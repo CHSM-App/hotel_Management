@@ -1,0 +1,480 @@
+/* Search, the status chips and Download all live in one toolbar row now —
+   the chips lose the bottom margin that used to space them from the row
+   below them (the row's own margin does that job instead), or the search
+   box and Download would read as sitting a few pixels higher than the chips
+   next to them. Download, and whatever follows it, is pushed to the row's
+   far end so the row reads as "narrow it" on the left, "act on it" on the
+   right. */
+/* The bills search field is flex: 1 — the right fill for a toolbar that is
+   otherwise just that field, but in a row that also carries the status chips
+   and Download it stretched to claim every pixel they weren't using. Capped
+   to a width that still fits a room number, a name or a phone number
+   comfortably, so the rest of the row has room to breathe. */
+.svc-usage__search {
+  flex: 0 1 280px;
+  min-width: 220px;
+}
+
+/* The catalogue's own search sits alone above the grid rather than in a
+   flex toolbar — flex-basis has nothing to shrink against there, so it gets
+   a real max-width instead of the sizing trick the usage tab's search uses. */
+.svc-catalogue__search {
+  max-width: 320px;
+  margin-bottom: 14px;
+}
+
+/* The Entry Type cell's chip and its room number — a flex column with its
+   own tight, fixed gap rather than relying on the chip's line-height to
+   space them, which left "Room 107" sitting an inconsistent distance under
+   "Room guest" depending on the row. Centred, not left-aligned: the column
+   is only ever as wide as its own header, so a left edge would leave the
+   room number looking shifted under the (usually shorter) chip above it. */
+.svc-usage__entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  text-align: center;
+}
+
+.svc-usage__filters {
+  margin-bottom: 0;
+}
+
+.svc-usage__download {
+  position: relative;
+  margin-left: auto;
+}
+
+.svc-usage__download-caret {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* A small menu rather than a backdrop modal — two choices, dismissed by
+   picking one or clicking anywhere else, the same weight as the button that
+   opened it. */
+.svc-usage__download-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-raised);
+}
+
+.svc-usage__download-item {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.svc-usage__download-item:hover {
+  background: var(--paper);
+  color: var(--brand-ink);
+}
+
+/* Service use: Qty, Entry Type, Phone, Status, Billing, Amount and Actions
+   shrink to their content so the spare width goes to Service and Customer
+   Name, the same shrink-to-content treatment the billing sheets use. */
+.history-sheet .history-table.svc-usage__table {
+  min-width: 0;
+}
+
+/* Nine columns is a lot to fit before the row has to scroll. The sheet
+   default (10px 14px, set for tables with half as many columns) is more
+   padding than a narrow Qty or Phone cell needs; tightened here and widened
+   back only once the viewport actually has the room to spare. */
+.history-sheet .history-table.svc-usage__table th,
+.history-sheet .history-table.svc-usage__table td {
+  padding: 8px 6px;
+}
+
+/* A row's cells don't all carry the same number of lines — Entry Type grows
+   to two when it names a room, every other cell stays one. Left at the
+   table default (vertical-align: top), that row then reads as its badge,
+   amount and buttons stranded above a gap only that one cell made.
+   Centring keeps every cell looking anchored to the row regardless of which
+   one happens to be tallest. */
+.history-sheet .history-table.svc-usage__table td {
+  vertical-align: middle;
+}
+
+.history-sheet .history-table.svc-usage__table th:nth-child(2),
+.history-sheet .history-table.svc-usage__table td:nth-child(2),
+.history-sheet .history-table.svc-usage__table th:nth-child(3),
+.history-sheet .history-table.svc-usage__table td:nth-child(3),
+.history-sheet .history-table.svc-usage__table th:nth-child(n + 5),
+.history-sheet .history-table.svc-usage__table td:nth-child(n + 5) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.history-sheet .history-table.svc-usage__table th.history-table__num {
+  text-align: right;
+}
+
+/* Units is a count, not a currency figure — right-aligning it the way Amount
+   is only makes sense when a column of them is meant to be summed by eye.
+   Centred instead, like the Qty column it replaced. */
+.history-sheet .history-table.svc-usage__table th.svc-usage__qty-col,
+.history-sheet .history-table.svc-usage__table td.svc-usage__qty-col {
+  text-align: center;
+}
+
+/* Service and Customer Name are the two columns left free to size themselves
+   — the ones worth reading in full. Without a cap, one long service name or
+   a guest's full legal name would claim width disproportionate to what it
+   says, pushing every shrink-to-content column off screen with it. Capped
+   and ellipsised instead: the row stays put, and the full value is still one
+   hover (native title) or a "View" click away. */
+.history-sheet .history-table.svc-usage__table td:nth-child(1),
+.history-sheet .history-table.svc-usage__table td:nth-child(4) {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Three actions can land in one row (View, Complete, Cancel) — the text
+   buttons elsewhere in the app assume room for one or two. Trimmed down so
+   the busiest row doesn't become the column that decides the table's width. */
+.history-sheet .history-table.svc-usage__table .history-table__actions-inner {
+  gap: 4px;
+}
+
+.history-sheet .history-table.svc-usage__table .history-table__btn {
+  margin-left: 0;
+  padding: 3px 8px;
+  font-size: 11.5px;
+}
+
+@media (min-width: 1300px) {
+  .history-sheet .history-table.svc-usage__table th,
+  .history-sheet .history-table.svc-usage__table td {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+/* The "View details" dialog. A single narrow column of 9 facts ran well past
+   a typical viewport and forced the dialog to scroll to show what is meant
+   to be read at a glance; widened so the two-column grid below has room to
+   pair facts up and halve that height instead. */
+.billing-panel__modal--usage-detail {
+  max-width: 640px;
+}
+
+/* Two facts to a line rather than one. chart-list's own border-bottom is
+   dropped here — on a 2-up grid it would rule under whichever cell is taller
+   and leave its neighbour's line floating short, so the gap between rows
+   carries the separation instead. */
+.billing-panel__modal--usage-detail .chart-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 28px;
+  row-gap: 14px;
+}
+
+/* chart-row is built for a wide single-column row — label at the left edge,
+   value pinned to the right, the two ends of a line with a border under it.
+   Stretched across half a modal that reads as a label and its answer filed
+   in two different places instead of one fact. Stacked instead, the way a
+   read-only form field is: a small caption, the answer directly under it —
+   which is also what stops every value from needing brand-purple just to be
+   found; found is now the label's job. */
+.billing-panel__modal--usage-detail .chart-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  border-bottom: none;
+  padding: 0;
+}
+
+.billing-panel__modal--usage-detail .chart-row__name {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.billing-panel__modal--usage-detail .chart-row__value {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .billing-panel__modal--usage-detail .chart-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The one figure the dialog exists to confirm, pulled out of the fact list
+   and into its own tile — the same reason a bill's total doesn't sit as just
+   another row among its line items. The quantity/rate/GST that make it up
+   ride underneath as the receipt, not repeated as rows of their own further
+   down. */
+.svc-detail__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  padding: 14px 16px;
+  margin: 2px 0 20px;
+  border-radius: 12px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+
+.svc-detail__summary-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  flex: 1 1 100%;
+}
+
+.svc-detail__summary-value {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--brand-ink);
+  line-height: 1.2;
+}
+
+/* Units, rate and GST were one run-on string separated only by a middot —
+   easy to read as a single blur rather than three facts. Broken into its own
+   labelled stat apiece, the way the amount above it is labelled, with a
+   rule between each so the eye has somewhere to stop. */
+.svc-detail__summary-breakdown {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 6px;
+}
+
+.svc-detail__summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.svc-detail__summary-stat:not(:first-child) {
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+
+.svc-detail__summary-stat-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.svc-detail__summary-stat-value {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Each fact group reads as its own block rather than one long undivided
+   list — the same .form-section rule booking forms use, just read-only
+   here. The dialog has no first field to anchor :first-child against, so
+   the usual zero-margin reset is skipped and every section keeps its rule. */
+.billing-panel__modal--usage-detail .form-section:first-child {
+  padding-top: 14px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.svc-catalogue__unit {
+  color: var(--text-muted);
+}
+
+/* Services & prices as a photo grid rather than a table — the same card
+   language MenuPanel's dish grid uses, so a service with a photo reads as a
+   small product tile instead of a spreadsheet row. */
+.svc-card-grid {
+  list-style: none;
+  margin: 0;
+  padding: 14px 18px 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.svc-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: none;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
+}
+
+.svc-card:hover {
+  box-shadow: var(--shadow-raised-hover);
+}
+
+/* Dimmed rather than struck out — but only the photo and the facts above the
+   rule, not the whole card: opacity on the card itself would have faded
+   "Activate" along with everything else, and a dim button reads as disabled
+   rather than as the one thing on an inactive card still worth clicking. */
+.svc-card--inactive .svc-card__photo,
+.svc-card--inactive .svc-card__photo--empty,
+.svc-card--inactive .svc-card__head,
+.svc-card--inactive .svc-card__facts {
+  opacity: 0.55;
+}
+
+.svc-card__photo {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  object-fit: cover;
+  display: block;
+  background: var(--paper);
+}
+
+.svc-card__photo--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.svc-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  flex: 1;
+}
+
+.svc-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.svc-card__name {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 15.5px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.svc-card__facts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The one figure the card exists to show, weighted the way the usage
+   detail's own amount tile is — brand colour, the heaviest type on the
+   card — with the unit as a quiet suffix rather than competing for
+   attention. */
+.svc-card__price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-weight: 800;
+  color: var(--brand-ink);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.svc-card__price .svc-catalogue__unit {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* A bordered chip rather than bare text — the same "fact, not prose" tag
+   language the rest of the app uses for a room number or a unit label. */
+.svc-card__gst {
+  flex-shrink: 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.svc-card__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* Edit is neutral; Deactivate/Activate carries the consequence of the click
+   — the same red/brand split the usage table's Cancel/Complete buttons use,
+   so turning a service off doesn't look identical to editing its price. */
+.svc-card__btn {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: var(--neu-transition);
+}
+
+.svc-card__btn:hover {
+  border-color: var(--field-border-hover);
+  background: var(--paper);
+}
+
+.svc-card__btn--danger {
+  border-color: #e6c3c0;
+  color: var(--danger);
+}
+
+.svc-card__btn--danger:hover {
+  background: var(--danger-bg);
+}
+
+.svc-card__btn--primary {
+  border-color: #cfc6f5;
+  color: var(--brand-ink);
+}
+
+.svc-card__btn--primary:hover {
+  background: #f1eefc;
+}

@@ -115,6 +115,17 @@ function billSource(inv) {
   return inv.foodSubtotal > 0 ? 'ROOM_FOOD' : 'ROOM';
 }
 
+// What a cancelled subject's advance receipt settled to — one wording so a
+// kept charge and a refund read the same whether shown in the Bills list or
+// the receipt modal.
+function advanceSettlementLabel(receipt) {
+  if (receipt.cancellationCharge > 0) return `${formatPrice(receipt.cancellationCharge)} kept`;
+  if (receipt.refundAmount > 0) return `${formatPrice(receipt.refundAmount)} refunded`;
+  // Genuinely NULL (a cancellation from before settlement columns existed),
+  // not zero — don't claim a figure nobody entered.
+  return 'not settled';
+}
+
 // The "Room" tag alone reads as an exclusive-use room, same as any other
 // stay — nothing about it says the guest holds one bed in a shared
 // dormitory, not the room outright. Said here rather than as its own badge:
@@ -525,6 +536,8 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const activeTab = forceTab && tabs.some((t) => t.key === forceTab) ? forceTab : tabs.some((t) => t.key === tab) ? tab : defaultTab;
   // Lists open as a spreadsheet; the cards are one click away.
   const [listView, setListView] = useState('sheet');
+  const [billSort, setBillSort] = useState({ key: null, dir: 1 });
+  const toggleBillSort = (key) => setBillSort((cur) => (cur.key === key ? { key, dir: -cur.dir } : { key, dir: 1 }));
   const [queue, setQueue] = useState(() => readCache('/billing/queue'));
   // A column only earns its place when some stay has something in it.
   const hasLate = Boolean(queue?.some((b) => b.lateCheckoutCharge > 0));
@@ -612,7 +625,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // billed — on their own document, or added to a guest's room bill.
   const [serviceUsages, setServiceUsages] = useState(() => readCache('/lodge-services/usages?status=tobill'));
   const [serviceError, setServiceError] = useState('');
-  const [serviceSel, setServiceSel] = useState([]);
+  // Which row's "Add to room bill" is open, and the guests to pick from.
   const [servicePick, setServicePick] = useState(null);
 
   const loadServices = () => {
@@ -620,34 +633,36 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     apiGet('/lodge-services/usages?status=tobill', { token })
       .then((data) => {
         setServiceUsages(writeCache('/lodge-services/usages?status=tobill', data.usages));
-        // Drop ticks on rows that have since been billed elsewhere.
-        setServiceSel((sel) => sel.filter((id) => data.usages.some((u) => u.id === id)));
         setServiceError('');
       })
       .catch((err) => setServiceError(err instanceof ApiError ? err.message : 'Could not load services to bill.'));
   };
-  const toggleServiceSel = (id) =>
-    setServiceSel((sel) => (sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]));
 
-  // "Add to room bill": a use already tied to a stay goes straight on it;
-  // otherwise the desk picks one of the guests staying in-house.
-  const openServicePick = () => {
-    const chosen = (serviceUsages ?? []).filter((u) => serviceSel.includes(u.id));
-    const stays = [...new Set(chosen.map((u) => u.bookingId).filter(Boolean))];
-    if (stays.length === 1 && chosen.every((u) => u.bookingId === stays[0])) {
-      addServicesToRoom(stays[0]);
+  // "Add to room bill" on a service row: a use already tied to a stay shows
+  // that guest so the desk can confirm who it's going on, same as the room
+  // billing on a food order; a walk-in use with no stay offers the same
+  // in-house guest picker the restaurant tables use.
+  const openServicePick = (usage) => {
+    if (usage.bookingId) {
+      setServicePick({
+        usageId: usage.id,
+        bookingId: usage.bookingId,
+        fixed: true,
+        guestName: usage.guestName,
+        roomNumber: usage.roomNumber,
+        error: '',
+      });
       return;
     }
-    setServicePick({ guests: null, bookingId: '', error: '' });
+    setServicePick({ usageId: usage.id, guests: null, bookingId: '', fixed: false, error: '' });
     apiGet('/billing/food-tabs/in-house-guests', { token })
       .then((data) => setServicePick((p) => p && { ...p, guests: data.guests }))
       .catch(() => setServicePick((p) => p && { ...p, guests: [], error: 'Could not load guests.' }));
   };
-  const addServicesToRoom = async (bookingId) => {
+  const addServicesToRoom = async (usageId, bookingId) => {
     try {
-      await apiPost('/billing/services/add-to-room', { usageIds: serviceSel, bookingId: Number(bookingId) }, { token });
+      await apiPost('/billing/services/add-to-room', { usageIds: [usageId], bookingId: Number(bookingId) }, { token });
       setServicePick(null);
-      setServiceSel([]);
       loadServices();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Could not add to the room bill.';
@@ -769,6 +784,18 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     documents &&
     documents.filter((i) => (!activeFilter || activeFilter.match(i)) && matchesDate(i) && matchesSearch(i));
   const billsFiltered = Boolean(billQuery) || Boolean(billFrom) || Boolean(billTo) || activeFilter != null;
+  // The spreadsheet view in the order of the heading clicked; until one is, the
+  // list's own order. Bills that tie keep that order too.
+  const billSortColumn = REPORT_COLUMNS.find((c) => c.key === billSort.key);
+  const sheetInvoices =
+    visibleInvoices && billSortColumn
+      ? [...visibleInvoices].sort((a, b) => {
+          const x = billSortColumn.value(a);
+          const y = billSortColumn.value(b);
+          const order = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' });
+          return order * billSort.dir;
+        })
+      : visibleInvoices;
 
   const clearBillFilters = () => {
     setBillFilter('ALL');
@@ -1514,8 +1541,8 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           <div className="chart-section__header">
             <h3>Services to bill</h3>
             <span className="chart-section__hint">
-              Laundry, pool, gaming and other services that are completed but not yet paid for. Tick
-              what to bill together, then bill it on its own document or add it to a guest’s room bill.
+              Laundry, pool, gaming and other services that are completed but not yet paid for. Each
+              bills on its own document, or goes onto a guest’s room bill instead.
             </span>
           </div>
 
@@ -1525,89 +1552,117 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             <div className="dash-state">Nothing waiting — every completed service has been billed.</div>
           )}
           {!serviceError && serviceUsages && serviceUsages.length > 0 && (
-            <>
-              <div className="chart-list">
-                {serviceUsages.map((u) => (
-                  <label className="chart-row billing-panel__queue-row" key={u.id} style={{ cursor: 'pointer' }}>
-                    <span className="chart-row__name">
-                      <input
-                        type="checkbox"
-                        checked={serviceSel.includes(u.id)}
-                        onChange={() => toggleServiceSel(u.id)}
-                        style={{ marginRight: 10 }}
-                      />
-                      {u.serviceName}
-                      <span className="chart-row__dates">
-                        {u.quantity} × {formatPrice(u.unitPrice)}
-                        {[u.roomNumber ? `Room ${u.roomNumber}` : null, u.guestName].filter(Boolean).map((s) => ` · ${s}`).join('')}
-                        {u.onRoomBill ? ' · its stay bill was already issued' : ''}
-                      </span>
-                    </span>
-                    <span className="chart-row__value">{formatPrice(u.lineTotal)}</span>
-                  </label>
-                ))}
+            <section className="history-sheet billing-sheet">
+              <div className="history-table-wrap">
+                <table className="history-table billing-sheet__services">
+                  <thead>
+                    <tr>
+                      <th>Service</th>
+                      <th>Room / Guest</th>
+                      <th className="history-table__num">Qty</th>
+                      <th className="history-table__num">Amount</th>
+                      <th aria-label="Actions" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serviceUsages.map((u) => (
+                      <tr key={u.id} className="history-table__row">
+                        <td className="history-table__strong">
+                          {u.serviceName}
+                          {u.onRoomBill && (
+                            <span className="history-table__note">its stay bill was already issued</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="history-table__where">{u.roomNumber ? `Room ${u.roomNumber}` : '—'}</span>
+                          {u.guestName && <span className="history-table__note">{u.guestName}</span>}
+                        </td>
+                        <td className="history-table__num">
+                          {u.quantity} × {formatPrice(u.unitPrice)}
+                        </td>
+                        <td className="history-table__num history-table__strong">{formatPrice(u.lineTotal)}</td>
+                        <td className="history-table__actions">
+                          <div className="history-table__actions-inner">
+                            <button type="button" className="history-table__btn" onClick={() => openServicePick(u)}>
+                              Add to room bill
+                            </button>
+                            <button
+                              type="button"
+                              className="history-table__btn history-table__btn--primary"
+                              onClick={() => openBilling({ kind: 'SERVICE', usageIds: [u.id] })}
+                            >
+                              Bill
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="billing-panel__queue-actions" style={{ marginTop: 12 }}>
-                <span className="chart-row__value">
-                  {serviceSel.length} selected ·{' '}
-                  {formatPrice(serviceUsages.filter((u) => serviceSel.includes(u.id)).reduce((n, u) => n + u.lineTotal, 0))}
-                </span>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  disabled={serviceSel.length === 0}
-                  onClick={openServicePick}
-                >
-                  Add to room bill
-                </button>
-                <button
-                  type="button"
-                  className="btn-accent"
-                  disabled={serviceSel.length === 0}
-                  onClick={() => openBilling({ kind: 'SERVICE', usageIds: serviceSel })}
-                >
-                  Bill selected
-                </button>
-              </div>
-              {servicePick && (
-                <div className="room-pick">
-                  <div className="room-pick__label">Add the selected services to a guest’s room bill</div>
-                  <div className="room-pick__controls">
-                    {!servicePick.guests ? (
-                      <span className="room-pick__note">Loading guests…</span>
-                    ) : servicePick.guests.length === 0 ? (
-                      <span className="room-pick__note">Nobody is checked in.</span>
-                    ) : (
-                      <select
-                        className="room-pick__select"
-                        aria-label="Guest"
-                        value={servicePick.bookingId}
-                        onChange={(e) => setServicePick({ ...servicePick, bookingId: e.target.value })}
-                      >
-                        <option value="">Choose guest…</option>
-                        {servicePick.guests.map((g) => (
-                          <option key={g.bookingId} value={g.bookingId}>
-                            Room {g.roomNumber} · {g.guestName}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <button type="button" className="btn-secondary" onClick={() => setServicePick(null)}>
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-accent"
-                      disabled={!servicePick.bookingId}
-                      onClick={() => addServicesToRoom(servicePick.bookingId)}
-                    >
-                      Add to room bill
-                    </button>
-                  </div>
-                  {servicePick.error && <div className="form-banner form-banner--error">{servicePick.error}</div>}
+            </section>
+          )}
+          {servicePick && (
+            <div className="glass-backdrop billing-panel__backdrop" onClick={() => setServicePick(null)}>
+              <div
+                className="glass-panel billing-panel__modal billing-panel__modal--room-pick"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="billing-panel__detail-header">
+                  <h3>Add to room bill</h3>
+                  <button type="button" className="bill-close" onClick={() => setServicePick(null)} aria-label="Close">
+                    ×
+                  </button>
                 </div>
-              )}
-            </>
+                <p className="chart-section__hint room-pick__intro">
+                  {serviceUsages.find((u) => u.id === servicePick.usageId)?.serviceName} will be added to the
+                  bill of the guest below.
+                </p>
+                <div className="field">
+                  <label htmlFor="room-pick-guest">Guest</label>
+                  {servicePick.fixed ? (
+                    <input
+                      id="room-pick-guest"
+                      type="text"
+                      value={`Room ${servicePick.roomNumber} · ${servicePick.guestName}`}
+                      disabled
+                      readOnly
+                    />
+                  ) : !servicePick.guests ? (
+                    <input id="room-pick-guest" type="text" value="Loading guests…" disabled readOnly />
+                  ) : servicePick.guests.length === 0 ? (
+                    <input id="room-pick-guest" type="text" value="Nobody is checked in." disabled readOnly />
+                  ) : (
+                    <select
+                      id="room-pick-guest"
+                      value={servicePick.bookingId}
+                      onChange={(e) => setServicePick({ ...servicePick, bookingId: e.target.value })}
+                    >
+                      <option value="">Choose guest…</option>
+                      {servicePick.guests.map((g) => (
+                        <option key={g.bookingId} value={g.bookingId}>
+                          Room {g.roomNumber} · {g.guestName}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {servicePick.error && <div className="form-banner form-banner--error">{servicePick.error}</div>}
+                <div className="billing-panel__actions">
+                  <button type="button" className="btn-secondary" onClick={() => setServicePick(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-accent"
+                    disabled={!servicePick.bookingId}
+                    onClick={() => addServicesToRoom(servicePick.usageId, servicePick.bookingId)}
+                  >
+                    Add to room bill
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -1828,14 +1883,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
       {activeTab === 'bills' && (
         <div className="chart-section">
-          <div className="chart-section__header">
-            <h3>Bills</h3>
-            <span className="chart-section__hint">
-              Most recent first. Tags show what was billed and which document was issued.
-            </span>
-            <ListViewToggle view={listView} onChange={setListView} />
-          </div>
-
           {invoicesError && <div className="form-banner form-banner--error">{invoicesError}</div>}
           {!invoicesError && !documents && <PageLoader inline label="Loading" />}
           {!invoicesError && documents && documents.length === 0 && (
@@ -1845,138 +1892,151 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             <>
               {/* The dates a bill was issued between, with the shortcuts for the
                   common answers underneath. Search sits alongside for the one
-                  bill somebody is holding a copy of. */}
-              <div className="billing-panel__bill-tools">
-                <div className="billing-panel__bill-range">
-                  <div className="field">
-                    <input
-                      type="date"
-                      aria-label="Bills issued from"
-                      value={billFrom}
-                      onChange={(e) => setBillFrom(e.target.value)}
-                    />
+                  bill somebody is holding a copy of. Grouped into one card so
+                  the toolbar reads as a single control surface rather than a
+                  loose stack of rows. */}
+              <div className="billing-panel__toolbar">
+                <div className="billing-panel__bill-tools">
+                  <div className="billing-panel__bill-range">
+                    <div className="field">
+                      <input
+                        type="date"
+                        aria-label="Bills issued from"
+                        value={billFrom}
+                        max={billTo || undefined}
+                        onChange={(e) => setBillFrom(e.target.value)}
+                      />
+                    </div>
+                    <span className="billing-panel__bill-range-dash" aria-hidden="true">
+                      –
+                    </span>
+                    <div className="field">
+                      <input
+                        type="date"
+                        aria-label="Bills issued up to"
+                        value={billTo}
+                        min={billFrom || undefined}
+                        onChange={(e) => setBillTo(e.target.value)}
+                      />
+                    </div>
                   </div>
-                  <span className="billing-panel__bill-range-dash" aria-hidden="true">
-                    –
-                  </span>
-                  <div className="field">
-                    <input
-                      type="date"
-                      aria-label="Bills issued up to"
-                      value={billTo}
-                      onChange={(e) => setBillTo(e.target.value)}
-                    />
+
+                  {/* Shortcuts into the same range the date boxes above hold —
+                      the four questions asked often enough that typing two
+                      dates for them is work nobody should be doing twice a
+                      day. */}
+                  <div className="billing-panel__bill-presets">
+                    {BILL_DATE_PRESETS.map((p) => (
+                      <button
+                        key={p.key}
+                        type="button"
+                        className="billing-panel__bill-preset"
+                        aria-pressed={activePreset?.key === p.key}
+                        onClick={() => applyPreset(p)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="billing-panel__bill-preset"
+                      aria-pressed={!billFrom && !billTo}
+                      onClick={clearBillDates}
+                    >
+                      All time
+                    </button>
+                  </div>
+
+                  <div className="billing-panel__bill-tools-right">
+                    <ListViewToggle view={listView} onChange={setListView} />
+
+                    {billsFiltered && (
+                      <span className="billing-panel__bill-count">
+                        {visibleInvoices.length} of {documents.length}
+                        <button type="button" className="billing-panel__bill-clear" onClick={clearBillFilters}>
+                          Clear
+                        </button>
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <div className="field billing-panel__bill-search">
-                  <svg
-                    className="billing-panel__bill-search-icon"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="m20 20-3.5-3.5" />
-                  </svg>
-                  <input
-                    aria-label="Search bills"
-                    value={billSearch}
-                    onChange={(e) => setBillSearch(e.target.value)}
-                    placeholder="Bill number, guest, room, table or phone"
-                  />
-                  {billSearch && (
-                    <button
-                      type="button"
-                      className="billing-panel__bill-search-clear"
-                      onClick={() => setBillSearch('')}
-                      aria-label="Clear search"
+                {invalidRange && (
+                  <p className="billing-panel__bill-note">
+                    The “to” date is before the “from” date, so nothing can match. Swap them or clear
+                    the dates.
+                  </p>
+                )}
+
+                <div className="billing-panel__bill-search-row">
+                  <div className="field billing-panel__bill-search">
+                    <svg
+                      className="billing-panel__bill-search-icon"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      aria-hidden="true"
                     >
-                      ×
-                    </button>
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="m20 20-3.5-3.5" />
+                    </svg>
+                    <input
+                      aria-label="Search bills"
+                      value={billSearch}
+                      onChange={(e) => setBillSearch(e.target.value)}
+                      placeholder="Bill number, guest, room, table or phone"
+                    />
+                    {billSearch && (
+                      <button
+                        type="button"
+                        className="billing-panel__bill-search-clear"
+                        onClick={() => setBillSearch('')}
+                        aria-label="Clear search"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Skipped when everything issued is of one type — a single chip
+                      filters nothing and only costs a row of screen. */}
+                  {billFilters.length > 1 && (
+                    <div className="billing-panel__filters">
+                      <button
+                        type="button"
+                        className="billing-panel__filter"
+                        aria-pressed={activeFilter == null}
+                        onClick={() => setBillFilter('ALL')}
+                      >
+                        All
+                        {/* Counted within the dates and search on screen, like every
+                            other chip — "All 42" above a list of six would be
+                            describing a list nobody is looking at. */}
+                        <span className="billing-panel__filter-count">
+                          {documents.filter((i) => matchesDate(i) && matchesSearch(i)).length}
+                        </span>
+                      </button>
+                      {billFilters.map((f) => (
+                        <button
+                          type="button"
+                          key={f.key}
+                          className="billing-panel__filter"
+                          aria-pressed={activeFilter?.key === f.key}
+                          onClick={() => setBillFilter(f.key)}
+                        >
+                          <span className={`bill-tag__dot bill-tag__dot--${tagClass(f.key)}`} aria-hidden="true" />
+                          {f.label}
+                          <span className="billing-panel__filter-count">{f.count}</span>
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
-
-                {billsFiltered && (
-                  <span className="billing-panel__bill-count">
-                    {visibleInvoices.length} of {documents.length}
-                    <button type="button" className="billing-panel__bill-clear" onClick={clearBillFilters}>
-                      Clear
-                    </button>
-                  </span>
-                )}
               </div>
-
-              {/* Shortcuts into the same range the controls above hold — the
-                  four questions asked often enough that typing two dates for
-                  them is work nobody should be doing twice a day. */}
-              <div className="billing-panel__bill-presets">
-                {BILL_DATE_PRESETS.map((p) => (
-                  <button
-                    key={p.key}
-                    type="button"
-                    className="billing-panel__bill-preset"
-                    aria-pressed={activePreset?.key === p.key}
-                    onClick={() => applyPreset(p)}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="billing-panel__bill-preset"
-                  aria-pressed={!billFrom && !billTo}
-                  onClick={clearBillDates}
-                >
-                  All time
-                </button>
-              </div>
-
-              {invalidRange && (
-                <p className="billing-panel__bill-note">
-                  The “to” date is before the “from” date, so nothing can match. Swap them or clear
-                  the dates.
-                </p>
-              )}
-
-              {/* Skipped when everything issued is of one type — a single chip
-                  filters nothing and only costs a row of screen. */}
-              {billFilters.length > 1 && (
-                <div className="billing-panel__filters">
-                  <button
-                    type="button"
-                    className="billing-panel__filter"
-                    aria-pressed={activeFilter == null}
-                    onClick={() => setBillFilter('ALL')}
-                  >
-                    All
-                    {/* Counted within the dates and search on screen, like every
-                        other chip — "All 42" above a list of six would be
-                        describing a list nobody is looking at. */}
-                    <span className="billing-panel__filter-count">
-                      {documents.filter((i) => matchesDate(i) && matchesSearch(i)).length}
-                    </span>
-                  </button>
-                  {billFilters.map((f) => (
-                    <button
-                      type="button"
-                      key={f.key}
-                      className="billing-panel__filter"
-                      aria-pressed={activeFilter?.key === f.key}
-                      onClick={() => setBillFilter(f.key)}
-                    >
-                      <span className={`bill-tag__dot bill-tag__dot--${tagClass(f.key)}`} aria-hidden="true" />
-                      {f.label}
-                      <span className="billing-panel__filter-count">{f.count}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
 
               {/* Nothing left after filtering is a different thing from having
                   issued no bills, and says so — with the way out beside it. */}
@@ -1995,18 +2055,29 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     <table className="history-table">
                       <thead>
                         <tr>
-                          <th>Bill no.</th>
-                          <th>Date</th>
-                          <th>Billed for</th>
-                          <th>Guest / Table</th>
-                          <th>Room</th>
-                          <th>Document</th>
-                          <th>Status</th>
-                          <th className="history-table__num">Amount</th>
+                          {REPORT_COLUMNS.map((column) => (
+                            <th
+                              key={column.key}
+                              className={column.className}
+                              aria-sort={billSort.key === column.key ? (billSort.dir === 1 ? 'ascending' : 'descending') : undefined}
+                            >
+                              <button
+                                type="button"
+                                className="billing-sheet__sort"
+                                onClick={() => toggleBillSort(column.key)}
+                                title={`Sort by ${column.label}`}
+                              >
+                                {column.label}
+                                <span className="billing-sheet__sort-icon" aria-hidden="true">
+                                  {billSort.key === column.key ? (billSort.dir === 1 ? '▲' : '▼') : '⇅'}
+                                </span>
+                              </button>
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleInvoices.map((inv) => {
+                        {sheetInvoices.map((inv) => {
                           const source = billSource(inv);
                           return (
                             <tr
@@ -2039,6 +2110,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                               <td>
                                 {inv.status === 'VOID' ? (
                                   <span className="bill-tag bill-tag--void">Void</span>
+                                ) : inv.kind === 'ADVANCE' && inv.cancelled ? (
+                                  <span className="billing-sheet__cancelled">
+                                    Cancelled — {advanceSettlementLabel(inv)}
+                                  </span>
                                 ) : inv.kind === 'ADVANCE' && inv.balanceDue > 0 ? (
                                   <span className="billing-sheet__due">{formatPrice(inv.balanceDue)} due</span>
                                 ) : (
@@ -2095,8 +2170,14 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                                 : `${inv.guestName} · ${inv.roomNumber}`}
                           {inv.createdAt && ` · ${formatBillDate(inv.createdAt)}`}
                           {/* Why anybody looks a receipt up again: what is
-                              still to come on the stay it was taken against. */}
+                              still to come on the stay it was taken against,
+                              or — once that stay fell through — what became
+                              of the money instead. */}
                           {inv.kind === 'ADVANCE' &&
+                            inv.cancelled &&
+                            ` · Cancelled — ${advanceSettlementLabel(inv)}`}
+                          {inv.kind === 'ADVANCE' &&
+                            !inv.cancelled &&
                             inv.balanceDue > 0 &&
                             ` · ${formatPrice(inv.balanceDue)} due`}
                         </span>

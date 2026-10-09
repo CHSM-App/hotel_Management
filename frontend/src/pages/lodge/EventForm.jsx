@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPatch, apiPost } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import QtyStepper from '../../components/QtyStepper';
 import { formatPrice } from './priceFormat';
 import PaymentLines from './PaymentLines';
 import CheckInRoomStatus from './CheckInRoomStatus';
@@ -883,16 +884,12 @@ export default function EventForm({
                   {l.selected ? (
                     <div className="ev-addon__fields">
                       {wantsQty(l) && (
-                        <label className="ev-addon__field">
+                        // Not a <label>: it would hand a click on "Qty" to the
+                        // stepper's minus button, the first control inside it.
+                        <span className="ev-addon__qty">
                           <span>Qty</span>
-                          <input
-                            type="number"
-                            min="1"
-                            value={l.quantity}
-                            aria-label={`Quantity of ${l.label}`}
-                            onChange={(e) => setLine(l.key, { quantity: e.target.value })}
-                          />
-                        </label>
+                          <QtyStepper label={l.label} value={l.quantity} onChange={(quantity) => setLine(l.key, { quantity })} />
+                        </span>
                       )}
                       <label className="ev-addon__field ev-addon__field--amount">
                         <span className="ev-addon__cur" aria-hidden="true">

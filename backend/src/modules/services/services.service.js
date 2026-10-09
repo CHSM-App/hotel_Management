@@ -1,8 +1,14 @@
+const fs = require('fs');
+const path = require('path');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const { UPLOAD_DIR: SERVICE_IMAGE_DIR } = require('../../middleware/serviceImageUpload');
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// A service photo the property uploaded, or nothing. The filename alone
+// travels — the browser builds the URL against the /service-images static
+// mount, the same way it does for a dish or a room photo.
 function mapService(row) {
   return {
     id: row.id,
@@ -12,7 +18,16 @@ function mapService(row) {
     gstRatePercent: Number(row.gst_rate_percent),
     isActive: !!row.is_active,
     isLaundry: !!row.is_laundry,
+    image: row.image_filename ?? null,
   };
+}
+
+// A service photo no longer referenced by any row. Deleted best-effort: an
+// orphaned file wastes a few hundred kilobytes, while a failed unlink that
+// took the whole request down would lose the edit the user actually asked for.
+function removeServiceImage(filename) {
+  if (!filename) return;
+  fs.unlink(path.join(SERVICE_IMAGE_DIR, path.basename(filename)), () => {});
 }
 
 async function listServices(lodgeId, { includeInactive = false } = {}) {
@@ -21,7 +36,7 @@ async function listServices(lodgeId, { includeInactive = false } = {}) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, unit_label, price, gst_rate_percent, is_active, is_laundry
+      SELECT id, name, unit_label, price, gst_rate_percent, is_active, is_laundry, image_filename
       FROM dbo.lodge_services
       WHERE lodge_id = @lodgeId ${includeInactive ? '' : 'AND is_active = 1'}
       ORDER BY name
@@ -39,11 +54,12 @@ async function createService(lodgeId, input) {
     .input('price', sql.Decimal(10, 2), input.price)
     .input('gst', sql.Decimal(5, 2), input.gstRatePercent)
     .input('isLaundry', sql.Bit, input.isLaundry ? 1 : 0)
+    .input('imageFilename', sql.NVarChar, input.imageFilename ?? null)
     .query(`
-      INSERT INTO dbo.lodge_services (lodge_id, name, unit_label, price, gst_rate_percent, is_laundry)
+      INSERT INTO dbo.lodge_services (lodge_id, name, unit_label, price, gst_rate_percent, is_laundry, image_filename)
       OUTPUT inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent,
-             inserted.is_active, inserted.is_laundry
-      VALUES (@lodgeId, @name, @unit, @price, @gst, @isLaundry)
+             inserted.is_active, inserted.is_laundry, inserted.image_filename
+      VALUES (@lodgeId, @name, @unit, @price, @gst, @isLaundry, @imageFilename)
     `);
   return mapService(result.recordset[0]);
 }
@@ -65,15 +81,27 @@ async function updateService(lodgeId, id, input) {
   add('gst_rate_percent', 'gst', sql.Decimal(5, 2), input.gstRatePercent);
   add('is_active', 'active', sql.Bit, input.isActive);
   add('is_laundry', 'isLaundry', sql.Bit, input.isLaundry === undefined ? undefined : input.isLaundry ? 1 : 0);
+  // The photo has three fates on a save: a new file replaces it, "remove"
+  // clears it, and sending neither leaves whatever is on file alone — the
+  // common case, since most edits are just a price change.
+  if (input.imageFilename) add('image_filename', 'image', sql.NVarChar, input.imageFilename);
+  else if (input.removeImage) add('image_filename', 'image', sql.NVarChar, null);
   if (sets.length === 0) throw new ApiError('Nothing to update.', 400);
   const result = await request.query(`
     UPDATE dbo.lodge_services SET ${sets.join(', ')}
-    OUTPUT inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent,
-           inserted.is_active, inserted.is_laundry
+    OUTPUT deleted.image_filename AS old_image_filename,
+           inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent,
+           inserted.is_active, inserted.is_laundry, inserted.image_filename
     WHERE id = @id AND lodge_id = @lodgeId
   `);
   if (result.recordset.length === 0) throw new ApiError('Service not found.', 404);
-  return mapService(result.recordset[0]);
+  const row = result.recordset[0];
+  // Only once the row has stopped pointing at it. The other order would leave
+  // the catalogue naming a file that had already gone if the update then failed.
+  if (row.old_image_filename && row.old_image_filename !== row.image_filename) {
+    removeServiceImage(row.old_image_filename);
+  }
+  return mapService(row);
 }
 
 const USAGE_SELECT = `
@@ -207,14 +235,17 @@ async function completeUsage(lodgeId, id) {
   return getUsage(lodgeId, id);
 }
 
-// Allowed until a bill carries it; a billed use is corrected by voiding the bill.
+// Only while it's still running. Once completed it's a use that actually
+// happened — a stay someone had, a round someone played — and the way to
+// correct that is to not bill it or to void the bill, not to erase that it
+// occurred.
 async function cancelUsage(lodgeId, id) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('id', sql.BigInt, id)
-    .query("UPDATE dbo.service_usages SET status = 'CANCELLED' WHERE id = @id AND lodge_id = @lodgeId AND status IN ('IN_USE', 'COMPLETED') AND invoice_id IS NULL");
+    .query("UPDATE dbo.service_usages SET status = 'CANCELLED' WHERE id = @id AND lodge_id = @lodgeId AND status = 'IN_USE'");
   if (result.rowsAffected[0] === 0) throw new ApiError('This service cannot be cancelled.', 409);
   return getUsage(lodgeId, id);
 }

@@ -45,7 +45,8 @@ async function updateMaterialHandler(req, res, next) {
     const material = await inventoryService.updateMaterial(
       req.user.lodgeId,
       Number(req.params.id),
-      parse(updateMaterialSchema, req.body)
+      parse(updateMaterialSchema, req.body),
+      req.user.sub
     );
     res.json({ material });
   } catch (err) {

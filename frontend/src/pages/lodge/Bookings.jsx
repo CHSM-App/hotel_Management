@@ -21,6 +21,7 @@ import PaymentLines from './PaymentLines';
 import IconButton from '../../components/IconButton';
 import Req from '../../components/RequiredMark';
 import StepNum from '../../components/StepNum';
+import QtyStepper from '../../components/QtyStepper';
 import { useToast } from '../../components/Toast';
 // Aliased: this file already has a local TrashIcon, drawn at 15px for the
 // inline row-remove buttons. The shared glyph is 18px, sized for the 34px
@@ -1454,12 +1455,15 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // Every route into the form goes through here, so there is one place that
   // remembers what it was handed and one definition of "unchanged".
   const beginForm = (mode, form) => {
-    // A draft parked before split advances existed carries no advanceLines, and
-    // so does any older shape that finds its way in here. The editor reads
-    // lines[0] unconditionally, so it is normalised at this one funnel rather
-    // than at the three call sites — new booking, restored draft and edit all
-    // come through here.
+    // A draft parked before some later field existed (advanceLines, vehicles,
+    // bedIds, switchableCharges, ...) carries none of it, and the form reads
+    // most of those unconditionally (bookingForm.vehicles.length and the
+    // like, every render). initialBookingForm is the base so any field the
+    // draft never had falls back to its default instead of undefined; `form`
+    // then overrides with whatever the draft (or edit, or a fresh booking)
+    // actually set.
     const seeded = {
+      ...initialBookingForm,
       ...form,
       advanceLines: form.advanceLines?.length ? form.advanceLines : [emptyPaymentLine()],
       // A draft parked before bookings could hold several rooms has neither.
@@ -1783,8 +1787,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       return;
     }
     let current = true;
+    const bookingIdParam = editing && editTarget?.id ? `&bookingId=${editTarget.id}` : '';
     apiGet(
-      `/bookings/available-beds?roomId=${selectedRoom.id}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}`,
+      `/bookings/available-beds?roomId=${selectedRoom.id}&checkInDate=${bookingForm.checkInDate}&checkOutDate=${bookingForm.checkOutDate}${bookingIdParam}`,
       { token }
     )
       .then((data) => {
@@ -1793,7 +1798,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         setAvailableBedsError('');
         // A bed or a buyout picked against the previous date range may no
         // longer be free — same "did the ground move" check the room picker
-        // above already does for the room itself.
+        // above already does for the room itself. The booking's own beds are
+        // already excluded from isTaken server-side (bookingIdParam above),
+        // so this only strips beds genuinely lost to someone else.
         setBookingForm((f) => {
           const stillFree = f.bedIds.filter((id) =>
             data.beds.some((b) => String(b.id) === String(id) && !b.isTaken)
@@ -1816,7 +1823,15 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showBookingForm, selectedRoom?.id, selectedRoom?.isDormitory, bookingForm.checkInDate, bookingForm.checkOutDate]);
+  }, [
+    showBookingForm,
+    selectedRoom?.id,
+    selectedRoom?.isDormitory,
+    bookingForm.checkInDate,
+    bookingForm.checkOutDate,
+    editing,
+    editTarget?.id,
+  ]);
 
   // Further rooms of a multi-room booking. Each card owns fetching its own
   // availability; the form only holds what was picked.
@@ -4649,7 +4664,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                                 }
                               >
                                 <span className="booking-form__bed-label">{bed.bedLabel}</span>
-                                <span className="booking-form__bed-state">{bed.isTaken ? 'Taken' : 'Free'}</span>
+                                <span className="booking-form__bed-state">
+                                  {selected ? 'Selected' : bed.isTaken ? 'Taken' : 'Free'}
+                                </span>
                               </button>
                             );
                           })}
@@ -4686,7 +4703,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   selectedRoom.switchableCharges.length > 0 && (
                     <div className="field">
                       <label>Extras</label>
-                      <div className="checkbox-grid">
+                      <div className="checkbox-grid checkbox-grid--fit">
                         {selectedRoom.switchableCharges.map((charge) => {
                           const selection = selectionOf(bookingForm.switchableCharges, charge.id);
                           return (
@@ -4701,15 +4718,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                                   extra is on the booking — an unticked row has
                                   nothing to count, and AC is on or it isn't. */}
                               {selection && charge.isCounter && (
-                                <input
-                                  className="checkbox-chip__qty"
-                                  type="number"
-                                  min="1"
-                                  step="1"
-                                  inputMode="numeric"
-                                  aria-label={`How many ${charge.name}`}
+                                <QtyStepper
+                                  label={charge.name}
                                   value={selection.quantity}
-                                  onChange={(e) => setChargeQuantity(charge.id, e.target.value)}
+                                  onChange={(quantity) => setChargeQuantity(charge.id, quantity)}
                                 />
                               )}
                             </label>

@@ -657,7 +657,7 @@ export default function OwnerDashboard() {
                 <RoomsAndRates />
               )}
 
-              {activeFeature && activeFeature.key === 'otherServices' && <ServicesPanel />}
+              {activeFeature && activeFeature.key === 'otherServices' && <ServicesPanel lodge={me.lodge} />}
 
               {activeFeature && activeFeature.key === 'housekeeping' && <HousekeepingPanel lodge={me.lodge} issueCount={issueCount} />}
 

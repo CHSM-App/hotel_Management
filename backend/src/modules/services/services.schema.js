@@ -1,5 +1,14 @@
 const { z } = require('zod');
 
+// The service form is multipart now that it can carry a photo, so every field
+// arrives as a string — which the coercions below already handled, except for
+// a checkbox, whose "true"/"false" needs saying out loud. See menu.schema.js,
+// which carries the same comment for the same reason.
+const formBoolean = z.preprocess((value) => {
+  if (typeof value === 'string') return value === 'true' || value === '1';
+  return value;
+}, z.boolean());
+
 const serviceSchema = z.object({
   name: z.string().trim().min(1, 'Service name is required.').max(100),
   unitLabel: z.string().trim().min(1).max(30).default('use'),
@@ -7,7 +16,7 @@ const serviceSchema = z.object({
   gstRatePercent: z.coerce.number().min(0, 'GST cannot be negative.').max(28, 'GST cannot be above 28%.').default(18),
   // A garment priced for guest laundry (shirt, saree ...) rather than a service
   // started and completed on its own.
-  isLaundry: z.boolean().default(false),
+  isLaundry: formBoolean.default(false),
 });
 
 // Written out rather than serviceSchema.partial(): partial() keeps the create
@@ -18,8 +27,11 @@ const updateServiceSchema = z.object({
   unitLabel: z.string().trim().min(1).max(30).optional(),
   price: serviceSchema.shape.price.optional(),
   gstRatePercent: z.coerce.number().min(0, 'GST cannot be negative.').max(28, 'GST cannot be above 28%.').optional(),
-  isLaundry: z.boolean().optional(),
-  isActive: z.boolean().optional(),
+  isLaundry: formBoolean.optional(),
+  isActive: formBoolean.optional(),
+  // Only an edit can mean it: "take the photo off this service", as distinct
+  // from an edit that simply doesn't mention the photo and leaves it alone.
+  removeImage: formBoolean.optional().default(false),
 });
 
 const startUsageSchema = z.object({

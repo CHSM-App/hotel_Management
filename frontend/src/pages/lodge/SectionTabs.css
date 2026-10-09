@@ -1,77 +1,91 @@
 /* The strip of group chips shared by the Menu and Inventory tabs.
    See SectionTabs.jsx for why this is a strip and not a dropdown. */
 
-/* The same underlined strip as .subtabs in RoomsAndRates.css. */
 .tabstrip {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  /* Headroom for the raised chips' own shadow, so it isn't clipped at the
+     strip's edges the way a flat underline never needed room for. */
+  padding: 5px 2px 11px;
   /* Scrolls sideways rather than wrapping: ten sections on two or three lines
      would push the list itself off a phone screen. */
   overflow-x: auto;
   scrollbar-width: none;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--border);
 }
 
 .tabstrip::-webkit-scrollbar {
   display: none;
 }
 
+/* Each section is its own pill rather than a slot in one continuous track —
+   a track wide enough for ten sections would either crowd them or commit the
+   strip to a width nothing else on the page does, and gapped chips scroll
+   exactly as readably at three sections as at fifteen. */
 .tabstrip__tab {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   flex: 0 0 auto;
-  padding: 8px 2px;
-  margin-right: 18px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
   font-size: 13.5px;
   font-weight: 600;
-  color: var(--text-muted);
+  line-height: 1;
+  color: var(--text);
   white-space: nowrap;
   cursor: pointer;
+  transition: var(--neu-transition);
 }
 
 .tabstrip__tab:hover {
-  color: var(--text);
+  box-shadow: var(--shadow-raised-hover);
+  color: var(--ink);
 }
 
 .tabstrip__tab:focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
+/* Carved rather than filled: the one not picked is something to press, the
+   one that is picked is held down — the same correction the Billing filter
+   chips carry (see .billing-panel__filter in Billing.css) — tinted with the
+   wash the sidebar already uses for "this one's selected" (--brand-wash),
+   so the live tab reads at a glance even mid-scroll. */
 .tabstrip__tab--on,
 .tabstrip__tab--on:hover {
+  background: var(--brand-wash);
+  border-color: var(--brand-wash-edge);
+  box-shadow: var(--shadow-pressed);
   color: var(--brand-ink);
-  border-bottom-color: var(--brand);
 }
 
 .tabstrip__tab--dim {
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 .tabstrip__tab--dim .tabstrip__name {
   text-decoration: line-through;
 }
 
-/* --paper now matches the chip it sits on, so the count needs the carve to
-   separate from it. */
 .tabstrip__count {
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--neu-sunken);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 700;
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-/* On the brand-filled chip the carve has nothing to bite into — a grey inset
-   over blue just reads as dirt — so the translucent fill does the work. */
+/* On the tinted chip the sunken grey has nothing to read against — it was
+   tuned for a white one — so the badge flips to a white well of its own. */
 .tabstrip__tab--on .tabstrip__count {
-  background: var(--brand-wash);
+  background: var(--surface);
   color: var(--brand-ink);
 }
 
@@ -82,8 +96,6 @@
   background: var(--danger);
   flex-shrink: 0;
 }
-
-
 
 @media (max-width: 640px) {
   .tabstrip {

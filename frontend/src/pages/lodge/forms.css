@@ -417,8 +417,13 @@
   transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
-.btn-outline:hover:not(:disabled) {
+/* The class is written twice on purpose. LodgesDashboard.css has a
+   .btn-outline of its own whose hover turns the label the brand colour, and
+   where both sheets are loaded that label landed on this rule's brand fill —
+   the same colour, so the label vanished. The doubled class out-ranks it. */
+.btn-outline.btn-outline:hover:not(:disabled) {
   background: var(--brand);
+  border-color: var(--brand);
   color: #ffffff;
   box-shadow: var(--shadow-raised-hover);
 }
@@ -494,6 +499,23 @@
   gap: 8px;
 }
 
+/* For chips that can grow a count stepper (the Extras pickers). Each chip
+   sizes to its own content instead of sharing 160px columns: a stepper does
+   not fit in one, so it spilled out of the chip's border and pushed the name
+   onto two lines. Chips share a height so ticked and unticked ones line up. */
+.checkbox-grid--fit {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.checkbox-grid--fit .checkbox-chip {
+  max-width: 100%;
+  min-height: 44px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  white-space: nowrap;
+}
+
 /* Deliberately flat. A grid of these is a dense field of small targets, and
    extruding every one of them turns a form section into gravel — the tick
    itself is the control, so the chip only has to bound it. */
@@ -536,24 +558,74 @@
   font-size: 0.82em;
 }
 
-/* The count that appears beside a ticked extra (3 extra beds). Needs to
-   outrank `.checkbox-chip input` above, which sizes the checkbox itself down
-   to 16px square — hence matching the element and the class together. */
-.checkbox-chip input.checkbox-chip__qty {
-  width: 56px;
-  height: auto;
-  min-height: 0;
+/* Minus, count, plus as one unit (components/QtyStepper.jsx), so the count
+   reads as part of the extra it belongs to rather than as a second field
+   floating beside it: a tinted track with the count as a white box in it. */
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
   margin-left: auto;
-  padding: 3px 6px;
   border: 1px solid var(--field-border);
-  border-radius: 6px;
-  font-size: 13px;
-  text-align: center;
-  /* Typed into, so it takes the field fill like every other input — inside a
-     chip that is deliberately flat, this is the only thing marking it out as
-     the one part of the chip you edit rather than tick. */
-  background: var(--field);
+  border-radius: 8px;
+  background: #f3f5f9;
+}
+
+.qty-stepper:focus-within {
+  border-color: var(--focus);
+}
+
+.qty-stepper button {
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  box-shadow: none;
+  color: var(--brand-ink);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.qty-stepper button:hover:not(:disabled) {
+  background: rgba(22, 33, 46, 0.07);
+}
+
+.qty-stepper button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* !important for the reason Events.css gives: index.css styles every text
+   input through a selector five :not()s long, and the forms this sits in
+   (.field, .checkbox-chip, the add-on cards) each size their inputs too. */
+.qty-stepper input.qty-stepper__input {
+  width: 34px !important;
+  height: 28px !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid var(--field-border) !important;
+  border-radius: 8px !important;
+  outline: none;
+  background: var(--field) !important;
+  box-shadow: none !important;
   color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center !important;
+  -moz-appearance: textfield;
+}
+
+.qty-stepper input.qty-stepper__input::-webkit-outer-spin-button,
+.qty-stepper input.qty-stepper__input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* With no depth to carry it, the ticked state leans on the brand border and
@@ -654,12 +726,6 @@
   text-align: right;
   background: var(--surface);
   color: var(--text);
-}
-
-/* When both boxes are present the count keeps them adjacent instead of each
-   claiming the free space. */
-.checkbox-chip input.checkbox-chip__qty + .checkbox-chip__price {
-  margin-left: 4px;
 }
 
 .field:has(> .field__error) input:focus-visible,

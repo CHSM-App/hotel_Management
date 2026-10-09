@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPut, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -31,6 +31,134 @@ function FoodTypeMark({ type }) {
 // dropped on save rather than refused — a half-typed row the owner abandoned
 // shouldn't block the rest of the recipe.
 const emptyLine = () => ({ key: Math.random().toString(36).slice(2), materialId: '', quantity: '' });
+
+// The ingredient picker: a box you type into, with the store cupboard filtered
+// down underneath. A native <select> stops being usable somewhere past a
+// screenful of materials, and a kitchen's list runs well past that.
+//
+// `query` is null while nobody is typing, and the box then shows the chosen
+// material's name. Focusing it starts an empty search rather than editing that
+// name, so the whole list is on offer and the first keystroke filters it; the
+// choice stays visible as the placeholder until something replaces it.
+function MaterialField({ value, groups, materialById, onChange }) {
+  const id = useId();
+  const [query, setQuery] = useState(null);
+  const [active, setActive] = useState(0);
+  const listRef = useRef(null);
+
+  const open = query !== null;
+  const selected = materialById.get(value);
+  const needle = (query || '').trim().toLowerCase();
+
+  // Matching the category as well as the name means "spices" lists the lot.
+  const matches = useMemo(
+    () =>
+      groups.flatMap((group) =>
+        group.materials
+          .filter(
+            (m) => !needle || m.name.toLowerCase().includes(needle) || group.label.toLowerCase().includes(needle)
+          )
+          .map((material) => ({ material, group }))
+      ),
+    [groups, needle]
+  );
+  const activeIndex = active < matches.length ? active : -1;
+
+  // The list opens inside the modal's scrolling body, so on a short recipe it
+  // would otherwise open below the fold.
+  useEffect(() => {
+    if (open) listRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [open]);
+
+  const close = () => {
+    setQuery(null);
+    setActive(0);
+  };
+
+  const take = (material) => {
+    onChange(String(material.id));
+    close();
+  };
+
+  const onKeyDown = (e) => {
+    if (!open) {
+      if (e.key === 'ArrowDown') setQuery('');
+      return;
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (matches.length === 0) return;
+      e.preventDefault();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActive((activeIndex + step + matches.length) % matches.length);
+    } else if (e.key === 'Enter') {
+      // Always swallowed while the list is open: Enter here means "this one",
+      // never "save the recipe".
+      e.preventDefault();
+      if (activeIndex >= 0) take(matches[activeIndex].material);
+    } else if (e.key === 'Escape') {
+      e.stopPropagation();
+      close();
+    }
+  };
+
+  return (
+    <div className="asset-suggest inv-recipe__material">
+      <input
+        value={open ? query : selected?.name || ''}
+        placeholder={selected ? selected.name : 'Search a material…'}
+        role="combobox"
+        aria-label="Raw material"
+        aria-expanded={open}
+        aria-controls={`${id}-suggestions`}
+        aria-autocomplete="list"
+        aria-activedescendant={activeIndex >= 0 ? `${id}-suggestion-${activeIndex}` : undefined}
+        autoComplete="off"
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setActive(0);
+        }}
+        onKeyDown={onKeyDown}
+        onFocus={() => setQuery((q) => (q === null ? '' : q))}
+        onClick={() => setQuery((q) => (q === null ? '' : q))}
+        onBlur={close}
+      />
+      {open && (
+        <ul className="asset-suggest__list" id={`${id}-suggestions`} role="listbox" ref={listRef}>
+          {matches.length === 0 && (
+            <li className="inv-recipe__no-match" role="presentation">
+              {needle ? `No material matches “${query.trim()}”.` : 'No raw materials added yet.'}
+            </li>
+          )}
+          {matches.map(({ material, group }, i) => (
+            <Fragment key={material.id}>
+              {(i === 0 || matches[i - 1].group.key !== group.key) && (
+                <li className="inv-recipe__group" role="presentation">
+                  {group.label}
+                </li>
+              )}
+              <li role="option" aria-selected={i === activeIndex} id={`${id}-suggestion-${i}`}>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className={`asset-suggest__option${i === activeIndex ? ' asset-suggest__option--active' : ''}`}
+                  // mousedown, and prevented: a click would blur the box first
+                  // and close the list out from under the pointer.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    take(material);
+                  }}
+                  onMouseEnter={() => setActive(i)}
+                >
+                  {material.name}
+                </button>
+              </li>
+            </Fragment>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export default function RecipesPanel() {
   const session = getSession();
@@ -452,27 +580,16 @@ export default function RecipesPanel() {
                   const material = materialById.get(row.materialId);
                   return (
                     <div key={row.key} className="inv-recipe__row">
-                      <select
+                      <MaterialField
                         value={row.materialId}
-                        aria-label="Raw material"
-                        onChange={(e) => {
-                          const value = e.target.value;
+                        groups={materialGroups}
+                        materialById={materialById}
+                        onChange={(value) =>
                           setRows((list) =>
                             list.map((r, i) => (i === index ? { ...r, materialId: value } : r))
-                          );
-                        }}
-                      >
-                        <option value="">Choose a material…</option>
-                        {materialGroups.map((group) => (
-                          <optgroup key={group.key} label={group.label}>
-                            {group.materials.map((m) => (
-                              <option key={m.id} value={String(m.id)}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
+                          )
+                        }
+                      />
 
                       <div className="inv-recipe__qty">
                         <input

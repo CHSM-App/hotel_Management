@@ -107,7 +107,14 @@ async function listAvailableBedsHandler(req, res, next) {
       throw new ApiError('Choose a room.', 400);
     }
     const { checkInDate, checkOutDate } = parseDateRange(req.query);
-    const result = await bookingsService.listAvailableBeds(req.user.lodgeId, roomId, checkInDate, checkOutDate);
+    const excludeBookingId = req.query.bookingId ? Number(req.query.bookingId) : null;
+    const result = await bookingsService.listAvailableBeds(
+      req.user.lodgeId,
+      roomId,
+      checkInDate,
+      checkOutDate,
+      excludeBookingId
+    );
     res.json(result);
   } catch (err) {
     next(err);

@@ -3,9 +3,11 @@ import { apiGet, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import { chargesParam, selectionOf, toggleSelection, withQuantity } from './chargeSelections';
 import './forms.css';
 import './chartSections.css';
 import PageLoader from '../../components/PageLoader';
+import QtyStepper from '../../components/QtyStepper';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const BED_SIZE_LABEL = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
@@ -58,7 +60,7 @@ export default function PriceSimulatorPanel() {
   const [simRoomId, setSimRoomId] = useState('');
   const [simFromDate, setSimFromDate] = useState(todayIso());
   const [simToDate, setSimToDate] = useState(addDays(todayIso(), 1));
-  const [simChargeIds, setSimChargeIds] = useState([]);
+  const [simCharges, setSimCharges] = useState([]);
   const [simResult, setSimResult] = useState(null);
   const [simError, setSimError] = useState('');
   const [simFieldError, setSimFieldError] = useState(null);
@@ -88,18 +90,70 @@ export default function PriceSimulatorPanel() {
   const activeCharges = charges?.filter((c) => c.isActive) || [];
   const nights = nightsBetween(simFromDate, simToDate);
 
+  // The price follows the form: every change re-quotes, so the total on screen
+  // is never for a room, a date or an extra the form no longer shows. Called
+  // from the change handlers with the values as they are about to be, since
+  // state set in the same handler has not landed yet.
+  const quoteSeq = useRef(0);
+  const runQuote = async ({ roomId = simRoomId, from = simFromDate, to = simToDate, selections = simCharges }) => {
+    // A slow answer to an earlier question must not overwrite a newer one.
+    const seq = ++quoteSeq.current;
+    setSimError('');
+    if (!roomId || nightsBetween(from, to) < 1) {
+      setSimResult(null);
+      setSimulating(false);
+      return;
+    }
+    setSimulating(true);
+    try {
+      const chargeIds = chargesParam(selections);
+      const result = await apiGet(
+        `/pricing/simulate?roomId=${roomId}&date=${from}&toDate=${to}${chargeIds ? `&chargeIds=${chargeIds}` : ''}`,
+        { token: session?.token }
+      );
+      if (seq === quoteSeq.current) setSimResult(result);
+    } catch (err) {
+      if (seq !== quoteSeq.current) return;
+      setSimResult(null);
+      reportSimError(err instanceof ApiError ? err.message : 'Could not work out the price.');
+    } finally {
+      if (seq === quoteSeq.current) setSimulating(false);
+    }
+  };
+
+  const handleRoomChange = (value) => {
+    setSimRoomId(value);
+    setSimFieldError(null);
+    runQuote({ roomId: value });
+  };
+
   // Moving the from date past the to date would otherwise leave the form in a
   // state that can only error — push checkout along instead.
   const handleFromDateChange = (value) => {
     setSimFromDate(value);
+    setSimFieldError(null);
     const nextDay = addDays(value, 1);
-    if (nextDay && nightsBetween(value, simToDate) < 1) {
-      setSimToDate(nextDay);
-    }
+    const to = nextDay && nightsBetween(value, simToDate) < 1 ? nextDay : simToDate;
+    if (to !== simToDate) setSimToDate(to);
+    runQuote({ from: value, to });
+  };
+
+  const handleToDateChange = (value) => {
+    setSimToDate(value);
+    setSimFieldError(null);
+    runQuote({ to: value });
   };
 
   const toggleSimCharge = (chargeId) => {
-    setSimChargeIds((ids) => (ids.includes(chargeId) ? ids.filter((id) => id !== chargeId) : [...ids, chargeId]));
+    const selections = toggleSelection(simCharges, chargeId);
+    setSimCharges(selections);
+    runQuote({ selections });
+  };
+
+  const setSimChargeQuantity = (chargeId, quantity) => {
+    const selections = withQuantity(simCharges, chargeId, quantity);
+    setSimCharges(selections);
+    runQuote({ selections });
   };
 
   useEffect(() => {
@@ -118,11 +172,11 @@ export default function PriceSimulatorPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSimulate = async (e) => {
+  // The button is only needed to be told what is missing — a complete form
+  // has already been priced by the time anyone reaches it.
+  const handleSimulate = (e) => {
     e.preventDefault();
-    setSimError('');
     setSimFieldError(null);
-    setSimResult(null);
     if (!simRoomId) {
       failSim('simRoom', 'Choose a room.');
       return;
@@ -139,19 +193,7 @@ export default function PriceSimulatorPanel() {
       failSim('simTo', 'The to date must be after the from date.');
       return;
     }
-    setSimulating(true);
-    try {
-      const chargeIds = simChargeIds.join(',');
-      const result = await apiGet(
-        `/pricing/simulate?roomId=${simRoomId}&date=${simFromDate}&toDate=${simToDate}${chargeIds ? `&chargeIds=${chargeIds}` : ''}`,
-        { token: session?.token }
-      );
-      setSimResult(result);
-    } catch (err) {
-      reportSimError(err instanceof ApiError ? err.message : 'Could not run the simulator.');
-    } finally {
-      setSimulating(false);
-    }
+    runQuote({});
   };
 
   if (error) {
@@ -186,7 +228,7 @@ export default function PriceSimulatorPanel() {
                 id="simRoom"
                 aria-invalid={simInvalid('simRoom')}
                 value={simRoomId}
-                onChange={(e) => setSimRoomId(e.target.value)}
+                onChange={(e) => handleRoomChange(e.target.value)}
               >
                 <option value="">Choose a room</option>
                 {rooms.map((r) => (
@@ -216,14 +258,9 @@ export default function PriceSimulatorPanel() {
                 aria-invalid={simInvalid('simTo')}
                 value={simToDate}
                 min={addDays(simFromDate, 1)}
-                onChange={(e) => setSimToDate(e.target.value)}
+                onChange={(e) => handleToDateChange(e.target.value)}
               />
               {simFieldErr('simTo')}
-            </div>
-            <div className="field sim-fields__action">
-              <button className="btn-accent" type="submit" disabled={simulating}>
-                {simulating ? 'Checking…' : 'Simulate'}
-              </button>
             </div>
           </div>
           {/* Checkout day itself is not charged, so the night count is spelled
@@ -235,6 +272,36 @@ export default function PriceSimulatorPanel() {
                 ? 'Pick a from and a to date.'
                 : 'The to date must be after the from date.'}
           </div>
+
+          {activeCharges.length > 0 && (
+            <div className="field">
+              <label>Extras</label>
+              <div className="checkbox-grid checkbox-grid--fit">
+                {activeCharges.map((charge) => {
+                  const selection = selectionOf(simCharges, charge.id);
+                  return (
+                    <label className="checkbox-chip" key={charge.id}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selection)}
+                        onChange={() => toggleSimCharge(charge.id)}
+                      />
+                      {charge.name} ({formatPrice(charge.chargePerNight)}/night)
+                      {/* Same rule as the booking form: only counted extras get
+                          a box, and only once ticked. */}
+                      {selection && charge.isCounter && (
+                        <QtyStepper
+                          label={charge.name}
+                          value={selection.quantity}
+                          onChange={(quantity) => setSimChargeQuantity(charge.id, quantity)}
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {selectedRoom && (
             <div className="chart-list">
@@ -274,27 +341,21 @@ export default function PriceSimulatorPanel() {
             </div>
           )}
 
-          {activeCharges.length > 0 && (
-            <div className="field">
-              <label>Extras</label>
-              <div className="checkbox-grid">
-                {activeCharges.map((charge) => (
-                  <label className="checkbox-chip" key={charge.id}>
-                    <input
-                      type="checkbox"
-                      checked={simChargeIds.includes(charge.id)}
-                      onChange={() => toggleSimCharge(charge.id)}
-                    />
-                    {charge.name} ({formatPrice(charge.chargePerNight)}/night)
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="sim-actions">
+            <button className="btn-accent" type="submit">
+              Show price
+            </button>
+          </div>
         </form>
 
+        {!simResult && !simRoomId && (
+          <div className="sim-empty">Choose a room and the price for the stay appears here.</div>
+        )}
+
         {simResult && (
-          <div className="sim-result">
+          // Dimmed while a newer answer is on its way, so a total that is about
+          // to change is not read off as the price.
+          <div className={`sim-result${simulating ? ' sim-result--stale' : ''}`} aria-busy={simulating}>
             {simResult.lines.map((line, i) => (
               <div className="sim-result__line" key={i}>
                 <span>

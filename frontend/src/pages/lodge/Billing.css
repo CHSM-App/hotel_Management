@@ -140,6 +140,18 @@
 
 /* --- narrowing the bills list ------------------------------------------- */
 
+/* One carved panel holding every control that narrows the bill list — date
+   range, presets, view toggle, search and type chips — set into the tab's own
+   card the way a field is set into the page (see the neumorphism note below):
+   a toolbar is a surface things sit in, not another thing to press. */
+.billing-panel__toolbar {
+  background: var(--paper);
+  border-radius: 12px;
+  box-shadow: var(--shadow-inset);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
 /* The date range and the search on one line above the document-type chips:
    when a bill was issued is the coarse cut staff make almost every time, and
    the chips refine what the dates left. */
@@ -148,7 +160,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
 }
 
 /* Both controls borrow .field for the input styling and give back its
@@ -185,6 +196,24 @@
 
 .billing-panel__bill-range-dash {
   color: var(--text-muted);
+}
+
+/* The toolbar's second group of controls, set off from the date/preset row
+   above by a hairline so the two rows of the card read as distinct steps
+   (narrow by date, then by type) rather than one long run of controls. */
+.billing-panel__bill-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.billing-panel__bill-search-row .billing-panel__filters,
+.billing-panel__bill-search-row .field {
+  margin-bottom: 0;
 }
 
 .billing-panel__bill-search {
@@ -249,6 +278,23 @@
   white-space: nowrap;
 }
 
+/* View toggle and the result count, grouped as one unit at the far end of the
+   toolbar and set off from the date controls by a divider — the same
+   left-right split a professional filter bar uses to separate "narrow the
+   list" from "look at what's left". */
+.billing-panel__bill-tools-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+
+.billing-panel__bill-tools-right .billing-view-toggle {
+  margin-left: 0;
+}
+
 .billing-panel__bill-clear {
   background: none;
   border: none;
@@ -267,11 +313,11 @@
 .billing-panel__bill-presets {
   display: inline-flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 2px;
   padding: 3px;
-  margin-bottom: 12px;
   border-radius: 999px;
-  background: var(--paper);
+  background: var(--surface);
   box-shadow: var(--shadow-inset);
 }
 
@@ -279,10 +325,11 @@
   border: none;
   border-radius: 999px;
   background: none;
-  padding: 6px 13px;
+  padding: 8px 14px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1;
   color: var(--text-muted);
   cursor: pointer;
   transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
@@ -299,7 +346,7 @@
 }
 
 .billing-panel__bill-note {
-  margin: 0 0 12px;
+  margin: 12px 0 0;
   font-size: 12px;
   color: var(--danger);
 }
@@ -307,8 +354,8 @@
 .billing-panel__filters {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
 }
 
 .billing-panel__filter {
@@ -319,12 +366,14 @@
   border: 1px solid transparent;
   box-shadow: var(--shadow-inset);
   border-radius: 999px;
-  padding: 5px 12px;
+  padding: 7px 14px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1;
   color: var(--text-muted);
   cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
 .billing-panel__filter:hover {
@@ -1430,6 +1479,21 @@
   color: var(--text-muted);
 }
 
+/* "Add to room bill", as its own small dialog rather than a panel pinned
+   under the row — the narrowest of the app's glass modals, since it is just
+   a guest to pick (or confirm) and nothing else. */
+.billing-panel__modal--room-pick {
+  max-width: 420px;
+}
+
+.billing-panel__modal--room-pick .billing-panel__detail-header {
+  margin-bottom: 4px;
+}
+
+.room-pick__intro {
+  margin-bottom: 16px;
+}
+
 /* Close icon in the bill modal's header, beside the tags. */
 .bill-close {
   width: 34px;
@@ -1509,6 +1573,16 @@
 }
 
 .billing-sheet__due {
+  color: var(--danger);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+/* A cancelled subject's advance. Same danger red as Void and "due" — a
+   cancelled booking is exactly the kind of thing the eye should catch first
+   scanning down this column, not a quieter note sitting beside the routine
+   "Issued" rows. */
+.billing-sheet__cancelled {
   color: var(--danger);
   font-weight: 700;
   font-size: 12px;
@@ -1624,6 +1698,36 @@
 .history-sheet .history-table.billing-sheet__ready tfoot td {
   font-weight: 700;
   background: var(--paper);
+}
+
+/* Services to bill: same shrink-to-content treatment as Ready to bill, minus
+   the footer totals — Qty, Amount and Actions hug their content so the spare
+   width goes to Service and Room / Guest. */
+.history-sheet .history-table.billing-sheet__services {
+  min-width: 0;
+}
+
+.history-sheet .history-table.billing-sheet__services th,
+.history-sheet .history-table.billing-sheet__services td {
+  padding: 8px 6px;
+}
+
+.history-sheet .history-table.billing-sheet__services th:nth-child(n + 3),
+.history-sheet .history-table.billing-sheet__services td:nth-child(n + 3) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.history-sheet .history-table.billing-sheet__services th.history-table__num {
+  text-align: right;
+}
+
+@media (min-width: 1300px) {
+  .history-sheet .history-table.billing-sheet__services th,
+  .history-sheet .history-table.billing-sheet__services td {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
 }
 
 /* A column heading that sorts the bills table. It looks like the heading it

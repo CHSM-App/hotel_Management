@@ -587,7 +587,7 @@ export default function PriceChartPanel() {
                 onChange={(e) => setCategoryForm((f) => ({ ...f, tapeOrder: e.target.value }))}
                 placeholder="e.g. 1 for first"
               />
-              <small className="chart-section__field-hint">Leave blank to place it after the other categories.</small>
+              <small className="chart-section__field-hint">The other categories shift to make room. Leave blank to place it last.</small>
             </div>
           </form>
         </Modal>

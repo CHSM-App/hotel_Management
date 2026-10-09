@@ -7,6 +7,7 @@ import { toQrDataUrl, assetUrl } from '../../lib/qr';
 import { formatPrice } from './priceFormat';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
+import VendorDirectory from './VendorDirectory';
 import Req from '../../components/RequiredMark';
 import PageLoader from '../../components/PageLoader';
 import {
@@ -2052,10 +2053,20 @@ export default function AssetsPanel({ onViewReport }) {
     setShowVendorForm(true);
   };
 
+  const deleteVendor = async (vendor) => {
+    try {
+      await apiDelete(`/assets/vendors/${vendor.id}`, { token: session?.token });
+      await loadVendors();
+      setError('');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not delete that vendor.');
+    }
+  };
+
   const handleVendorSubmit = async (e) => {
     e.preventDefault();
     const errors = {};
-    if (!vendorForm.name.trim()) errors.name = 'Vendor name is required.';
+    if (!vendorForm.name.trim()) errors.name = 'Shop / business name is required.';
     if (vendorForm.phone && !/^[6-9]\d{9}$/.test(vendorForm.phone)) {
       errors.phone = 'Enter a valid 10-digit mobile number.';
     } else if (vendorForm.phone) {
@@ -2470,37 +2481,14 @@ export default function AssetsPanel({ onViewReport }) {
       )}
 
       {tab === 'vendors' && (
-        <div>
-          <div className="inv-bar">
-            <div className="inv-bar__row">
-              <div />
-              <div className="inv-bar__actions">
-                <button type="button" className="btn-accent" onClick={() => openVendorForm(null)}>
-                  Add vendor
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {(vendors || []).length === 0 ? (
-            <p className="inv-panel__hint">No vendors yet. Add the AC contractor, lift AMC firm, or electrician you call for repairs.</p>
-          ) : (
-            <ul className="inv-list">
-              {vendors.map((vendor) => (
-                <li key={vendor.id} className="inv-item">
-                  <div className="inv-item__body" onClick={() => openVendorForm(vendor)} style={{ cursor: 'pointer' }}>
-                    <div className="inv-item__name">{vendor.name}</div>
-                    <div className="inv-item__meta">
-                      {vendor.specialty || 'No specialty set'}
-                      {vendor.phone && ` · ${vendor.phone}`}
-                      {vendor.altPhone && ` / ${vendor.altPhone}`}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <VendorDirectory
+          vendors={vendors}
+          emptyHint="No vendors yet. Add the AC contractor, lift AMC firm, or electrician you call for repairs."
+          deleteNote="Assets, work orders and coverage already linked to them keep the vendor's name."
+          onAdd={() => openVendorForm(null)}
+          onEdit={openVendorForm}
+          onDelete={deleteVendor}
+        />
       )}
 
       {tab === 'deadStock' && (
@@ -4562,10 +4550,11 @@ export default function AssetsPanel({ onViewReport }) {
 
                 <div className="field">
                   <label htmlFor="vendorName">
-                    Name <Req />
+                    Shop / business name <Req />
                   </label>
                   <input
                     id="vendorName"
+                    placeholder="e.g. Sai Electricals"
                     aria-invalid={Boolean(vendorFieldErrors.name)}
                     value={vendorForm.name}
                     onChange={(e) => {
@@ -4581,6 +4570,7 @@ export default function AssetsPanel({ onViewReport }) {
                   <input
                     id="vendorContact"
                     value={vendorForm.contactPerson}
+                    placeholder="Who you speak to there"
                     onChange={(e) => setVendorForm((f) => ({ ...f, contactPerson: e.target.value }))}
                   />
                 </div>

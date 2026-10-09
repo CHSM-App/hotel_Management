@@ -128,7 +128,7 @@ async function createMaterial(lodgeId, input, userId) {
   }
 }
 
-async function updateMaterial(lodgeId, materialId, input) {
+async function updateMaterial(lodgeId, materialId, input, userId) {
   const pool = await getPool();
 
   const conflict = await pool
@@ -141,21 +141,63 @@ async function updateMaterial(lodgeId, materialId, input) {
     throw new ApiError('A raw material with that name already exists.', 409, 'name');
   }
 
-  const result = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .input('materialId', sql.BigInt, materialId)
-    .input('name', sql.NVarChar, input.name)
-    .input('category', sql.NVarChar, input.category)
-    .input('lowStockThreshold', sql.Decimal(12, 3), round3(input.lowStockThreshold))
-    .query(`
-      UPDATE dbo.raw_materials
-      SET name = @name, category = @category, low_stock_threshold = @lowStockThreshold
-      OUTPUT inserted.id
-      WHERE id = @materialId AND lodge_id = @lodgeId
-    `);
-  if (result.recordset.length === 0) {
-    throw new ApiError('Raw material not found.', 404);
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    // Locked so a stock movement racing in between the read and the write
+    // (an order deducting, say) can't have its delta clobbered by a quantity
+    // this request read before it happened — same guard adjustStock's SET
+    // mode uses for the same reason.
+    const currentResult = await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('materialId', sql.BigInt, materialId)
+      .query(`
+        SELECT quantity FROM dbo.raw_materials WITH (UPDLOCK, ROWLOCK)
+        WHERE id = @materialId AND lodge_id = @lodgeId
+      `);
+    const current = currentResult.recordset[0];
+    if (!current) {
+      throw new ApiError('Raw material not found.', 404);
+    }
+
+    const newQuantity = round3(input.quantity);
+    const changeQty = round3(newQuantity - Number(current.quantity));
+
+    await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('materialId', sql.BigInt, materialId)
+      .input('name', sql.NVarChar, input.name)
+      .input('unit', sql.NVarChar, input.unit)
+      .input('category', sql.NVarChar, input.category)
+      .input('quantity', sql.Decimal(12, 3), newQuantity)
+      .input('lowStockThreshold', sql.Decimal(12, 3), round3(input.lowStockThreshold))
+      .query(`
+        UPDATE dbo.raw_materials
+        SET name = @name, unit = @unit, category = @category, quantity = @quantity,
+            low_stock_threshold = @lowStockThreshold
+        WHERE id = @materialId AND lodge_id = @lodgeId
+      `);
+
+    // A quantity typed into the edit form is a correction like any other —
+    // the ledger stays complete only if it gets written down same as a
+    // "Stock" adjustment would. A recount that agrees with the book writes
+    // nothing, same rule adjustStock follows.
+    if (changeQty !== 0) {
+      await writeMovement(new sql.Request(transaction), {
+        lodgeId,
+        materialId,
+        changeQty,
+        balanceAfter: newQuantity,
+        reason: 'ADJUSTMENT',
+        note: 'Corrected while editing material',
+        createdBy: userId,
+      });
+    }
+
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
   }
 
   return getMaterial(lodgeId, materialId);

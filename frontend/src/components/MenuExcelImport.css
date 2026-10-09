@@ -1,89 +1,190 @@
-.menu-import-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
+/* The modal chrome itself (backdrop, card, head/body/foot) comes from the
+   shared .glass-backdrop/.glass-panel/.menu-panel__modal/.modal-form classes
+   every other dialog in MenuPanel already uses — see MenuPanel.css and
+   forms.css. Everything below is what's specific to this one: the template
+   link, the file picker, and the result it shows once an import finishes. */
+
+/* A small secondary action, not a paragraph link — it reads as "here's the
+   thing you need before you start" rather than a clause buried in the
+   explanatory copy above it. */
+.menu-import-template {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 20px;
-  background: rgba(22, 33, 46, 0.45);
-  z-index: 100;
-}
-
-.menu-import-card {
-  width: 100%;
-  max-width: 520px;
-  max-height: 90vh;
-  overflow-y: auto;
-  background: var(--color-surface);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-elevated);
-  padding: 22px;
-}
-
-.menu-import-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.menu-import-card__head h3 {
-  margin: 0;
-}
-
-.menu-import-close {
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 7px 13px;
   border: none;
-  background: none;
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-  color: var(--text-muted);
-}
-
-.menu-import-hint {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin: 0 0 16px;
-}
-
-.menu-import-link {
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--color-primary);
-  text-decoration: underline;
-  cursor: pointer;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
   font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--brand-ink);
+  cursor: pointer;
+  transition: var(--neu-transition);
+}
+
+.menu-import-template:hover {
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.menu-import-template:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+/* The picker itself: a real input[type=file], made invisible and stretched
+   over a label styled to look like the thing a file drops onto — so the
+   native picker, its keyboard handling and its accessibility tree are all
+   untouched, and only the paint changes. */
+.menu-import-drop {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1.5px dashed var(--field-border);
+  border-radius: 12px;
+  background: var(--paper);
+  cursor: pointer;
+  transition: var(--neu-transition), border-color 150ms ease;
+}
+
+.menu-import-drop:hover {
+  border-color: var(--brand);
+  background: var(--brand-wash);
+}
+
+.menu-import-drop input[type='file'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.menu-import-drop--busy {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.menu-import-drop--busy input[type='file'] {
+  cursor: default;
+}
+
+.menu-import-drop__icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--brand);
+}
+
+.menu-import-drop__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.menu-import-drop__text strong {
+  font-size: 14px;
+  color: var(--ink);
+  /* The picked filename can run long; the dropzone shouldn't grow with it. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-import-drop__text span {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .menu-import-status {
-  margin: 12px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
   font-size: 13px;
   color: var(--text-muted);
 }
 
-.menu-import-error {
-  margin: 12px 0 0;
-  font-size: 13px;
-  color: var(--color-danger);
+.menu-import-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--brand-wash-edge);
+  border-top-color: var(--brand);
+  animation: menu-import-spin 700ms linear infinite;
+}
+
+@keyframes menu-import-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .menu-import-result {
   margin-top: 16px;
+}
+
+.menu-import-result__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.menu-import-result__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.menu-import-result__stat strong {
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.menu-import-result__stat--added {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.menu-import-result__stat--updated {
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+}
+
+.menu-import-result__stat--failed {
+  background: var(--danger-bg);
+  color: var(--danger);
 }
 
 .menu-import-errors {
-  margin: 8px 0 0;
-  padding-left: 18px;
-  font-size: 12px;
-  color: var(--color-danger);
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.6;
   max-height: 160px;
   overflow-y: auto;
 }
 
-.menu-import-card__actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 18px;
+.menu-import-errors li + li {
+  border-top: 1px solid rgba(192, 57, 43, 0.18);
+  padding-top: 4px;
+  margin-top: 4px;
 }
