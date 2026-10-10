@@ -3357,6 +3357,11 @@ class _QuoteCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final quote = state.quote;
     final vm = ref.read(bookingViewModelProvider.notifier);
+    // Several rooms can share the same calendar nights. Show the shared stay
+    // window here; each room line carries its own night count.
+    final stayNightCount = state.multiQuote == null
+        ? quote?.nightCount
+        : quote?.nights.map((night) => night.date).toSet().length;
 
     if (quote == null) {
       return NeuCard(
@@ -3409,7 +3414,38 @@ class _QuoteCard extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
-                  if (line.isBase)
+                  if (line.roomIndex != null &&
+                      line.roomIndex! > 0 &&
+                      line.roomIndex! <= state.extraRooms.length &&
+                      line.isBase)
+                    _AmountBox(
+                      value: state.extraRooms[line.roomIndex! - 1].roomTotal,
+                      shown: line.amount,
+                      onChanged: (v) =>
+                          vm.setExtraRoomTotal(line.roomIndex! - 1, v),
+                    )
+                  else if (line.roomIndex != null &&
+                      line.roomIndex! > 0 &&
+                      line.roomIndex! <= state.extraRooms.length &&
+                      line.isExtra)
+                    _AmountBox(
+                      value: state.extraRooms[line.roomIndex! - 1]
+                              .extras[line.chargeId!]
+                              ?.agreedTotal ??
+                          '',
+                      shown: line.amount,
+                      onChanged: (v) => vm.setExtraRoomExtraTotal(
+                        line.roomIndex! - 1,
+                        line.chargeId!,
+                        v,
+                      ),
+                    )
+                  else if (line.roomIndex != null && line.roomIndex! > 0)
+                    Text(
+                      formatPrice(line.amount),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    )
+                  else if (line.isBase)
                     _AmountBox(
                       // Held as typed, not read back off the quote: the box
                       // would otherwise reformat itself mid-number on every
@@ -3475,7 +3511,7 @@ class _QuoteCard extends ConsumerWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Stay total · ${nightsLabel(quote.nightCount)}',
+                    'Stay total · ${nightsLabel(stayNightCount ?? quote.nightCount)}',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: AppTheme.heading,

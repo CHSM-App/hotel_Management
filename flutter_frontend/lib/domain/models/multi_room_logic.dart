@@ -103,6 +103,11 @@ class MultiRoomLogic {
           bookingRoomId: state.primaryBookingRoomId,
           room: state.room!,
           bedIds: state.bedIds,
+          // The top-level dates describe the full booking window. When rooms
+          // have different dates, send room 1's dates explicitly too, or the
+          // server can extend it to another room's checkout date.
+          checkIn: state.checkIn,
+          checkOut: state.checkOut,
           roomTotal: state.roomTotal,
           extras: state.extras,
           nights: state.nights,
@@ -117,8 +122,8 @@ class MultiRoomLogic {
           bookingRoomId: r.bookingRoomId,
           room: r.room!,
           bedIds: r.bedIds,
-          checkIn: state.multiRoomDifferentDates ? dates?.$1 : null,
-          checkOut: state.multiRoomDifferentDates ? dates?.$2 : null,
+          checkIn: dates?.$1,
+          checkOut: dates?.$2,
           roomTotal: r.roomTotal,
           extras: r.extras,
           nights: nights,
@@ -129,30 +134,31 @@ class MultiRoomLogic {
   }
 
   /// Flattens a [MultiRoomQuote] into the single flat [Quote] shape the
-  /// existing quote card already renders — room 1's own lines pass through
-  /// unprefixed, every further room's lines get labelled "Room {n} · {label}"
-  /// so the desk can tell which room's line an editable total belongs to.
+  /// existing quote card renders. Every line identifies its room, and each
+  /// base line carries that room's own night count and index for editing.
   static Quote combineQuote(MultiRoomQuote response, List<String> roomNumbers) {
     final charges = <QuoteLine>[];
     final nights = <QuoteNight>[];
     for (var i = 0; i < response.rooms.length; i++) {
       final room = response.rooms[i];
-      if (i == 0) {
-        charges.addAll(room.charges);
-      } else {
-        final label = i < roomNumbers.length ? roomNumbers[i] : 'Room ${i + 1}';
-        charges.addAll(
-          room.charges.map(
-            (c) => QuoteLine(
-              label: 'Room $label · ${c.label}',
-              amount: c.amount,
-              isBase: c.isBase,
-              chargeId: c.chargeId,
-              quantity: c.quantity,
-            ),
+      final roomLabel = i < roomNumbers.length ? roomNumbers[i] : 'Room ${i + 1}';
+      final roomNights = room.nights.length;
+      charges.addAll(
+        room.charges.map(
+          (c) => QuoteLine(
+            label:
+                'Room $roomLabel · ${c.label}' +
+                (c.isBase
+                    ? ' · $roomNights ${roomNights == 1 ? 'night' : 'nights'}'
+                    : ''),
+            amount: c.amount,
+            isBase: c.isBase,
+            chargeId: c.chargeId,
+            quantity: c.quantity,
+            roomIndex: i,
           ),
-        );
-      }
+        ),
+      );
       nights.addAll(room.nights);
     }
     return Quote(

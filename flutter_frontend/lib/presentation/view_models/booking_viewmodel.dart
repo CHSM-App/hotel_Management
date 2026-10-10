@@ -1322,10 +1322,14 @@ class BookingViewModel extends StateNotifier<BookingState> {
     final draft = state.extraRooms[index];
     final dates = MultiRoomLogic.roomDates(state, draft);
     if (dates == null) return;
-    _updateExtraRoom(
-      index,
-      (r) => r.copyWith(availableRooms: const AsyncValue.loading()),
-    );
+    // Keep the current options visible while dates are rechecked, like the
+    // website. Show a loader only on the card's first availability request.
+    if (draft.availableRooms is! AsyncData<List<Room>>) {
+      _updateExtraRoom(
+        index,
+        (r) => r.copyWith(availableRooms: const AsyncValue.loading()),
+      );
+    }
     try {
       final editId = state.editBookingId;
       final taken = MultiRoomLogic.pickedRoomIds(
@@ -1339,9 +1343,15 @@ class BookingViewModel extends StateNotifier<BookingState> {
               checkInDate: iso(dates.$1),
             );
       final free = rooms.where((r) => !taken.contains(r.id)).toList();
+      // Keep the selected room while dates are rechecked. Retain it if it is
+      // still free; clear it only when the new date range makes it unavailable.
+      final stillAvailable = draft.room == null || free.any((r) => r.id == draft.room!.id);
       _updateExtraRoom(
         index,
-        (r) => r.copyWith(availableRooms: AsyncValue.data(free)),
+        (r) => r.copyWith(
+          availableRooms: AsyncValue.data(free),
+          clearRoom: !stillAvailable,
+        ),
       );
     } catch (e, st) {
       _updateExtraRoom(
@@ -1362,11 +1372,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
       (r) => r.copyWith(
         checkIn: checkIn,
         checkOut: checkOut,
-        clearRoom: true,
       ),
     );
     await loadExtraRoomAvailableRooms(index);
-    state = state.copyWith(discount: '', clearQuote: true);
+    // Keep the previous quote visible while the replacement is calculated.
+    state = state.copyWith(discount: '');
     await refreshQuote();
   }
 
@@ -1383,7 +1393,8 @@ class BookingViewModel extends StateNotifier<BookingState> {
       ),
     );
     if (room.isDormitory) await _loadExtraRoomBeds(index);
-    state = state.copyWith(discount: '', clearQuote: true);
+    // The web form keeps its quote card in place during re-pricing.
+    state = state.copyWith(discount: '');
     await refreshQuote();
   }
 

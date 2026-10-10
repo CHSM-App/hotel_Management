@@ -68,12 +68,16 @@ class QuoteLine {
   final int? chargeId;
   final int? quantity;
 
+  /// Zero-based position in a multi-room quote; null for a single-room quote.
+  final int? roomIndex;
+
   const QuoteLine({
     required this.label,
     required this.amount,
     this.isBase = false,
     this.chargeId,
     this.quantity,
+    this.roomIndex,
   });
 
   factory QuoteLine.fromJson(Map<String, dynamic> json) => QuoteLine(
@@ -83,6 +87,7 @@ class QuoteLine {
     // switchable_charges.id is a BIGINT and arrives as a string.
     chargeId: asIntOrNull(json['chargeId']),
     quantity: asIntOrNull(json['quantity']),
+    roomIndex: asIntOrNull(json['roomIndex']),
   );
 
   bool get isExtra => chargeId != null;
