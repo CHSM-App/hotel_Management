@@ -1198,6 +1198,54 @@
   overflow: hidden;
 }
 
+/* --- guest reviews ----------------------------------------------------- */
+
+.lodge-public__reviews {
+  scroll-margin-top: var(--site-nav-h);
+}
+
+.lodge-public__review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.lodge-public__review-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card, 12px);
+  box-shadow: var(--site-shadow-card);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lodge-public__review-stars {
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: #f5a623;
+}
+
+.lodge-public__review-stars-off {
+  color: var(--border);
+}
+
+.lodge-public__review-comment {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  flex: 1;
+}
+
+.lodge-public__review-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .lodge-public__menu-head {
   display: flex;
   align-items: center;

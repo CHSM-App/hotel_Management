@@ -723,7 +723,7 @@ export default function LodgePublicPage() {
   const [heroLoaded, setHeroLoaded] = useState(false);
   useEffect(() => {
     if (!data || typeof IntersectionObserver === 'undefined') return undefined;
-    const targets = ['home', 'rooms', 'events', 'menu', 'contact'].map((id) => document.getElementById(id)).filter(Boolean);
+    const targets = ['home', 'rooms', 'events', 'menu', 'reviews', 'contact'].map((id) => document.getElementById(id)).filter(Boolean);
     if (targets.length === 0) return undefined;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -808,7 +808,7 @@ export default function LodgePublicPage() {
     );
   }
 
-  const { lodge, roomTypes, roomAddons = [], venues = [], addons = [], menu = [] } = data;
+  const { lodge, roomTypes, roomAddons = [], venues = [], addons = [], menu = [], reviews = [] } = data;
   const generalMessage = `Hi! I'd like to know more about ${lodge.name}.`;
 
   // Which parts of the page this property has. The nav strip only appears
@@ -817,6 +817,7 @@ export default function LodgePublicPage() {
     lodge.hasRooms && { id: 'rooms', label: 'Rooms' },
     lodge.hasEvents && venues.length > 0 && { id: 'events', label: 'Venues & functions' },
     lodge.servesFood && menu.length > 0 && { id: 'menu', label: 'Menu' },
+    reviews.length > 0 && { id: 'reviews', label: 'Guest reviews' },
   ].filter(Boolean);
   const nothingListed = sections.length === 0 && roomTypes.length === 0;
 
@@ -1274,6 +1275,29 @@ export default function LodgePublicPage() {
             </p>
           </div>
           <MenuCard menu={menu} onOpenPhotos={openLightbox} />
+          </div>
+        </section>
+      )}
+
+      {reviews.length > 0 && (
+        <section className="lodge-public__reviews site-section" id="reviews">
+          <div className="site-container">
+            <div className="lodge-public__section-head">
+              <span className="lodge-public__eyebrow">Guest reviews</span>
+              <h2>What our guests say</h2>
+            </div>
+            <div className="lodge-public__review-grid">
+              {reviews.map((r) => (
+                <article className="lodge-public__review-card" key={r.id}>
+                  <div className="lodge-public__review-stars" aria-label={`${r.rating} out of 5 stars`}>
+                    {'★'.repeat(r.rating)}
+                    <span className="lodge-public__review-stars-off">{'★'.repeat(5 - r.rating)}</span>
+                  </div>
+                  <p className="lodge-public__review-comment">&ldquo;{r.comment}&rdquo;</p>
+                  <p className="lodge-public__review-name">{r.guestName}</p>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
       )}

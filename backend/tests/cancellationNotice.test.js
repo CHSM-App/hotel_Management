@@ -38,6 +38,7 @@ const booking = {
   id: 41,
   guestName: 'Rahul Patil',
   guestPhone: '9876543210',
+  roomNumbers: '204',
   checkInDate: '2026-09-12',
   checkOutDate: '2026-09-14',
   cancelReason: 'Change of plans',
@@ -56,7 +57,7 @@ test('a cancellation fills the seven template variables in order', () => {
   assert.deepStrictEqual(sample, [
     'Rahul Patil',
     'Sea View Lodge',
-    '#41',
+    '204',
     '12 Sep 2026',
     '14 Sep 2026',
     'Change of plans',
@@ -86,14 +87,20 @@ test('neither a refund nor a charge reads as "No refund due"', () => {
   );
 });
 
-test('a missing reason is sent as an empty slot, not a placeholder', () => {
+// WhatsApp's template API rejects a body parameter that's empty, and the
+// provider (SMSala) reports success at submission regardless of whether
+// delivery later fails — so an empty slot here used to mean "toast says
+// sent, guest gets nothing" with no error surfacing anywhere. Every slot,
+// including this one, now falls back to '-' like clean() already does for
+// the rest of the template.
+test('a missing reason falls back to a placeholder, same as every other slot', () => {
   const sample = buildCancellationSample({ ...booking, cancelReason: null }, lodge);
-  assert.strictEqual(sample[5], '');
+  assert.strictEqual(sample[5], '-');
 });
 
-test('a blank or whitespace-only reason is also sent as an empty slot', () => {
+test('a blank or whitespace-only reason also falls back to a placeholder', () => {
   const sample = buildCancellationSample({ ...booking, cancelReason: '   ' }, lodge);
-  assert.strictEqual(sample[5], '');
+  assert.strictEqual(sample[5], '-');
 });
 
 test('no value ever carries a comma — it is the variable separator', () => {
@@ -128,6 +135,7 @@ test('reads the camelCase fields getBooking() actually returns, not the raw snak
   // Every field the notifier touches on `booking` must be the mapped name.
   assert.match(src, /booking\.guestPhone/);
   assert.match(src, /booking\.guestName/);
+  assert.match(src, /booking\.roomNumbers/);
   assert.match(src, /booking\.checkInDate/);
   assert.match(src, /booking\.checkOutDate/);
   assert.match(src, /booking\.cancelReason/);

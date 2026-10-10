@@ -13,11 +13,14 @@ const SCHEMA = {
   price: { column: 'Price', type: Number },
   foodType: {
     column: 'Type',
-    type: String,
     required: false,
-    // Accepts "Veg"/"Non-Veg"/"NON_VEG"/blank the way a hotelier would type
-    // it, not just the exact enum menu.schema.js stores.
-    parse: (value) => (/non/i.test(value || '') ? 'NON_VEG' : 'VEG'),
+    // read-excel-file v9 has no separate "parse" option — a custom
+    // conversion is the `type` itself, a function from cell value to parsed
+    // value. This accepts "Veg"/"Non-Veg"/"NON_VEG" the way a hotelier would
+    // type it, not just the exact enum menu.schema.js stores. (It only runs
+    // for a non-empty cell; see propertyValueWhenCellIsEmpty below for a
+    // blank one.)
+    type: (value) => (/non/i.test(value || '') ? 'NON_VEG' : 'VEG'),
   },
 };
 
@@ -101,7 +104,19 @@ export default function MenuExcelImport({ importPath, token, onImported }) {
     setFileName(file.name);
     setBusy(true);
     try {
-      const { rows, errors } = await readSheet(file, { schema: SCHEMA });
+      // read-excel-file v9's readSheet(file, { schema }) returns { objects, errors } —
+      // not { rows, errors } (that was the v8 API) — so this is renamed on the way in,
+      // not a field read-excel-file actually calls "rows".
+      //
+      // propertyValueWhenCellIsEmpty: a blank optional cell (Description,
+      // Type) otherwise becomes `null`, which menu.schema.js's zod schema
+      // rejects outright — z.string().optional() and z.enum().optional()
+      // only special-case `undefined`, not `null`. `undefined` is what lets
+      // their .default(...) actually kick in for a blank cell.
+      const { objects: rows, errors } = await readSheet(file, {
+        schema: SCHEMA,
+        propertyValueWhenCellIsEmpty: undefined,
+      });
       if (errors && errors.length > 0) {
         const first = errors[0];
         throw new Error(

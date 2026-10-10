@@ -6,6 +6,7 @@ const { logger } = require('../../config/logger');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR } = require('../../middleware/receiptShareUpload');
 const whatsapp = require('../../config/whatsapp');
+const { publicBaseUrl } = require('../../config/publicBaseUrl');
 
 // Handing an advance receipt to a guest on WhatsApp, from the server rather
 // than from the desk's own phone. Same shape as billShare.service.js, and the
@@ -28,17 +29,6 @@ const RECEIPT_CAMPAIGN = 'receipt_share';
 // Same TTL as a shared bill — a guest reopening a receipt from the same chat
 // a few weeks later is the ordinary case this window is sized for.
 const LINK_TTL_DAYS = 30;
-
-function publicBaseUrl() {
-  const base = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
-  if (!base) {
-    throw new ApiError(
-      'Sharing a receipt on WhatsApp needs PUBLIC_BASE_URL set to the address guests reach this site at.',
-      503
-    );
-  }
-  return base;
-}
 
 // Same packing rule as billShare.service.js: the provider joins a template's
 // variables with commas, so a comma inside a value shifts every later one

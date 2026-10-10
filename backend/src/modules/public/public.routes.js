@@ -19,6 +19,8 @@ const {
   downloadSharedReceiptHandler,
   getAssetQrPageHandler,
   getAssetQrBillHandler,
+  getFeedbackContextHandler,
+  submitFeedbackHandler,
 } = require('./public.controller');
 
 const router = Router();
@@ -84,5 +86,13 @@ router.get('/receipts/:token/download', downloadSharedReceiptHandler);
 // not rate limited for the same reason (it's a GUID, nothing useful to guess).
 router.get('/assets/:token', getAssetQrPageHandler);
 router.get('/assets/:token/bill', getAssetQrBillHandler);
+
+// The post-checkout "how was your stay" page — reached by the link in the
+// feedback-request WhatsApp message (feedbackRequests.service.js), not an
+// owner-supplied review URL. Same unauthenticated, unguessable-token trust
+// model as the bill/receipt links above; not rate limited for the same
+// reason those aren't — there's no secret here to brute-force.
+router.get('/feedback/:token', getFeedbackContextHandler);
+router.post('/feedback/:token', submitFeedbackHandler);
 
 module.exports = router;

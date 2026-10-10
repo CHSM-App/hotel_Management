@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const assetsService = require('../assets/assets.service');
+const expensesService = require('../expenses/expenses.service');
 
 // ---------------------------------------------------------------------------
 // Room cleaning
@@ -961,9 +962,12 @@ async function addMovements(lodgeId, userId, rows) {
   await assertLinenItems(pool.request(), lodgeId, rows.map((r) => r.linenItemId));
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
+  // Collects the id each inserted row got, so the own-linen vendor cost can
+  // be logged as an expense (linked by linen_movement_id) once this commits.
+  const inserted = [];
   try {
     for (const r of rows) {
-      await new sql.Request(transaction)
+      const result = await new sql.Request(transaction)
         .input('lodgeId', sql.BigInt, lodgeId)
         .input('itemId', sql.BigInt, r.linenItemId)
         .input('kind', sql.NVarChar, r.kind)
@@ -975,13 +979,33 @@ async function addMovements(lodgeId, userId, rows) {
         .input('userId', sql.BigInt, userId ?? null)
         .query(`
           INSERT INTO dbo.linen_movements (lodge_id, linen_item_id, kind, source, quantity, note, washed_by, wash_charge, created_by)
+          OUTPUT inserted.id
           VALUES (@lodgeId, @itemId, @kind, @source, @qty, @note, @washedBy, @washCharge, @userId)
         `);
+      inserted.push({ id: result.recordset[0].id, washedBy: r.washedBy, washCharge: r.washCharge });
     }
     await transaction.commit();
   } catch (err) {
     await transaction.rollback();
     throw err;
+  }
+
+  // Outside-vendor cost for the hotel's own linen, logged the same way a
+  // guest order's vendor price is in setLaundryStatus — best-effort, after
+  // commit, one at a time (not Promise.all) so two rows for the same lodge
+  // don't race resolveLaundryExpenseCategoryId's find-or-create.
+  const today = new Date().toISOString().slice(0, 10);
+  for (const row of inserted) {
+    const washedBy = (row.washedBy || '').trim();
+    if (!washedBy || washedBy.toLowerCase() === OWN_LAUNDRY || !row.washCharge) continue;
+    await expensesService
+      .logLaundryExpense(lodgeId, {
+        linenMovementId: row.id,
+        title: `Linen wash: ${washedBy}`,
+        amount: row.washCharge,
+        expenseDate: today,
+      })
+      .catch(() => {});
   }
 }
 
@@ -1309,10 +1333,13 @@ async function setLaundryStatus(lodgeId, userId, id, { status, washedBy = '', ve
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
+  // Declared outside the try so the tag_number from OUTPUT is still reachable
+  // below for the post-commit expense log, not just inside the try block.
+  let moved;
   try {
     // The guard on the old status is what stops two people delivering the same
     // order and billing it twice.
-    const moved = await new sql.Request(transaction)
+    moved = await new sql.Request(transaction)
       .input('id', sql.BigInt, id)
       .input('from', sql.NVarChar, from)
       .input('to', sql.NVarChar, status)
@@ -1381,6 +1408,22 @@ async function setLaundryStatus(lodgeId, userId, id, { status, washedBy = '', ve
     await transaction.rollback();
     throw err;
   }
+
+  // Outside-vendor price, logged as a real expense now that it's settled —
+  // best-effort and after commit, same placement as logAssetExpenseQuietly
+  // in assets.service.js, so a logging hiccup never fails the status change.
+  if (status === 'READY' && washedBy.trim().toLowerCase() !== OWN_LAUNDRY && charge != null) {
+    const tagNumber = moved.recordset[0].tag_number;
+    expensesService
+      .logLaundryExpense(lodgeId, {
+        laundryOrderId: id,
+        title: `Laundry vendor: ${washedBy.trim()} (Tag #${tagNumber})`,
+        amount: charge,
+        expenseDate: new Date().toISOString().slice(0, 10),
+      })
+      .catch(() => {});
+  }
+
   return getLaundryOrder(lodgeId, id);
 }
 

@@ -74,6 +74,13 @@ function catalogueLine(addon) {
     // venue charge defaults to the venue's base charge — not left as a greyed
     // placeholder the desk has to notice and retype.
     agreedAmount: addon.defaultAmount != null ? String(addon.defaultAmount) : '',
+    // Tracks whether agreedAmount is still "unit rate × quantity" rather than
+    // a figure the desk typed in by hand. While true, the Qty stepper keeps
+    // this field in step with the quantity; the moment the desk edits the
+    // amount directly it drops to false, and from then on it's a flat
+    // negotiated total the backend won't second-guess (see addonLineAmount
+    // in eventPricing.js — an agreedAmount, once present, is the whole line).
+    autoAmount: true,
     selected: false,
   };
 }
@@ -166,6 +173,14 @@ function initialLines(event, addons) {
       hit.selected = true;
       hit.quantity = saved.quantity || 1;
       hit.agreedAmount = saved.agreedAmount != null ? String(saved.agreedAmount) : '';
+      // If what's saved still equals unit × quantity, the desk never
+      // actually overrode the catalogue rate — it's safe to keep following
+      // the quantity. If it doesn't match, someone negotiated a flat total
+      // for this line, and the Qty stepper must leave that number alone.
+      hit.autoAmount =
+        hit.unitAmount != null && saved.agreedAmount != null
+          ? round2(Number(hit.unitAmount) * hit.quantity) === round2(Number(saved.agreedAmount))
+          : false;
     } else {
       oneOffs.push({
         key: `o${saved.id || oneOffs.length}`,
@@ -197,6 +212,10 @@ function numOrUndef(v) {
   if (v === '' || v == null) return undefined;
   const n = Number(v);
   return Number.isNaN(n) ? undefined : n;
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
 }
 
 // A quote line's note: catering already sends its own "pax × rate" string;
@@ -888,7 +907,23 @@ export default function EventForm({
                         // stepper's minus button, the first control inside it.
                         <span className="ev-addon__qty">
                           <span>Qty</span>
-                          <QtyStepper label={l.label} value={l.quantity} onChange={(quantity) => setLine(l.key, { quantity })} />
+                          <QtyStepper
+                            label={l.label}
+                            value={l.quantity}
+                            onChange={(quantity) =>
+                              setLine(l.key, {
+                                quantity,
+                                // Still following the catalogue rate? Keep the
+                                // shown amount in step with the new quantity.
+                                // Once the desk has typed their own figure in
+                                // (autoAmount false), quantity changes leave
+                                // it alone — it's their negotiated total now.
+                                ...(l.autoAmount && l.unitAmount != null
+                                  ? { agreedAmount: String(round2(Number(l.unitAmount) * quantity)) }
+                                  : null),
+                              })
+                            }
+                          />
                         </span>
                       )}
                       <label className="ev-addon__field ev-addon__field--amount">
@@ -901,7 +936,7 @@ export default function EventForm({
                           value={l.agreedAmount}
                           aria-label={`Agreed amount for ${l.label}`}
                           placeholder={l.unitAmount != null ? String(l.unitAmount) : '0'}
-                          onChange={(e) => setLine(l.key, { agreedAmount: e.target.value })}
+                          onChange={(e) => setLine(l.key, { agreedAmount: e.target.value, autoAmount: false })}
                         />
                       </label>
                     </div>

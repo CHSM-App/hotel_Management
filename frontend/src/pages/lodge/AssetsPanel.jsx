@@ -18,6 +18,7 @@ import {
 } from './paymentMethods';
 import './forms.css';
 import './InventoryPanel.css';
+import './FinanceTabs.css';
 
 const STATUS_LABEL = {
   IN_USE: 'In use',
@@ -805,6 +806,7 @@ export default function AssetsPanel({ onViewReport }) {
   const [depreciationForm, setDepreciationForm] = useState({ depreciationBlock: '', depreciationRatePercent: '', depreciationMethod: 'WDV' });
   const [depreciationSubmitting, setDepreciationSubmitting] = useState(false);
   const [depreciationError, setDepreciationError] = useState('');
+  const [depreciationSort, setDepreciationSort] = useState({ key: null, dir: 'asc' });
 
   const [showCoverageForm, setShowCoverageForm] = useState(false);
   const [coverageForm, setCoverageForm] = useState(emptyCoverageForm);
@@ -963,11 +965,81 @@ export default function AssetsPanel({ onViewReport }) {
     });
   };
 
+  const toggleDepreciationSort = (key) => {
+    setDepreciationSort((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return { key: null, dir: 'asc' };
+    });
+  };
+
+  const DEPRECIATION_SORT_ACCESSORS = {
+    category: (cat) => cat.name || '',
+    block: (cat) => cat.depreciationBlock || '',
+    method: (cat) => (cat.depreciationRatePercent != null ? (cat.depreciationMethod === 'SLM' ? 'Straight-line' : 'WDV') : ''),
+    rate: (cat) => cat.depreciationRatePercent,
+  };
+
+  const sortedCategories = useMemo(() => {
+    const list = categories || [];
+    if (!depreciationSort.key) return list;
+    const accessor = DEPRECIATION_SORT_ACCESSORS[depreciationSort.key];
+    if (!accessor) return list;
+    const dir = depreciationSort.dir === 'desc' ? -1 : 1;
+    return [...list].sort((a, b) => {
+      const av = accessor(a);
+      const bv = accessor(b);
+      const aEmpty = av === null || av === undefined || av === '';
+      const bEmpty = bv === null || bv === undefined || bv === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [categories, depreciationSort]);
+
   const visibleWorkOrders = useMemo(() => {
     if (!workOrders) return [];
     if (!woStatusFilter) return workOrders;
     return workOrders.filter((w) => w.status === woStatusFilter);
   }, [workOrders, woStatusFilter]);
+
+  const [woSort, setWoSort] = useState({ key: null, dir: 'asc' });
+
+  const toggleWoSort = (key) => {
+    setWoSort((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return { key: null, dir: 'asc' };
+    });
+  };
+
+  const WO_SORT_ACCESSORS = {
+    asset: (wo) => wo.assetName || '',
+    status: (wo) => WO_STATUS_LABEL[wo.status] || '',
+    description: (wo) => wo.description || '',
+    assigned: (wo) => [wo.assignedToName, wo.vendorName].filter(Boolean).join(' · '),
+    opened: (wo) => (wo.openedAt ? new Date(wo.openedAt).getTime() : null),
+  };
+
+  const sortedWorkOrders = useMemo(() => {
+    if (!woSort.key) return visibleWorkOrders;
+    const accessor = WO_SORT_ACCESSORS[woSort.key];
+    if (!accessor) return visibleWorkOrders;
+    const dir = woSort.dir === 'desc' ? -1 : 1;
+    return [...visibleWorkOrders].sort((a, b) => {
+      const av = accessor(a);
+      const bv = accessor(b);
+      const aEmpty = av === null || av === undefined || av === '';
+      const bEmpty = bv === null || bv === undefined || bv === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [visibleWorkOrders, woSort]);
 
   const openWoCount = (workOrders || []).filter((w) => w.status !== 'CLOSED').length;
 
@@ -2158,25 +2230,27 @@ export default function AssetsPanel({ onViewReport }) {
     <div>
       {error && <div className="form-banner form-banner--error">{error}</div>}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <SectionTabs
-          ariaLabel="Assets sections"
-          activeId={tab}
-          onChange={setTab}
-          tabs={[
-            { id: 'register', name: 'Asset Register', count: assets.filter((a) => a.status !== 'RETIRED').length },
-            {
-              id: 'workOrders',
-              name: 'Work Orders',
-              count: openWoCount,
-              flagged: openWoCount > 0,
-              flagTitle: `${openWoCount} open work order${openWoCount === 1 ? '' : 's'}`,
-            },
-            { id: 'vendors', name: 'Vendors', count: (vendors || []).length },
-            { id: 'deadStock', name: 'Dead Stock', count: deadStockAssets.length },
-            { id: 'depreciation', name: 'Depreciation', count: (categories || []).length },
-          ]}
-        />
+      <div className="finance-tabs-row">
+        <div className="finance-tabs">
+          <SectionTabs
+            ariaLabel="Assets sections"
+            activeId={tab}
+            onChange={setTab}
+            tabs={[
+              { id: 'register', name: 'Asset Register', count: assets.filter((a) => a.status !== 'RETIRED').length },
+              {
+                id: 'workOrders',
+                name: 'Work Orders',
+                count: openWoCount,
+                flagged: openWoCount > 0,
+                flagTitle: `${openWoCount} open work order${openWoCount === 1 ? '' : 's'}`,
+              },
+              { id: 'vendors', name: 'Vendors', count: (vendors || []).length },
+              { id: 'deadStock', name: 'Dead Stock', count: deadStockAssets.length },
+              { id: 'depreciation', name: 'Depreciation', count: (categories || []).length },
+            ]}
+          />
+        </div>
         <button type="button" className="btn-secondary" onClick={onViewReport}>
           View Report
         </button>
@@ -2271,7 +2345,7 @@ export default function AssetsPanel({ onViewReport }) {
             </p>
           ) : assetView === 'table' ? (
             <div className="asset-table-wrap">
-              <table className="asset-table">
+              <table className="asset-table finance-table">
                 <thead>
                   <tr>
                     {[
@@ -2458,24 +2532,53 @@ export default function AssetsPanel({ onViewReport }) {
           {visibleWorkOrders.length === 0 ? (
             <p className="inv-panel__hint">No work orders here.</p>
           ) : (
-            <ul className="inv-list">
-              {visibleWorkOrders.map((wo) => (
-                <li key={wo.id} className="inv-item">
-                  <div className="inv-item__body" onClick={() => openWoForm(wo)} style={{ cursor: 'pointer' }}>
-                    <div className="inv-item__name">
-                      {wo.assetName}
-                      <span className="inv-tag">{WO_STATUS_LABEL[wo.status]}</span>
-                      {wo.isWarrantyClaim && <span className="inv-tag">Warranty claim</span>}
-                    </div>
-                    <div className="inv-item__meta">
-                      {wo.description}
-                      {wo.assignedToName && ` · Assigned: ${wo.assignedToName}`}
-                      {wo.vendorName && ` · Vendor: ${wo.vendorName}`}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="asset-table-wrap">
+              <table className="asset-table finance-table">
+                <thead>
+                  <tr>
+                    {[
+                      ['asset', 'Asset'],
+                      ['status', 'Status'],
+                      ['description', 'Description'],
+                      ['assigned', 'Assigned / Vendor'],
+                      ['opened', 'Opened'],
+                    ].map(([key, label]) => (
+                      <th key={key}>
+                        <button
+                          type="button"
+                          className="asset-table__sort-btn"
+                          aria-sort={woSort.key === key ? (woSort.dir === 'desc' ? 'descending' : 'ascending') : 'none'}
+                          onClick={() => toggleWoSort(key)}
+                        >
+                          {label}
+                          <span className="asset-table__sort-icon" aria-hidden="true">
+                            {woSort.key === key ? (woSort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                          </span>
+                        </button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedWorkOrders.map((wo) => (
+                    <tr key={wo.id} onClick={() => openWoForm(wo)}>
+                      <td className="asset-table__name">
+                        {wo.assetName}
+                        {wo.isWarrantyClaim && <span className="inv-tag"> Warranty claim</span>}
+                      </td>
+                      <td>
+                        <span className="inv-tag">{WO_STATUS_LABEL[wo.status]}</span>
+                      </td>
+                      <td className={wo.description ? '' : 'asset-table__muted'}>{wo.description || '—'}</td>
+                      <td className={wo.assignedToName || wo.vendorName ? '' : 'asset-table__muted'}>
+                        {[wo.assignedToName, wo.vendorName].filter(Boolean).join(' · ') || '—'}
+                      </td>
+                      <td className="asset-table__muted">{formatDate(wo.openedAt) || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -2500,7 +2603,7 @@ export default function AssetsPanel({ onViewReport }) {
             </p>
           ) : (
             <div className="asset-table-wrap">
-              <table className="asset-table">
+              <table className="asset-table finance-table">
                 <thead>
                   <tr>
                     <th>Tag</th>
@@ -2541,25 +2644,54 @@ export default function AssetsPanel({ onViewReport }) {
             Every category needs a depreciation rate before its assets can appear on the Profit &amp; Loss
             report — the method and rate on an asset's category apply to every unit filed under it.
           </p>
+
           {(categories || []).length === 0 ? (
             <p className="inv-panel__hint">No categories yet. Register an asset first to create one.</p>
           ) : (
-            <ul className="inv-list">
-              {categories.map((cat) => (
-                <li key={cat.id} className="inv-item">
-                  <div className="inv-item__body" onClick={() => openDepreciationForm(cat)} style={{ cursor: 'pointer' }}>
-                    <div className="inv-item__name">{cat.name}</div>
-                    <div className="inv-item__meta">
-                      {cat.depreciationRatePercent != null ? (
-                        `${cat.depreciationBlock ? `${cat.depreciationBlock} · ` : ''}${cat.depreciationRatePercent}% ${cat.depreciationMethod === 'SLM' ? 'straight-line' : 'WDV'}`
-                      ) : (
-                        <span className="asset-table__muted">No rate set</span>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="asset-table-wrap">
+              <table className="asset-table finance-table">
+                <thead>
+                  <tr>
+                    {[
+                      ['category', 'Category'],
+                      ['block', 'IT Act block'],
+                      ['method', 'Method'],
+                      ['rate', 'Rate'],
+                    ].map(([key, label]) => (
+                      <th key={key}>
+                        <button
+                          type="button"
+                          className="asset-table__sort-btn"
+                          aria-sort={depreciationSort.key === key ? (depreciationSort.dir === 'desc' ? 'descending' : 'ascending') : 'none'}
+                          onClick={() => toggleDepreciationSort(key)}
+                        >
+                          {label}
+                          <span className="asset-table__sort-icon" aria-hidden="true">
+                            {depreciationSort.key === key ? (depreciationSort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                          </span>
+                        </button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedCategories.map((cat) => (
+                    <tr key={cat.id} onClick={() => openDepreciationForm(cat)}>
+                      <td className="asset-table__name">{cat.name}</td>
+                      <td className={cat.depreciationBlock ? '' : 'asset-table__muted'}>
+                        {cat.depreciationBlock || '—'}
+                      </td>
+                      <td className={cat.depreciationRatePercent != null ? '' : 'asset-table__muted'}>
+                        {cat.depreciationRatePercent != null ? (cat.depreciationMethod === 'SLM' ? 'Straight-line' : 'WDV') : '—'}
+                      </td>
+                      <td className={cat.depreciationRatePercent != null ? '' : 'asset-table__muted'}>
+                        {cat.depreciationRatePercent != null ? `${cat.depreciationRatePercent}%` : 'No rate set'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -2957,7 +3089,7 @@ export default function AssetsPanel({ onViewReport }) {
                       <div style={{ gridColumn: '1 / -1' }}>
                         <button
                           type="button"
-                          className="btn-primary"
+                          className="btn-accent"
                           disabled={addingAssetPayment || !newAssetPayment.amount}
                           onClick={(e) => handleAddAssetPayment(e)}
                         >

@@ -1204,8 +1204,21 @@ async function getLaundryReport(lodgeId, fromDate, toDate) {
     washCharge: row.wash_charge == null ? null : Number(row.wash_charge),
   }));
   // vendorCharge is what outside laundries charged the lodge for these orders:
-  // a cost, never part of what guests were billed.
-  const guest = { takenIn: orders.length, handedOver: 0, cancelled: 0, open: 0, pieces: 0, handedOverValue: 0, openValue: 0, vendorCharge: 0 };
+  // a cost, never part of what guests were billed. handedOverVendorCharge
+  // mirrors handedOverValue/openValue's own split — profit only makes sense
+  // over orders where both the guest charge and the vendor cost are settled,
+  // not an order that's still open and may not even have a vendor price yet.
+  const guest = {
+    takenIn: orders.length,
+    handedOver: 0,
+    cancelled: 0,
+    open: 0,
+    pieces: 0,
+    handedOverValue: 0,
+    openValue: 0,
+    vendorCharge: 0,
+    handedOverVendorCharge: 0,
+  };
   for (const o of orders) {
     if (o.status === 'CANCELLED') {
       guest.cancelled += 1;
@@ -1216,11 +1229,18 @@ async function getLaundryReport(lodgeId, fromDate, toDate) {
     if (o.status === 'DELIVERED') {
       guest.handedOver += 1;
       guest.handedOverValue = round2(guest.handedOverValue + o.total);
+      guest.handedOverVendorCharge = round2(guest.handedOverVendorCharge + (o.washCharge ?? 0));
     } else {
       guest.open += 1;
       guest.openValue = round2(guest.openValue + o.total);
     }
   }
+  guest.profit = round2(guest.handedOverValue - guest.handedOverVendorCharge);
+
+  const ordersWithProfit = orders.map((o) => ({
+    ...o,
+    profit: o.status === 'CANCELLED' ? null : round2(o.total - (o.washCharge ?? 0)),
+  }));
 
   return {
     fromDate,
@@ -1230,7 +1250,7 @@ async function getLaundryReport(lodgeId, fromDate, toDate) {
       byItem,
       byWasher,
     },
-    guest: { totals: guest, orders },
+    guest: { totals: guest, orders: ordersWithProfit },
   };
 }
 
@@ -2270,6 +2290,47 @@ async function getProfitLossHistory(lodgeId, granularity = 'year') {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Guest feedback — the post-checkout "how was your stay" responses
+// ---------------------------------------------------------------------------
+
+// Submitted responses in the period, by submitted_at — the date a guest
+// actually answered, not the date the sweep happened to ask (requested_at).
+// A row with no submitted_at yet is an unanswered ask, not feedback, so it
+// has nothing to say to this report.
+async function getFeedbackReport(lodgeId, fromDate, toDate) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT fr.id, fr.rating, fr.comment, fr.requested_at, fr.submitted_at,
+             b.guest_name, b.check_out_date
+      FROM dbo.feedback_requests fr
+      JOIN dbo.bookings b ON b.id = fr.booking_id
+      WHERE fr.lodge_id = @lodgeId AND fr.submitted_at IS NOT NULL
+        AND CAST(fr.submitted_at AS DATE) BETWEEN @fromDate AND @toDate
+      ORDER BY fr.submitted_at DESC
+    `);
+
+  const responses = result.recordset.map((row) => ({
+    id: row.id,
+    guestName: row.guest_name,
+    checkOutDate: row.check_out_date,
+    rating: row.rating,
+    comment: row.comment || '',
+    requestedAt: row.requested_at,
+    submittedAt: row.submitted_at,
+  }));
+
+  const averageRating =
+    responses.length > 0 ? round2(responses.reduce((sum, r) => sum + r.rating, 0) / responses.length) : null;
+
+  return { fromDate, toDate, totals: { count: responses.length, averageRating }, responses };
+}
+
 module.exports = {
   getOccupancyReport,
   getGstSummary,
@@ -2278,6 +2339,7 @@ module.exports = {
   getFoodOrdersReport,
   getServicesReport,
   getLaundryReport,
+  getFeedbackReport,
   getAnalyticsOverview,
   getRoomsAnalytics,
   getProfitLossReport,

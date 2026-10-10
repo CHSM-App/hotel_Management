@@ -57,7 +57,7 @@ async function getLodgePageHandler(req, res, next) {
     // Each part of the page is gated on what the property is: a rooms-only
     // lodge sends no venues and no menu, so the page has nothing to hide, and
     // the flags on `lodge` tell the client which sections to draw at all.
-    const [roomTypes, roomAddons, venues, addons, menu] = await Promise.all([
+    const [roomTypes, roomAddons, venues, addons, menu, reviews] = await Promise.all([
       lodge.hasRooms
         ? publicService.listPublicRoomTypes(
             lodge.id,
@@ -69,8 +69,11 @@ async function getLodgePageHandler(req, res, next) {
       lodge.hasEvents ? publicService.listPublicVenues(lodge.id) : [],
       lodge.hasEvents ? publicService.listPublicAddons(lodge.id) : [],
       lodge.servesFood ? publicService.getPublicMenu(lodge.id) : [],
+      // Not gated on any lodge flag — every property can be reviewed
+      // regardless of what it sells.
+      publicService.listPublicReviews(lodge.id),
     ]);
-    res.json({ lodge, roomTypes, roomAddons, venues, addons, menu });
+    res.json({ lodge, roomTypes, roomAddons, venues, addons, menu, reviews });
   } catch (err) {
     next(err);
   }
@@ -411,6 +414,33 @@ async function downloadSharedReceiptHandler(req, res, next) {
   }
 }
 
+// Rating is required (1-5); a blank comment is an ordinary "no comment",
+// not something to coerce into a dash the way the WhatsApp templates do —
+// this is a page a human reads back, not a provider's template slot.
+const feedbackSubmitSchema = z.object({
+  rating: z.coerce.number().int().min(1, 'Choose a rating.').max(5, 'Choose a rating.'),
+  comment: z.string().trim().max(1000).optional().default(''),
+});
+
+async function getFeedbackContextHandler(req, res, next) {
+  try {
+    const context = await publicService.getFeedbackContext(String(req.params.token || ''));
+    res.json(context);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function submitFeedbackHandler(req, res, next) {
+  try {
+    const input = parse(feedbackSubmitSchema, req.body);
+    const result = await publicService.submitFeedback(String(req.params.token || ''), input);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getSharedBillHandler,
   viewSharedBillHandler,
@@ -430,4 +460,6 @@ module.exports = {
   getOrderStatusHandler,
   getAssetQrPageHandler,
   getAssetQrBillHandler,
+  getFeedbackContextHandler,
+  submitFeedbackHandler,
 };

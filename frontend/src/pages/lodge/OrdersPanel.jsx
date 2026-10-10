@@ -597,12 +597,14 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
                 {key ? (
                   <button
                     type="button"
+                    className="history-table__sort"
                     onClick={() => toggleQSort(key)}
-                    style={{ all: 'inherit', cursor: 'pointer', padding: 0 }}
                     title={`Sort by ${label}`}
                   >
                     {label}
-                    {qSort.key === key ? (qSort.dir === 1 ? ' ▲' : ' ▼') : ''}
+                    <span className="history-table__sort-icon" aria-hidden="true">
+                      {qSort.key === key ? (qSort.dir === 1 ? '▲' : '▼') : '⇅'}
+                    </span>
                   </button>
                 ) : (
                   label

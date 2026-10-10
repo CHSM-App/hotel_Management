@@ -742,6 +742,29 @@ CREATE UNIQUE INDEX uq_receipt_shares_token ON dbo.receipt_shares(token);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_receipt_shares_receipt' AND object_id = OBJECT_ID('dbo.receipt_shares'))
 CREATE INDEX ix_receipt_shares_receipt ON dbo.receipt_shares(receipt_id, id DESC);
 
+-- The guest side of "how was your stay" — a page this app hosts itself (see
+-- migration 137), not a link the owner has to go find and paste in. One row
+-- is both the WhatsApp message's credential (token) and the answer to "has
+-- this booking already been asked" — the daily sweep only considers a
+-- booking with no row here yet, and inserts before attempting the send, so
+-- a retry can never double-ask. rating/comment/submitted_at stay NULL until
+-- the guest actually fills the page in.
+IF OBJECT_ID('dbo.feedback_requests', 'U') IS NULL
+CREATE TABLE dbo.feedback_requests (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    booking_id     BIGINT NOT NULL REFERENCES dbo.bookings(id),
+    token          NVARCHAR(32) NOT NULL,
+    requested_at   DATETIMEOFFSET NOT NULL CONSTRAINT df_feedback_requests_requested DEFAULT SYSDATETIMEOFFSET(),
+    rating         TINYINT NULL CONSTRAINT ck_feedback_requests_rating CHECK (rating BETWEEN 1 AND 5),
+    comment        NVARCHAR(1000) NULL,
+    submitted_at   DATETIMEOFFSET NULL,
+    CONSTRAINT uq_feedback_requests_booking UNIQUE (booking_id)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_feedback_requests_token' AND object_id = OBJECT_ID('dbo.feedback_requests'))
+CREATE UNIQUE INDEX uq_feedback_requests_token ON dbo.feedback_requests(token);
+
 -- Roles and their permission sets. A row with lodge_id IS NULL is a built-in
 -- default shared by every lodge; a row with lodge_id set belongs to that lodge
 -- and, when its role_key matches a built-in, overrides it. That's what lets an
@@ -1721,6 +1744,13 @@ IF COL_LENGTH('dbo.bookings', 'cancellation_charge_payment_method') IS NULL
             CONSTRAINT ck_bookings_charge_method
             CHECK (cancellation_charge_payment_method IN (''CASH'', ''UPI'', ''CARD''))');
 
+-- When the "your stay is coming up" WhatsApp reminder went out for this
+-- booking (136) — NULL means "not sent yet". Set once, the first (and only)
+-- time sendDueStayReminders fires for this booking, so the daily sweep never
+-- sends the same guest the same reminder twice.
+IF COL_LENGTH('dbo.bookings', 'reminder_sent_at') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD reminder_sent_at DATETIMEOFFSET NULL');
+
 -- ---------------------------------------------------------------------------
 -- The advance-receipt number series
 -- ---------------------------------------------------------------------------
@@ -2558,6 +2588,12 @@ CREATE TABLE dbo.expenses (
     -- purchase, a work order close, or a coverage/AMC renewal — see
     -- migration 078. NULL for anything typed by hand in the Expenses tab.
     asset_id                BIGINT NULL REFERENCES dbo.assets(id),
+    -- laundry_order_id/linen_movement_id (same "origin marker" pattern as
+    -- asset_id, for what an outside laundry was paid) are added further down
+    -- this file via ALTER TABLE, not inline here — dbo.laundry_orders and
+    -- dbo.linen_movements are both created later in this script, so an
+    -- inline REFERENCES to either would fail on a fresh database. See the
+    -- comment by service_usages.laundry_order_id for the same deferral.
     created_at              DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     updated_at              DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
 );
@@ -2931,6 +2967,23 @@ IF COL_LENGTH('dbo.lodge_services', 'is_laundry') IS NULL
 IF COL_LENGTH('dbo.service_usages', 'laundry_order_id') IS NULL
     EXEC('ALTER TABLE dbo.service_usages ADD laundry_order_id BIGINT NULL REFERENCES dbo.laundry_orders(id)');
 
+-- dbo.expenses.laundry_order_id/linen_movement_id (see migration 135) — added
+-- here, not as inline columns on dbo.expenses above, for the same reason
+-- service_usages.laundry_order_id is deferred to this point: dbo.expenses is
+-- created earlier in this file than dbo.laundry_orders/dbo.linen_movements,
+-- so an inline REFERENCES to either would fail on a fresh database.
+IF COL_LENGTH('dbo.expenses', 'laundry_order_id') IS NULL
+    EXEC('ALTER TABLE dbo.expenses ADD laundry_order_id BIGINT NULL REFERENCES dbo.laundry_orders(id)');
+
+IF COL_LENGTH('dbo.expenses', 'linen_movement_id') IS NULL
+    EXEC('ALTER TABLE dbo.expenses ADD linen_movement_id BIGINT NULL REFERENCES dbo.linen_movements(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_expenses_laundry_order' AND object_id = OBJECT_ID('dbo.expenses'))
+CREATE INDEX ix_expenses_laundry_order ON dbo.expenses(laundry_order_id) WHERE laundry_order_id IS NOT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_expenses_linen_movement' AND object_id = OBJECT_ID('dbo.expenses'))
+CREATE INDEX ix_expenses_linen_movement ON dbo.expenses(linen_movement_id) WHERE linen_movement_id IS NOT NULL;
+
 IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'HOUSEKEEPING')
 INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
     (NULL, 'HOUSEKEEPING', 'Housekeeping', 'Cleans rooms, tracks linen and takes guest laundry.', 1, '["housekeeping.manage"]');
@@ -3116,6 +3169,16 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_guests_custome
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_customer' AND object_id = OBJECT_ID('dbo.event_bookings'))
     CREATE INDEX ix_event_bookings_customer ON dbo.event_bookings(customer_id) WHERE customer_id IS NOT NULL;
+
+-- date_of_birth (138): optional, entered by hand on the profile — NULL means
+-- "not on file", not "no birthday". last_birthday_wished_at is the sweep's
+-- dedup (birthdayWishes.service.js): NULL or not already this calendar year
+-- is what lets a customer be wished again next year without a special case.
+IF COL_LENGTH('dbo.customers', 'date_of_birth') IS NULL
+    EXEC('ALTER TABLE dbo.customers ADD date_of_birth DATE NULL');
+
+IF COL_LENGTH('dbo.customers', 'last_birthday_wished_at') IS NULL
+    EXEC('ALTER TABLE dbo.customers ADD last_birthday_wished_at DATE NULL');
 
 -- customers.manage granted to whichever role already holds guests.view
 -- (migration 132) — adding a permission to the catalog doesn't retroactively
