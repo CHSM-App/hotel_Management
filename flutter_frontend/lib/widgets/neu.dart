@@ -237,6 +237,19 @@ class NeuButton extends StatefulWidget {
   /// white-on-color look that [primary] gives.
   final Color? color;
 
+  /// A tinted pill instead of either the plain white/border look or the
+  /// solid [primary] fill — [AppTheme.sidebarBrandWash] behind
+  /// [AppTheme.sidebarBrandInk] text, the exact soft badge look as the
+  /// sidebar's own selected nav pill (e.g. "Room Chart"). Takes priority
+  /// over [primary] when both are set.
+  final bool soft;
+
+  /// The floor on the button's own height — 44px (the touch-target minimum)
+  /// by default. Callers that already sit inside a tight row of their own
+  /// (a repeatable "+ Add …" row under a list, say) can pass a smaller
+  /// floor to shrink the button itself, not just its padding.
+  final double minHeight;
+
   const NeuButton({
     super.key,
     required this.child,
@@ -248,6 +261,8 @@ class NeuButton extends StatefulWidget {
       vertical: AppTheme.s16,
     ),
     this.color,
+    this.soft = false,
+    this.minHeight = 44,
   });
 
   @override
@@ -264,7 +279,11 @@ class _NeuButtonState extends State<NeuButton> {
     // this keeps it cleared if a caller passes something tighter.
     final label = DefaultTextStyle(
       style: TextStyle(
-        color: widget.primary ? Colors.white : AppTheme.heading,
+        color: widget.soft
+            ? AppTheme.sidebarBrandInk
+            : widget.primary
+            ? Colors.white
+            : AppTheme.heading,
         fontSize: 14,
         fontWeight: FontWeight.w600,
       ),
@@ -288,14 +307,18 @@ class _NeuButtonState extends State<NeuButton> {
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOut,
           width: widget.expand ? double.infinity : null,
-          constraints: const BoxConstraints(minHeight: 44),
+          constraints: BoxConstraints(minHeight: widget.minHeight),
           padding: widget.padding,
           decoration: BoxDecoration(
-            color: widget.primary
+            color: widget.soft
+                ? AppTheme.sidebarBrandWash
+                : widget.primary
                 ? (widget.color ?? AppTheme.accent)
                 : AppTheme.card,
             borderRadius: BorderRadius.circular(AppTheme.rMedium),
-            border: widget.primary ? null : Border.all(color: AppTheme.border),
+            border: (widget.primary || widget.soft)
+                ? null
+                : Border.all(color: AppTheme.border),
             boxShadow: widget.primary ? AppTheme.subtle : null,
           ),
           child: label,

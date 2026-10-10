@@ -316,10 +316,8 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
           if (hover?.ev?.id === ev.id) classes.push('events-tape__seg--active');
           if (awaitingClean.has(ev.id)) classes.push('events-tape__seg--notready');
           // In time, as well as in money. The colour stays the status at full
-          // strength; a function that is over is ticked on its last day, and
-          // the one in the hall now carries a dot on today's.
+          // strength; the function in the hall now carries a dot on today's.
           const phase = eventPhase(ev, now);
-          if (phase === 'COMPLETED' && last) classes.push('events-tape__seg--over');
           if (phase === 'IN_PROGRESS' && d === today) classes.push('events-tape__seg--live');
           return (
             <button
@@ -419,14 +417,10 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
             {EVENT_STATUS_LABEL[s]}
           </button>
         ))}
-        {/* The two marks a tile can carry, keyed like the colours are. */}
+        {/* The mark a tile can carry, keyed like the colours are. */}
         <span className="tape-legend__item">
           <i className="tape-legend__swatch events-legend__mark events-legend__mark--live" />
           In progress
-        </span>
-        <span className="tape-legend__item">
-          <i className="tape-legend__swatch events-legend__mark events-legend__mark--over" />
-          Completed
         </span>
         <span className="tape-legend__hint">Click a colour to list those functions · hover a tile to see the function · click to open · click a vacant day to start a new event</span>
       </div>

@@ -3089,7 +3089,7 @@ export default function AssetsPanel({ onViewReport }) {
                       <div style={{ gridColumn: '1 / -1' }}>
                         <button
                           type="button"
-                          className="btn-primary"
+                          className="btn-accent"
                           disabled={addingAssetPayment || !newAssetPayment.amount}
                           onClick={(e) => handleAddAssetPayment(e)}
                         >

@@ -588,14 +588,18 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                     const SizedBox(height: AppTheme.s8),
                   ],
 
-                  // ── Function ───────────────────────────────────────────
+                  // Everything the desk fills in lives on one card — a
+                  // section label plus a hairline divider separates each
+                  // part instead of a stack of separate elevated cards,
+                  // mirroring the booking form's own compact framing.
                   NeuCard(
                     radius: AppTheme.rLarge,
                     shadow: AppTheme.elevated,
-                    padding: const EdgeInsets.all(AppTheme.s16),
+                    padding: const EdgeInsets.all(AppTheme.s8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // ── Function ───────────────────────────────────
                         const SectionLabel('Function', number: 1, icon: Icons.event_rounded),
                         const SizedBox(height: AppTheme.s8),
                         RequiredLabel('Type'),
@@ -614,6 +618,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                           required: true,
                           errorText: _submitAttempted && _fieldError == 'title' ? _error : null,
                           forceCapitalizeWords: true,
+                          dense: true,
                         ),
                         const SizedBox(height: AppTheme.s8),
                         RequiredLabel('Venue'),
@@ -680,22 +685,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                             text: '${venue?.name ?? 'This venue'} is already taken: ${_availability!.clashes.map((c) => '"${c.title}" (${c.organiserName})').join('; ')}',
                             color: AppTheme.danger,
                           ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.s8),
 
-                  // ── Organiser ──────────────────────────────────────────
-                  NeuCard(
-                    radius: AppTheme.rLarge,
-                    shadow: AppTheme.elevated,
-                    padding: const EdgeInsets.all(AppTheme.s16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                        // ── Organiser ────────────────────────────────
+                        const SectionDivider(),
                         const SectionLabel('Organiser', number: 2, icon: Icons.person_rounded),
                         const SizedBox(height: AppTheme.s8),
-                        NeuField(key: _fieldKeys['organiserName'], controller: _organiserName, label: 'Name', required: true, errorText: _submitAttempted && _fieldError == 'organiserName' ? _error : null, forceCapitalizeWords: true),
+                        NeuField(key: _fieldKeys['organiserName'], controller: _organiserName, label: 'Name', required: true, errorText: _submitAttempted && _fieldError == 'organiserName' ? _error : null, forceCapitalizeWords: true, dense: true),
                         const SizedBox(height: AppTheme.s8),
                         NeuField(
                           key: _fieldKeys['organiserPhone'],
@@ -705,22 +700,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                           keyboardType: TextInputType.phone,
                           maxLength: 10,
                           errorText: _submitAttempted && _fieldError == 'organiserPhone' ? _error : null,
+                          dense: true,
                         ),
                         const SizedBox(height: AppTheme.s8),
-                        NeuField(controller: _organiserAltPhone, label: 'Alternate number (optional)', keyboardType: TextInputType.phone, maxLength: 10),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.s8),
+                        NeuField(controller: _organiserAltPhone, label: 'Alternate number (optional)', keyboardType: TextInputType.phone, maxLength: 10, dense: true),
 
-                  // ── Guests & pricing ───────────────────────────────────
-                  NeuCard(
-                    radius: AppTheme.rLarge,
-                    shadow: AppTheme.elevated,
-                    padding: const EdgeInsets.all(AppTheme.s16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                        // ── Guests & pricing ─────────────────────────
+                        const SectionDivider(),
                         const SectionLabel('Guests & pricing', number: 3, icon: Icons.groups_rounded),
                         const SizedBox(height: AppTheme.s8),
                         Row(
@@ -734,11 +720,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                                 keyboardType: TextInputType.number,
                                 errorText: _submitAttempted && _fieldError == 'expectedPax' ? _error : null,
                                 onChanged: (_) => _scheduleQuote(),
+                                dense: true,
                               ),
                             ),
                             const SizedBox(width: AppTheme.s8),
                             Expanded(
-                              child: NeuField(controller: _venueCharge, label: 'Venue hire charge (per day)', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote()),
+                              child: NeuField(controller: _venueCharge, label: 'Venue hire charge (per day)', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote(), dense: true),
                             ),
                           ],
                         ),
@@ -778,11 +765,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                                   keyboardType: TextInputType.number,
                                   errorText: _submitAttempted && _fieldError == 'perPlateRate' ? _error : null,
                                   onChanged: (_) => _scheduleQuote(),
+                                  dense: true,
                                 ),
                               ),
                               const SizedBox(width: AppTheme.s8),
                               Expanded(
-                                child: NeuField(controller: _guaranteedPax, label: 'Guaranteed minimum', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote()),
+                                child: NeuField(controller: _guaranteedPax, label: 'Guaranteed minimum', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote(), dense: true),
                               ),
                             ],
                           ),
@@ -799,6 +787,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                                   required: true,
                                   keyboardType: TextInputType.number,
                                   errorText: _submitAttempted && _fieldError == 'roomsCount' ? _error : null,
+                                  dense: true,
                                 ),
                               ),
                               const SizedBox(width: AppTheme.s8),
@@ -810,7 +799,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                           if (_submitAttempted && (_fieldError == 'roomsFrom' || _fieldError == 'roomsTo'))
                             Padding(padding: const EdgeInsets.only(top: 4), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
                           const SizedBox(height: AppTheme.s8),
-                          NeuField(controller: _roomsNotes, label: 'Room notes (optional)', hint: 'Two on the ground floor for grandparents, …'),
+                          NeuField(controller: _roomsNotes, label: 'Room notes (optional)', hint: 'Two on the ground floor for grandparents, …', dense: true),
                         ],
                         const SizedBox(height: AppTheme.s8),
                         const Text('Add-ons (per day)', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
@@ -820,9 +809,9 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                         const SizedBox(height: AppTheme.s8),
                         Row(
                           children: [
-                            Expanded(child: NeuField(controller: _oneOffLabel, label: '', hint: 'One-off item (e.g. mandap flowers)')),
+                            Expanded(child: NeuField(controller: _oneOffLabel, label: '', hint: 'One-off item (e.g. mandap flowers)', dense: true)),
                             const SizedBox(width: 6),
-                            SizedBox(width: 80, child: NeuField(controller: _oneOffAmount, label: '', hint: '₹', keyboardType: TextInputType.number)),
+                            SizedBox(width: 80, child: NeuField(controller: _oneOffAmount, label: '', hint: '₹', keyboardType: TextInputType.number, dense: true)),
                             const SizedBox(width: 6),
                             NeuButton(onPressed: _addOneOff, padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s12), child: const Text('Add')),
                           ],
@@ -830,9 +819,9 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                         const SizedBox(height: AppTheme.s8),
                         Row(
                           children: [
-                            Expanded(child: NeuField(controller: _discountAmount, label: 'Concession', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote())),
+                            Expanded(child: NeuField(controller: _discountAmount, label: 'Concession', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote(), dense: true)),
                             const SizedBox(width: AppTheme.s8),
-                            Expanded(child: NeuField(controller: _discountReason, label: 'Reason for concession')),
+                            Expanded(child: NeuField(controller: _discountReason, label: 'Reason for concession', dense: true)),
                           ],
                         ),
                         if (_quoting) const Padding(padding: EdgeInsets.only(top: AppTheme.s8), child: Text('Pricing…', style: TextStyle(color: AppTheme.muted, fontSize: 12))),
@@ -841,68 +830,56 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                           const SizedBox(height: AppTheme.s8),
                           _QuoteCard(quote: _quote!, advance: _advanceAmount, overCapacity: _quote!.overCapacity),
                         ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.s8),
 
-                  if (!_isEdit) ...[
-                    NeuCard(
-                      key: _fieldKeys['advance'],
-                      radius: AppTheme.rLarge,
-                    shadow: AppTheme.elevated,
-                    padding: const EdgeInsets.all(AppTheme.s16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SectionLabel('Advance payment', number: 4, icon: Icons.payments_rounded),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Optional. Money taken now confirms the venue is theirs from this moment, whichever way you save below.',
-                            style: TextStyle(color: AppTheme.muted, fontSize: 12),
-                          ),
-                          const SizedBox(height: AppTheme.s8),
-                          for (var i = 0; i < _advanceLines.length; i++)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                              child: PaymentRow(
-                                key: ValueKey(_advanceLines[i]),
-                                line: _advanceLines[i],
-                                onRemove: _advanceLines.length == 1 ? null : () => setState(() => _advanceLines.removeAt(i)),
-                                onChanged: () => setState(() {}),
-                              ),
+                        if (!_isEdit) ...[
+                          // ── Advance payment ────────────────────────
+                          const SectionDivider(),
+                          KeyedSubtree(
+                            key: _fieldKeys['advance'],
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SectionLabel('Advance payment', number: 4, icon: Icons.payments_rounded),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Optional. Money taken now confirms the venue is theirs from this moment, whichever way you save below.',
+                                  style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                                ),
+                                const SizedBox(height: AppTheme.s8),
+                                for (var i = 0; i < _advanceLines.length; i++)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                                    child: PaymentRow(
+                                      key: ValueKey(_advanceLines[i]),
+                                      line: _advanceLines[i],
+                                      onRemove: _advanceLines.length == 1 ? null : () => setState(() => _advanceLines.removeAt(i)),
+                                      onChanged: () => setState(() {}),
+                                    ),
+                                  ),
+                                if (_advanceLines.length < 5)
+                                  NeuButton(expand: true, soft: true, minHeight: 38, padding: const EdgeInsets.symmetric(vertical: AppTheme.s8), onPressed: () => setState(() => _advanceLines.add(PaymentDraft())), child: const Text('+ Add another payment')),
+                                if (_submitAttempted && _fieldError == 'advance')
+                                  Padding(padding: const EdgeInsets.only(top: AppTheme.s8), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
+                              ],
                             ),
-                          if (_advanceLines.length < 5)
-                            NeuButton(expand: true, onPressed: () => setState(() => _advanceLines.add(PaymentDraft())), child: const Text('+ Add another payment')),
-                          if (_submitAttempted && _fieldError == 'advance')
-                            Padding(padding: const EdgeInsets.only(top: AppTheme.s8), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
+                          ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(height: AppTheme.s8),
-                  ],
 
-                  // ── Function sheet ─────────────────────────────────────
-                  NeuCard(
-                    radius: AppTheme.rLarge,
-                    shadow: AppTheme.elevated,
-                    padding: const EdgeInsets.all(AppTheme.s16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                        // ── Function sheet ───────────────────────────
+                        const SectionDivider(),
                         SectionLabel('Function sheet', number: _isEdit ? 4 : 5, icon: Icons.description_rounded),
                         const SizedBox(height: AppTheme.s8),
                         if (catering) ...[
-                          NeuField(controller: _menuNotes, label: 'Menu', hint: 'Veg thali, live chaat counter, …'),
+                          NeuField(controller: _menuNotes, label: 'Menu', hint: 'Veg thali, live chaat counter, …', dense: true),
                           const SizedBox(height: AppTheme.s8),
                         ],
-                        NeuField(controller: _setupNotes, label: 'Setup', hint: 'Round tables for 10, stage at north end, …'),
+                        NeuField(controller: _setupNotes, label: 'Setup', hint: 'Round tables for 10, stage at north end, …', dense: true),
                         const SizedBox(height: AppTheme.s8),
-                        NeuField(controller: _scheduleNotes, label: 'Schedule', hint: 'Baraat 7 pm, dinner 9 pm, …'),
+                        NeuField(controller: _scheduleNotes, label: 'Schedule', hint: 'Baraat 7 pm, dinner 9 pm, …', dense: true),
                       ],
                     ),
                   ),
-                  const SizedBox(height: AppTheme.s16),
+                  const SizedBox(height: AppTheme.s12),
 
                   if (_isEdit)
                     Align(
@@ -1016,19 +993,70 @@ class _Dropdown<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final picked = items.containsKey(value) ? value : null;
     return NeuPressed(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: items.containsKey(value) ? value : null,
-          isExpanded: true,
-          dropdownColor: AppTheme.bg,
-          hint: const Text('Choose', style: TextStyle(color: AppTheme.muted, fontSize: 14)),
-          style: const TextStyle(color: AppTheme.heading, fontSize: 14),
-          items: [for (final e in items.entries) DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis))],
-          onChanged: (v) {
-            if (v != null || null is T) onChanged(v as T);
-          },
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 2),
+      child: Theme(
+        // The framework paints the open menu's selected row with
+        // Theme.focusColor — an accent tint here instead of Material's
+        // default grey, so the picked option reads as chosen rather than
+        // merely focused. Mirrors OptionDropdown's own styling.
+        data: Theme.of(context).copyWith(
+          focusColor: AppTheme.accent.withValues(alpha: 0.1),
+          hoverColor: AppTheme.accent.withValues(alpha: 0.06),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            value: picked,
+            isExpanded: true,
+            isDense: true,
+            itemHeight: null,
+            dropdownColor: AppTheme.card,
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
+            elevation: 3,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
+            hint: const Text('Choose', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+            style: const TextStyle(color: AppTheme.heading, fontSize: 13),
+            selectedItemBuilder: (context) => [
+              for (final e in items.entries)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    e.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                ),
+            ],
+            items: [
+              for (final e in items.entries)
+                DropdownMenuItem(
+                  value: e.key,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          e.value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: e.key == picked ? AppTheme.accent : AppTheme.text,
+                            fontWeight: e.key == picked ? FontWeight.w700 : FontWeight.w400,
+                            fontSize: 13.5,
+                          ),
+                        ),
+                      ),
+                      if (e.key == picked)
+                        const Icon(Icons.check_rounded, color: AppTheme.accent, size: 16),
+                    ],
+                  ),
+                ),
+            ],
+            onChanged: (v) {
+              if (v != null || null is T) onChanged(v as T);
+            },
+          ),
         ),
       ),
     );

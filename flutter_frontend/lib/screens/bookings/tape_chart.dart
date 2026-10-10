@@ -161,6 +161,15 @@ class _TapeChartState extends ConsumerState<TapeChart>
       }
     }
     found ??= sections.first.categoryName;
+    // Scrolled as far down as it goes — e.g. a short section at the very
+    // bottom (a one-room Dormitory band, say) can never drag its own top up
+    // to the header line, so the loop above would never pick it and a tap on
+    // its chip would scroll there and then immediately lose the highlight.
+    // At the bottom of the list there's nothing left to scroll past, so the
+    // last section is the one on screen regardless of where its top sits.
+    if (_vScroll.position.pixels >= _vScroll.position.maxScrollExtent - 1) {
+      found = sections.last.categoryName;
+    }
     if (found != _activeCategory) setState(() => _activeCategory = found);
   }
 

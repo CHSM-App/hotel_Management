@@ -209,7 +209,15 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     return null;
   }
 
-  void _select(String key) => setState(() => _section = key);
+  void _select(String key) => setState(() {
+    _section = key;
+    // Leaving Reports for any other section must drop its PDF/Excel icons
+    // from the shared top bar right away — relying only on ReportsScreen's
+    // own dispose() left a stale pair showing on whatever section opened
+    // next (e.g. Room Chart) when the clear lost the race within the same
+    // build.
+    if (!key.startsWith('report-')) _headerActions.value = null;
+  });
 
   /// Same confirmation ProfileScreen's own sign-out carries. No popUntil
   /// needed here the way that screen needs one: DashboardShell is the root
