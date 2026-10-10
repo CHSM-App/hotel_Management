@@ -1547,22 +1547,17 @@ export default function MenuPanel() {
                       Price
                       <Req />
                     </label>
-                    <div className="menu-money">
-                      <span className="menu-money__symbol" aria-hidden="true">
-                        ₹
-                      </span>
-                      <input
-                        id="itemPrice"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        inputMode="decimal"
-                        value={itemForm.price}
-                        aria-invalid={Boolean(itemErrors.price)}
-                        onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))}
-                        placeholder="220"
-                      />
-                    </div>
+                    <input
+                      id="itemPrice"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      inputMode="decimal"
+                      value={itemForm.price}
+                      aria-invalid={Boolean(itemErrors.price)}
+                      onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))}
+                      placeholder="220"
+                    />
                     {itemErrors.price && <p className="field__error">{itemErrors.price}</p>}
                   </div>
                 )}

@@ -128,28 +128,10 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(255, 255, 255, 0.2);
 }
 
-/* The two marks a function's tile can carry, in white on its status colour.
-   The colour is left at full strength — washing a finished function back
-   turned the red into a pink that was no status at all — and the mark says
-   the rest: a tick on the last day of one that is over, a dot on today's day
-   of the one in the hall now. */
-.events-tape__seg--over,
+/* The one mark a function's tile can carry, in white on its status colour: a
+   dot on today's day of the one in the hall now. */
 .events-tape__seg--live {
   position: relative;
-}
-
-.events-tape__seg--over::after,
-.events-legend__mark--over::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 4px;
-  height: 8px;
-  margin: -6px 0 0 -3px;
-  border: solid #fff;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
 }
 
 .events-tape__seg--live::after,
@@ -199,21 +181,14 @@
   }
 }
 
-/* The legend's key for each mark: the mark on a neutral slate chip, a little
-   larger than a colour swatch so a tick is still a tick at that size. */
+/* The legend's key for the mark: the dot on a red chip, a little larger than a
+   colour swatch. */
 .tape-legend__swatch.events-legend__mark {
   position: relative;
   width: 16px;
   height: 14px;
   border-radius: 4px;
-  background: #5b6875;
-}
-
-.events-legend__mark--over::after {
-  width: 3px;
-  height: 6px;
-  margin: -5px 0 0 -2px;
-  border-width: 0 1.5px 1.5px 0;
+  background: var(--danger);
 }
 
 .events-legend__mark--live::after {
