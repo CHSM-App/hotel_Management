@@ -69,7 +69,7 @@ class _CheckInRoomStatusState extends ConsumerState<CheckInRoomStatus> {
 
     return Container(
       margin: const EdgeInsets.only(top: AppTheme.s8),
-      padding: const EdgeInsets.all(AppTheme.s8),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 6),
       decoration: BoxDecoration(
         color: AppTheme.bg,
         borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -82,10 +82,10 @@ class _CheckInRoomStatusState extends ConsumerState<CheckInRoomStatus> {
             widget.venues ? 'Venue status' : 'Room status',
             style: const TextStyle(color: AppTheme.muted, fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.3),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           for (final (entry, hk) in rows)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
+              padding: const EdgeInsets.symmetric(vertical: 1),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [

@@ -625,7 +625,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     ],
 
     if (state.datesChosen) ...[
-      const SizedBox(height: AppTheme.s12),
+      const SizedBox(height: AppTheme.s8),
       Row(
         children: [
           _RequiredLabel(
@@ -648,7 +648,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
           ],
         ],
       ),
-      const SizedBox(height: AppTheme.s8),
+      const SizedBox(height: AppTheme.s4),
       KeyedSubtree(
         key: _roomKey,
         child: (state.multiRoomMode && !state.multiRoomDifferentDates)
@@ -669,7 +669,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   /// its bed picker if it's a dormitory, and its switchable extras. Assumes
   /// [BookingState.room] is already set.
   List<Widget> _buildRoomFacts(BookingState state) => [
-    const SizedBox(height: AppTheme.s12),
+    const SizedBox(height: AppTheme.s8),
     // Commented out for now, not deleted — uncomment to bring the
     // price/category/bed/bathroom chip row back under a picked room.
     // _RoomChips(room: state.room!),
@@ -683,7 +683,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       ),
 
     if (state.room!.isDormitory) ...[
-      const SizedBox(height: AppTheme.s12),
+      const SizedBox(height: AppTheme.s8),
       KeyedSubtree(
         key: _bedKey,
         child: _BedPicker(state: state),
@@ -698,7 +698,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     ],
 
     if (!state.room!.isDormitory && state.room!.switchableCharges.isNotEmpty) ...[
-      const SizedBox(height: AppTheme.s12),
+      const SizedBox(height: AppTheme.s8),
       const Text(
         'EXTRAS',
         style: TextStyle(
@@ -708,7 +708,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
           letterSpacing: 0.4,
         ),
       ),
-      const SizedBox(height: AppTheme.s8),
+      const SizedBox(height: AppTheme.s4),
       _ExtrasCard(state: state),
     ],
   ];
@@ -837,7 +837,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             // about the past.
             if (!_editing) ...[
               _BookingTypeHeader(state: state),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
             ],
 
             // Says which draft this is and offers the way out of it — a
@@ -848,7 +848,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                 submitting: state.submitting,
                 onDelete: _deleteDraft,
               ),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
             ],
 
             // Everything the desk fills in lives on one card — the numbered
@@ -857,12 +857,12 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             NeuCard(
               radius: AppTheme.rLarge,
               shadow: AppTheme.elevated,
-              padding: const EdgeInsets.all(AppTheme.s12 + AppTheme.s4),
+              padding: const EdgeInsets.all(AppTheme.s8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const _SectionLabel('Stay & room', number: 1),
-                  const SizedBox(height: AppTheme.s12),
+                  const SizedBox(height: AppTheme.s8),
 
                   // On a multi-room booking, room 1 reads as one of a set
                   // rather than as the form itself — the same bordered box
@@ -877,6 +877,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       shadow: AppTheme.subtle,
                       color: AppTheme.bg,
                       borderColor: AppTheme.border2,
+                      padding: const EdgeInsets.all(AppTheme.s12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -888,7 +889,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                               fontSize: 14,
                             ),
                           ),
-                          const SizedBox(height: AppTheme.s8),
+                          const SizedBox(height: AppTheme.s4),
                           ..._buildDatesAndRoomPicker(state),
                           if (state.room != null) ..._buildRoomFacts(state),
                         ],
@@ -899,11 +900,12 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     if (state.room != null) ...[
                       if (state.multiRoomMode) ...[
                         Padding(
-                          padding: const EdgeInsets.only(top: AppTheme.s12),
+                          padding: const EdgeInsets.only(top: AppTheme.s8),
                           child: NeuCard(
                             shadow: AppTheme.subtle,
                             color: AppTheme.bg,
                             borderColor: AppTheme.border2,
+                            padding: const EdgeInsets.all(AppTheme.s12),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -928,7 +930,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
 
                   if (state.room != null) ...[
                     if (state.multiRoomMode) ...[
-                      const SizedBox(height: AppTheme.s12),
+                      const SizedBox(height: AppTheme.s8),
                       KeyedSubtree(
                         key: _extraRoomsKey,
                         child: Column(
@@ -947,7 +949,11 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                               ),
                             NeuButton(
                               expand: true,
-                              primary: true,
+                              soft: true,
+                              minHeight: 38,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: AppTheme.s8,
+                              ),
                               onPressed: () => ref
                                   .read(bookingViewModelProvider.notifier)
                                   .addExtraRoom(),
@@ -968,7 +974,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       ],
                     ],
 
-                    const SizedBox(height: AppTheme.s12),
+                    const SizedBox(height: AppTheme.s8),
                     _QuoteCard(state: state),
 
                     const _SectionDivider(),
@@ -978,12 +984,13 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       trailing: '${1 + _guests.length} guest'
                           '${1 + _guests.length == 1 ? '' : 's'}',
                     ),
-                    const SizedBox(height: AppTheme.s12),
+                    const SizedBox(height: AppTheme.s8),
 
                     _SectionLabel('Adults', trailing: '${1 + adults.length}'),
-                    const SizedBox(height: AppTheme.s8),
+                    const SizedBox(height: AppTheme.s4),
                     NeuCard(
                       shadow: AppTheme.subtle,
+                      padding: const EdgeInsets.all(AppTheme.s12),
                       child: Column(
                         children: [
                           KeyedSubtree(
@@ -996,6 +1003,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                     errorText: _nameError,
                                     onChanged: (_) => setState(() {}),
                                     forceCapitalizeWords: true,
+                                    dense: true,
                                   )
                                 : CompositedTransformTarget(
                                     link: _nameLink,
@@ -1046,6 +1054,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                           errorText: _nameError,
                                           onChanged: _onNameTyped,
                                           forceCapitalizeWords: true,
+                                          dense: true,
                                           onTap: () {
                                             if (_nameMatches.isNotEmpty) {
                                               _namePortal.show();
@@ -1056,7 +1065,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                     ),
                                   ),
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           NeuField(
                             key: _phoneKey,
                             controller: _phone,
@@ -1067,8 +1076,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                             required: true,
                             errorText: _phoneError,
                             onChanged: (_) => setState(() {}),
+                            dense: true,
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           KeyedSubtree(
                             key: _idProofKey,
                             child: _IdProofFields(
@@ -1091,7 +1101,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     ),
                     for (final i in adults)
                       Padding(
-                        padding: const EdgeInsets.only(top: AppTheme.s12),
+                        padding: const EdgeInsets.only(top: AppTheme.s8),
                         child: _GuestCard(
                           guest: _guests[i],
                           index: i,
@@ -1099,25 +1109,27 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                           onChanged: () => setState(() {}),
                         ),
                       ),
-                    const SizedBox(height: AppTheme.s12),
+                    const SizedBox(height: AppTheme.s8),
                     NeuButton(
                       expand: true,
                       onPressed: () => setState(
                         () => _guests.add(GuestDraft(isChild: false)),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+                      soft: true,
+                      minHeight: 38,
                       child: const Text('+ Add adult'),
                     ),
 
-                    const SizedBox(height: AppTheme.s12),
+                    const SizedBox(height: AppTheme.s8),
                     _SectionLabel(
                       'Children',
                       trailing: children.isEmpty ? null : '${children.length}',
                     ),
-                    const SizedBox(height: AppTheme.s8),
+                    const SizedBox(height: AppTheme.s4),
                     for (final i in children)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: AppTheme.s12),
+                        padding: const EdgeInsets.only(bottom: AppTheme.s8),
                         child: _GuestCard(
                           guest: _guests[i],
                           index: i,
@@ -1130,12 +1142,14 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       onPressed: () => setState(
                         () => _guests.add(GuestDraft(isChild: true)),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+                      soft: true,
+                      minHeight: 38,
                       child: const Text('+ Add child'),
                     ),
 
                     if (!_editing && state.isWalkIn) ...[
-                      const SizedBox(height: AppTheme.s12),
+                      const SizedBox(height: AppTheme.s8),
                       const Text(
                         'A walk-in is checked in as it saves, so the primary '
                         'guest needs an ID — an ID number or a photo of the '
@@ -1162,7 +1176,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                           trailingFull: _paidInFull,
                         );
                       }),
-                      const SizedBox(height: AppTheme.s8),
+                      const SizedBox(height: AppTheme.s4),
                       KeyedSubtree(
                         key: _advanceKey,
                         child: _AdvanceCard(
@@ -1188,7 +1202,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       number: vehiclesNumber,
                       trailing: _vehicles.isEmpty ? null : '${_vehicles.length}',
                     ),
-                    const SizedBox(height: AppTheme.s8),
+                    const SizedBox(height: AppTheme.s4),
                     _VehicleList(
                       vehicles: _vehicles,
                       onAdd: () => setState(() => _vehicles.add(VehicleDraft())),
@@ -1200,14 +1214,14 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
               ),
             ),
 
-            const SizedBox(height: AppTheme.s16),
+            const SizedBox(height: AppTheme.s12),
             Row(
               children: [
                 Expanded(
                   child: NeuButton(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppTheme.s8,
-                      vertical: AppTheme.s12,
+                      vertical: AppTheme.s8,
                     ),
                     onPressed: state.submitting
                         ? null
@@ -1224,7 +1238,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     child: NeuButton(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppTheme.s8,
-                        vertical: AppTheme.s12,
+                        vertical: AppTheme.s8,
                       ),
                       onPressed: state.submitting ? null : _saveDraft,
                       child: Text(
@@ -1235,7 +1249,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                 ],
               ],
             ),
-            const SizedBox(height: AppTheme.s12),
+            const SizedBox(height: AppTheme.s8),
             _PrimaryCta(
               // Held shut while the request is in flight, and until
               // there is a room to save against. The server holds a
@@ -1440,7 +1454,7 @@ class _SectionDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Padding(
-      padding: EdgeInsets.symmetric(vertical: AppTheme.s12),
+      padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
       child: SizedBox(
         height: 1.4,
         child: DecoratedBox(
@@ -1492,7 +1506,7 @@ class _PrimaryCtaState extends State<_PrimaryCta> {
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOut,
           width: double.infinity,
-          constraints: const BoxConstraints(minHeight: 48),
+          constraints: const BoxConstraints(minHeight: 42),
           padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
@@ -1614,9 +1628,9 @@ class _BookingSavedDialog extends StatelessWidget {
               ),
               child: const Icon(Icons.check_rounded, color: Colors.white, size: 30),
             ),
-            const SizedBox(height: AppTheme.s12),
-            Text('Booking saved', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: AppTheme.s8),
+            Text('Booking saved', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: AppTheme.s4),
             Text.rich(
               TextSpan(
                 children: [
@@ -1634,7 +1648,7 @@ class _BookingSavedDialog extends StatelessWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: AppTheme.s8),
+            const SizedBox(height: AppTheme.s4),
             Text(
               advance > 0
                   ? '${paidInFull ? 'Full payment of' : 'Advance of'} '
@@ -1645,7 +1659,7 @@ class _BookingSavedDialog extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: AppTheme.s16),
+            const SizedBox(height: AppTheme.s12),
             if (advance > 0) ...[
               NeuButton(
                 primary: true,
@@ -1653,7 +1667,7 @@ class _BookingSavedDialog extends StatelessWidget {
                 onPressed: onPrintReceipt,
                 child: const Text('Advance receipt'),
               ),
-              const SizedBox(height: AppTheme.s8),
+              const SizedBox(height: AppTheme.s4),
             ],
             NeuButton(
               expand: true,
@@ -1855,7 +1869,7 @@ class _BookingTypeHeader extends ConsumerWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppTheme.s8),
+        const SizedBox(height: AppTheme.s4),
         Text(
           futureCheckIn
               ? 'Walk-in isn’t available for a future check-in date — this '
@@ -2266,7 +2280,7 @@ class _RoomChooserState extends ConsumerState<_RoomChooser> {
                 controller: _search,
                 onChanged: (_) => setState(() {}),
               ),
-              const SizedBox(height: AppTheme.s8),
+              const SizedBox(height: AppTheme.s4),
             ],
             Wrap(
               spacing: AppTheme.s8,
@@ -2288,7 +2302,7 @@ class _RoomChooserState extends ConsumerState<_RoomChooser> {
               ],
             ),
             for (final c in visible) ...[
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               _RoomGroup(
                 title: c,
                 rooms: groups[c]!,
@@ -2455,7 +2469,7 @@ class _RoomGroup extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppTheme.s8),
+        const SizedBox(height: AppTheme.s4),
         Wrap(
           spacing: AppTheme.s8,
           runSpacing: AppTheme.s8,
@@ -2615,6 +2629,7 @@ class _ExtraRoomCard extends ConsumerWidget {
       shadow: AppTheme.subtle,
       color: AppTheme.bg,
       borderColor: AppTheme.border2,
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2645,7 +2660,7 @@ class _ExtraRoomCard extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s8),
+          const SizedBox(height: AppTheme.s4),
 
           if (showDatePickers) ...[
             Row(
@@ -2667,7 +2682,7 @@ class _ExtraRoomCard extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: AppTheme.s12),
+            const SizedBox(height: AppTheme.s8),
             if (draft.checkIn == null || draft.checkOut == null)
               const Text(
                 'Choose dates to see available rooms.',
@@ -2675,7 +2690,7 @@ class _ExtraRoomCard extends ConsumerWidget {
               )
             else
               _ExtraRoomPicker(index: index, draft: draft),
-            const SizedBox(height: AppTheme.s8),
+            const SizedBox(height: AppTheme.s4),
           ],
 
           if (room != null) ...[
@@ -2686,11 +2701,11 @@ class _ExtraRoomCard extends ConsumerWidget {
                 rooms: [CheckInRoomStatusEntry(roomId: room.id, roomNumber: room.roomNumber)],
               ),
             if (room.isDormitory) ...[
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               _ExtraRoomBedPicker(index: index, draft: draft),
             ],
             if (!room.isDormitory && room.switchableCharges.isNotEmpty) ...[
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               const Text(
                 'EXTRAS',
                 style: TextStyle(
@@ -2700,7 +2715,7 @@ class _ExtraRoomCard extends ConsumerWidget {
                   letterSpacing: 0.4,
                 ),
               ),
-              const SizedBox(height: AppTheme.s8),
+              const SizedBox(height: AppTheme.s4),
               _ExtraRoomExtras(index: index, draft: draft, room: room),
             ],
           ],
@@ -2866,7 +2881,7 @@ class _ExtraRoomBedPicker extends ConsumerWidget {
             '${formatPrice(data.pricePerNight)}/bed/night — pick as many as the party needs.',
             style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
           ),
-          const SizedBox(height: AppTheme.s8),
+          const SizedBox(height: AppTheme.s4),
           Wrap(
             spacing: AppTheme.s8,
             runSpacing: AppTheme.s8,
@@ -2909,7 +2924,7 @@ class _ExtraRoomExtras extends ConsumerWidget {
     return Column(
       children: [
         for (var i = 0; i < charges.length; i++) ...[
-          if (i > 0) const SizedBox(height: AppTheme.s8),
+          if (i > 0) const SizedBox(height: AppTheme.s4),
           _ExtraRow(
             name: charges[i].name,
             pricePerNight: charges[i].chargePerNight,
@@ -3032,7 +3047,7 @@ class _BedPicker extends ConsumerWidget {
               '${formatPrice(data.pricePerNight)}/bed/night — pick as many as the party needs.',
               style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
             ),
-            const SizedBox(height: AppTheme.s8),
+            const SizedBox(height: AppTheme.s4),
             Wrap(
               spacing: AppTheme.s8,
               runSpacing: AppTheme.s8,
@@ -3183,7 +3198,7 @@ class _ExtrasCard extends ConsumerWidget {
     return Column(
       children: [
         for (var i = 0; i < charges.length; i++) ...[
-          if (i > 0) const SizedBox(height: AppTheme.s8),
+          if (i > 0) const SizedBox(height: AppTheme.s4),
           _ExtraRow(
             name: charges[i].name,
             pricePerNight: charges[i].chargePerNight,
@@ -3229,7 +3244,7 @@ class _ExtraRow extends StatelessWidget {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(
             horizontal: AppTheme.s12,
-            vertical: AppTheme.s12,
+            vertical: AppTheme.s8,
           ),
           decoration: BoxDecoration(
             color: selected
@@ -3270,8 +3285,8 @@ class _ExtraRow extends StatelessWidget {
               ],
               AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                width: 22,
-                height: 22,
+                width: 20,
+                height: 20,
                 decoration: BoxDecoration(
                   color: selected ? AppTheme.accent : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
@@ -3345,6 +3360,7 @@ class _QuoteCard extends ConsumerWidget {
 
     if (quote == null) {
       return NeuCard(
+        padding: const EdgeInsets.all(AppTheme.s12),
         child: Center(
           child: state.quoting
               ? const SizedBox(
@@ -3361,6 +3377,7 @@ class _QuoteCard extends ConsumerWidget {
     }
 
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         children: [
           // Said once, in words, above the boxes — the pencil inside each one
@@ -3377,10 +3394,10 @@ class _QuoteCard extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           for (final line in quote.charges)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
+              padding: const EdgeInsets.only(bottom: AppTheme.s8),
               child: Row(
                 children: [
                   Expanded(
@@ -3420,7 +3437,7 @@ class _QuoteCard extends ConsumerWidget {
           // discount from before still opens, prices and saves correctly on
           // an edit; a new booking simply never sets one.
           if (state.editBookingId != null) ...[
-            const Divider(height: AppTheme.s16),
+            const Divider(height: AppTheme.s12),
             Row(
               children: [
                 Expanded(
@@ -3484,7 +3501,7 @@ class _QuoteCard extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: AppTheme.s8),
+          const SizedBox(height: AppTheme.s4),
           const Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -3632,9 +3649,9 @@ class _IdProofFields extends StatelessWidget {
         required
             ? const _RequiredLabel('ID proof')
             : Text('ID proof', style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: AppTheme.s8),
+        const SizedBox(height: AppTheme.s4),
         SizedBox(
-          height: 44,
+          height: 38,
           child: NeuPressed(
             padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
             child: DropdownButtonHideUnderline(
@@ -3668,7 +3685,7 @@ class _IdProofFields extends StatelessWidget {
           ),
         ],
         if (type != null) ...[
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           NeuField(
             controller: number,
             label: 'ID number',
@@ -3676,6 +3693,7 @@ class _IdProofFields extends StatelessWidget {
             errorText: numberErrorText,
             maxLength: 40,
             onChanged: onNumber,
+            dense: true,
           ),
           if (!required && numberErrorText == null) ...[
             const SizedBox(height: AppTheme.s4),
@@ -3685,12 +3703,12 @@ class _IdProofFields extends StatelessWidget {
             ),
           ],
           if (onFile != null) ...[
-            const SizedBox(height: AppTheme.s12),
+            const SizedBox(height: AppTheme.s8),
             Text(
               'Document photo (optional)',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            const SizedBox(height: AppTheme.s8),
+            const SizedBox(height: AppTheme.s4),
             if (file != null)
               PhotoThumb(
                 imageProvider: FileImage(File(file!.path)),
@@ -3812,6 +3830,7 @@ class _GuestCardState extends State<_GuestCard> {
   Widget build(BuildContext context) {
     return NeuCard(
       shadow: AppTheme.subtle,
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3823,6 +3842,7 @@ class _GuestCardState extends State<_GuestCard> {
             label: 'Name',
             onChanged: (v) => widget.guest.name = v,
             forceCapitalizeWords: true,
+            dense: true,
             labelAction: SizedBox(
               height: 20,
               width: 20,
@@ -3835,7 +3855,7 @@ class _GuestCardState extends State<_GuestCard> {
               ),
             ),
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           NeuField(
             controller: _phone,
             label: 'Mobile (optional)',
@@ -3843,8 +3863,9 @@ class _GuestCardState extends State<_GuestCard> {
             keyboardType: TextInputType.phone,
             maxLength: 10,
             onChanged: (v) => widget.guest.phone = v,
+            dense: true,
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           _IdProofFields(
             type: widget.guest.idProofType,
             number: _number,
@@ -3889,7 +3910,7 @@ class _VehicleList extends StatelessWidget {
       children: [
         for (var i = 0; i < vehicles.length; i++)
           Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s12),
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
             child: _VehicleCard(
               vehicle: vehicles[i],
               onRemove: () => onRemove(i),
@@ -3899,7 +3920,9 @@ class _VehicleList extends StatelessWidget {
         NeuButton(
           expand: true,
           onPressed: onAdd,
-          padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+          padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+          soft: true,
+          minHeight: 38,
           child: const Text('+ Add a vehicle'),
         ),
       ],
@@ -3935,6 +3958,7 @@ class _VehicleCardState extends State<_VehicleCard> {
   Widget build(BuildContext context) {
     return NeuCard(
       shadow: AppTheme.subtle,
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3945,6 +3969,7 @@ class _VehicleCardState extends State<_VehicleCard> {
             controller: _number,
             label: 'Number',
             onChanged: (v) => widget.vehicle.number = v,
+            dense: true,
             labelAction: SizedBox(
               height: 20,
               width: 20,
@@ -3957,9 +3982,9 @@ class _VehicleCardState extends State<_VehicleCard> {
               ),
             ),
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           SizedBox(
-            height: 44,
+            height: 38,
             child: NeuPressed(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
               child: DropdownButtonHideUnderline(
@@ -4022,11 +4047,12 @@ class _AdvanceCard extends StatelessWidget {
     final total = sumPayments(lines.where((l) => l.value > 0).toList());
 
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         children: [
           for (var i = 0; i < lines.length; i++)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
+              padding: const EdgeInsets.only(bottom: AppTheme.s8),
               child: PaymentRow(
                 key: ValueKey('advance-$i'),
                 line: lines[i],
@@ -4038,7 +4064,7 @@ class _AdvanceCard extends StatelessWidget {
             ),
           if (errorText != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
+              padding: const EdgeInsets.only(bottom: AppTheme.s8),
               child: Text(
                 errorText!,
                 style: const TextStyle(color: AppTheme.danger, fontSize: 12),
@@ -4046,7 +4072,7 @@ class _AdvanceCard extends StatelessWidget {
             )
           else if (hintText != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
+              padding: const EdgeInsets.only(bottom: AppTheme.s8),
               child: Text(
                 hintText!,
                 style: const TextStyle(color: AppTheme.vacant, fontSize: 12),
@@ -4056,11 +4082,13 @@ class _AdvanceCard extends StatelessWidget {
             NeuButton(
               expand: true,
               onPressed: onAdd,
-              padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+              padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+              soft: true,
+              minHeight: 38,
               child: const Text('+ Add another payment'),
             ),
           if (total > 0) ...[
-            const Divider(height: AppTheme.s24),
+            const Divider(height: AppTheme.s16),
             Row(
               children: [
                 Expanded(
