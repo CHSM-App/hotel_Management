@@ -3192,3 +3192,9 @@ WHERE permissions LIKE '%"guests.view"%' AND permissions NOT LIKE '%"customers.m
 -- uploads/service-images, the same way a dish photo is referenced.
 IF COL_LENGTH('dbo.lodge_services', 'image_filename') IS NULL
     EXEC('ALTER TABLE dbo.lodge_services ADD image_filename NVARCHAR(255) NULL');
+
+-- last_seen (139): set on every sign-in and session renewal (auth.service.js's
+-- loginWithRoles and refresh) so the superadmin panel can show when a login
+-- was last actually used. NULL means "never signed in".
+IF COL_LENGTH('dbo.users', 'last_seen') IS NULL
+    EXEC('ALTER TABLE dbo.users ADD last_seen DATETIMEOFFSET NULL');

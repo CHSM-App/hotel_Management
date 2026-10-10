@@ -157,12 +157,12 @@ async function getLodgeDetail(id) {
     FROM dbo.lodges
     WHERE id = @id;
 
-    -- Owner only. No password material is selected: this screen shows who
-    -- can sign in, never how.
-    SELECT id, name, email, phone, role, is_active, must_reset_password, created_at
+    -- Every login on the property, owner and staff alike. No password
+    -- material is selected: this screen shows who can sign in, never how.
+    SELECT id, name, email, phone, role, is_active, must_reset_password, created_at, last_seen
     FROM dbo.users
-    WHERE lodge_id = @id AND role = 'OWNER'
-    ORDER BY created_at;
+    WHERE lodge_id = @id
+    ORDER BY CASE WHEN role = 'OWNER' THEN 0 ELSE 1 END, created_at;
 
     SELECT
       (SELECT COUNT(*) FROM dbo.rooms WHERE lodge_id = @id) AS rooms,

@@ -1,5 +1,17 @@
 const jwt = require('jsonwebtoken');
 const { ApiError } = require('./errorHandler');
+const { logger } = require('../config/logger');
+
+// Best-effort "last seen" stamp for the superadmin panel, fired on every
+// authenticated request so it reflects real activity rather than just login
+// or token refresh — the web app never calls /auth/refresh, so that alone
+// would leave last_seen stale for an entire shift. Required lazily to avoid
+// a startup import cycle, the same precaution requirePermission takes below.
+// Never awaited: a DB hiccup here must not block or fail the real request.
+function touchLastSeen(userId) {
+  const { touchLastSeen: touch } = require('../modules/auth/auth.service');
+  touch(userId).catch((err) => logger.warn({ err, userId }, 'Could not update last_seen'));
+}
 
 function authenticate(req, res, next) {
   const header = req.headers.authorization;
@@ -11,6 +23,7 @@ function authenticate(req, res, next) {
 
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
+    touchLastSeen(req.user.sub);
     next();
   } catch {
     next(new ApiError('Session expired. Sign in again.', 401));

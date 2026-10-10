@@ -38,6 +38,23 @@ async function findUserById(id) {
   return result.recordset[0];
 }
 
+// Stamped on login, token refresh, and every authenticated request (see
+// authenticate.js) — the superadmin panel's "last seen" column. Throttled to
+// once every 5 minutes per user via the WHERE clause rather than a separate
+// read, so calling this on every API request costs one indexed no-op update
+// instead of turning into a write storm.
+async function touchLastSeen(userId) {
+  const pool = await getPool();
+  await pool
+    .request()
+    .input('userId', sql.BigInt, userId)
+    .query(`
+      UPDATE dbo.users
+      SET last_seen = SYSDATETIMEOFFSET()
+      WHERE id = @userId AND (last_seen IS NULL OR last_seen < DATEADD(MINUTE, -5, SYSDATETIMEOFFSET()))
+    `);
+}
+
 function issueToken(user) {
   const token = jwt.sign(
     { sub: user.id, role: user.role, lodgeId: user.lodge_id ?? null },
@@ -88,6 +105,7 @@ async function loginWithRoles({ identifier, password }, isAllowedRole, door) {
   }
 
   await loginLockout.clearFailures(identifier, door);
+  await touchLastSeen(user.id);
 
   return issueToken(user);
 }
@@ -155,7 +173,8 @@ async function refresh(userClaims) {
   if (!user || !user.is_active) {
     throw new ApiError('Session expired. Sign in again.', 401);
   }
+  await touchLastSeen(user.id);
   return issueToken(user);
 }
 
-module.exports = { login, adminLogin, resetPasswordByIdentifier, refresh };
+module.exports = { login, adminLogin, resetPasswordByIdentifier, refresh, touchLastSeen };

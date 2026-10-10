@@ -2022,8 +2022,9 @@ async function createBooking(lodgeId, userId, input) {
     if (customerId) {
       await new sql.Request(transaction)
         .input('id', sql.BigInt, bookingId)
+        .input('lodgeId', sql.BigInt, lodgeId)
         .input('customerId', sql.BigInt, customerId)
-        .query('UPDATE dbo.bookings SET customer_id = @customerId WHERE id = @id');
+        .query('UPDATE dbo.bookings SET customer_id = @customerId WHERE id = @id AND lodge_id = @lodgeId');
     }
 
     for (const room of priced.rooms) {
