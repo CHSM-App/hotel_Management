@@ -76,6 +76,7 @@ async function createVendor(lodgeId, kind, input) {
     await pool
       .request()
       .input('vendorId', sql.BigInt, removed.id)
+      .input('lodgeId', sql.BigInt, lodgeId)
       .input('contactPerson', sql.NVarChar, toNullable(input.contactPerson))
       .input('phone', sql.NVarChar, phone)
       .input('altPhone', sql.NVarChar, toNullable(input.altPhone))
@@ -86,7 +87,7 @@ async function createVendor(lodgeId, kind, input) {
         UPDATE dbo.vendors
         SET contact_person = @contactPerson, phone = @phone, alt_phone = @altPhone,
             email = @email, specialty = @specialty, notes = @notes, is_active = 1
-        WHERE id = @vendorId
+        WHERE id = @vendorId AND lodge_id = @lodgeId
       `);
     const revived = await listVendors(lodgeId, kind, { includeInactive: true });
     return revived.find((v) => v.id === removed.id);
@@ -185,14 +186,12 @@ async function deleteVendor(lodgeId, kind, vendorId) {
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('kind', sql.NVarChar, kind)
       .input('vendorId', sql.BigInt, vendorId);
-  const where = 'WHERE id = @vendorId AND lodge_id = @lodgeId AND kind = @kind';
-
   let result;
   try {
-    result = await request().query(`DELETE FROM dbo.vendors OUTPUT deleted.id ${where}`);
+    result = await request().query('DELETE FROM dbo.vendors OUTPUT deleted.id WHERE id = @vendorId AND lodge_id = @lodgeId AND kind = @kind');
   } catch (err) {
     if (err.number !== FK_VIOLATION) throw err;
-    result = await request().query(`UPDATE dbo.vendors SET is_active = 0 OUTPUT inserted.id ${where}`);
+    result = await request().query('UPDATE dbo.vendors SET is_active = 0 OUTPUT inserted.id WHERE id = @vendorId AND lodge_id = @lodgeId AND kind = @kind');
   }
   if (result.recordset.length === 0) {
     throw new ApiError('Vendor not found.', 404);

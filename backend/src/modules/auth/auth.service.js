@@ -47,11 +47,11 @@ async function touchLastSeen(userId) {
   const pool = await getPool();
   await pool
     .request()
-    .input('id', sql.BigInt, userId)
+    .input('userId', sql.BigInt, userId)
     .query(`
       UPDATE dbo.users
       SET last_seen = SYSDATETIMEOFFSET()
-      WHERE id = @id AND (last_seen IS NULL OR last_seen < DATEADD(MINUTE, -5, SYSDATETIMEOFFSET()))
+      WHERE id = @userId AND (last_seen IS NULL OR last_seen < DATEADD(MINUTE, -5, SYSDATETIMEOFFSET()))
     `);
 }
 

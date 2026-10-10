@@ -66,6 +66,7 @@ async function upsertCustomerRow(
     const id = existing.recordset[0].id;
     await requestFactory()
       .input('id', sql.BigInt, id)
+      .input('lodgeId', sql.BigInt, lodgeId)
       .input('name', sql.NVarChar, name ?? null)
       .input('idProofType', sql.NVarChar, idProofType)
       .input('idProofNumber', sql.NVarChar, idProofNumber)
@@ -93,7 +94,7 @@ async function upsertCustomerRow(
               WHEN @isRoom = 0 AND @visitDate IS NOT NULL AND (last_event_date IS NULL OR @visitDate > last_event_date)
               THEN @visitDate ELSE last_event_date END,
             updated_at = SYSDATETIMEOFFSET()
-        WHERE id = @id
+        WHERE id = @id AND lodge_id = @lodgeId
       `);
     return id;
   }
@@ -164,8 +165,9 @@ async function upsertCustomerForEventSafely(lodgeId, eventBookingId, { phone, na
       await pool
         .request()
         .input('id', sql.BigInt, eventBookingId)
+        .input('lodgeId', sql.BigInt, lodgeId)
         .input('customerId', sql.BigInt, customerId)
-        .query('UPDATE dbo.event_bookings SET customer_id = @customerId WHERE id = @id');
+        .query('UPDATE dbo.event_bookings SET customer_id = @customerId WHERE id = @id AND lodge_id = @lodgeId');
     }
   } catch (err) {
     logger.warn({ eventBookingId, lodgeId, err }, 'Could not update customer record for confirmed event');
@@ -227,14 +229,15 @@ async function listCustomers(lodgeId, { search = '', tag = '', optInOnly = false
     .input('search', sql.NVarChar, `%${term.replace(/[%_[]/g, (c) => `[${c}]`)}%`)
     .input('tag', sql.NVarChar, `%${String(tag ?? '').trim()}%`);
 
-  const conditions = ['lodge_id = @lodgeId'];
-  if (term) conditions.push('(name LIKE @search ESCAPE \'\\\' OR phone LIKE @search ESCAPE \'\\\' OR email LIKE @search ESCAPE \'\\\')');
-  if (tag) conditions.push('tags LIKE @tag');
-  if (optInOnly) conditions.push('marketing_opt_in = 1');
+  const extraConditions = [];
+  if (term) extraConditions.push('(name LIKE @search ESCAPE \'\\\' OR phone LIKE @search ESCAPE \'\\\' OR email LIKE @search ESCAPE \'\\\')');
+  if (tag) extraConditions.push('tags LIKE @tag');
+  if (optInOnly) extraConditions.push('marketing_opt_in = 1');
+  const extraWhere = extraConditions.length ? ` AND ${extraConditions.join(' AND ')}` : '';
 
   const result = await request.query(`
     SELECT * FROM dbo.customers
-    WHERE ${conditions.join(' AND ')}
+    WHERE lodge_id = @lodgeId${extraWhere}
     ORDER BY COALESCE(last_stay_date, last_event_date) DESC, name ASC
   `);
 
@@ -268,22 +271,24 @@ async function getCustomer(lodgeId, id) {
   const stays = await pool
     .request()
     .input('customerId', sql.BigInt, id)
+    .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
       SELECT b.id, b.check_in_date, b.check_out_date, b.status, b.total_price, r.room_number
       FROM dbo.bookings b
       LEFT JOIN dbo.rooms r ON r.id = b.room_id
-      WHERE b.customer_id = @customerId
+      WHERE b.customer_id = @customerId AND b.lodge_id = @lodgeId
       ORDER BY b.check_in_date DESC
     `);
 
   const events = await pool
     .request()
     .input('customerId', sql.BigInt, id)
+    .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
       SELECT eb.id, eb.title, eb.event_type, eb.start_at, eb.end_at, eb.status, eb.total_amount, v.name AS venueName
       FROM dbo.event_bookings eb
       LEFT JOIN dbo.event_venues v ON v.id = eb.venue_id
-      WHERE eb.customer_id = @customerId
+      WHERE eb.customer_id = @customerId AND eb.lodge_id = @lodgeId
       ORDER BY eb.start_at DESC
     `);
 
@@ -360,6 +365,7 @@ async function updateCustomer(lodgeId, id, input) {
   await pool
     .request()
     .input('id', sql.BigInt, id)
+    .input('lodgeId', sql.BigInt, lodgeId)
     .input('name', sql.NVarChar, input.name ?? null)
     .input('email', sql.NVarChar, input.email ?? null)
     .input('dateOfBirth', sql.Date, input.dateOfBirth || null)
@@ -381,7 +387,7 @@ async function updateCustomer(lodgeId, id, input) {
           id_proof_number = COALESCE(@idProofNumber, id_proof_number),
           id_proof_document = COALESCE(@idProofDocument, id_proof_document),
           updated_at = SYSDATETIMEOFFSET()
-      WHERE id = @id
+      WHERE id = @id AND lodge_id = @lodgeId
     `);
 
   return getCustomer(lodgeId, id);
