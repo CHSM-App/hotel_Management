@@ -550,6 +550,8 @@ class _TapeChartState extends ConsumerState<TapeChart>
                             checkIn: day,
                           ),
                           onTapDraft: (d) => _openDraft(context, d.id),
+                          onDormPartial: (room, day) =>
+                              _showDormPartialPicker(context, room, day),
                           hitIds: hitIds,
                           activeHitId: activeHitId,
                           roomKeyFor: _roomKeyFor,
@@ -711,6 +713,44 @@ class _TapeChartState extends ConsumerState<TapeChart>
     _hSync.jumpAllTo(offset);
   }
 
+  /// A tap (or long press) on a partial dormitory night — every bed for
+  /// that room and night, in one place, so the desk can either finish
+  /// selling the free ones or drop straight into a booking already on one
+  /// of the taken ones. Mirrors the web tape chart's own click-to-open bed
+  /// picker exactly.
+  Future<void> _showDormPartialPicker(
+    BuildContext context,
+    ChartRoom room,
+    DateTime day,
+  ) async {
+    final occupancy = room.dormitoryOccupancyOn(day);
+    final bedCount = room.room.dormitoryBedCount;
+    if (occupancy == null || bedCount <= 0) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: AppTheme.bg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rLarge)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s24),
+        child: _DormPartialPicker(
+          room: room,
+          day: day,
+          occupancy: occupancy,
+          bedCount: bedCount,
+          onPickTaken: (booking) {
+            Navigator.of(dialogContext).pop();
+            _openBookingDetail(context, booking);
+          },
+          onPickFree: () {
+            Navigator.of(dialogContext).pop();
+            _takeBooking(context, roomId: room.room.id, checkIn: day);
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _takeBooking(
     BuildContext context, {
     int? roomId,
@@ -742,6 +782,153 @@ class _TapeChartState extends ConsumerState<TapeChart>
     // backed out of — the chart's own drafts and bookings may have moved,
     // so it is always worth a refetch rather than only on a reported save.
     if (mounted) ref.read(bookingViewModelProvider.notifier).loadChart();
+  }
+}
+
+// ── A partial dormitory night's bed picker ──────────────────────────────────
+
+/// Every bed on a dormitory room for one night — who holds it, or that it's
+/// still free. A [Scrollbar] with its thumb always on is what the web
+/// picker gets for free from the browser's own scroll container; a plain
+/// [SingleChildScrollView] here gave no hint at all that the list ran past
+/// what fit on screen, which read as the dialog simply stopping short of
+/// its last few beds rather than as something to scroll.
+class _DormPartialPicker extends StatefulWidget {
+  final ChartRoom room;
+  final DateTime day;
+  final DormitoryOccupancy occupancy;
+  final int bedCount;
+  final ValueChanged<TapeChartBooking> onPickTaken;
+  final VoidCallback onPickFree;
+
+  const _DormPartialPicker({
+    required this.room,
+    required this.day,
+    required this.occupancy,
+    required this.bedCount,
+    required this.onPickTaken,
+    required this.onPickFree,
+  });
+
+  @override
+  State<_DormPartialPicker> createState() => _DormPartialPickerState();
+}
+
+class _DormPartialPickerState extends State<_DormPartialPicker> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: 420,
+        // A dormitory can run past a dozen beds, which does not fit one
+        // screen's height — the list below scrolls under this cap instead
+        // of the dialog overflowing past the bottom of the screen the way
+        // an unbounded Column would.
+        maxHeight: MediaQuery.of(context).size.height * 0.72,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppTheme.s16,
+          AppTheme.s16,
+          AppTheme.s8,
+          AppTheme.s16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(right: AppTheme.s8),
+              child: Text(
+                'Room ${widget.room.room.roomNumber} · Dormitory',
+                style: const TextStyle(color: AppTheme.heading, fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Padding(
+              padding: const EdgeInsets.only(right: AppTheme.s8),
+              child: Text(formatDate(widget.day), style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+            ),
+            const SizedBox(height: AppTheme.s12),
+            Flexible(
+              child: Scrollbar(
+                controller: _scrollController,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  // Room for the scrollbar itself so it doesn't sit printed
+                  // over the last few millimetres of every row's own text.
+                  padding: const EdgeInsets.only(right: AppTheme.s8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var n = 1; n <= widget.bedCount; n++) ...[
+                        Builder(
+                          builder: (_) {
+                            final label = 'Bed $n';
+                            TapeChartBooking? taken;
+                            for (final b in widget.occupancy.stays) {
+                              if (b.bedLabels.contains(label) || b.bedLabel == label) {
+                                taken = b;
+                                break;
+                              }
+                            }
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                              onTap: () {
+                                if (taken != null) {
+                                  widget.onPickTaken(taken);
+                                } else {
+                                  widget.onPickFree();
+                                }
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: AppTheme.s8),
+                                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.card,
+                                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                                  border: Border.all(color: AppTheme.border),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Text(label, style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600)),
+                                    const SizedBox(width: AppTheme.s12),
+                                    Expanded(
+                                      child: Text(
+                                        taken?.guestName ?? 'Free — tap to book',
+                                        textAlign: TextAlign.right,
+                                        style: TextStyle(
+                                          color: taken != null ? AppTheme.text : AppTheme.vacant,
+                                          fontSize: 12.5,
+                                          fontWeight: taken != null ? FontWeight.w500 : FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1693,6 +1880,7 @@ class _CategoryBand extends StatelessWidget {
   onLongPressStay;
   final void Function(int roomId, DateTime day) onTapVacant;
   final ValueChanged<TapeChartDraft> onTapDraft;
+  final void Function(ChartRoom room, DateTime day) onDormPartial;
   final Set<int> hitIds;
   final int? activeHitId;
   final GlobalKey Function(int roomId) roomKeyFor;
@@ -1714,6 +1902,7 @@ class _CategoryBand extends StatelessWidget {
     required this.onLongPressStay,
     required this.onTapVacant,
     required this.onTapDraft,
+    required this.onDormPartial,
     required this.roomKeyFor,
     required this.flashBookingId,
     required this.flashRoomId,
@@ -1785,6 +1974,7 @@ class _CategoryBand extends StatelessWidget {
               onLongPressStay: onLongPressStay,
               onTapVacant: onTapVacant,
               onTapDraft: onTapDraft,
+              onDormPartial: onDormPartial,
               hitIds: hitIds,
               activeHitId: activeHitId,
               isFlashRoom: flashRoomId != null && room.room.id == flashRoomId,
@@ -1855,6 +2045,7 @@ class _RoomRow extends StatelessWidget {
   onLongPressStay;
   final void Function(int roomId, DateTime day) onTapVacant;
   final ValueChanged<TapeChartDraft> onTapDraft;
+  final void Function(ChartRoom room, DateTime day) onDormPartial;
   final Set<int> hitIds;
   final int? activeHitId;
 
@@ -1882,6 +2073,7 @@ class _RoomRow extends StatelessWidget {
     required this.onLongPressStay,
     required this.onTapVacant,
     required this.onTapDraft,
+    required this.onDormPartial,
     required this.hitIds,
     required this.activeHitId,
     required this.isFlashRoom,
@@ -2014,6 +2206,8 @@ class _RoomRow extends StatelessWidget {
                           onLongPressStay: (b) => onLongPressStay(b, room),
                           onTapVacant: () => onTapVacant(room.room.id, d),
                           onTapDraft: onTapDraft,
+                          onDormPartial: () =>
+                              onDormPartial(room, d),
                         ),
                     ],
                   ),
@@ -2066,6 +2260,12 @@ class _Tile extends StatefulWidget {
   final VoidCallback onTapVacant;
   final ValueChanged<TapeChartDraft> onTapDraft;
 
+  /// A tap (or long press) on a partial dormitory night — the same
+  /// click-to-open bed picker the web tape chart shows, listing every bed
+  /// on the room so the desk can jump straight to whichever one is already
+  /// taken instead of only ever starting a fresh booking against it.
+  final VoidCallback onDormPartial;
+
   /// The one tile a quick-peek pick just sent the chart to — filled a flat
   /// amber for a few seconds, same moment the web tape chart's own
   /// `.tape-tile--flash` marks, then fades back to its usual fill.
@@ -2096,6 +2296,7 @@ class _Tile extends StatefulWidget {
     required this.onLongPressStay,
     required this.onTapVacant,
     required this.onTapDraft,
+    required this.onDormPartial,
   });
 
   @override
@@ -2129,20 +2330,24 @@ class _TileState extends State<_Tile> {
     super.dispose();
   }
 
-  // A partial dormitory night opens its own bed chooser on a plain tap
-  // already (several bookings share one tile there); every other tile —
-  // booked, drafted or vacant — has something worth a long-press peek at,
-  // the touch equivalent of the web chart's own hover tooltip.
-  bool get _longPressable => !(widget.dormitoryOccupancy?.isPartial ?? false);
-
   void _onPointerDown(PointerDownEvent event) {
-    if (!_longPressable) return;
     _downPosition = event.position;
     _longPressFired = false;
     _longPressTimer?.cancel();
     _longPressTimer = Timer(_longPressDuration, () {
       _longPressTimer = null;
       _longPressFired = true;
+      // Checked before widget.stay: stayOn() always names one "winner"
+      // booking even on a partial dormitory night (several share the same
+      // tile), so a partial night must route to the bed picker first — not
+      // the quick-peek sheet for whichever single stay happened to win.
+      if (widget.dormitoryOccupancy?.isPartial ?? false) {
+        // Mirrors the web tape chart's own click on a partial dormitory
+        // tile — a bed picker, not the plain vacant-night info card below,
+        // since several different bookings can share this one night.
+        widget.onDormPartial();
+        return;
+      }
       final s = widget.stay;
       if (s != null) {
         widget.onLongPressStay(s);
@@ -2322,7 +2527,11 @@ class _TileState extends State<_Tile> {
             return;
           }
           if (isPartial) {
-            widget.onTapVacant();
+            // Mirrors the web tape chart's own click on a partial dormitory
+            // tile: several different bookings can share this one night, so
+            // a tap opens the bed picker rather than guessing which bed —
+            // free or already taken — the desk meant.
+            widget.onDormPartial();
           } else if (s != null) {
             widget.onTapStay(s);
           } else if (d != null) {

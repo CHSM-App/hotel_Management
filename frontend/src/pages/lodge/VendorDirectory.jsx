@@ -71,6 +71,7 @@ export default function VendorDirectory({
   onDelete,
 }) {
   const [view, setView] = useState('cards');
+  const [query, setQuery] = useState('');
   const [sort, setSort] = useState({ key: null, dir: 'asc' });
   // The vendor a delete has been asked for, held until the dialog is answered.
   const [toDelete, setToDelete] = useState(null);
@@ -97,11 +98,20 @@ export default function VendorDirectory({
   };
 
   const list = useMemo(() => vendors || [], [vendors]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((vendor) =>
+      [vendor.name, vendor.specialty, vendor.contactPerson, vendor.email, ...phonesOf(vendor)]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(q))
+    );
+  }, [list, query]);
   const sorted = useMemo(() => {
     const accessor = SORT_ACCESSORS[sort.key];
-    if (!accessor) return list;
+    if (!accessor) return filtered;
     const dir = sort.dir === 'desc' ? -1 : 1;
-    return [...list].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const av = accessor(a);
       const bv = accessor(b);
       // Blanks go last whichever way the column runs — a vendor with no email
@@ -109,13 +119,21 @@ export default function VendorDirectory({
       if (!av || !bv) return av ? -1 : bv ? 1 : 0;
       return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true }) * dir;
     });
-  }, [list, sort]);
+  }, [filtered, sort]);
 
   return (
     <div>
       <div className="inv-bar">
-        <div className="inv-bar__row">
-          <div />
+        <div className="inv-bar__row inv-bar__row--stats">
+          <div className="inv-search">
+            <span className="inv-search__icon" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search vendors, specialty, phone…"
+              aria-label="Search vendors"
+            />
+          </div>
           <div className="inv-bar__actions">
             <div className="toggle-group asset-view-toggle" role="group" aria-label="Vendor list view">
               <button
@@ -158,9 +176,11 @@ export default function VendorDirectory({
 
       {list.length === 0 ? (
         <p className="inv-panel__hint">{emptyHint}</p>
+      ) : sorted.length === 0 ? (
+        <p className="inv-panel__hint">No vendors match “{query}”.</p>
       ) : view === 'table' ? (
         <div className="asset-table-wrap">
-          <table className="asset-table">
+          <table className="asset-table finance-table">
             <thead>
               <tr>
                 {SORT_COLUMNS.map(([key, label]) => (

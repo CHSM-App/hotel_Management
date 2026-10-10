@@ -231,10 +231,10 @@ const LEGEND_LINKS = [
   { status: 'BOOKED', swatch: 'booked' },
   { status: 'CHECKED_IN', swatch: 'checked-in' },
   { status: 'CHECKED_OUT', swatch: 'checked-out' },
-  // Border-only on the chart, because a cancelled stay holds no night to
-  // fill — but it is still a status the register can be cut by, so its chip
-  // links there like the others.
-  { status: 'CANCELLED', swatch: 'cancelled' },
+  // No CANCELLED chip here: a cancelled stay holds no night to fill, and the
+  // chart no longer marks one on the tile it was cancelled from (that code
+  // path is disabled below), so a chip for it would link to a register cut
+  // with nothing on the chart to show it came from.
 ].map((item) => ({ ...item, label: STAY_STATUS_CHIP_LABEL[item.status] }));
 const BED_SIZE_LABEL = { SINGLE: 'Single', DOUBLE: 'Double', QUEEN: 'Queen', KING: 'King' };
 

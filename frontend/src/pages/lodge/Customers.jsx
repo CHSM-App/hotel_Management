@@ -5,6 +5,7 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import Req from '../../components/RequiredMark';
 import RowMenu from './RowMenu';
+import SectionTabs from './SectionTabs';
 import './forms.css';
 import './InventoryPanel.css';
 import './AnalyticsCharts.css';
@@ -56,6 +57,7 @@ const emptyForm = {
   name: '',
   phone: '',
   email: '',
+  dateOfBirth: '',
   notes: '',
   tags: '',
   marketingOptIn: false,
@@ -93,6 +95,8 @@ function rowStatusLabel(h) {
 export default function Customers() {
   const session = getSession();
 
+  const [activeTab, setActiveTab] = useState('customers');
+
   const [customers, setCustomers] = useState(() => readCache('/customers') || []);
   const [stats, setStats] = useState(() => readCache('/customers:stats') || { total: 0, optedIn: 0 });
   const [loading, setLoading] = useState(customers.length === 0);
@@ -125,6 +129,19 @@ export default function Customers() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // All-time, not date-ranged like the Reports tab's own feedback section —
+  // fetched once per visit to this tab rather than on every render, same
+  // reasoning as the Expenses/Assets history fetches elsewhere.
+  const [feedback, setFeedback] = useState(null);
+  const [feedbackError, setFeedbackError] = useState('');
+  useEffect(() => {
+    if (activeTab !== 'feedback' || feedback) return;
+    apiGet('/customers/feedback', { token: session?.token })
+      .then((data) => setFeedback(data))
+      .catch((err) => setFeedbackError(err instanceof ApiError ? err.message : 'Could not load feedback.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -167,6 +184,7 @@ export default function Customers() {
       name: row.name || '',
       phone: row.phone || '',
       email: row.email || '',
+      dateOfBirth: row.dateOfBirth ? String(row.dateOfBirth).slice(0, 10) : '',
       notes: row.notes || '',
       tags: row.tags || '',
       marketingOptIn: Boolean(row.marketingOptIn),
@@ -183,6 +201,7 @@ export default function Customers() {
         name: customer.name || '',
         phone: customer.phone || '',
         email: customer.email || '',
+        dateOfBirth: customer.dateOfBirth ? String(customer.dateOfBirth).slice(0, 10) : '',
         notes: customer.notes || '',
         tags: customer.tags || '',
         marketingOptIn: Boolean(customer.marketingOptIn),
@@ -231,6 +250,7 @@ export default function Customers() {
           {
             name: form.name,
             email: form.email,
+            dateOfBirth: form.dateOfBirth,
             notes: form.notes,
             tags: form.tags,
             marketingOptIn: form.marketingOptIn,
@@ -244,7 +264,15 @@ export default function Customers() {
       } else {
         await apiPost(
           '/customers',
-          { name: form.name, phone: typedMobile(form.phone), email: form.email, notes: form.notes, tags: form.tags, marketingOptIn: form.marketingOptIn },
+          {
+            name: form.name,
+            phone: typedMobile(form.phone),
+            email: form.email,
+            dateOfBirth: form.dateOfBirth,
+            notes: form.notes,
+            tags: form.tags,
+            marketingOptIn: form.marketingOptIn,
+          },
           { token: session?.token }
         );
         setShowForm(false);
@@ -261,6 +289,72 @@ export default function Customers() {
     <div>
       {error && <div className="form-banner form-banner--error">{error}</div>}
 
+      <div style={{ marginBottom: 16 }}>
+        <SectionTabs
+          ariaLabel="Customers sections"
+          activeId={activeTab}
+          onChange={setActiveTab}
+          tabs={[
+            { id: 'customers', name: 'Customers' },
+            { id: 'feedback', name: 'Customer Feedbacks', count: feedback?.totals.count },
+          ]}
+        />
+      </div>
+
+      {activeTab === 'feedback' ? (
+        <>
+          {feedbackError && <div className="form-banner form-banner--error">{feedbackError}</div>}
+          {!feedbackError && !feedback && <p className="inv-panel__hint">Loading feedback…</p>}
+          {feedback && (
+            <>
+              <div className="kpi-row" style={{ marginBottom: 16 }}>
+                <div className="kpi-card kpi-card--primary">
+                  <span className="kpi-label">Responses</span>
+                  <span className="kpi-value">{feedback.totals.count}</span>
+                  <span className="kpi-sub">Every submitted response, all-time</span>
+                </div>
+                <div className="kpi-card">
+                  <span className="kpi-label">Average rating</span>
+                  <span className="kpi-value">{feedback.totals.averageRating == null ? '—' : `${feedback.totals.averageRating} / 5`}</span>
+                  <span className="kpi-sub">Across every response on file</span>
+                </div>
+              </div>
+
+              {feedback.responses.length === 0 ? (
+                <p className="inv-panel__hint">
+                  No feedback has been submitted yet. It's asked automatically a few hours after a guest checks out.
+                </p>
+              ) : (
+                <div className="asset-table-wrap">
+                  <table className="asset-table">
+                    <thead>
+                      <tr>
+                        <th>Guest</th>
+                        <th>Checked out</th>
+                        <th>Rating</th>
+                        <th>Comment</th>
+                        <th>Submitted</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {feedback.responses.map((r) => (
+                        <tr key={r.id}>
+                          <td className="asset-table__name">{r.guestName || '—'}</td>
+                          <td className="asset-table__muted">{formatDate(r.checkOutDate)}</td>
+                          <td>{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</td>
+                          <td className={r.comment ? '' : 'asset-table__muted'}>{r.comment || 'No comment'}</td>
+                          <td className="asset-table__muted">{formatDate(r.submittedAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      ) : (
+        <>
       <div className="kpi-row" style={{ marginBottom: 16 }}>
         <div className="kpi-card kpi-card--primary">
           <span className="kpi-label">Customers</span>
@@ -380,6 +474,8 @@ export default function Customers() {
           </table>
         </div>
       )}
+        </>
+      )}
 
       {showForm && (
         <div className="glass-backdrop inv-panel__backdrop" onClick={() => setShowForm(false)}>
@@ -462,6 +558,10 @@ export default function Customers() {
                       <div>
                         <dt>Email</dt>
                         <dd>{form.email || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Date of birth</dt>
+                        <dd>{form.dateOfBirth ? formatDate(form.dateOfBirth) : '—'}</dd>
                       </div>
                       <div>
                         <dt>Last visit</dt>
@@ -597,6 +697,18 @@ export default function Customers() {
                         }}
                       />
                       {fieldErrors.email && <span className="field__error">{fieldErrors.email}</span>}
+                    </div>
+
+                    <div className="field">
+                      <label htmlFor="custDob">Date of birth</label>
+                      <input
+                        id="custDob"
+                        type="date"
+                        value={form.dateOfBirth}
+                        max={new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => setForm((f) => ({ ...f, dateOfBirth: e.target.value }))}
+                      />
+                      <span className="field__hint">So we can send a birthday wish — leave blank if you'd rather not.</span>
                     </div>
 
                     <div className="field">

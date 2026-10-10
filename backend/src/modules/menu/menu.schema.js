@@ -105,4 +105,5 @@ module.exports = {
   statusSchema,
   foodSettingsSchema,
   menuImportSchema,
+  menuImportRowSchema,
 };

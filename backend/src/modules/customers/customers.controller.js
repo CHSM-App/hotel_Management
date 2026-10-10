@@ -24,6 +24,14 @@ async function listCustomersHandler(req, res, next) {
   }
 }
 
+async function listFeedbackHandler(req, res, next) {
+  try {
+    res.json(await customersService.listFeedback(req.user.lodgeId));
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getCustomerHandler(req, res, next) {
   try {
     const customer = await customersService.getCustomer(req.user.lodgeId, Number(req.params.id));
@@ -57,6 +65,7 @@ async function updateCustomerHandler(req, res, next) {
 
 module.exports = {
   listCustomersHandler,
+  listFeedbackHandler,
   getCustomerHandler,
   createCustomerHandler,
   updateCustomerHandler,

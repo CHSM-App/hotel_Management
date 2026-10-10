@@ -184,7 +184,9 @@
     width: 100%;
   }
 
-  .asset-wo-toolbar__actions button {
+  /* Direct child only — the view-toggle's own icon buttons sit a level
+     deeper (.asset-view-toggle > button) and keep their fixed 34px size. */
+  .asset-wo-toolbar__actions > button {
     width: 100%;
   }
 }

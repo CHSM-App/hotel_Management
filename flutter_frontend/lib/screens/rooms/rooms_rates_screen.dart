@@ -7,6 +7,7 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'checkout_policy_panel.dart';
 import 'price_chart_panel.dart';
+import 'price_simulator_panel.dart';
 import 'rooms_panel.dart';
 
 /// Rooms & rates: the same page the web dashboard puts under that name, with
@@ -74,6 +75,7 @@ class _RoomsRatesScreenState extends ConsumerState<RoomsRatesScreen> {
     return switch (_tab) {
       'rooms' => const RoomsPanel(),
       'chart' => const PriceChartPanel(),
+      'simulator' => const PriceSimulatorPanel(),
       _ => const CheckoutPolicyPanel(),
     };
   }
@@ -91,6 +93,7 @@ class _SubTabs extends StatelessWidget {
   static const _tabs = {
     'rooms': 'Rooms',
     'chart': 'Price chart',
+    'simulator': 'Simulator',
     'checkout': 'Checkout policy',
   };
 

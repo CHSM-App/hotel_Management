@@ -8,6 +8,7 @@ const {
   getFoodOrdersReportHandler,
   getServicesReportHandler,
   getLaundryReportHandler,
+  getFeedbackReportHandler,
   getAnalyticsOverviewHandler,
   getRoomsAnalyticsHandler,
   getProfitLossHandler,
@@ -32,6 +33,7 @@ router.get('/events', authenticate, owner, getEventsReportHandler);
 router.get('/food-orders', authenticate, owner, getFoodOrdersReportHandler);
 router.get('/services', authenticate, requireCapability('hasOtherServices'), owner, getServicesReportHandler);
 router.get('/laundry', authenticate, requireCapability('hasLaundry'), owner, getLaundryReportHandler);
+router.get('/feedback', authenticate, owner, getFeedbackReportHandler);
 router.get('/analytics-overview', authenticate, owner, getAnalyticsOverviewHandler);
 router.get('/rooms-analytics', authenticate, owner, getRoomsAnalyticsHandler);
 router.get('/profit-loss', ...profitLossGate, getProfitLossHandler);

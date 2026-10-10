@@ -9,6 +9,7 @@ function mapCustomer(row) {
     phone: row.phone,
     name: row.name,
     email: row.email,
+    dateOfBirth: row.date_of_birth,
     idProofType: row.id_proof_type,
     idProofNumber: row.id_proof_number,
     idProofDocument: row.id_proof_document,
@@ -329,13 +330,14 @@ async function createCustomer(lodgeId, input) {
     .input('phone', sql.NVarChar, phone)
     .input('name', sql.NVarChar, input.name)
     .input('email', sql.NVarChar, input.email ?? null)
+    .input('dateOfBirth', sql.Date, input.dateOfBirth || null)
     .input('notes', sql.NVarChar, input.notes ?? null)
     .input('tags', sql.NVarChar, input.tags ?? null)
     .input('marketingOptIn', sql.Bit, input.marketingOptIn ? 1 : 0)
     .query(`
-      INSERT INTO dbo.customers (lodge_id, phone, name, email, notes, tags, marketing_opt_in)
+      INSERT INTO dbo.customers (lodge_id, phone, name, email, date_of_birth, notes, tags, marketing_opt_in)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @phone, @name, @email, @notes, @tags, @marketingOptIn)
+      VALUES (@lodgeId, @phone, @name, @email, @dateOfBirth, @notes, @tags, @marketingOptIn)
     `);
 
   return getCustomer(lodgeId, inserted.recordset[0].id);
@@ -360,6 +362,7 @@ async function updateCustomer(lodgeId, id, input) {
     .input('id', sql.BigInt, id)
     .input('name', sql.NVarChar, input.name ?? null)
     .input('email', sql.NVarChar, input.email ?? null)
+    .input('dateOfBirth', sql.Date, input.dateOfBirth || null)
     .input('notes', sql.NVarChar, input.notes ?? null)
     .input('tags', sql.NVarChar, input.tags ?? null)
     .input('marketingOptIn', sql.Bit, input.marketingOptIn == null ? null : input.marketingOptIn ? 1 : 0)
@@ -370,6 +373,7 @@ async function updateCustomer(lodgeId, id, input) {
       UPDATE dbo.customers
       SET name = COALESCE(@name, name),
           email = @email,
+          date_of_birth = @dateOfBirth,
           notes = @notes,
           tags = @tags,
           marketing_opt_in = COALESCE(@marketingOptIn, marketing_opt_in),
@@ -383,6 +387,41 @@ async function updateCustomer(lodgeId, id, input) {
   return getCustomer(lodgeId, id);
 }
 
+// Every submitted "how was your stay" response, all-time — not date-ranged
+// like reports.service.js's getFeedbackReport, which this otherwise mirrors.
+// Lives here rather than being reused from Reports because the Customers tab
+// is gated on customers.manage, not reports.view, and a desk role with one
+// but not the other should still see this.
+async function listFeedback(lodgeId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT fr.id, fr.rating, fr.comment, fr.submitted_at, b.guest_name, b.check_out_date
+      FROM dbo.feedback_requests fr
+      JOIN dbo.bookings b ON b.id = fr.booking_id
+      WHERE fr.lodge_id = @lodgeId AND fr.submitted_at IS NOT NULL
+      ORDER BY fr.submitted_at DESC
+    `);
+
+  const responses = result.recordset.map((row) => ({
+    id: row.id,
+    guestName: row.guest_name,
+    checkOutDate: row.check_out_date,
+    rating: row.rating,
+    comment: row.comment || '',
+    submittedAt: row.submitted_at,
+  }));
+
+  const averageRating =
+    responses.length > 0
+      ? Math.round((responses.reduce((sum, r) => sum + r.rating, 0) / responses.length) * 100) / 100
+      : null;
+
+  return { totals: { count: responses.length, averageRating }, responses };
+}
+
 module.exports = {
   upsertCustomerForRoomStay,
   upsertCustomerForEventSafely,
@@ -392,4 +431,5 @@ module.exports = {
   getCustomer,
   createCustomer,
   updateCustomer,
+  listFeedback,
 };

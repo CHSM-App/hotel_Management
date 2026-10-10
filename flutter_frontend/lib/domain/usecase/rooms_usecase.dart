@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../models/category.dart';
 import '../models/checkout_policy.dart';
+import '../models/quote.dart';
 import '../models/room.dart';
 import '../models/season.dart';
 import '../models/switchable_charge_listing.dart';
@@ -73,6 +74,13 @@ class RoomsUsecase {
     adjustmentPercent: adjustmentPercent,
   );
   Future<void> deleteSeason(int id) => repository.deleteSeason(id);
+
+  Future<PriceSimulation> simulatePrice({
+    required int roomId,
+    required String date,
+    required String toDate,
+    String? chargeIds,
+  }) => repository.simulatePrice(roomId: roomId, date: date, toDate: toDate, chargeIds: chargeIds);
 
   Future<CheckoutPolicy> checkoutPolicy() => repository.checkoutPolicy();
   Future<CheckoutPolicy> updateCheckoutPolicy({

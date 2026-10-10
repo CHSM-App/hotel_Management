@@ -16,6 +16,7 @@ class LodgeService {
   final num gstRatePercent;
   final bool isActive;
   final bool isLaundry;
+  final String? image;
 
   const LodgeService({
     required this.id,
@@ -25,6 +26,7 @@ class LodgeService {
     this.gstRatePercent = 18,
     this.isActive = true,
     this.isLaundry = false,
+    this.image,
   });
 
   factory LodgeService.fromJson(Map<String, dynamic> json) => LodgeService(
@@ -35,6 +37,7 @@ class LodgeService {
     gstRatePercent: asNum(json['gstRatePercent'], fallback: 18),
     isActive: asBool(json['isActive']),
     isLaundry: asBool(json['isLaundry']),
+    image: asStringOrNull(json['image']),
   );
 }
 

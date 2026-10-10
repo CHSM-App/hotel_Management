@@ -9,9 +9,9 @@ class LodgeServicesUsecase {
 
   Future<List<LodgeService>> services({bool includeInactive = false}) => repository.services(includeInactive: includeInactive);
 
-  Future<LodgeService> createService(Map<String, dynamic> body) => repository.createService(body);
+  Future<LodgeService> createService(dynamic body) => repository.createService(body);
 
-  Future<LodgeService> updateService(int id, Map<String, dynamic> body) => repository.updateService(id, body);
+  Future<LodgeService> updateService(int id, dynamic body) => repository.updateService(id, body);
 
   Future<List<ServiceUsage>> usages({String status = 'all'}) => repository.usages(status: status);
 

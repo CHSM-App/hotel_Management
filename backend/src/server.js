@@ -26,6 +26,10 @@ try {
 const app = require('./app');
 const { getPool, closePool } = require('./config/connection');
 const { drift } = require('./config/migrations');
+const cron = require('node-cron');
+const { sendDueStayReminders } = require('./modules/bookings/stayReminders.service');
+const { sendDueFeedbackRequests } = require('./modules/bookings/feedbackRequests.service');
+const { sendDueBirthdayWishes } = require('./modules/customers/birthdayWishes.service');
 
 const port = process.env.PORT || 5000;
 
@@ -80,6 +84,56 @@ server.on('error', (err) => {
     logger.debug({ err }, 'Schema drift check skipped — database unreachable');
   }
 })();
+
+// ---------------------------------------------------------------------------
+// Scheduled jobs
+// ---------------------------------------------------------------------------
+
+// The only timers in this backend — everything else either rides along with
+// a request (see otp.service.js's sweep-on-write) or is a plain unscheduled
+// best-effort send triggered by a user action (bookingConfirmation.js,
+// cancellationNotice.js, checkinWelcome.js). A "the stay is coming up"
+// reminder and a "how was your stay" feedback ask both have no such request
+// to ride along with; each has to notice something about a date on its own,
+// which is what these two are for.
+//
+// 9 AM IST, fixed: every lodge is in India, and a reminder landing at 9 AM
+// local reads as the desk thinking of the guest, not a 3 AM notification
+// buzzing their phone because the server happened to be on UTC.
+cron.schedule(
+  '0 9 * * *',
+  () => {
+    sendDueStayReminders().catch((err) => logger.error({ err }, 'Stay reminder sweep failed'));
+  },
+  { timezone: 'Asia/Kolkata' }
+);
+
+// Every 2 hours, not once a day: the feedback ask is meant to land a few
+// hours after checkout (see feedbackRequests.service.js's DELAY_HOURS), and
+// a guest who checks out at 10 AM shouldn't wait until the next morning's
+// single daily tick to hear from the property. Its own schedule, not folded
+// into the one above, because the two run for genuinely different reasons
+// on genuinely different cadences.
+cron.schedule(
+  '0 */2 * * *',
+  () => {
+    sendDueFeedbackRequests().catch((err) => logger.error({ err }, 'Feedback request sweep failed'));
+  },
+  { timezone: 'Asia/Kolkata' }
+);
+
+// Once a day, same 9 AM IST moment as the stay reminder above — a calendar
+// check (is today someone's birthday) has no reason to run more often than
+// once a day, same reasoning as the reminder sweep's own schedule. Its own
+// cron.schedule call, not folded into that one, so a failure in either sweep
+// never stops the other from running.
+cron.schedule(
+  '0 9 * * *',
+  () => {
+    sendDueBirthdayWishes().catch((err) => logger.error({ err }, 'Birthday wishes sweep failed'));
+  },
+  { timezone: 'Asia/Kolkata' }
+);
 
 // ---------------------------------------------------------------------------
 // Shutdown

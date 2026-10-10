@@ -9,6 +9,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/billing_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../housekeeping/housekeeping_parts.dart';
 import '../theme.dart';
 import 'advance_receipt_screen.dart';
 import 'invoice_preview_screen.dart';
@@ -44,12 +45,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       : _BillingTab.toBill;
 
   final _search = TextEditingController();
-
-  // Which rows of the Services tab are ticked — mirrors `serviceSel` in
-  // Billing.jsx. Local to the screen, not the view model: it is a transient
-  // selection over whatever the queue currently holds, not billing state
-  // worth keeping once the screen is left.
-  final Set<int> _serviceSel = {};
 
   // 'table' is the landing view — mirrors the web's own `useState('sheet')`:
   // lists open as a spreadsheet, the cards one toggle away. 'cards' is the
@@ -147,13 +142,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     }
 
     // Selected on the Services tab right now, if that's the tab open — used
-    // below for the sticky action bar, which needs the count and total
-    // regardless of how far down the (possibly long) list the desk has
-    // scrolled.
-    final selectedServices = tab == _BillingTab.services
-        ? _selectedServiceUsages(state)
-        : const <ServiceUsage>[];
-
     // The tab strip stays put above the list rather than scrolling away with
     // it — same fixed Column/Expanded split FoodBillingScreen uses for its
     // own Kitchen queue/History/Numbering strip (and this screen's own
@@ -219,18 +207,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ),
           ),
         ),
-        // Pinned below the list rather than scrolling with it — ticking rows
-        // on a long Services queue used to leave "Add to room bill"/"Bill
-        // selected" wherever the list happened to end, often off screen
-        // entirely. One row, always in reach, for as long as anything stays
-        // ticked.
-        if (selectedServices.isNotEmpty)
-          _ServiceSelectionBar(
-            count: selectedServices.length,
-            total: selectedServices.fold<num>(0, (sum, u) => sum + u.lineTotal),
-            onAddToRoom: () => _addServicesToRoom(selectedServices),
-            onBillSelected: () => _billSelectedServices(selectedServices),
-          ),
       ],
     );
   }
@@ -343,19 +319,13 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           ),
         ];
       }
-      // Drop ticks on rows that have since been billed elsewhere, same as
-      // the web screen's own filter after a reload.
-      _serviceSel.retainAll(usages.map((u) => u.id));
-      void toggle(int id) => setState(() {
-        if (!_serviceSel.add(id)) _serviceSel.remove(id);
-      });
 
       if (_view == 'table') {
         return [
           _ServiceQueueTable(
             usages: usages,
-            selected: _serviceSel,
-            onToggle: toggle,
+            onAddToRoom: (u) => _addServicesToRoom([u]),
+            onBill: (u) => _billSelectedServices([u]),
           ),
         ];
       }
@@ -365,21 +335,13 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
             child: _ServiceUsageRow(
               usage: u,
-              selected: _serviceSel.contains(u.id),
-              onToggle: () => toggle(u.id),
+              onAddToRoom: () => _addServicesToRoom([u]),
+              onBill: () => _billSelectedServices([u]),
             ),
           ),
       ];
     },
   );
-
-  /// What is ticked on the Services tab right now — read off the queue
-  /// itself so a usage billed from elsewhere (another device, say) can't
-  /// stay selected past a reload.
-  List<ServiceUsage> _selectedServiceUsages(BillingState state) =>
-      (state.serviceQueue.valueOrNull ?? const <ServiceUsage>[])
-          .where((u) => _serviceSel.contains(u.id))
-          .toList();
 
   /// "Add to room bill": a use already tied to a stay goes straight on it;
   /// otherwise the desk picks one of the guests staying in-house — mirrors
@@ -388,17 +350,15 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final usageIds = usages.map((u) => u.id).toList();
     final bookingIds = usages.map((u) => u.bookingId).whereType<int>().toSet();
     if (bookingIds.length == 1 && usages.every((u) => u.bookingId == bookingIds.first)) {
-      final ok = await ref
+      await ref
           .read(billingViewModelProvider.notifier)
           .addServicesToRoom(usageIds, bookingIds.first);
-      if (ok && mounted) setState(() => _serviceSel.clear());
       return;
     }
-    final added = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
       builder: (_) => _AddServicesToRoomDialog(usageIds: usageIds),
     );
-    if (added == true && mounted) setState(() => _serviceSel.clear());
   }
 
   Future<void> _billSelectedServices(List<ServiceUsage> usages) async {
@@ -408,7 +368,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       context,
     ).push(MaterialPageRoute(builder: (_) => const IssueServiceBillScreen()));
     if (!mounted) return;
-    setState(() => _serviceSel.clear());
     await _load();
   }
 
@@ -1041,13 +1000,13 @@ class _EdgeFade extends StatelessWidget {
 /// Billing.jsx's own Services to bill tab.
 class _ServiceUsageRow extends StatelessWidget {
   final ServiceUsage usage;
-  final bool selected;
-  final VoidCallback onToggle;
+  final VoidCallback onAddToRoom;
+  final VoidCallback onBill;
 
   const _ServiceUsageRow({
     required this.usage,
-    required this.selected,
-    required this.onToggle,
+    required this.onAddToRoom,
+    required this.onBill,
   });
 
   @override
@@ -1064,151 +1023,55 @@ class _ServiceUsageRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.card,
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(
-          color: selected ? AppTheme.accent.withValues(alpha: 0.5) : AppTheme.border,
-        ),
+        border: Border.all(color: AppTheme.border),
         boxShadow: AppTheme.extruded,
       ),
       clipBehavior: Clip.antiAlias,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onToggle,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.s12,
-              vertical: AppTheme.s8,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Checkbox(
-                  value: selected,
-                  onChanged: (_) => onToggle(),
-                ),
-                const SizedBox(width: AppTheme.s4),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        usage.serviceName,
-                        style: Theme.of(context).textTheme.titleSmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        detail,
-                        style: Theme.of(context).textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppTheme.s8),
-                Text(
-                  formatPrice(usage.lineTotal),
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The selection summary and its two actions — "Add to room bill" and "Bill
-/// selected" — pinned to the bottom of the screen rather than sitting in the
-/// scrolling list: a long Services queue used to leave these wherever the
-/// list happened to end, often off screen by the time two or three rows were
-/// ticked. One row, fixed, for as long as anything stays selected.
-class _ServiceSelectionBar extends StatelessWidget {
-  final int count;
-  final num total;
-  final VoidCallback onAddToRoom;
-  final VoidCallback onBillSelected;
-
-  const _ServiceSelectionBar({
-    required this.count,
-    required this.total,
-    required this.onAddToRoom,
-    required this.onBillSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(
-          AppTheme.s12,
-          AppTheme.s8,
-          AppTheme.s12,
-          AppTheme.s8,
-        ),
-        decoration: BoxDecoration(
-          color: AppTheme.card,
-          border: const Border(top: BorderSide(color: AppTheme.border)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s12,
+          vertical: AppTheme.s8,
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '$count selected',
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    usage.serviceName,
+                    style: Theme.of(context).textTheme.titleSmall,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 2),
                   Text(
-                    formatPrice(total),
+                    detail,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    formatPrice(usage.lineTotal),
                     style: const TextStyle(
                       color: AppTheme.heading,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
             const SizedBox(width: AppTheme.s8),
-            NeuButton(
-              onPressed: onAddToRoom,
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.s12,
-                vertical: AppTheme.s8,
-              ),
-              child: const Text('Add to room', style: TextStyle(fontSize: 12.5)),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            NeuButton(
-              primary: true,
-              onPressed: onBillSelected,
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.s12,
-                vertical: AppTheme.s8,
-              ),
-              child: const Text('Bill selected', style: TextStyle(fontSize: 12.5)),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                CompactActionButton(label: 'Add to room bill', color: AppTheme.edit, onTap: onAddToRoom),
+                const SizedBox(height: 6),
+                CompactActionButton(label: 'Bill', color: AppTheme.accent, primary: true, onTap: onBill),
+              ],
             ),
           ],
         ),
@@ -1218,21 +1081,20 @@ class _ServiceSelectionBar extends StatelessWidget {
 }
 
 /// The sheet-style view of the Services queue — mirrors [BillingQueueTable],
-/// with a checkbox column standing in for the "Bill" button: several rows
-/// are ticked together here before either action in [_ServiceSelectionBar]
-/// fires, rather than one row driving its own bill straight away.
+/// with an actions column holding "Add to room bill" and "Bill", one row at
+/// a time, same as the per-row buttons on Billing.jsx's own table.
 class _ServiceQueueTable extends StatelessWidget {
   final List<ServiceUsage> usages;
-  final Set<int> selected;
-  final ValueChanged<int> onToggle;
+  final ValueChanged<ServiceUsage> onAddToRoom;
+  final ValueChanged<ServiceUsage> onBill;
 
   const _ServiceQueueTable({
     required this.usages,
-    required this.selected,
-    required this.onToggle,
+    required this.onAddToRoom,
+    required this.onBill,
   });
 
-  static const _checkboxWidth = 44.0;
+  static const _actionsWidth = 176.0;
   static const _columns = [
     _QueueTableColumn('service', 'Service', width: 160),
     _QueueTableColumn('detail', 'Detail', width: 220),
@@ -1242,7 +1104,7 @@ class _ServiceQueueTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width =
-        _checkboxWidth + _columns.fold<double>(0, (sum, c) => sum + c.width);
+        _actionsWidth + _columns.fold<double>(0, (sum, c) => sum + c.width);
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -1266,7 +1128,6 @@ class _ServiceQueueTable extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      const SizedBox(width: _checkboxWidth),
                       for (final c in _columns)
                         SizedBox(
                           width: c.width,
@@ -1288,6 +1149,7 @@ class _ServiceQueueTable extends StatelessWidget {
                             ),
                           ),
                         ),
+                      const SizedBox(width: _actionsWidth),
                     ],
                   ),
                 ),
@@ -1295,8 +1157,8 @@ class _ServiceQueueTable extends StatelessWidget {
                   _ServiceTableRow(
                     usage: usages[i],
                     shaded: i.isOdd,
-                    selected: selected.contains(usages[i].id),
-                    onToggle: () => onToggle(usages[i].id),
+                    onAddToRoom: () => onAddToRoom(usages[i]),
+                    onBill: () => onBill(usages[i]),
                   ),
               ],
             ),
@@ -1310,14 +1172,14 @@ class _ServiceQueueTable extends StatelessWidget {
 class _ServiceTableRow extends StatelessWidget {
   final ServiceUsage usage;
   final bool shaded;
-  final bool selected;
-  final VoidCallback onToggle;
+  final VoidCallback onAddToRoom;
+  final VoidCallback onBill;
 
   const _ServiceTableRow({
     required this.usage,
     required this.shaded,
-    required this.selected,
-    required this.onToggle,
+    required this.onAddToRoom,
+    required this.onBill,
   });
 
   @override
@@ -1330,71 +1192,76 @@ class _ServiceTableRow extends StatelessWidget {
       if (usage.onRoomBill) 'stay bill already issued',
     ].join(' · ');
 
-    return Material(
-      color: selected
-          ? AppTheme.accent.withValues(alpha: 0.08)
-          : (shaded ? AppTheme.bg : Colors.transparent),
-      child: InkWell(
-        onTap: onToggle,
-        child: Row(
-          children: [
-            SizedBox(
-              width: _ServiceQueueTable._checkboxWidth,
-              child: Checkbox(value: selected, onChanged: (_) => onToggle()),
-            ),
-            SizedBox(
-              width: _ServiceQueueTable._columns[0].width,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s8,
-                  vertical: 10,
-                ),
-                child: Text(
-                  usage.serviceName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.heading,
-                  ),
+    return Container(
+      color: shaded ? AppTheme.bg : Colors.transparent,
+      child: Row(
+        children: [
+          SizedBox(
+            width: _ServiceQueueTable._columns[0].width,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                usage.serviceName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.heading,
                 ),
               ),
             ),
-            SizedBox(
-              width: _ServiceQueueTable._columns[1].width,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s8,
-                  vertical: 10,
-                ),
-                child: Text(
-                  detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.muted),
+          ),
+          SizedBox(
+            width: _ServiceQueueTable._columns[1].width,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: AppTheme.muted),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: _ServiceQueueTable._columns[2].width,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                formatPrice(usage.lineTotal),
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.heading,
                 ),
               ),
             ),
-            SizedBox(
-              width: _ServiceQueueTable._columns[2].width,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s8,
-                  vertical: 10,
-                ),
-                child: Text(
-                  formatPrice(usage.lineTotal),
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.heading,
-                  ),
-                ),
+          ),
+          SizedBox(
+            width: _ServiceQueueTable._actionsWidth,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CompactActionButton(label: 'Add to room', color: AppTheme.edit, onTap: onAddToRoom),
+                  const SizedBox(width: 6),
+                  CompactActionButton(label: 'Bill', color: AppTheme.accent, primary: true, onTap: onBill),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

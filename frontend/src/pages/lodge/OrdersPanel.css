@@ -575,6 +575,9 @@ label.order-card__item:has(.order-card__tick:disabled) {
   border-left: 3px solid var(--border);
   border-radius: var(--radius-tile);
   padding: 12px 14px;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .history-row--delivered {
@@ -591,6 +594,12 @@ label.order-card__item:has(.order-card__tick:disabled) {
   align-items: baseline;
   gap: 10px;
   flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.history-row__head > * {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .history-row__number {
@@ -671,7 +680,15 @@ label.order-card__item:has(.order-card__tick:disabled) {
 
 .history-row__items li {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.history-row__items li > span {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .history-row__ready {
@@ -1330,6 +1347,47 @@ label.order-card__item:has(.order-card__tick:disabled) {
   background: var(--paper);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+}
+
+/* A sortable column heading — same treatment as the bills sheet
+   (.billing-sheet__sort in Billing.css): the label looks like the plain
+   heading it replaces, with a faint ⇅ that only turns solid and brand-
+   coloured once that column is the one actually sorting the rows. */
+.history-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.history-table__sort:hover {
+  color: var(--brand-ink);
+}
+
+.history-table__sort:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.history-table__sort-icon {
+  font-size: 9px;
+  opacity: 0.45;
+}
+
+th[aria-sort] .history-table__sort {
+  color: var(--brand-ink);
+}
+
+th[aria-sort] .history-table__sort-icon {
+  opacity: 1;
 }
 
 .history-table td {

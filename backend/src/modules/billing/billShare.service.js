@@ -6,6 +6,7 @@ const { logger } = require('../../config/logger');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR } = require('../../middleware/billShareUpload');
 const whatsapp = require('../../config/whatsapp');
+const { publicBaseUrl } = require('../../config/publicBaseUrl');
 
 // Handing a bill to a guest on WhatsApp, from the server rather than from the
 // desk's own phone.
@@ -81,23 +82,10 @@ function stayDates(invoice) {
 // already served its purpose.
 const LINK_TTL_DAYS = 30;
 
-// The link the guest taps. It has to be an address reachable from a phone on
-// mobile data — not the LAN address the desk's browser uses — so it is
-// configured rather than derived from the request: behind a proxy, Host is
-// whatever the proxy was asked for, and a bill link built from it can point
-// somewhere the guest cannot reach.
-//
-// PUBLIC_BASE_URL is therefore required for this feature and only this one.
-function publicBaseUrl() {
-  const base = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
-  if (!base) {
-    throw new ApiError(
-      'Sharing a bill on WhatsApp needs PUBLIC_BASE_URL set to the address guests reach this site at.',
-      503
-    );
-  }
-  return base;
-}
+// The link the guest taps — see config/publicBaseUrl.js for why it's
+// configured rather than derived from the request. Shared with
+// feedbackRequests.service.js now, so there's exactly one PUBLIC_BASE_URL
+// check in the codebase, not one per feature that needs a guest-facing link.
 
 // The provider packs template variables into one comma-separated string, so a
 // comma inside a value shifts every later variable along by one — the amount

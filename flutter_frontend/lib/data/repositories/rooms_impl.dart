@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../domain/models/category.dart';
 import '../../domain/models/checkout_policy.dart';
+import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/switchable_charge_listing.dart';
@@ -115,6 +116,14 @@ class RoomsImpl implements RoomsRepository {
 
   @override
   Future<void> deleteSeason(int id) => api.deleteSeason(id);
+
+  @override
+  Future<PriceSimulation> simulatePrice({
+    required int roomId,
+    required String date,
+    required String toDate,
+    String? chargeIds,
+  }) => api.simulatePrice(roomId: roomId, date: date, toDate: toDate, chargeIds: chargeIds);
 
   @override
   Future<CheckoutPolicy> checkoutPolicy() => api.checkoutPolicy();

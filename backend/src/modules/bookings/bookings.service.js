@@ -8,6 +8,7 @@ const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 const pricingService = require('../pricing/pricing.service');
 const notifications = require('../notifications/bookingConfirmation');
 const cancellationNotice = require('../notifications/cancellationNotice');
+const checkinWelcome = require('../notifications/checkinWelcome');
 const billingService = require('../billing/billing.service');
 const { splitAcross } = require('../reports/reports.service');
 const advanceReceiptsService = require('../billing/advanceReceipts.service');
@@ -2393,7 +2394,14 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
   // this receipts the instalment just taken rather than the running total.
   await autoIssueAdvanceReceipt(lodgeId, userId ?? null, bookingId, input);
 
-  return getBooking(lodgeId, bookingId);
+  const booking = await getBooking(lodgeId, bookingId);
+
+  // Not awaited: same reasoning as notifyStayBooked — the welcome is
+  // best-effort, and the desk checking a guest in shouldn't wait on a
+  // WhatsApp provider. The notifier never rejects — it logs.
+  void checkinWelcome.notifyCheckedIn(lodgeId, booking);
+
+  return booking;
 }
 
 // What reception is shown before they check anyone out: when the stay was due

@@ -10,6 +10,7 @@ import LodgePublicPage from './pages/public/LodgePublicPage';
 import PrivacyPolicy from './pages/public/PrivacyPolicy';
 import DeleteAccount from './pages/public/DeleteAccount';
 import OrderPage from './pages/public/OrderPage';
+import FeedbackPage from './pages/public/FeedbackPage';
 import AssetQrPage from './pages/lodge/AssetQrPage';
 import NotFound from './pages/NotFound';
 import RequireStaff from './components/RequireStaff';
@@ -50,6 +51,12 @@ function App() {
               as the table route above (the qr_token in the URL is the whole
               credential). No sidebar, no dashboard, nothing to navigate. */}
           <Route path="/asset/:token" element={<AssetQrPage />} />
+
+          {/* Public, unauthenticated — the post-checkout "how was your stay"
+              page, reached by the link in the feedback-request WhatsApp
+              message (feedbackRequests.service.js), same trust model as the
+              routes above: the token in the URL is the whole credential. */}
+          <Route path="/feedback/:token" element={<FeedbackPage />} />
 
           {/* Lodge owner / reception / kitchen sign-in. Wrapped so Back from the
               dashboard cannot land on a sign-in form the user has already

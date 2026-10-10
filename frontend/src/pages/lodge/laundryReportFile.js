@@ -40,12 +40,12 @@ export async function downloadLaundryReportExcel(report, { guestLaundry }) {
     sheets.push(
       sheet(
         'Guest laundry',
-        ['Tag', 'Guest', 'Room', 'Pieces', 'Status', 'Taken in', 'Handed over', 'Amount', 'Washed by', 'Vendor price (₹)'],
+        ['Tag', 'Guest', 'Room', 'Pieces', 'Status', 'Taken in', 'Handed over', 'Amount', 'Washed by', 'Vendor price (₹)', 'Profit (₹)'],
         report.guest.orders.map((o) => [
           o.tagNumber, o.guestName || '', o.roomNumber || 'Walk-in', o.pieces, GUEST_STATUS[o.status] || o.status,
-          stamp(o.receivedAt), stamp(o.deliveredAt), o.total, o.washedBy || '', o.washCharge ?? '',
+          stamp(o.receivedAt), stamp(o.deliveredAt), o.total, o.washedBy || '', o.washCharge ?? '', o.profit ?? '',
         ]),
-        [8, 24, 10, 8, 14, 22, 22, 12, 22, 16]
+        [8, 24, 10, 8, 14, 22, 22, 12, 22, 16, 14]
       )
     );
   }

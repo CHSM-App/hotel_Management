@@ -1,0 +1,95 @@
+/* Finance & Management section nav (Expenses, Other Income, Asset Inventory).
+   Overrides the shared SectionTabs pill look with the plain underline style
+   used by Rooms, Price chart, Price simulator and Checkout policy (.subtabs
+   in RoomsAndRates.css) — scoped to this wrapper so Menu/Inventory, which
+   also render SectionTabs, are untouched. */
+
+/* Every table in this section (Expenses, Income, Asset Register, Dead Stock,
+   Depreciation, Vendors) — the same indigo-on-lavender column header the
+   Housekeeping board table uses (.hk-board .hk-rooms thead th in
+   HousekeepingPanel.css), applied here via a wrapper class instead of
+   touching .asset-table itself, which Inventory and Menu also render. */
+.finance-table thead th {
+  color: var(--brand);
+  background: #f1eefc;
+  border-bottom: 2px solid #ddd6f7;
+}
+
+/* Sortable columns (Asset Register, Depreciation, Work Orders, Vendors) wrap
+   their label in a button that sets its own grey — .asset-table__sort-btn's
+   `color` beats the <th>'s, since it targets the button directly rather than
+   inheriting. Restated here so the label and its ⇕ icon pick up the same
+   indigo as a plain, button-less header. */
+.finance-table .asset-table__sort-btn,
+.finance-table .asset-table__sort-btn:hover {
+  color: var(--brand);
+}
+
+.finance-table .asset-table__sort-icon {
+  opacity: 0.7;
+}
+
+/* Wraps the whole header line — tabs plus the row's action button — so the
+   rule sits under both instead of stopping short at the tabs' own width. */
+.finance-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.finance-tabs-row .finance-tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.finance-tabs .tabstrip {
+  gap: 0;
+  padding: 0;
+}
+
+.finance-tabs .tabstrip__tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 8px 2px;
+  margin-right: 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.finance-tabs .tabstrip__tab:hover {
+  box-shadow: none;
+  color: var(--text);
+}
+
+.finance-tabs .tabstrip__tab--on,
+.finance-tabs .tabstrip__tab--on:hover {
+  background: transparent;
+  border-color: transparent;
+  border-bottom-color: var(--brand);
+  box-shadow: none;
+  color: var(--brand-ink);
+}
+
+.finance-tabs .tabstrip__count {
+  background: var(--neu-sunken);
+  color: var(--text-muted);
+}
+
+.finance-tabs .tabstrip__tab--on .tabstrip__count {
+  background: var(--neu-sunken);
+  color: var(--brand-ink);
+}
+
+@media (max-width: 640px) {
+  .finance-tabs .tabstrip__tab {
+    margin-right: 16px;
+  }
+}

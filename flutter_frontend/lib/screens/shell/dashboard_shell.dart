@@ -60,6 +60,20 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   DateTime? _lastBackPressedAt;
   static const _exitWindow = Duration(seconds: 2);
 
+  /// Lets a section (currently just Reports) put its own trailing buttons —
+  /// the PDF/Excel download icons — directly in the top bar next to the
+  /// section title, instead of opening a second header row underneath. The
+  /// active section writes into this after its own build (see
+  /// ReportsScreen's headerActions) and clears it again on dispose, so
+  /// switching away from Reports doesn't leave its icons stuck in the bar.
+  final ValueNotifier<Widget?> _headerActions = ValueNotifier(null);
+
+  @override
+  void dispose() {
+    _headerActions.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -101,6 +115,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                 onMenuTap: (me != null && compact)
                     ? () => _scaffoldKey.currentState?.openDrawer()
                     : null,
+                actions: _headerActions,
               ),
               const _OfflineBanner(),
               Expanded(
@@ -337,13 +352,13 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       case 'income':
         return const IncomeScreen();
       case 'report-overview':
-        return const ReportsScreen(key: ValueKey('report-overview'), only: 'overview');
+        return ReportsScreen(key: const ValueKey('report-overview'), only: 'overview', headerActions: _headerActions);
       case 'report-sales':
-        return const ReportsScreen(key: ValueKey('report-sales'), only: 'sales');
+        return ReportsScreen(key: const ValueKey('report-sales'), only: 'sales', headerActions: _headerActions);
       case 'report-finance':
-        return const ReportsScreen(key: ValueKey('report-finance'), only: 'finance');
+        return ReportsScreen(key: const ValueKey('report-finance'), only: 'finance', headerActions: _headerActions);
       case 'report-assets':
-        return const ReportsScreen(key: ValueKey('report-assets'), only: 'assets');
+        return ReportsScreen(key: const ValueKey('report-assets'), only: 'assets', headerActions: _headerActions);
       case 'staff':
         return const StaffRolesScreen();
       default:
@@ -465,7 +480,12 @@ class _TopBar extends StatelessWidget {
   /// wide enough for the permanent rail has nothing for it to open.
   final VoidCallback? onMenuTap;
 
-  const _TopBar({this.title, this.onMenuTap});
+  /// Trailing buttons the active section wants shown next to its title —
+  /// currently only Reports, for its PDF/Excel download icons. Null (the
+  /// common case) shows nothing extra.
+  final ValueNotifier<Widget?>? actions;
+
+  const _TopBar({this.title, this.onMenuTap, this.actions});
 
   @override
   Widget build(BuildContext context) {
@@ -507,6 +527,11 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
             ),
+            if (actions != null)
+              ValueListenableBuilder<Widget?>(
+                valueListenable: actions!,
+                builder: (context, child, _) => child ?? const SizedBox.shrink(),
+              ),
           ],
         ),
       ),
