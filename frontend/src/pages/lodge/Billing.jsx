@@ -94,6 +94,13 @@ const SOURCE_LABEL = {
   SERVICE: 'Services',
 };
 
+// A guest-laundry invoice is a SERVICE bill whose lines all trace back to a
+// laundry order. It already has its own history under Housekeeping ->
+// Guest laundry, so the Bills tab here would just be showing it twice.
+function isLaundryInvoice(inv) {
+  return inv.kind === 'SERVICE' && (inv.serviceItems || []).some((item) => item.laundryOrderId != null);
+}
+
 function billSource(inv) {
   if (inv.kind === 'ADVANCE') return 'ADVANCE';
   if (inv.kind === 'EVENT') return 'EVENT';
@@ -638,14 +645,43 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       .catch((err) => setServiceError(err instanceof ApiError ? err.message : 'Could not load services to bill.'));
   };
 
+  // A laundry order makes one row per garment (each can have its own price),
+  // but it's one order the guest handed over and should be one bill — so
+  // rows sharing a laundryOrderId are collapsed into a single billable line
+  // carrying every usage id that belongs to it.
+  const groupedServiceUsages = useMemo(() => {
+    if (!serviceUsages) return serviceUsages;
+    const groups = [];
+    const byOrder = new Map();
+    for (const u of serviceUsages) {
+      if (!u.laundryOrderId) {
+        groups.push({ ...u, usageIds: [u.id] });
+        continue;
+      }
+      const existing = byOrder.get(u.laundryOrderId);
+      if (existing) {
+        existing.usageIds.push(u.id);
+        existing.quantity += u.quantity;
+        existing.lineTotal += u.lineTotal;
+      } else {
+        const group = { ...u, serviceName: 'Laundry', usageIds: [u.id] };
+        byOrder.set(u.laundryOrderId, group);
+        groups.push(group);
+      }
+    }
+    return groups;
+  }, [serviceUsages]);
+
   // "Add to room bill" on a service row: a use already tied to a stay shows
   // that guest so the desk can confirm who it's going on, same as the room
   // billing on a food order; a walk-in use with no stay offers the same
   // in-house guest picker the restaurant tables use.
   const openServicePick = (usage) => {
+    const usageIds = usage.usageIds ?? [usage.id];
     if (usage.bookingId) {
       setServicePick({
-        usageId: usage.id,
+        usageIds,
+        serviceName: usage.serviceName,
         bookingId: usage.bookingId,
         fixed: true,
         guestName: usage.guestName,
@@ -654,14 +690,14 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       });
       return;
     }
-    setServicePick({ usageId: usage.id, guests: null, bookingId: '', fixed: false, error: '' });
+    setServicePick({ usageIds, serviceName: usage.serviceName, guests: null, bookingId: '', fixed: false, error: '' });
     apiGet('/billing/food-tabs/in-house-guests', { token })
       .then((data) => setServicePick((p) => p && { ...p, guests: data.guests }))
       .catch(() => setServicePick((p) => p && { ...p, guests: [], error: 'Could not load guests.' }));
   };
-  const addServicesToRoom = async (usageId, bookingId) => {
+  const addServicesToRoom = async (usageIds, bookingId) => {
     try {
-      await apiPost('/billing/services/add-to-room', { usageIds: [usageId], bookingId: Number(bookingId) }, { token });
+      await apiPost('/billing/services/add-to-room', { usageIds, bookingId: Number(bookingId) }, { token });
       setServicePick(null);
       loadServices();
     } catch (err) {
@@ -759,7 +795,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     invoices || receipts
       ? [
           ...[...(invoices ?? []), ...(restaurant ? [] : (receipts ?? []).map(asDocument))].filter(
-            (d) => streamOf(d) === stream
+            (d) => streamOf(d) === stream && !isLaundryInvoice(d)
           ),
         ].sort((a, b) =>
           String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''))
@@ -1565,10 +1601,11 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     </tr>
                   </thead>
                   <tbody>
-                    {serviceUsages.map((u) => (
-                      <tr key={u.id} className="history-table__row">
+                    {groupedServiceUsages.map((u) => (
+                      <tr key={u.usageIds.join('-')} className="history-table__row">
                         <td className="history-table__strong">
                           {u.serviceName}
+                          {u.laundryOrderId && u.note && <span className="history-table__note">{u.note}</span>}
                           {u.onRoomBill && (
                             <span className="history-table__note">its stay bill was already issued</span>
                           )}
@@ -1578,7 +1615,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                           {u.guestName && <span className="history-table__note">{u.guestName}</span>}
                         </td>
                         <td className="history-table__num">
-                          {u.quantity} × {formatPrice(u.unitPrice)}
+                          {u.laundryOrderId
+                            ? `${u.usageIds.length} item${u.usageIds.length === 1 ? '' : 's'}`
+                            : `${u.quantity} × ${formatPrice(u.unitPrice)}`}
                         </td>
                         <td className="history-table__num history-table__strong">{formatPrice(u.lineTotal)}</td>
                         <td className="history-table__actions">
@@ -1589,7 +1628,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                             <button
                               type="button"
                               className="history-table__btn history-table__btn--primary"
-                              onClick={() => openBilling({ kind: 'SERVICE', usageIds: [u.id] })}
+                              onClick={() => openBilling({ kind: 'SERVICE', usageIds: u.usageIds })}
                             >
                               Bill
                             </button>
@@ -1615,8 +1654,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   </button>
                 </div>
                 <p className="chart-section__hint room-pick__intro">
-                  {serviceUsages.find((u) => u.id === servicePick.usageId)?.serviceName} will be added to the
-                  bill of the guest below.
+                  {servicePick.serviceName} will be added to the bill of the guest below.
                 </p>
                 <div className="field">
                   <label htmlFor="room-pick-guest">Guest</label>
@@ -1656,7 +1694,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     type="button"
                     className="btn-accent"
                     disabled={!servicePick.bookingId}
-                    onClick={() => addServicesToRoom(servicePick.usageId, servicePick.bookingId)}
+                    onClick={() => addServicesToRoom(servicePick.usageIds, servicePick.bookingId)}
                   >
                     Add to room bill
                   </button>

@@ -241,8 +241,16 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
       AND CAST(b.cancelled_at AS DATE) BETWEEN @fromDate AND @toDate
   `);
 
+  // The extra columns past balance_collected are only here so each row's
+  // balance can be split room/food the same way billFigures does for a bill's
+  // own total — a ROOM_FOOD stay pays one combined balance, and this report
+  // is the room register, not the restaurant's.
   const balances = await period(pool.request()).query(`
-    SELECT i.id, i.balance_collected, i.balance_payment_method, ${stayPeriodCase}
+    SELECT i.id, i.balance_collected, i.balance_payment_method, ${stayPeriodCase},
+           i.room_subtotal, i.food_subtotal, i.service_subtotal,
+           i.cgst_amount, i.sgst_amount, i.food_cgst_amount, i.food_sgst_amount,
+           i.service_cgst_amount, i.service_sgst_amount, i.discount_amount,
+           i.round_off, i.total_amount
     FROM dbo.invoices i
     JOIN dbo.bookings b ON b.id = i.booking_id
     WHERE i.lodge_id = @lodgeId
@@ -322,13 +330,30 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
   }
 
   let balanceCollected = 0;
+  // The food share of balance_collected on a ROOM_FOOD invoice — reported
+  // separately (see getBookingsReport's foodBalanceCollected) rather than
+  // folded into this register, which is room-only throughout.
+  let foodBalanceCollected = 0;
   for (const row of balances.recordset) {
     const amount = Number(row.balance_collected);
-    balanceCollected = round2(balanceCollected + amount);
-    for (const part of splitAcross(amount, balanceLines.get(String(row.id)), row.balance_payment_method)) {
+    // The advance was always room money (taken before any room-service food
+    // existed to bill), so it's the room side that's already partly paid —
+    // food is still owed in full. The balance therefore settles food first,
+    // up to what food actually cost, and whatever is left over is room's.
+    // This isn't a guess at which literal rupee paid for which dish; it's
+    // the split that makes balanceDue land on exactly 0 for a settled bill,
+    // which a proportional share of the whole bill cannot guarantee once an
+    // advance is in the mix.
+    const figures = billFigures(row);
+    const foodBilled = round2(figures.foodTaxable + figures.foodCgst + figures.foodSgst);
+    const foodPart = round2(Math.min(amount, foodBilled));
+    const roomPart = round2(amount - foodPart);
+    balanceCollected = round2(balanceCollected + roomPart);
+    foodBalanceCollected = round2(foodBalanceCollected + foodPart);
+    for (const part of splitAcross(roomPart, balanceLines.get(String(row.id)), row.balance_payment_method)) {
       add(part.method, 'balance', part.amount);
     }
-    file(row, 'balance', amount);
+    file(row, 'balance', roomPart);
   }
 
   // Summed on its own rather than through add()/file(): the charge was
@@ -345,6 +370,10 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
     advanceCount,
     balanceCollected,
     balanceCount: balances.recordset.length,
+    // The food share this register leaves out of balanceCollected/
+    // totalCollected above — surfaced so the bookings summary can point to
+    // it (and the Restaurant report can show it) rather than it just vanishing.
+    foodBalanceCollected,
     // Cancellation charges are income of the period too — money the house
     // kept when a stay fell through — but they ride outside the advance and
     // balance halves, so byPaymentMode still foots against those two alone.
@@ -721,7 +750,18 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       roomSide.billed = round2(figures.billedAmount - roomSide.foodBilled);
     }
     const advanceAmount = row.advance_amount != null ? Number(row.advance_amount) : 0;
-    const balanceCollected = billed ? Number(row.balance_collected ?? 0) : null;
+    // The advance was always room money (taken before any room-service food
+    // existed to bill), so it's the room side that already carries a
+    // payment — food is still owed in full. The one balance payment that
+    // settles both therefore reads as food first, up to what food actually
+    // cost, and whatever is left over is room's. That isn't a claim about
+    // which literal rupee paid for which dish; it's the split that makes
+    // balanceDue land on exactly 0 for a settled bill, every figure below
+    // reads room-only and foots against the others, same as billedAmount
+    // above — a proportional share of the whole bill can't promise either.
+    const balanceCollectedRaw = billed ? Number(row.balance_collected ?? 0) : null;
+    const foodBalanceCollected = billed ? round2(Math.min(balanceCollectedRaw, roomSide.foodBilled)) : null;
+    const balanceCollected = billed ? round2(balanceCollectedRaw - foodBalanceCollected) : null;
     return {
       id: row.id,
       guestName: row.guest_name,
@@ -784,15 +824,23 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       // shows the booking's figure and the bill's separately.
       advancePaid: billed ? Number(row.advance_paid ?? 0) : null,
       balanceCollected,
+      // The food share left out of balanceCollected above — same memo role
+      // foodBilledAmount plays for billedAmount.
+      foodBalanceCollected,
       balancePaymentMethod: row.balance_payment_method || null,
+      // Against the room-only balance, same reason billedAmount above is
+      // room-only: this report's figures are meant to foot against each
+      // other within the room side, not restate the bill's full payment.
       balanceTenders: billed
         ? mergeTenders(
             splitAcross(balanceCollected, tenders.balance.get(String(row.id)), row.balance_payment_method)
           )
         : [],
-      // Left unpaid after the bill's own deductions — 0 on a settled bill.
+      // Left unpaid on the room side — 0 on a stay whose bill is settled.
+      // Against roomSide.billed/balanceCollected rather than the bill's full
+      // figures, so it reads consistently with everything else in this row.
       balanceDue: billed
-        ? round2(figures.billedAmount - Number(row.advance_paid ?? 0) - balanceCollected)
+        ? round2(roomSide.billed - Number(row.advance_paid ?? 0) - balanceCollected)
         : null,
       createdAt: row.created_at,
     };
@@ -878,6 +926,10 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   summary.balanceCollected = collections.balanceCollected;
   summary.cancellationChargesKept = collections.cancellationChargesKept;
   summary.totalCollected = collections.totalCollected;
+  // The food share of balanceCollected, left out of the room-only figures
+  // above — shown as an aside here, same as foodBilledAmount, and it's what
+  // the Restaurant report's room-service card reads.
+  summary.foodBalanceCollected = collections.foodBalanceCollected;
 
   return {
     fromDate,

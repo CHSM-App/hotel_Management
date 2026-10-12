@@ -968,7 +968,16 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
             <>
               <RoomsAnalytics fromDate={fromDate} toDate={toDate} validRange={validRange} bookings={bookings} />
 
-              <p className="reports-panel__section-label">This period at a glance</p>
+              {/* Two bases, same split the PDF/Excel export prints as Part 1
+                  and Part 2 — one card grid mixing them read as a single
+                  total that should foot, when it never was one. Labelling
+                  each half what it actually is stops that expectation before
+                  it forms. */}
+              <p className="reports-panel__section-label">Stays checking in this period</p>
+              <p className="reports-panel__hint">
+                Counted by check-in date. Cancelled stays are excluded except for the cancellation charge kept
+                on them, which belongs to the money received below instead.
+              </p>
               <div className="reports-panel__stat-grid">
                 <div className="reports-panel__stat">
                   <span className="reports-panel__stat-label">Bookings</span>
@@ -995,12 +1004,15 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                   <span className="reports-panel__stat-value">
                     {formatPrice(bookings.summary.billedAmount)}
                   </span>
-                  {bookings.summary.foodBilledAmount > 0 && (
-                    <span className="reports-panel__muted">
-                      + {formatPrice(bookings.summary.foodBilledAmount)} food, in Restaurant
-                    </span>
-                  )}
                 </div>
+              </div>
+
+              <p className="reports-panel__section-label">Money received this period</p>
+              <p className="reports-panel__hint">
+                Cash basis — dated by when the payment came in, whichever stay it was for. Not expected to
+                match the figures above.
+              </p>
+              <div className="reports-panel__stat-grid">
                 <div className="reports-panel__stat reports-panel__stat--positive">
                   <span className="reports-panel__stat-label">Advance collected</span>
                   <span className="reports-panel__stat-value">
@@ -2146,9 +2158,20 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                   <span className="reports-panel__stat-value">{formatPrice(foodOrders.summary.billedValue)}</span>
                   <span className="reports-panel__muted">
                     {foodOrders.summary.billedCount} {foodOrders.summary.billedCount === 1 ? 'order' : 'orders'}
-                    {foodOrders.summary.onStayBillValue > 0 && ` · ${formatPrice(foodOrders.summary.onStayBillValue)} on room bills`}
                   </span>
                 </div>
+                {/* Food ordered to a room rides on that stay's combined bill
+                    rather than its own — the Room Bookings report excludes
+                    it from the room total, so it needs a home here instead. */}
+                {foodOrders.summary.onStayBillValue > 0 && (
+                  <div className="reports-panel__stat">
+                    <span className="reports-panel__stat-label">Room service</span>
+                    <span className="reports-panel__stat-value">
+                      {formatPrice(foodOrders.summary.onStayBillValue)}
+                    </span>
+                    <span className="reports-panel__muted">on a room's bill</span>
+                  </div>
+                )}
               </div>
 
               <FoodAnalytics

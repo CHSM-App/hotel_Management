@@ -451,6 +451,14 @@
   margin: 4px 2px;
 }
 
+/* Breathing room between two stat grids stacked one after the other — e.g.
+   the Room Bookings tab's "Stays checking in" and "Money received" groups,
+   which are on different date bases and need to read as separate sections,
+   not one continuous grid. */
+.reports-panel__stat-grid + .reports-panel__section-label {
+  margin-top: 20px;
+}
+
 /* Pairs the register's section label with the tax-columns switch on one row,
    so turning on the detailed columns reads as an action on this table, not
    a separate setting floating elsewhere on the tab. */

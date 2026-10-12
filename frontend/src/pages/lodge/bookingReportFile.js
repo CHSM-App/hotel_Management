@@ -224,7 +224,6 @@ function detailColumns(servesFood) {
     { label: 'SGST', width: 12, kind: 'money', value: money((b) => b.sgstAmount) },
     { label: 'Round off', width: 10, kind: 'money', value: money((b) => b.roundOff) },
     { label: 'Room billed total', width: 14, kind: 'money', value: money((b) => b.billedAmount) },
-    { label: 'Food on bill (in Restaurant report)', width: 18, kind: 'money', value: money((b) => b.foodBilledAmount) },
     { label: 'Advance deducted on bill', width: 16, kind: 'money', value: money((b) => b.advancePaid) },
     { label: 'Balance collected', width: 15, kind: 'money', value: money((b) => b.balanceCollected) },
     { label: 'Balance paid by', width: 24, value: (b) => (b.balanceCollected ? tendersLabel(b.balanceTenders) : '') },
