@@ -480,32 +480,42 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
                 const SizedBox(height: AppTheme.s12),
               ],
               _IncomeHeroCard(income: widget.income!),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               NeuCard(
+                padding: const EdgeInsets.all(AppTheme.s12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _ViewRow('Category', widget.income!.categoryName),
-                    if ((widget.income!.payerName ?? '').isNotEmpty) _ViewRow('Payer', widget.income!.payerName!),
-                    _ViewRow('Date', formatIsoDate(widget.income!.incomeDate)),
-                    if (widget.income!.description.isNotEmpty) _ViewRow('Notes', widget.income!.description),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(width: 110, child: Text('Receipt', style: TextStyle(color: AppTheme.muted, fontSize: 12.5))),
-                          Expanded(
-                            child: widget.income!.hasReceiptDocument
-                                ? GestureDetector(
-                                    onTap: () => _viewReceiptDocument(context),
-                                    child: const Text('View receipt', style: TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w600)),
-                                  )
-                                : const Text('Not uploaded', style: TextStyle(color: AppTheme.text, fontSize: 13)),
-                          ),
-                        ],
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: _ViewTile(icon: Icons.sell_rounded, label: 'Category', value: widget.income!.categoryName)),
+                        if ((widget.income!.payerName ?? '').isNotEmpty)
+                          Expanded(child: _ViewTile(icon: Icons.person_outline_rounded, label: 'Payer', value: widget.income!.payerName!)),
+                      ],
                     ),
+                    const SizedBox(height: AppTheme.s12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: _ViewTile(icon: Icons.event_rounded, label: 'Date', value: formatIsoDate(widget.income!.incomeDate))),
+                        Expanded(
+                          child: widget.income!.hasReceiptDocument
+                              ? _ViewTile(
+                                  icon: Icons.description_rounded,
+                                  label: 'Receipt',
+                                  value: 'View receipt',
+                                  valueColor: AppTheme.accent,
+                                  onTap: () => _viewReceiptDocument(context),
+                                )
+                              : const _ViewTile(icon: Icons.description_outlined, label: 'Receipt', value: 'Not uploaded'),
+                        ),
+                      ],
+                    ),
+                    if (widget.income!.description.isNotEmpty) ...[
+                      const SizedBox(height: AppTheme.s12),
+                      _ViewTile(icon: Icons.sticky_note_2_outlined, label: 'Notes', value: widget.income!.description),
+                    ],
                   ],
                 ),
               ),
@@ -768,24 +778,40 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
   }
 }
 
-/// One label/value pair in the read-only summary.
-class _ViewRow extends StatelessWidget {
+/// One labelled field in the read-only summary's compact 2-column grid — an
+/// icon, a small caption, then the value. Optionally tappable (the receipt
+/// link).
+class _ViewTile extends StatelessWidget {
+  final IconData icon;
   final String label;
   final String value;
-  const _ViewRow(this.label, this.value);
+  final Color? valueColor;
+  final VoidCallback? onTap;
+  const _ViewTile({required this.icon, required this.label, required this.value, this.valueColor, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 110, child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5))),
-          Expanded(child: Text(value, style: const TextStyle(color: AppTheme.text, fontSize: 13))),
-        ],
-      ),
+    final content = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: AppTheme.muted),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(color: valueColor ?? AppTheme.heading, fontSize: 13.5, fontWeight: onTap != null ? FontWeight.w600 : FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
+    return onTap == null ? content : GestureDetector(onTap: onTap, child: content);
   }
 }
 
@@ -913,40 +939,67 @@ class _ReceiptsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Receipts', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15)),
-        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Icon(Icons.receipt_long_rounded, size: 16, color: AppTheme.heading),
+            const SizedBox(width: 6),
+            const Text('Payments', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 15)),
+          ],
+        ),
+        const SizedBox(height: 6),
         Text(
           '${formatPrice(amountReceived)} of ${formatPrice(amount)} received${remaining > 0.01 ? ' · ${formatPrice(remaining)} left' : ''}',
           style: Theme.of(context).textTheme.bodySmall,
         ),
+        if (amount > 0) ...[
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: (amountReceived / amount).clamp(0, 1).toDouble(),
+              minHeight: 5,
+              backgroundColor: AppTheme.border2,
+              valueColor: const AlwaysStoppedAnimation(AppTheme.vacant),
+            ),
+          ),
+        ],
         const SizedBox(height: AppTheme.s8),
         if (loading)
           const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
         else ...[
           if (receipts.isNotEmpty)
             NeuCard(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: AppTheme.s4),
               child: Column(
                 children: [
-                  for (final r in receipts)
+                  for (int i = 0; i < receipts.length; i++) ...[
+                    if (i > 0) const Divider(height: 1, color: AppTheme.border),
                     Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: AppTheme.s4),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: AppTheme.s8),
                       child: Row(
                         children: [
+                          Container(
+                            width: 30,
+                            height: 30,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(color: AppTheme.vacant.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+                            child: const Icon(Icons.arrow_downward_rounded, size: 15, color: AppTheme.vacant),
+                          ),
+                          const SizedBox(width: AppTheme.s8),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '${formatPrice(r.amount)} · ${kPaymentMethodLabel[r.paymentMethod] ?? r.paymentMethod}',
+                                  '${formatPrice(receipts[i].amount)} · ${kPaymentMethodLabel[receipts[i].paymentMethod] ?? receipts[i].paymentMethod}',
                                   style: Theme.of(context).textTheme.titleSmall,
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   [
-                                    formatIsoDate(r.receivedDate),
-                                    if (r.referenceNumber != null && r.referenceNumber!.isNotEmpty)
-                                      '${kPaymentReferenceLabel[r.paymentMethod] ?? 'Ref'}: ${r.referenceNumber}',
+                                    formatIsoDate(receipts[i].receivedDate),
+                                    if (receipts[i].referenceNumber != null && receipts[i].referenceNumber!.isNotEmpty)
+                                      '${kPaymentReferenceLabel[receipts[i].paymentMethod] ?? 'Ref'}: ${receipts[i].referenceNumber}',
                                   ].join(' · '),
                                   style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
                                 ),
@@ -956,11 +1009,12 @@ class _ReceiptsSection extends StatelessWidget {
                           IconButton(
                             visualDensity: VisualDensity.compact,
                             icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.danger),
-                            onPressed: () => onDeleteReceipt(r),
+                            onPressed: () => onDeleteReceipt(receipts[i]),
                           ),
                         ],
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -969,34 +1023,48 @@ class _ReceiptsSection extends StatelessWidget {
             _ErrorBanner(receiptError!),
           ],
           if (remaining > 0.01) ...[
-            const SizedBox(height: AppTheme.s12),
+            const SizedBox(height: AppTheme.s8),
             NeuCard(
+              padding: const EdgeInsets.all(AppTheme.s8 + 2),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Add a receipt against what's left", style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(dense: true, controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
-                  const SizedBox(height: AppTheme.s12),
+                  Text("Add a payment against what's left", style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: AppTheme.s8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 4, child: NeuField(dense: true, controller: newAmount, label: 'Amount', keyboardType: TextInputType.number)),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(flex: 3, child: NeuField(dense: true, controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate)),
+                    ],
+                  ),
+                  const SizedBox(height: AppTheme.s8),
                   OptionDropdown(
                     values: kPaymentMethods,
                     labels: kPaymentMethodLabel,
                     selected: newMethod,
                     onSelect: onMethodChanged,
                   ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(dense: true, controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate),
                   if (kPaymentReferenceLabel[newMethod] != null) ...[
-                    const SizedBox(height: AppTheme.s12),
+                    const SizedBox(height: AppTheme.s8),
                     NeuField(dense: true, controller: newReference, label: kPaymentReferenceLabel[newMethod]!),
                   ],
-                  const SizedBox(height: AppTheme.s12),
+                  const SizedBox(height: AppTheme.s8),
                   NeuButton(
+                    soft: true,
                     expand: true,
                     onPressed: addingReceipt ? null : onAddReceipt,
                     child: addingReceipt
-                        ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Add receipt'),
+                        ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.sidebarBrandInk))
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_rounded, size: 16, color: AppTheme.sidebarBrandInk),
+                              SizedBox(width: 4),
+                              Text('Add another payment'),
+                            ],
+                          ),
                   ),
                 ],
               ),

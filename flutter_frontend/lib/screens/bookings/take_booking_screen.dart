@@ -3968,7 +3968,19 @@ class _QuoteCard extends ConsumerWidget {
                 ),
                 // Kept on screen through a re-quote, the way the website's own
                 // total never blanks out mid-edit — only the figure changes
-                // once the new one lands, nothing disappears in between.
+                // once the new one lands, nothing disappears in between. A
+                // spinner next to it while a re-quote is in flight tells the
+                // desk this figure hasn't caught up with a box they just
+                // edited yet — without it, a still-settling total next to
+                // already-updated boxes reads as wrong math instead of lag.
+                if (state.quoting) ...[
+                  const SizedBox(
+                    height: 12,
+                    width: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                ],
                 Text(
                   formatPrice(_previewTotal(quote)),
                   style: const TextStyle(

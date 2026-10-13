@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -68,9 +70,16 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   /// switching away from Reports doesn't leave its icons stuck in the bar.
   final ValueNotifier<Widget?> _headerActions = ValueNotifier(null);
 
+  // The sidebar's Housekeeping badge polls the open-issue count the same way
+  // the web rail's useOpenIssues does (30s) — started once the signed-in
+  // login actually has Housekeeping to begin with, never before.
+  Timer? _issueCountTimer;
+  bool _issuePollingStarted = false;
+
   @override
   void dispose() {
     _headerActions.dispose();
+    _issueCountTimer?.cancel();
     super.dispose();
   }
 
@@ -80,6 +89,14 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     // Never synchronously in initState — the provider is not ready to be
     // written to during the first build.
     Future.microtask(() => ref.read(authViewModelProvider.notifier).loadMe());
+  }
+
+  void _startIssuePolling() {
+    ref.read(housekeepingViewModelProvider.notifier).loadIssueSummary();
+    _issueCountTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => ref.read(housekeepingViewModelProvider.notifier).loadIssueSummary(),
+    );
   }
 
   void _toggleGroup(String group, String? activeGroup) {
@@ -92,6 +109,16 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     final state = ref.watch(authViewModelProvider);
     final me = state.me;
     final compact = AppTheme.isCompact(context);
+    final issueCount = ref.watch(
+      housekeepingViewModelProvider.select((s) => s.issueSummary.count),
+    );
+
+    if (!_issuePollingStarted &&
+        me != null &&
+        _features(me).any((f) => f.key == 'housekeeping')) {
+      _issuePollingStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startIssuePolling());
+    }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -107,7 +134,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         },
         child: Scaffold(
           key: _scaffoldKey,
-          drawer: (me != null && compact) ? _drawer(me) : null,
+          drawer: (me != null && compact) ? _drawer(me, issueCount) : null,
           body: Column(
             children: [
               _TopBar(
@@ -125,7 +152,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (me != null && !compact) _rail(me),
+                      if (me != null && !compact) _rail(me, issueCount),
                       Expanded(
                         child: _ResponsiveBody(
                           child: _body(state.isLoading, state.error, me),
@@ -231,7 +258,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     }
   }
 
-  Widget _rail(Me me) {
+  Widget _rail(Me me, int issueCount) {
     final features = _features(me);
     if (features.isEmpty) return const SizedBox.shrink();
     return AnimatedContainer(
@@ -247,6 +274,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         onSelect: _select,
         groupToggle: _groupToggle,
         onToggleGroup: (g) => _toggleGroup(g, _activeGroup(features)),
+        issueCount: issueCount,
         me: me,
         onProfileTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const ProfileScreen()),
@@ -259,7 +287,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     );
   }
 
-  Widget _drawer(Me me) {
+  Widget _drawer(Me me, int issueCount) {
     final features = _features(me);
     return Drawer(
       width: 280,
@@ -273,6 +301,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
           },
           groupToggle: _groupToggle,
           onToggleGroup: (g) => _toggleGroup(g, _activeGroup(features)),
+          issueCount: issueCount,
           me: me,
           onProfileTap: () {
             Navigator.of(context).pop();
