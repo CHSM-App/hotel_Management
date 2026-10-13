@@ -11,6 +11,7 @@ import '../../widgets/payment_row.dart';
 import '../billing/advance_receipt_screen.dart';
 import '../billing/invoice_preview_screen.dart';
 import '../billing/issue_event_bill_screen.dart';
+import '../housekeeping/housekeeping_parts.dart';
 import '../theme.dart';
 import 'event_form_screen.dart';
 
@@ -539,25 +540,32 @@ class _ExtrasCardState extends ConsumerState<_ExtrasCard> {
     final extras = widget.event.addons.where((a) => a.isExtra).toList();
     final unpriced = extras.where((a) => a.needsPricing).length;
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Extras on the day', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14)),
           if (unpriced > 0) ...[
             const SizedBox(height: 4),
-            Text('$unpriced extra${unpriced == 1 ? '' : 's'} still need a price before the bill can be issued.', style: const TextStyle(color: AppTheme.draft, fontSize: 12)),
+            Text('$unpriced extra${unpriced == 1 ? '' : 's'} still need a price before the bill can be issued.', style: const TextStyle(color: AppTheme.draft, fontSize: 11.5, fontWeight: FontWeight.w600)),
           ],
           const SizedBox(height: 6),
           if (extras.isEmpty) const Text('Nothing added on the day yet.', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
           for (final line in extras)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.bg,
+                borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              ),
               child: Row(
                 children: [
-                  Expanded(child: Text('${line.label}${line.quantity > 1 ? ' × ${line.quantity}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 12))),
+                  Expanded(child: Text('${line.label}${line.quantity > 1 ? ' × ${line.quantity}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 12.5, fontWeight: FontWeight.w500))),
                   if (line.needsPricing && widget.open) ...[
                     SizedBox(
-                      width: 70,
+                      width: 64,
+                      height: 30,
                       child: TextField(
                         keyboardType: TextInputType.number,
                         style: const TextStyle(fontSize: 12),
@@ -565,27 +573,41 @@ class _ExtrasCardState extends ConsumerState<_ExtrasCard> {
                         onChanged: (v) => _pricing[line.id ?? 0] = v,
                       ),
                     ),
-                    TextButton(onPressed: _busy ? null : () => _price(line), child: const Text('Set', style: TextStyle(fontSize: 12))),
+                    const SizedBox(width: 2),
+                    CompactActionButton(label: 'Set', color: AppTheme.accent, primary: true, onTap: _busy ? null : () => _price(line)),
                   ] else
-                    Text(line.needsPricing ? 'price to set' : formatPrice(line.agreedAmount ?? 0), style: const TextStyle(color: AppTheme.text, fontSize: 12)),
+                    Text(line.needsPricing ? 'price to set' : formatPrice(line.agreedAmount ?? 0), style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w700)),
                   if (widget.open)
-                    IconButton(icon: const Icon(Icons.close_rounded, size: 16), color: AppTheme.danger, onPressed: _busy ? null : () => _remove(line)),
+                    InkWell(
+                      onTap: _busy ? null : () => _remove(line),
+                      borderRadius: BorderRadius.circular(999),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(Icons.close_rounded, size: 15, color: AppTheme.danger),
+                      ),
+                    ),
                 ],
               ),
             ),
           if (widget.open) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 2),
             Row(
               children: [
-                Expanded(child: NeuField(controller: _label, label: '', hint: 'Extra asked for', forceCapitalizeWords: true)),
+                Expanded(child: NeuField(controller: _label, label: '', hint: 'Extra asked for', forceCapitalizeWords: true, dense: true)),
                 const SizedBox(width: 6),
-                SizedBox(width: 46, child: NeuField(controller: _quantity, label: '', keyboardType: TextInputType.number)),
+                SizedBox(width: 44, child: NeuField(controller: _quantity, label: '', keyboardType: TextInputType.number, dense: true)),
                 const SizedBox(width: 6),
-                SizedBox(width: 70, child: NeuField(controller: _amount, label: '', hint: '₹', keyboardType: TextInputType.number)),
+                SizedBox(width: 64, child: NeuField(controller: _amount, label: '', hint: '₹', keyboardType: TextInputType.number, dense: true)),
               ],
             ),
-            const SizedBox(height: 6),
-            NeuButton(expand: true, onPressed: _busy ? null : _add, child: const Text('Add extra')),
+            const SizedBox(height: 8),
+            NeuButton(
+              soft: true,
+              expand: true,
+              minHeight: 38,
+              onPressed: _busy ? null : _add,
+              child: const Text('+ Add extra', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
           ],
         ],
       ),
@@ -626,6 +648,7 @@ class _NotesCardState extends State<_NotesCard> {
       ('scheduleNotes', 'Schedule', _schedule, widget.event.scheduleNotes),
     ];
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -633,12 +656,16 @@ class _NotesCardState extends State<_NotesCard> {
             children: [
               const Expanded(child: Text('Function sheet', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14))),
               if (!_editing)
-                TextButton(onPressed: () => setState(() => _editing = true), child: const Text('Edit'))
+                CompactActionButton(label: 'Edit', color: AppTheme.accent, onTap: () => setState(() => _editing = true))
               else
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextButton(
-                      onPressed: _busy
+                    CompactActionButton(
+                      label: _busy ? 'Saving…' : 'Save',
+                      color: AppTheme.accent,
+                      primary: true,
+                      onTap: _busy
                           ? null
                           : () async {
                               setState(() => _busy = true);
@@ -654,24 +681,25 @@ class _NotesCardState extends State<_NotesCard> {
                                 });
                               }
                             },
-                      child: const Text('Save'),
                     ),
-                    TextButton(onPressed: _busy ? null : () => setState(() => _editing = false), child: const Text('Cancel')),
+                    const SizedBox(width: 6),
+                    CompactActionButton(label: 'Cancel', color: AppTheme.muted, onTap: _busy ? null : () => setState(() => _editing = false)),
                   ],
                 ),
             ],
           ),
           for (final s in sections)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.only(top: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(s.$2, style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+                  Text(s.$2, style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.2)),
+                  const SizedBox(height: 2),
                   if (_editing)
-                    NeuField(controller: s.$3, label: '')
+                    NeuField(controller: s.$3, label: '', dense: true)
                   else
-                    Text(s.$4?.isNotEmpty == true ? s.$4! : 'Nothing noted.', style: const TextStyle(color: AppTheme.text, fontSize: 12)),
+                    Text(s.$4?.isNotEmpty == true ? s.$4! : 'Nothing noted.', style: const TextStyle(color: AppTheme.text, fontSize: 12.5)),
                 ],
               ),
             ),
@@ -699,6 +727,7 @@ class _AdvancesCardState extends State<_AdvancesCard> {
   @override
   Widget build(BuildContext context) {
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -706,8 +735,11 @@ class _AdvancesCardState extends State<_AdvancesCard> {
             children: [
               const Expanded(child: Text('Advances', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14))),
               if (widget.canTake && !_taking)
-                TextButton(
-                  onPressed: () async {
+                CompactActionButton(
+                  label: 'Take advance',
+                  color: AppTheme.accent,
+                  primary: true,
+                  onTap: () async {
                     if (widget.receipts.isEmpty) {
                       setState(() => _taking = true);
                       return;
@@ -716,16 +748,22 @@ class _AdvancesCardState extends State<_AdvancesCard> {
                     // latest receipt, which itself offers "Take another".
                     await _openReceipt(widget.receipts.first);
                   },
-                  child: const Text('Take advance / print receipt'),
                 ),
             ],
           ),
+          const SizedBox(height: 4),
           if (widget.receipts.isEmpty) const Text('No advance taken yet.', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
           for (final r in widget.receipts)
             InkWell(
               onTap: () => _openReceipt(r),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 4),
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 7),
+                decoration: BoxDecoration(
+                  color: AppTheme.bg,
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -735,8 +773,8 @@ class _AdvancesCardState extends State<_AdvancesCard> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Text('${formatPrice(r.amountReceived)}${r.paymentMethod != null ? ' · ${r.paymentMethod}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 12)),
-                    const SizedBox(width: 4),
+                    Text('${formatPrice(r.amountReceived)}${r.paymentMethod != null ? ' · ${r.paymentMethod}' : ''}', style: const TextStyle(color: AppTheme.heading, fontSize: 12, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 2),
                     const Icon(Icons.chevron_right_rounded, size: 16, color: AppTheme.muted),
                   ],
                 ),
@@ -744,7 +782,7 @@ class _AdvancesCardState extends State<_AdvancesCard> {
             ),
           if (widget.event.invoice != null)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: 2),
               child: Text('Invoice ${widget.event.invoice!.invoiceNumber ?? ''} · ${formatPrice(widget.event.invoice!.totalAmount)}', style: const TextStyle(color: AppTheme.text, fontSize: 12)),
             ),
           if (_taking)
@@ -837,14 +875,20 @@ class _TakeAdvanceFormState extends ConsumerState<_TakeAdvanceForm> {
               ),
             ),
           if (_lines.length < 5)
-            NeuButton(expand: true, onPressed: () => setState(() => _lines.add(PaymentDraft())), child: const Text('+ Add another payment')),
+            NeuButton(
+              soft: true,
+              expand: true,
+              minHeight: 38,
+              onPressed: () => setState(() => _lines.add(PaymentDraft())),
+              child: const Text('+ Add another payment', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
           if (_error != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
           const SizedBox(height: AppTheme.s8),
           Row(
             children: [
-              Expanded(child: NeuButton(onPressed: _busy ? null : widget.onCancel, child: const Text('Cancel'))),
+              Expanded(child: NeuButton(minHeight: 40, onPressed: _busy ? null : widget.onCancel, child: const Text('Cancel'))),
               const SizedBox(width: AppTheme.s8),
-              Expanded(child: NeuButton(primary: true, onPressed: _busy ? null : _submit, child: Text(_busy ? 'Recording…' : 'Record'))),
+              Expanded(child: NeuButton(minHeight: 40, primary: true, onPressed: _busy ? null : _submit, child: Text(_busy ? 'Recording…' : 'Record'))),
             ],
           ),
         ],

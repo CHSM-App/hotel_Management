@@ -146,9 +146,9 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
                       : 'Nothing reported yet.',
             )
           else if (_view == 'table')
-            _IssuesTable(issues: shown, placeHead: bothKinds ? 'Room / Venue' : (lodge?.hasEvents ?? false) ? 'Venue' : 'Room', onClose: _close)
+            _IssuesTable(issues: shown, placeHead: bothKinds ? 'Room / Venue' : (lodge?.hasEvents ?? false) ? 'Venue' : 'Room', busyIssueKey: state.busyIssueKey, onClose: _close)
           else
-            for (final i in shown) _IssueCard(issue: i, onClose: () => _close(i)),
+            for (final i in shown) _IssueCard(issue: i, busy: state.busyIssueKey == i.key, onClose: () => _close(i)),
         ],
       ),
     );
@@ -157,8 +157,9 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
 
 class _IssueCard extends StatelessWidget {
   final HousekeepingIssue issue;
+  final bool busy;
   final VoidCallback onClose;
-  const _IssueCard({required this.issue, required this.onClose});
+  const _IssueCard({required this.issue, required this.busy, required this.onClose});
 
   @override
   Widget build(BuildContext context) {
@@ -225,7 +226,7 @@ class _IssueCard extends StatelessWidget {
             ),
             if (issue.isOpen) ...[
               const SizedBox(width: AppTheme.s8),
-              CompactActionButton(label: kIssueKindCloseLabel[issue.kind] ?? 'Close', color: AppTheme.accent, onTap: onClose),
+              CompactActionButton(label: kIssueKindCloseLabel[issue.kind] ?? 'Close', color: AppTheme.accent, onTap: busy ? null : onClose),
             ],
           ],
         ),
@@ -240,9 +241,10 @@ class _IssueCard extends StatelessWidget {
 class _IssuesTable extends StatelessWidget {
   final List<HousekeepingIssue> issues;
   final String placeHead;
+  final String? busyIssueKey;
   final ValueChanged<HousekeepingIssue> onClose;
 
-  const _IssuesTable({required this.issues, required this.placeHead, required this.onClose});
+  const _IssuesTable({required this.issues, required this.placeHead, required this.busyIssueKey, required this.onClose});
 
   static const _actionsWidth = 140.0;
 
@@ -284,7 +286,7 @@ class _IssuesTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < issues.length; i++) _IssueTableRow(issue: issues[i], shaded: i.isOdd, anyClosed: anyClosed, onClose: () => onClose(issues[i])),
+                for (var i = 0; i < issues.length; i++) _IssueTableRow(issue: issues[i], shaded: i.isOdd, anyClosed: anyClosed, busy: busyIssueKey == issues[i].key, onClose: () => onClose(issues[i])),
               ],
             ),
           ),
@@ -298,9 +300,10 @@ class _IssueTableRow extends StatelessWidget {
   final HousekeepingIssue issue;
   final bool shaded;
   final bool anyClosed;
+  final bool busy;
   final VoidCallback onClose;
 
-  const _IssueTableRow({required this.issue, required this.shaded, required this.anyClosed, required this.onClose});
+  const _IssueTableRow({required this.issue, required this.shaded, required this.anyClosed, required this.busy, required this.onClose});
 
   @override
   Widget build(BuildContext context) {
@@ -331,10 +334,12 @@ class _IssueTableRow extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
                     child: Align(
                       alignment: Alignment.centerRight,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: CompactActionButton(label: kIssueKindCloseLabel[issue.kind] ?? 'Close', color: AppTheme.accent, onTap: onClose),
-                      ),
+                      child: busy
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: CompactActionButton(label: kIssueKindCloseLabel[issue.kind] ?? 'Close', color: AppTheme.accent, onTap: onClose),
+                            ),
                     ),
                   )
                 : null,

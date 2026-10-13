@@ -1592,6 +1592,7 @@ class _OrderCard extends ConsumerWidget {
                     const SizedBox(height: AppTheme.s8),
                     NeuButton(
                       expand: true,
+                      soft: true,
                       padding: const EdgeInsets.symmetric(
                         vertical: AppTheme.s8 + 2,
                       ),
@@ -1599,7 +1600,7 @@ class _OrderCard extends ConsumerWidget {
                           _viewOrderBill(context, ref, order.invoiceId!),
                       child: const Text(
                         'View bill',
-                        style: TextStyle(fontSize: 13),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                       ),
                     ),
                   ],

@@ -352,6 +352,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       // for it.
       if (!booking.hasIssuedInvoice)
         NeuButton(
+          primary: true,
+          color: AppTheme.sidebarBrand,
           expand: true,
           padding: pairedPadding,
           onPressed: _openEdit,
@@ -545,6 +547,7 @@ class _StayRoomSection extends StatelessWidget {
 
     return _Section(
       number: 1,
+      icon: Icons.meeting_room_rounded,
       title: 'Stay & room',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -656,7 +659,7 @@ class _MultiRoomBreakdown extends StatelessWidget {
             padding: const EdgeInsets.all(AppTheme.s12),
             margin: const EdgeInsets.only(bottom: AppTheme.s8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
+              color: AppTheme.bg,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -770,7 +773,7 @@ class _FoodPinBox extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppTheme.s12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -873,6 +876,7 @@ class _GuestSection extends StatelessWidget {
 
     return _Section(
       number: 2,
+      icon: Icons.people_alt_rounded,
       title: 'Guest details',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -884,7 +888,7 @@ class _GuestSection extends StatelessWidget {
               vertical: AppTheme.s12,
             ),
             decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
+              color: AppTheme.bg,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -977,7 +981,7 @@ class _PersonRow extends StatelessWidget {
         vertical: AppTheme.s12,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -1087,6 +1091,7 @@ class _AdvanceSection extends StatelessWidget {
 
     return _Section(
       number: 3,
+      icon: Icons.payments_rounded,
       title: booking.paidInFull ? 'Payment' : 'Advance payment',
       child: booking.advanceAmount == null
           ? Column(
@@ -1171,6 +1176,7 @@ class _VehiclesSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return _Section(
       number: 4,
+      icon: Icons.directions_car_filled_rounded,
       title: 'Vehicles',
       child: booking.vehicles.isEmpty
           ? const _EmptyBox(message: 'None on file.')
@@ -1202,12 +1208,13 @@ class _ChargesSection extends StatelessWidget {
     final servicesOpen = booking.servicesOpen;
     return _Section(
       number: 5,
+      icon: Icons.receipt_long_rounded,
       title: 'Price breakdown',
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(AppTheme.s16),
         decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
+          color: AppTheme.bg,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -1478,7 +1485,7 @@ class _FoodOrderTicket extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppTheme.s12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -1666,7 +1673,7 @@ class _ServiceUsageTile extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppTheme.s12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Wrap(
@@ -1838,7 +1845,7 @@ class _BillSectionState extends State<_BillSection> {
           width: double.infinity,
           padding: const EdgeInsets.all(AppTheme.s16),
           decoration: BoxDecoration(
-            color: const Color(0xFFF3F4F6),
+            color: AppTheme.bg,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
@@ -2068,14 +2075,23 @@ class _MoneyLine extends StatelessWidget {
 
 // ── Shared shells ─────────────────────────────────────────────────────────
 
-/// A numbered header — the small purple badge and caps title every section
-/// on the web panel opens with — over whatever that section's own body is.
+/// A numbered header — a gradient icon badge, caps title and a muted number
+/// chip every section on the web panel opens with — over whatever that
+/// section's own body is. Mirrors the same icon-badge language the billing
+/// screens' own stay-details and itemised cards use, so the whole app reads
+/// as one design rather than a different header style per screen.
 class _Section extends StatelessWidget {
   final int number;
+  final IconData icon;
   final String title;
   final Widget child;
 
-  const _Section({required this.number, required this.title, required this.child});
+  const _Section({
+    required this.number,
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2089,35 +2105,57 @@ class _Section extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 20,
-                height: 20,
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppTheme.accent.withValues(alpha: 0.18),
+                      AppTheme.sidebarBrand.withValues(alpha: 0.10),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 14, color: AppTheme.accent),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+              Container(
+                width: 18,
+                height: 18,
                 alignment: Alignment.center,
                 decoration: const BoxDecoration(
-                  color: AppTheme.accent,
+                  color: AppTheme.bg,
                   shape: BoxShape.circle,
                 ),
                 child: Text(
                   '$number',
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+                    color: AppTheme.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
                   ),
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              Text(
-                title.toUpperCase(),
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s12),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
+            child: Divider(height: 1),
+          ),
           child,
         ],
       ),
@@ -2137,14 +2175,14 @@ class _FactBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppTheme.s16),
+      padding: const EdgeInsets.all(AppTheme.s12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Wrap(
-        spacing: AppTheme.s24,
-        runSpacing: AppTheme.s16,
+        spacing: AppTheme.s16,
+        runSpacing: AppTheme.s12,
         children: [for (final f in facts) f],
       ),
     );
@@ -2215,7 +2253,7 @@ class _EmptyBox extends StatelessWidget {
         vertical: AppTheme.s16,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(

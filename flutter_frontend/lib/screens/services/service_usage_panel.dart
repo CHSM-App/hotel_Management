@@ -429,7 +429,7 @@ class _UsageCard extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CompactActionButton(label: 'View', color: AppTheme.muted, onTap: onView),
+                    CompactActionButton(label: 'View', color: AppTheme.edit, onTap: onView),
                     if (showActions) ...[
                       if (usage.status == 'IN_USE') ...[
                         const SizedBox(width: 6),

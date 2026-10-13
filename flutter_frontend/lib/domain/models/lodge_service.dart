@@ -65,6 +65,9 @@ class ServiceUsage {
   final bool billed;
   final String startedAt;
   final String? completedAt;
+  // Non-null when this use is one garment of a guest-laundry order — such
+  // uses are billed and displayed as one group per order, not per garment.
+  final int? laundryOrderId;
 
   const ServiceUsage({
     required this.id,
@@ -86,6 +89,7 @@ class ServiceUsage {
     this.billed = false,
     this.startedAt = '',
     this.completedAt,
+    this.laundryOrderId,
   });
 
   factory ServiceUsage.fromJson(Map<String, dynamic> json) => ServiceUsage(
@@ -108,6 +112,58 @@ class ServiceUsage {
     billed: asBool(json['billed']),
     startedAt: json['startedAt']?.toString() ?? '',
     completedAt: asStringOrNull(json['completedAt']),
+    laundryOrderId: asIntOrNull(json['laundryOrderId']),
+  );
+
+  /// This use as the head of a new laundry group — same fields, named
+  /// "Laundry" rather than the individual garment's own service name.
+  ServiceUsage asLaundryHead() => ServiceUsage(
+    id: id,
+    serviceId: serviceId,
+    serviceName: 'Laundry',
+    unitLabel: unitLabel,
+    unitPrice: unitPrice,
+    gstRatePercent: gstRatePercent,
+    quantity: quantity,
+    lineTotal: lineTotal,
+    roomId: roomId,
+    roomNumber: roomNumber,
+    bookingId: bookingId,
+    guestName: guestName,
+    guestPhone: guestPhone,
+    note: note,
+    status: status,
+    onRoomBill: onRoomBill,
+    billed: billed,
+    startedAt: startedAt,
+    completedAt: completedAt,
+    laundryOrderId: laundryOrderId,
+  );
+
+  /// Folds another garment row of the same laundry order into this group's
+  /// display row — quantity and total summed, mirrors groupedServiceUsages
+  /// in Billing.jsx.
+  ServiceUsage mergedWith(ServiceUsage other) => ServiceUsage(
+    id: id,
+    serviceId: serviceId,
+    serviceName: 'Laundry',
+    unitLabel: unitLabel,
+    unitPrice: unitPrice,
+    gstRatePercent: gstRatePercent,
+    quantity: quantity + other.quantity,
+    lineTotal: lineTotal + other.lineTotal,
+    roomId: roomId,
+    roomNumber: roomNumber,
+    bookingId: bookingId,
+    guestName: guestName,
+    guestPhone: guestPhone,
+    note: note,
+    status: status,
+    onRoomBill: onRoomBill,
+    billed: billed,
+    startedAt: startedAt,
+    completedAt: completedAt,
+    laundryOrderId: laundryOrderId,
   );
 
   /// "Completed · Room 12 · Asha · ready to bill" — mirrors the detail line
