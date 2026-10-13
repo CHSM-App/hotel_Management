@@ -156,6 +156,7 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
               rooms: shown,
               now: now,
               hasVenues: hasVenues,
+              busyRoomId: state.busyRoomId,
               onFinish: (r) => showFinishCleaningScreen(context, r),
               onStart: _start,
               onBackInService: _backInService,
@@ -168,7 +169,7 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
               _RoomCard(
                 room: r,
                 now: now,
-                busy: state.submitting,
+                busy: state.busyRoomId == r.id,
                 onStart: () => _start(r),
                 onFinish: () => showFinishCleaningScreen(context, r),
                 onRelease: () => _release(r),
@@ -403,6 +404,7 @@ class _RoomsTable extends StatelessWidget {
   final List<HousekeepingRoom> rooms;
   final DateTime now;
   final bool hasVenues;
+  final int? busyRoomId;
   final ValueChanged<HousekeepingRoom> onStart;
   final ValueChanged<HousekeepingRoom> onFinish;
   final ValueChanged<HousekeepingRoom> onBackInService;
@@ -414,6 +416,7 @@ class _RoomsTable extends StatelessWidget {
     required this.rooms,
     required this.now,
     required this.hasVenues,
+    required this.busyRoomId,
     required this.onStart,
     required this.onFinish,
     required this.onBackInService,
@@ -466,6 +469,7 @@ class _RoomsTable extends StatelessWidget {
                     room: rooms[i],
                     now: now,
                     shaded: i.isOdd,
+                    busy: busyRoomId == rooms[i].id,
                     onStart: () => onStart(rooms[i]),
                     onFinish: () => onFinish(rooms[i]),
                     onBackInService: () => onBackInService(rooms[i]),
@@ -484,6 +488,7 @@ class _RoomTableRow extends StatelessWidget {
   final HousekeepingRoom room;
   final DateTime now;
   final bool shaded;
+  final bool busy;
   final VoidCallback onStart;
   final VoidCallback onFinish;
   final VoidCallback onBackInService;
@@ -493,6 +498,7 @@ class _RoomTableRow extends StatelessWidget {
     required this.room,
     required this.now,
     required this.shaded,
+    required this.busy,
     required this.onStart,
     required this.onFinish,
     required this.onBackInService,
@@ -537,7 +543,12 @@ class _RoomTableRow extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (room.status == 'DIRTY')
+                    if (busy && (room.status == 'DIRTY' || room.status == 'CLEANING' || room.status == 'OUT_OF_ORDER'))
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: AppTheme.s8),
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    else if (room.status == 'DIRTY')
                       CompactActionButton(label: 'Start cleaning', color: tone, onTap: onStart)
                     else if (room.status == 'CLEANING')
                       CompactActionButton(label: 'Finish', color: AppTheme.accent, primary: true, onTap: onFinish)
@@ -546,6 +557,7 @@ class _RoomTableRow extends StatelessWidget {
                     if (menu.isNotEmpty)
                       PopupMenuButton<int>(
                         padding: EdgeInsets.zero,
+                        enabled: !busy,
                         icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
                         onSelected: (i) => menu[i].$2(),
                         elevation: 10,

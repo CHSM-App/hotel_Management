@@ -172,6 +172,10 @@ class HousekeepingIssue {
 
   bool get isOpen => closedAt == null;
   bool get isVenue => space == 'VENUE';
+  // A finish-cleaning submission with both a problem and a found item
+  // stores them as one housekeeping_log row, so a FOUND and an ISSUE entry
+  // can share the same logId — `kind` is what tells them apart.
+  String get key => '$logId:$kind';
   // "Room 12", or the venue by its own name — mirrors spaceName in
   // HousekeepingIssues.jsx.
   String get spaceLabel => isVenue ? roomNumber : 'Room $roomNumber';
