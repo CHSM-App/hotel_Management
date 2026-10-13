@@ -1788,7 +1788,7 @@ export default function IncomePanel({ onViewReport }) {
                             disabled={addingReceipt}
                             onClick={(e) => handleAddReceipt(e)}
                           >
-                            {addingReceipt ? 'Adding…' : 'Add receipt'}
+                            {addingReceipt ? 'Adding…' : 'Add payment'}
                           </button>
                         </div>
                       </div>

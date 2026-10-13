@@ -797,9 +797,11 @@
   border-color: var(--danger, #b42318);
 }
 
+/* Tinted rather than bare: on a plain background the strip read as a label
+   rather than as something to press. */
 .pay-lines__add {
-  background: none;
-  border: 1px dashed var(--border);
+  background: var(--brand-wash);
+  border: 1px dashed var(--brand-band);
   border-radius: 8px;
   color: var(--brand-ink);
   font-size: 13px;
@@ -807,6 +809,10 @@
   cursor: pointer;
   padding: 10px 14px;
   width: 100%;
+}
+
+.pay-lines__add:hover {
+  background: var(--brand-wash-edge);
 }
 
 @media (max-width: 480px) {

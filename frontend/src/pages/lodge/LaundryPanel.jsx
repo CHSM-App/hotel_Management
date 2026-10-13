@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
@@ -1137,24 +1137,40 @@ function GuestLaundryTab({ token }) {
   const renameLine = (line, name) =>
     patchLine(line.key, { name, ...(line.price === '' && priceOf.has(name.trim().toLowerCase()) ? { price: String(priceOf.get(name.trim().toLowerCase())) } : {}) });
 
+  // The banner sits at the top of a form that is usually scrolled down to the
+  // garment rows or the washer by the time Send to wash is pressed, so a
+  // failure takes the view, and the cursor, up to its own message.
+  const formErrorRef = useRef(null);
+  const failForm = (message) => {
+    setFormError(message);
+    requestAnimationFrame(() => {
+      formErrorRef.current?.focus({ preventScroll: true });
+      formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  };
+
   const create = async () => {
     setFormError('');
     // A row with nothing typed in it is just a row someone added and left.
     const used = lines.filter((l) => l.name.trim() || l.price !== '');
-    if (used.length === 0) return setFormError('Add the garments being handed in.');
+    if (used.length === 0) return failForm('Add the garments being handed in.');
     for (const l of used) {
-      if (!l.name.trim()) return setFormError('Enter the garment name on every row.');
-      if (l.price === '' || !(Number(l.price) >= 0)) return setFormError(`Enter the price for ${l.name.trim()}.`);
+      if (!l.name.trim()) return failForm('Enter the garment name on every row.');
+      if (l.price === '' || !(Number(l.price) >= 0)) return failForm(`Enter the price for ${l.name.trim()}.`);
     }
     const stay = form.mode === 'stay' ? guests.find((g) => `${g.bookingId}:${g.roomId}` === form.stay) : null;
-    if (form.mode === 'stay' && !stay) return setFormError('Choose the guest.');
-    if (form.mode === 'walkin' && !form.guestName.trim()) return setFormError('Enter the customer’s name.');
+    if (form.mode === 'stay' && !stay) return failForm('Choose the guest.');
+    if (form.mode === 'walkin' && !form.guestName.trim()) return failForm('Enter the customer’s name.');
     // Sending to an outside vendor needs to say which one. The price can wait
     // until the clothes are back; it is asked for then.
     const washerErrs = washerErrors(form, { needName: true });
     setFormErrors(washerErrs);
     if (Object.keys(washerErrs).length > 0) {
-      document.getElementById({ washedBy: 'hkWashedBy', vendorPhone: 'hkVendorPhone', charge: 'hkWashCharge' }[Object.keys(washerErrs)[0]])?.focus();
+      const field = document.getElementById(
+        { washedBy: 'hkWashedBy', vendorPhone: 'hkVendorPhone', charge: 'hkWashCharge' }[Object.keys(washerErrs)[0]]
+      );
+      field?.focus({ preventScroll: true });
+      field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
     setBusy(true);
@@ -1178,7 +1194,7 @@ function GuestLaundryTab({ token }) {
       load();
       loadRecent();
     } catch (err) {
-      setFormError(errorText(err, 'Could not save the order.'));
+      failForm(errorText(err, 'Could not save the order.'));
     } finally {
       setBusy(false);
     }
@@ -1469,7 +1485,11 @@ function GuestLaundryTab({ token }) {
             </>
           }
         >
-          {formError && <div className="form-banner form-banner--error">{formError}</div>}
+          {formError && (
+            <div ref={formErrorRef} tabIndex={-1} role="alert" className="form-banner form-banner--error form-banner--flash">
+              {formError}
+            </div>
+          )}
 
           <section className="hk-finish__section">
           <div className="hk-finish__head">
