@@ -51,6 +51,18 @@ class ReportsImpl implements ReportsRepository {
   }) => api.analyticsOverview(fromDate: fromDate, toDate: toDate, compareMode: compareMode);
 
   @override
+  Future<ServicesReport> servicesReport({
+    required String fromDate,
+    required String toDate,
+  }) => api.servicesReport(fromDate: fromDate, toDate: toDate);
+
+  @override
+  Future<LaundryReport> laundryReport({
+    required String fromDate,
+    required String toDate,
+  }) => api.laundryReport(fromDate: fromDate, toDate: toDate);
+
+  @override
   Future<ProfitLossReport> profitLoss({
     required String fromDate,
     required String toDate,

@@ -107,6 +107,11 @@ class Booking {
   /// server. Only populated by the detail fetch, same as [rooms].
   final List<BookingFoodOrder> foodOrders;
 
+  /// Services used against this stay — spa, pool, laundry, whatever the
+  /// lodge sells beyond the room and food. Only populated by the detail
+  /// fetch, mirrors Bookings.jsx's own `booking.serviceUsages`.
+  final List<BookingServiceUsage> serviceUsages;
+
   /// A stay stays editable right up until its bill is issued — extend it,
   /// move rooms, correct the party, fix a detail. Once this is true only the
   /// server's own further guards (room and check-out date edits close once
@@ -175,6 +180,7 @@ class Booking {
     this.roomCharges = const [],
     this.invoice,
     this.foodOrders = const [],
+    this.serviceUsages = const [],
     this.hasIssuedInvoice = false,
     this.rooms = const [],
     this.roomCount,
@@ -253,6 +259,10 @@ class Booking {
             ?.map((e) => BookingFoodOrder.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
+    serviceUsages: (json['serviceUsages'] as List?)
+            ?.map((e) => BookingServiceUsage.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
     hasIssuedInvoice: asBool(json['hasIssuedInvoice']),
     rooms: (json['rooms'] as List?)
             ?.map((e) => BookingRoom.fromJson(e as Map<String, dynamic>))
@@ -276,6 +286,19 @@ class Booking {
   num get foodOpenTotal =>
       (foodOrdersOpen.fold<num>(0, (sum, o) => sum + o.subtotal) * 100)
           .round() /
+      100;
+
+  /// Services used that have not yet landed on a bill and that the desk has
+  /// put on the room bill — same filter StayDetails.jsx's own `servicesOpen`
+  /// applies.
+  List<BookingServiceUsage> get servicesOpen => serviceUsages
+      .where((u) => !u.billed && u.onRoomBill && u.status == 'COMPLETED')
+      .toList();
+
+  /// The unbilled services total, rounded the same way StayDetails.jsx
+  /// rounds `servicesOpenTotal` — to the paisa, not the rupee.
+  num get servicesOpenTotal =>
+      (servicesOpen.fold<num>(0, (sum, u) => sum + u.amount) * 100).round() /
       100;
 
   /// What is still to collect, before the bill is cut — the room charge and
@@ -526,6 +549,61 @@ class BookingFoodOrderItem {
         quantity: asIntOrNull(json['quantity']) ?? 1,
         lineTotal: asNumOrNull(json['lineTotal']) ?? 0,
       );
+}
+
+/// One service used against a stay — spa, pool, laundry, whatever the lodge
+/// sells beyond the room and food. Mirrors the shape bookings.service.js's
+/// own `getBooking` builds for StayDetails.jsx's price breakdown, and
+/// Bookings.jsx's own RoomServicesSection.
+class BookingServiceUsage {
+  final int id;
+  final String name;
+  final num quantity;
+  final String unitLabel;
+  final num? unitPrice;
+  final num amount;
+  final num gstRatePercent;
+
+  /// IN_USE or COMPLETED.
+  final String status;
+  final String? startedAt;
+
+  /// Whether an invoice already carries this usage — [Booking.servicesOpen]
+  /// is everything that isn't.
+  final bool billed;
+
+  /// Whether the desk has deliberately added this completed usage to the
+  /// room bill — mirrors the backend's own `onRoomBill`, same distinction
+  /// [BookingFoodOrder.onRoomBill] draws for food.
+  final bool onRoomBill;
+
+  const BookingServiceUsage({
+    required this.id,
+    this.name = '',
+    this.quantity = 1,
+    this.unitLabel = '',
+    this.unitPrice,
+    this.amount = 0,
+    this.gstRatePercent = 0,
+    this.status = 'COMPLETED',
+    this.startedAt,
+    this.billed = false,
+    this.onRoomBill = false,
+  });
+
+  factory BookingServiceUsage.fromJson(Map<String, dynamic> json) => BookingServiceUsage(
+    id: asInt(json['id']),
+    name: json['name']?.toString() ?? '',
+    quantity: asNum(json['quantity'], fallback: 1),
+    unitLabel: json['unitLabel']?.toString() ?? '',
+    unitPrice: asNumOrNull(json['unitPrice']),
+    amount: asNumOrNull(json['amount']) ?? 0,
+    gstRatePercent: asNum(json['gstRatePercent']),
+    status: json['status']?.toString() ?? 'COMPLETED',
+    startedAt: asStringOrNull(json['startedAt']),
+    billed: asBool(json['billed']),
+    onRoomBill: asBool(json['onRoomBill']),
+  );
 }
 
 /// One room of a multi-room stay — only present on [Booking.rooms], which

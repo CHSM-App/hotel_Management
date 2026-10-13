@@ -436,6 +436,14 @@ class ApiService {
         .toList();
   }
 
+  /// Functions that are over (or marked complete) and have no bill yet.
+  Future<List<EventBooking>> eventBillingQueue() async {
+    final res = await _dio.get('/billing/event-queue');
+    return (_map(res.data)['events'] as List? ?? [])
+        .map((e) => EventBooking.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// What the bill will say. Re-fetched when the overstay decision changes,
   /// because adding that charge can move a night into a different GST band and
   /// change the rounding — the totals are never adjusted on the phone.
@@ -1392,6 +1400,32 @@ class ApiService {
     return FoodOrdersReport.fromJson(_map(res.data));
   }
 
+  /// Other services (pool, gaming, guest laundry ...) over a date range —
+  /// Reports > Other services tab.
+  Future<ServicesReport> servicesReport({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/services',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return ServicesReport.fromJson(_map(res.data));
+  }
+
+  /// Hotel linen through the wash, and guest laundry orders, over a date
+  /// range — Reports > Laundry tab.
+  Future<LaundryReport> laundryReport({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/laundry',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return LaundryReport.fromJson(_map(res.data));
+  }
+
   /// One period's Profit & Loss statement — Reports > Profit & Loss tab.
   Future<ProfitLossReport> profitLoss({
     required String fromDate,
@@ -1651,8 +1685,20 @@ class ApiService {
   }
 
   /// What a function's bill will say — the detail screen's "Settle & bill".
-  Future<EventBillPreview> previewEventBill(int eventId) async {
-    final res = await _dio.get('/billing/events/$eventId/preview');
+  Future<EventBillPreview> previewEventBill(
+    int eventId, {
+    num discountAmount = 0,
+    String? discountReason,
+  }) async {
+    final res = await _dio.get(
+      '/billing/events/$eventId/preview',
+      queryParameters: {
+        if (discountAmount > 0) ...{
+          'discountAmount': discountAmount,
+          'discountReason': (discountReason ?? '').trim(),
+        },
+      },
+    );
     return EventBillPreview.fromJson(_map(res.data));
   }
 
@@ -2266,6 +2312,13 @@ class ApiService {
     final res = await _dio.patch('/customers/$id', data: body);
     final customer = _map(res.data)['customer'];
     return customer is Map<String, dynamic> ? Customer.fromJson(customer) : null;
+  }
+
+  /// Registered ahead of /customers/:id on the backend so "feedback" is never
+  /// read as a customer id.
+  Future<CustomerFeedbackResult> customerFeedback() async {
+    final res = await _dio.get('/customers/feedback');
+    return CustomerFeedbackResult.fromJson(_map(res.data));
   }
 
   // ===== OTHER SERVICES (rooms.manage / bookings.manage / billing.manage) =====

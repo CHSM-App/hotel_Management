@@ -14,6 +14,7 @@ import '../theme.dart';
 import 'asset_report_excel.dart';
 import 'asset_report_pdf.dart';
 import 'assets_report_tab.dart';
+import 'bills_report_panel.dart';
 import 'booking_report_excel.dart';
 import 'booking_report_pdf.dart';
 import 'bookings_report_panel.dart';
@@ -32,9 +33,11 @@ import 'gst_report_panel.dart';
 import 'income_report_excel.dart';
 import 'income_report_pdf.dart';
 import 'income_report_tab.dart';
+import 'laundry_report_panel.dart';
 import 'overview_report_panel.dart';
 import 'profit_loss_panel.dart';
 import 'report_widgets.dart';
+import 'services_report_panel.dart';
 
 enum _ReportFormat { pdf, excel }
 
@@ -80,6 +83,8 @@ class _ReportTab {
     'hasEvents' => lodge.hasEvents,
     'hasAssets' => lodge.hasAssets,
     'hasExpenses' => lodge.hasExpenses,
+    'hasOtherServices' => lodge.hasOtherServices,
+    'hasLaundry' => lodge.hasLaundry,
     _ => true,
   };
 }
@@ -90,8 +95,8 @@ class _ReportTab {
 /// tab strip at all when just one is left.
 const _kReportSections = <String, List<String>>{
   'overview': ['overview'],
-  'sales': ['bookings', 'events', 'food'],
-  'finance': ['profitLoss', 'expenses', 'income', 'gst'],
+  'sales': ['bookings', 'events', 'food', 'services', 'laundry'],
+  'finance': ['bills', 'profitLoss', 'expenses', 'income', 'gst'],
   'assets': ['assets'],
 };
 
@@ -100,6 +105,9 @@ const _kAllReportTabs = <_ReportTab>[
   _ReportTab(key: 'bookings', label: 'Room Bookings', capability: 'hasRooms'),
   _ReportTab(key: 'events', label: 'Events & functions', capability: 'hasEvents'),
   _ReportTab(key: 'food', label: 'Restaurant', capability: 'servesFood'),
+  _ReportTab(key: 'services', label: 'Other services', capability: 'hasOtherServices'),
+  _ReportTab(key: 'laundry', label: 'Laundry', capability: 'hasLaundry'),
+  _ReportTab(key: 'bills', label: 'Bills'),
   _ReportTab(key: 'gst', label: 'Tax & GST'),
   _ReportTab(
     key: 'profitLoss',
@@ -143,13 +151,13 @@ class ReportsScreen extends ConsumerStatefulWidget {
 /// Tabs whose data is fetched over the shared date range (and so need the
 /// range picker on screen); Expenses/Other Income/Assets report their full
 /// history instead, the same distinction ReportsPanel.jsx draws.
-const _kDateRangedTabs = {'overview', 'bookings', 'events', 'food', 'gst', 'profitLoss'};
+const _kDateRangedTabs = {'overview', 'bookings', 'events', 'food', 'services', 'laundry', 'gst', 'profitLoss'};
 
 /// Tabs that load their full history once and filter it client-side —
 /// still shown with the same From/To range picker above the tab strip as
 /// the server-ranged tabs, just wired to a locally held range instead of
 /// the shared [ReportsState].
-const _kLocalRangedTabs = {'expenses', 'income', 'assets'};
+const _kLocalRangedTabs = {'expenses', 'income', 'assets', 'bills'};
 
 /// Tabs with a matching PDF/Excel builder, same parity as the web's own
 /// preview/export buttons for Bookings/Events/Food/GST/Expenses/Other
@@ -357,11 +365,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     'bookings' => const BookingsReportPanel(),
                     'events' => const EventsReportPanel(),
                     'food' => const FoodOrdersReportPanel(),
+                    'services' => const ServicesReportPanel(),
+                    'laundry' => const LaundryReportPanel(),
                     'gst' => const GstReportPanel(),
                     'profitLoss' => const ProfitLossPanel(),
                     'expenses' => ExpensesReportTab(fromDate: _localFromDate, toDate: _localToDate),
                     'income' => IncomeReportTab(fromDate: _localFromDate, toDate: _localToDate),
                     'assets' => AssetsReportTab(fromDate: _localFromDate, toDate: _localToDate),
+                    'bills' => BillsReportPanel(fromDate: _localFromDate, toDate: _localToDate),
                     _ => const OverviewReportPanel(),
                   },
           ),

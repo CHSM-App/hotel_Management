@@ -25,6 +25,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _forgotPassword = TextEditingController();
   final _forgotConfirm = TextEditingController();
   bool _showForgotPasswords = false;
+  bool _showPassword = false;
   bool _forgotSubmitting = false;
   bool _forgotDone = false;
   String? _forgotError;
@@ -193,7 +194,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         NeuField(
           controller: _password,
           label: 'Password',
-          obscure: true,
+          obscure: !_showPassword,
+          suffix: _EyeToggle(
+            shown: _showPassword,
+            onTap: () => setState(() => _showPassword = !_showPassword),
+          ),
           labelAction: TextButton(
             onPressed: _openForgot,
             style: TextButton.styleFrom(

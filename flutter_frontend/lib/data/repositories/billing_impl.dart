@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../../domain/models/event_booking.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/models/lodge_service.dart' show ServiceUsage;
 import '../../domain/repository/billing_repo.dart';
@@ -19,6 +20,9 @@ class BillingImpl implements BillingRepository {
 
   @override
   Future<List<BillableStay>> queue() => api.billingQueue();
+
+  @override
+  Future<List<EventBooking>> queueEvents() => api.eventBillingQueue();
 
   @override
   Future<BillPreview> preview(
@@ -91,8 +95,15 @@ class BillingImpl implements BillingRepository {
   Future<Invoice> invoice(int id) => api.invoice(id);
 
   @override
-  Future<EventBillPreview> previewEventBill(int eventId) =>
-      api.previewEventBill(eventId);
+  Future<EventBillPreview> previewEventBill(
+    int eventId, {
+    num discountAmount = 0,
+    String? discountReason,
+  }) => api.previewEventBill(
+    eventId,
+    discountAmount: discountAmount,
+    discountReason: discountReason,
+  );
 
   @override
   Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body) =>

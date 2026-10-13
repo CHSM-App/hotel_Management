@@ -47,7 +47,8 @@ class ReportPdfStyle {
 
   static String dateOnly(String? iso) {
     if (iso == null || iso.isEmpty) return '';
-    final parts = iso.split('-');
+    final datePart = iso.split('T').first;
+    final parts = datePart.split('-');
     if (parts.length != 3) return iso;
     final months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',

@@ -72,7 +72,14 @@ class _Loaded extends StatelessWidget {
             StatItem(label: 'Checked out', value: '${s.statusCount('CHECKED_OUT')}'),
             StatItem(label: 'Cancelled', value: '$cancelled'),
             StatItem(label: 'Room nights', value: '${s.roomNights}'),
-            StatItem(label: 'Billed', value: formatPrice(s.billedAmount), accent: true),
+            StatItem(
+              label: 'Room billed',
+              value: formatPrice(s.billedAmount),
+              accent: true,
+              note: s.foodBilledAmount > 0
+                  ? '+ ${formatPrice(s.foodBilledAmount)} food, in Restaurant'
+                  : null,
+            ),
             StatItem(label: 'Advance collected', value: formatPrice(s.advanceCollected)),
             StatItem(label: 'Total collected', value: formatPrice(s.totalCollected)),
             if (s.cancellationChargesKept > 0)

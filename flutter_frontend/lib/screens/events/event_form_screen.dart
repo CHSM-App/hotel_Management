@@ -147,6 +147,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         quantity: saved?.quantity ?? 1,
         agreedAmount: saved?.agreedAmount?.toString(),
         selected: saved != null,
+        isPerUnit: a.isPerUnit,
       );
     }).toList();
     if (ev != null) {
@@ -805,7 +806,25 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                         const Text('Add-ons (per day)', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
                         const SizedBox(height: 6),
                         if (_lines.isEmpty) const Text('No add-ons in the catalogue yet.', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
-                        for (final l in _lines) _AddonLineTile(line: l, onChanged: () { setState(() {}); _scheduleQuote(); }),
+                        if (_lines.isNotEmpty)
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              const spacing = AppTheme.s8;
+                              final cols = constraints.maxWidth >= 520 ? 3 : (constraints.maxWidth >= 340 ? 2 : 1);
+                              final tileWidth = (constraints.maxWidth - spacing * (cols - 1)) / cols;
+                              return Wrap(
+                                spacing: spacing,
+                                runSpacing: spacing,
+                                children: [
+                                  for (final l in _lines)
+                                    SizedBox(
+                                      width: tileWidth,
+                                      child: _AddonLineTile(line: l, onChanged: () { setState(() {}); _scheduleQuote(); }),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
                         const SizedBox(height: AppTheme.s8),
                         Row(
                           children: [
@@ -912,6 +931,12 @@ class _AddonLineDraft {
   final bool needsPricing;
   final String? notedAt;
 
+  /// Whether this add-on is priced per unit (extra chairs, cold drinks —
+  /// the quantity stepper applies) rather than a flat fee for the whole
+  /// function (DJ & sound system, venue decor — quantity is always 1 and
+  /// never shown).
+  final bool isPerUnit;
+
   _AddonLineDraft({
     this.addonId,
     required this.label,
@@ -922,6 +947,7 @@ class _AddonLineDraft {
     this.isExtra = false,
     this.needsPricing = false,
     this.notedAt,
+    this.isPerUnit = false,
   });
 }
 
@@ -931,53 +957,180 @@ class _AddonLineTile extends StatelessWidget {
 
   const _AddonLineTile({required this.line, required this.onChanged});
 
+  Widget _stepperButton(IconData icon, VoidCallback? onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 22,
+        height: 22,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: onTap == null ? AppTheme.bg : AppTheme.card,
+          border: Border.all(color: AppTheme.border2),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(icon, size: 13, color: onTap == null ? AppTheme.muted : AppTheme.heading),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
+    final selected = line.selected;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+      decoration: BoxDecoration(
+        color: selected ? AppTheme.accent.withValues(alpha: 0.05) : AppTheme.card,
+        border: Border.all(color: selected ? AppTheme.accent : AppTheme.border2, width: selected ? 1.4 : 1),
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Checkbox(
-            value: line.selected,
-            onChanged: (v) {
-              line.selected = v ?? false;
-              onChanged();
-            },
-          ),
-          Expanded(child: Text(line.label, style: const TextStyle(color: AppTheme.text, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)),
-          if (!line.selected && line.unitAmount != null)
-            Text('${formatPrice(line.unitAmount!)}/day', style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
-          if (line.selected) ...[
-            SizedBox(
-              width: 46,
-              child: TextField(
-                controller: TextEditingController(text: line.quantity.toString()),
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12),
-                decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6)),
-                onChanged: (v) {
-                  line.quantity = int.tryParse(v) ?? 1;
-                  onChanged();
-                },
+          Row(
+            children: [
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: Checkbox(
+                  value: selected,
+                  activeColor: AppTheme.accent,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (v) {
+                    line.selected = v ?? false;
+                    onChanged();
+                  },
+                ),
               ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  line.label,
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          if (!selected && line.unitAmount != null) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Text('${formatPrice(line.unitAmount!)}/day', style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
             ),
-            const SizedBox(width: 6),
-            SizedBox(
-              width: 70,
-              child: TextField(
-                controller: TextEditingController(text: line.agreedAmount ?? ''),
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12),
-                decoration: InputDecoration(isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), hintText: line.unitAmount?.toString() ?? '₹'),
-                onChanged: (v) {
-                  line.agreedAmount = v;
-                  onChanged();
-                },
+          ],
+          if (selected) ...[
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Row(
+                children: [
+                  if (line.isPerUnit) ...[
+                    const Text('Qty', style: TextStyle(color: AppTheme.muted, fontSize: 11)),
+                    const Spacer(),
+                    _stepperButton(Icons.remove_rounded, line.quantity > 1 ? () {
+                      line.quantity -= 1;
+                      onChanged();
+                    } : null),
+                    SizedBox(
+                      width: 26,
+                      child: Text('${line.quantity}', textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600)),
+                    ),
+                    _stepperButton(Icons.add_rounded, () {
+                      line.quantity += 1;
+                      onChanged();
+                    }),
+                    const SizedBox(width: 8),
+                  ] else ...[
+                    const Text('Price', style: TextStyle(color: AppTheme.muted, fontSize: 11)),
+                    const Spacer(),
+                  ],
+                  _AmountBox(line: line, onChanged: onChanged),
+                ],
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The agreed-amount field for a selected add-on — boxed, bordered, and
+/// carrying a small pencil glyph so it reads unmistakably as an editable
+/// control rather than plain price text, and rings in [AppTheme.accent]
+/// while focused the way the web form's own amount field does.
+class _AmountBox extends StatefulWidget {
+  final _AddonLineDraft line;
+  final VoidCallback onChanged;
+
+  const _AmountBox({required this.line, required this.onChanged});
+
+  @override
+  State<_AmountBox> createState() => _AmountBoxState();
+}
+
+class _AmountBoxState extends State<_AmountBox> {
+  final _node = FocusNode();
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _node.addListener(() {
+      if (mounted) setState(() => _focused = _node.hasFocus);
+    });
+  }
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final line = widget.line;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        border: Border.all(color: _focused ? AppTheme.accent : AppTheme.border2, width: _focused ? 1.4 : 1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('₹', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+          const SizedBox(width: 2),
+          SizedBox(
+            width: 52,
+            child: TextField(
+              controller: TextEditingController(text: line.agreedAmount ?? '')
+                ..selection = TextSelection.collapsed(offset: (line.agreedAmount ?? '').length),
+              focusNode: _node,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 13, color: AppTheme.heading, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                hintText: line.unitAmount?.toString(),
+                hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 13),
+              ),
+              onChanged: (v) {
+                line.agreedAmount = v;
+                widget.onChanged();
+              },
+            ),
+          ),
+          const SizedBox(width: 2),
+          Icon(Icons.edit_rounded, size: 11, color: _focused ? AppTheme.accent : AppTheme.muted),
         ],
       ),
     );

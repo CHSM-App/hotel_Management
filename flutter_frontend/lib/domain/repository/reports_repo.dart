@@ -40,6 +40,16 @@ abstract class ReportsRepository {
     String compareMode = 'previous_period',
   });
 
+  Future<ServicesReport> servicesReport({
+    required String fromDate,
+    required String toDate,
+  });
+
+  Future<LaundryReport> laundryReport({
+    required String fromDate,
+    required String toDate,
+  });
+
   Future<ProfitLossReport> profitLoss({
     required String fromDate,
     required String toDate,

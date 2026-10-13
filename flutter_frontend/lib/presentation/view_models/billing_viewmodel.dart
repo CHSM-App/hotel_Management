@@ -16,6 +16,11 @@ import 'booking_viewmodel.dart' show BookingViewModel;
 /// and the one bill being cut right now.
 class BillingState {
   final AsyncValue<List<BillableStay>> queue;
+
+  /// Functions that are over (or marked complete) and have no bill yet —
+  /// the events stream's own queue, mirrors [queue] for stays. Feeds the
+  /// Event billing screen's "Ready to bill" tab.
+  final AsyncValue<List<EventBooking>> eventQueue;
   final AsyncValue<List<FoodTab>> foodQueue;
   final AsyncValue<List<ServiceUsage>> serviceQueue;
   final AsyncValue<List<Invoice>> invoices;
@@ -82,6 +87,7 @@ class BillingState {
 
   const BillingState({
     this.queue = const AsyncValue.loading(),
+    this.eventQueue = const AsyncValue.loading(),
     this.foodQueue = const AsyncValue.loading(),
     this.serviceQueue = const AsyncValue.loading(),
     this.invoices = const AsyncValue.loading(),
@@ -107,6 +113,7 @@ class BillingState {
 
   BillingState copyWith({
     AsyncValue<List<BillableStay>>? queue,
+    AsyncValue<List<EventBooking>>? eventQueue,
     AsyncValue<List<FoodTab>>? foodQueue,
     AsyncValue<List<ServiceUsage>>? serviceQueue,
     AsyncValue<List<Invoice>>? invoices,
@@ -139,6 +146,7 @@ class BillingState {
     String? discountReason,
   }) => BillingState(
     queue: queue ?? this.queue,
+    eventQueue: eventQueue ?? this.eventQueue,
     foodQueue: foodQueue ?? this.foodQueue,
     serviceQueue: serviceQueue ?? this.serviceQueue,
     invoices: invoices ?? this.invoices,
@@ -252,6 +260,12 @@ class BillingViewModel extends StateNotifier<BillingState> {
       state = state.copyWith(queue: AsyncValue.data(rows));
     } catch (e, st) {
       state = state.copyWith(queue: AsyncValue.error(e, st));
+    }
+    try {
+      final rows = await usecase.queueEvents();
+      state = state.copyWith(eventQueue: AsyncValue.data(rows));
+    } catch (e, st) {
+      state = state.copyWith(eventQueue: AsyncValue.error(e, st));
     }
     try {
       final rows = await usecase.foodTabs();
@@ -404,6 +418,13 @@ class BillingViewModel extends StateNotifier<BillingState> {
     await refreshPreview();
   }
 
+  /// Whichever bill is open right now — a stay's or a function's. Only one
+  /// of [BillingState.target]/[BillingState.eventTarget] is ever non-null at
+  /// a time, so the discount typed into either screen re-prices the one
+  /// that's actually open.
+  Future<void> _refreshOpenPreview() =>
+      state.eventTarget != null ? refreshEventPreview() : refreshPreview();
+
   /// Set the discount amount and re-price. Clearing it also clears the
   /// reason — an empty amount is charging in full, and a reason with no
   /// discount behind it would print beside nothing.
@@ -412,12 +433,12 @@ class BillingViewModel extends StateNotifier<BillingState> {
       discountInput: amount,
       discountReason: amount.trim().isEmpty ? '' : state.discountReason,
     );
-    await refreshPreview();
+    await _refreshOpenPreview();
   }
 
   Future<void> setDiscountReason(String reason) async {
     state = state.copyWith(discountReason: reason);
-    await refreshPreview();
+    await _refreshOpenPreview();
   }
 
   void addPaymentRow() => state = state.copyWith(
@@ -575,7 +596,11 @@ class BillingViewModel extends StateNotifier<BillingState> {
 
     state = state.copyWith(previewing: true, clearError: true);
     try {
-      final preview = await usecase.previewEventBill(event.id);
+      final preview = await usecase.previewEventBill(
+        event.id,
+        discountAmount: state.cycleDiscount,
+        discountReason: state.discountReason,
+      );
       final rows = state.payment.isEmpty
           ? <PaymentDraft>[PaymentDraft()]
           : state.payment;
@@ -617,6 +642,8 @@ class BillingViewModel extends StateNotifier<BillingState> {
       final invoice = await usecase.issueEventInvoice(event.id, {
         'billingSide': preview.billingSide,
         'discountAmount': preview.amounts?.discountAmount ?? 0,
+        if (state.cycleDiscount > 0 && state.discountReason.trim().isNotEmpty)
+          'discountReason': state.discountReason.trim(),
         'collectedAmount': state.collected,
         if (rows.isNotEmpty) ...{
           'paymentMethod': rows.first.method,

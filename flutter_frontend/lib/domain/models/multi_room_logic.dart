@@ -17,13 +17,18 @@ class MultiRoomLogic {
 
   /// A fresh, empty extra-room slot — the different-dates path's "+ Add
   /// another room".
-  static ExtraRoomDraft blankExtraRoom({DateTime? checkIn, DateTime? checkOut}) =>
-      ExtraRoomDraft(checkIn: checkIn, checkOut: checkOut);
+  static ExtraRoomDraft blankExtraRoom({
+    DateTime? checkIn,
+    DateTime? checkOut,
+  }) => ExtraRoomDraft(checkIn: checkIn, checkOut: checkOut);
 
   /// The dates one extra room actually uses: the booking's shared dates
   /// while "same dates for all rooms" is on, else its own (falling back to
   /// the shared ones if it hasn't set any yet).
-  static (DateTime, DateTime)? roomDates(BookingState state, ExtraRoomDraft room) {
+  static (DateTime, DateTime)? roomDates(
+    BookingState state,
+    ExtraRoomDraft room,
+  ) {
     if (!state.multiRoomDifferentDates) {
       final ci = state.checkIn, co = state.checkOut;
       return (ci != null && co != null) ? (ci, co) : null;
@@ -65,8 +70,9 @@ class MultiRoomLogic {
   };
 
   /// A short display label for a room, e.g. "101 · Deluxe".
-  static String roomMeta(Room room) =>
-      room.categoryName.isEmpty ? room.roomNumber : '${room.roomNumber} · ${room.categoryName}';
+  static String roomMeta(Room room) => room.categoryName.isEmpty
+      ? room.roomNumber
+      : '${room.roomNumber} · ${room.categoryName}';
 
   /// The `rooms[]` array sent on save — room 1 first, then each picked extra
   /// room, in the shape the server's `rooms[]` schema expects.
@@ -141,7 +147,9 @@ class MultiRoomLogic {
     final nights = <QuoteNight>[];
     for (var i = 0; i < response.rooms.length; i++) {
       final room = response.rooms[i];
-      final roomLabel = i < roomNumbers.length ? roomNumbers[i] : 'Room ${i + 1}';
+      final roomLabel = i < roomNumbers.length
+          ? roomNumbers[i]
+          : 'Room ${i + 1}';
       final roomNights = room.nights.length;
       charges.addAll(
         room.charges.map(
@@ -180,11 +188,7 @@ class MultiRoomLogic {
   static BookingState promoteFirstExtra(BookingState state) {
     final extras = state.extraRooms;
     if (extras.isEmpty) {
-      return state.copyWith(
-        clearRoom: true,
-        clearQuote: true,
-        discount: '',
-      );
+      return state.copyWith(clearRoom: true, clearQuote: true, discount: '');
     }
     final promoted = extras.first;
     return state.copyWith(
@@ -195,6 +199,7 @@ class MultiRoomLogic {
       buyout: promoted.buyout,
       extras: promoted.extras,
       roomTotal: promoted.roomTotal,
+      roomTotalTouched: promoted.roomTotalTouched,
       extraRooms: extras.skip(1).toList(),
       clearQuote: true,
       discount: '',
@@ -210,15 +215,13 @@ class MultiRoomLogic {
     if (state.room?.id == room.id) {
       return promoteFirstExtra(state);
     }
-    final extraIndex = state.extraRooms.indexWhere((r) => r.room?.id == room.id);
+    final extraIndex = state.extraRooms.indexWhere(
+      (r) => r.room?.id == room.id,
+    );
     if (extraIndex != -1) {
       final next = List<ExtraRoomDraft>.from(state.extraRooms)
         ..removeAt(extraIndex);
-      return state.copyWith(
-        extraRooms: next,
-        clearQuote: true,
-        discount: '',
-      );
+      return state.copyWith(extraRooms: next, clearQuote: true, discount: '');
     }
     if (state.room == null) {
       return state.copyWith(
@@ -227,6 +230,7 @@ class MultiRoomLogic {
         clearAvailableBeds: true,
         extras: const {},
         roomTotal: '',
+        roomTotalTouched: false,
         clearQuote: true,
         discount: '',
       );

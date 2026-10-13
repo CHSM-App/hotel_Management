@@ -272,6 +272,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                                 bookingId: widget.bookingId,
                               ),
                             ],
+                            if (booking.serviceUsages.isNotEmpty) ...[
+                              const SizedBox(height: AppTheme.s12),
+                              _ServicesSection(usages: booking.serviceUsages),
+                            ],
                             if (booking.invoice != null) ...[
                               const SizedBox(height: AppTheme.s12),
                               _BillSection(invoice: booking.invoice!),
@@ -1195,6 +1199,7 @@ class _ChargesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foodOpen = booking.foodOrdersOpen;
+    final servicesOpen = booking.servicesOpen;
     return _Section(
       number: 5,
       title: 'Price breakdown',
@@ -1248,6 +1253,28 @@ class _ChargesSection extends StatelessWidget {
                 strong: true,
               ),
             ],
+            // Services used that aren't on a bill yet but are on the room
+            // bill — spa, pool, laundry, whatever the lodge sells beyond the
+            // room and food — same as StayDetails.jsx's own servicesOpen
+            // block.
+            if (servicesOpen.isNotEmpty) ...[
+              const Divider(height: AppTheme.s16),
+              for (final u in servicesOpen)
+                _MoneyLine(
+                  label: u.name,
+                  note:
+                      '${formatPrice(u.unitPrice ?? u.amount / u.quantity)} per ${u.unitLabel} × ${u.quantity}'
+                      '${u.gstRatePercent > 0 ? ' · incl. ${u.gstRatePercent}% GST' : ''}',
+                  value: formatPrice(u.amount),
+                ),
+              _MoneyLine(
+                label:
+                    'Services used · ${servicesOpen.length} '
+                    '${servicesOpen.length == 1 ? 'item' : 'items'}',
+                value: formatPrice(booking.servicesOpenTotal),
+                strong: true,
+              ),
+            ],
             if (booking.advanceAmount != null)
               _MoneyLine(
                 label: booking.paidInFull
@@ -1263,15 +1290,15 @@ class _ChargesSection extends StatelessWidget {
               const Divider(height: AppTheme.s16),
               _MoneyLine(
                 label: 'Still to collect',
-                note: foodOpen.isNotEmpty
-                    ? 'Room'
-                          '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
-                          ' + food − advance'
-                    : 'Room'
-                          '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
-                          ' − advance',
+                note: 'Room'
+                    '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
+                    '${foodOpen.isNotEmpty ? ' + food' : ''}'
+                    '${servicesOpen.isNotEmpty ? ' + services' : ''}'
+                    ' − advance',
                 value: formatPrice(
-                  booking.outstandingBeforeTax + booking.foodOpenTotal,
+                  booking.outstandingBeforeTax +
+                      booking.foodOpenTotal +
+                      booking.servicesOpenTotal,
                 ),
                 strong: true,
               ),
@@ -1551,6 +1578,174 @@ class _FoodOrderTicket extends StatelessWidget {
               ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// ── Services used ─────────────────────────────────────────────────────────
+
+/// Every service this stay has used — spa, pool, laundry, whatever the lodge
+/// sells beyond the room and food — billed or not. Mirrors Bookings.jsx's own
+/// RoomServicesSection on the web guest register.
+class _ServicesSection extends StatelessWidget {
+  final List<BookingServiceUsage> usages;
+
+  const _ServicesSection({required this.usages});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = usages.fold<num>(0, (sum, u) => sum + u.amount);
+    final onBill = usages
+        .where((u) => u.onRoomBill && !u.billed)
+        .fold<num>(0, (sum, u) => sum + u.amount);
+
+    return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.extruded,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.spa_rounded, color: AppTheme.accent, size: 18),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Services used',
+                      style: TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      '${usages.length} service${usages.length == 1 ? '' : 's'} · '
+                      'on the room bill only once added',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+          for (final u in usages) ...[
+            _ServiceUsageTile(usage: u),
+            const SizedBox(height: AppTheme.s8),
+          ],
+          const Divider(height: AppTheme.s16),
+          _MoneyLine(label: 'Services total', value: formatPrice(total), strong: true),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              '${formatPrice(onBill)} of this is on the room bill'
+              '${onBill == total ? '' : ' · ${formatPrice(total - onBill)} is not'}.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ServiceUsageTile extends StatelessWidget {
+  final BookingServiceUsage usage;
+
+  const _ServiceUsageTile({required this.usage});
+
+  @override
+  Widget build(BuildContext context) {
+    final started = DateTime.tryParse(usage.startedAt ?? '');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: AppTheme.s8,
+        runSpacing: 4,
+        children: [
+          Text(
+            usage.name,
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            '${usage.quantity} ${usage.unitLabel}'
+            '${started != null ? ' · ${_formatDateTime(started)}' : ''}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          _StatusChip(
+            label: usage.billed
+                ? 'Billed'
+                : usage.status == 'COMPLETED'
+                ? 'Completed'
+                : 'In use',
+            color: usage.billed
+                ? AppTheme.heading
+                : usage.status == 'COMPLETED'
+                ? AppTheme.vacant
+                : AppTheme.accent,
+          ),
+          if (!usage.billed)
+            _StatusChip(
+              label: usage.onRoomBill ? 'On room bill' : 'Not on room bill',
+              color: usage.onRoomBill ? AppTheme.vacant : AppTheme.muted,
+            ),
+          Text(
+            formatPrice(usage.amount),
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatDateTime(DateTime dt) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+  final minute = dt.minute.toString().padLeft(2, '0');
+  final ampm = dt.hour < 12 ? 'AM' : 'PM';
+  return '${dt.day} ${months[dt.month - 1]}, $hour12:$minute $ampm';
+}
+
+class _StatusChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _StatusChip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
       ),
     );
   }

@@ -67,6 +67,7 @@ final reportsViewModelProvider =
         ref.watch(expensesUsecaseProvider),
         ref.watch(assetsUsecaseProvider),
         ref.watch(incomeUsecaseProvider),
+        ref.watch(billingUsecaseProvider),
       ),
     );
 

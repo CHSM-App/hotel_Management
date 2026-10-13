@@ -1368,6 +1368,8 @@ class _OrderCard extends ConsumerWidget {
                             Text(
                               order.billed
                                   ? 'Billed'
+                                  : order.onRoomBill
+                                  ? 'On room bill'
                                   : order.readyToBill
                                   ? 'Ready to bill'
                                   : order.statusLabel,
@@ -1605,10 +1607,11 @@ class _OrderCard extends ConsumerWidget {
                   // Delivered and unbilled: either straight to a bill
                   // (this login also holds billing.manage, same as
                   // OrdersPanel.jsx's `readyToBill.issues`) or queued for
-                  // whoever does (`canBillFood` alone) — never both.
-                  if (canIssueBill &&
-                      order.isDeliveredUnbilled &&
-                      order.billableAsFoodTab) ...[
+                  // whoever does (`canBillFood` alone) — never both. Same as
+                  // OrdersPanel.jsx's `canIssue`, this doesn't gate on
+                  // source/bookingId — a room order can still get its own
+                  // standalone food bill instead of going on the room.
+                  if (canIssueBill && order.isDeliveredUnbilled) ...[
                     const SizedBox(height: AppTheme.s8),
                     NeuButton(
                       primary: true,
@@ -2574,6 +2577,8 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
     final colour = _OrderCard._statusColour(order.status);
     final statusText = order.billed
         ? 'Billed'
+        : order.onRoomBill
+        ? 'On room bill'
         : order.readyToBill
         ? 'Ready to bill'
         : order.statusLabel;
@@ -2718,9 +2723,9 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       );
     }
 
-    if (widget.canIssueBill &&
-        order.isDeliveredUnbilled &&
-        order.billableAsFoodTab) {
+    // Same as OrdersPanel.jsx's `canIssue`: no source/bookingId gate here —
+    // a room order can still get its own standalone food bill.
+    if (widget.canIssueBill && order.isDeliveredUnbilled) {
       buttons.add(
         _SheetActionButton(
           label: 'Issue bill',

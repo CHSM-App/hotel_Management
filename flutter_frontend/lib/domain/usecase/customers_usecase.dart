@@ -15,4 +15,6 @@ class CustomersUsecase {
 
   Future<Customer?> updateCustomer(int id, Map<String, dynamic> body) =>
       repository.updateCustomer(id, body);
+
+  Future<CustomerFeedbackResult> feedback() => repository.feedback();
 }

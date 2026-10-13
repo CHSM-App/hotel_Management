@@ -1,14 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../domain/models/draft.dart';
+import '../../domain/models/booking.dart';
 import '../../domain/models/invoice.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/billing_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/payment_row.dart';
 import '../theme.dart';
 import 'bill_receipt_screen.dart';
+
+/// "4h 8m late" / "35 min late" / "on time" — mirrors the web screen's own
+/// `lateLabel()` (Billing.jsx) so the two read the overstay the same way.
+String lateCheckoutLabel(int minutes) {
+  if (minutes <= 0) return 'on time';
+  if (minutes < 60) return '$minutes min late';
+  final hours = minutes ~/ 60;
+  final mins = minutes % 60;
+  return mins == 0 ? '${hours}h late' : '${hours}h ${mins}m late';
+}
 
 /// The bill itself: what it says, and what the guest handed over.
 ///
@@ -89,6 +100,55 @@ class _Body extends ConsumerWidget {
         AppTheme.s24,
       ),
       children: [
+        // ── The whole stay, for when a figure gets queried ──────────────────
+        // Shut by default and loaded only when opened — most bills are issued
+        // off the summary below, and this is for the one where the guest
+        // queries a figure and the desk needs the whole stay without leaving
+        // the bill it's halfway through writing. Mirrors the web screen's own
+        // "View full stay details".
+        if (preview.bookingId != null) ...[
+          _StayDetailsExpander(bookingId: preview.bookingId!),
+          const SizedBox(height: AppTheme.s12),
+        ],
+
+        // ── What's being swept onto this bill, itemised ─────────────────────
+        // Staff read this back against what actually went to the room before
+        // committing to a document they can only void — the same breakdown
+        // the web screen shows above its own bill card.
+        if (preview.foodItems.isNotEmpty) ...[
+          _ItemisedSection(
+            title: 'Food ordered during the stay',
+            hint: preview.orderNumbers.isEmpty
+                ? null
+                : 'From order${preview.orderNumbers.length == 1 ? '' : 's'} '
+                      '${preview.orderNumbers.map((n) => '#$n').join(', ')}',
+            children: [
+              for (final item in preview.foodItems)
+                _ItemRow(
+                  name: item.name,
+                  detail: '${item.quantity} × ${formatPrice(item.unitPrice)}',
+                  value: item.lineTotal,
+                ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+        ],
+        if (preview.serviceItems.isNotEmpty) ...[
+          _ItemisedSection(
+            title: 'Other services',
+            children: [
+              for (final item in preview.serviceItems)
+                _ItemRow(
+                  name: item.name,
+                  detail: '${item.quantity} × ${formatPrice(item.unitPrice)}'
+                      '${item.gstRatePercent > 0 ? ' · GST ${item.gstRatePercent}%' : ''}',
+                  value: item.lineTotal,
+                ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+        ],
+
         // ── The document ────────────────────────────────────────────────────
         NeuCard(
           padding: EdgeInsets.zero,
@@ -220,6 +280,9 @@ class _Body extends ConsumerWidget {
                     if ((amounts?.foodSubtotal ?? 0) > 0)
                       _Row(label: 'Food', value: amounts!.foodSubtotal),
 
+                    if ((amounts?.serviceSubtotal ?? 0) > 0)
+                      _Row(label: 'Other services', value: amounts!.serviceSubtotal),
+
                     if ((amounts?.discountAmount ?? 0) > 0)
                       _Row(
                         label: 'Discount (${amounts!.discountPercent}%)',
@@ -257,6 +320,18 @@ class _Body extends ConsumerWidget {
                       _Row(
                         label: 'SGST (${amounts?.foodSgstRatePercent ?? 0}%) on food',
                         value: amounts?.foodSgstAmount ?? 0,
+                        muted: true,
+                      ),
+                    ],
+                    if ((amounts?.serviceCgstAmount ?? 0) > 0 || (amounts?.serviceSgstAmount ?? 0) > 0) ...[
+                      _Row(
+                        label: 'CGST (${amounts?.serviceCgstRatePercent ?? 0}%) on services',
+                        value: amounts?.serviceCgstAmount ?? 0,
+                        muted: true,
+                      ),
+                      _Row(
+                        label: 'SGST (${amounts?.serviceSgstRatePercent ?? 0}%) on services',
+                        value: amounts?.serviceSgstAmount ?? 0,
                         muted: true,
                       ),
                     ],
@@ -327,32 +402,76 @@ class _Body extends ConsumerWidget {
         ),
 
         // ── The overstay charge ─────────────────────────────────────────────
-        if (preview.lateCheckoutAgreed) ...[
+        // Reception agreed this with the guest at the door, but the bill is
+        // written here — a manager who decides the overstay isn't worth
+        // charging drops it without sending the guest back to the desk.
+        // Dropping it affects this document only: the booking keeps what was
+        // agreed and how late the guest actually was. Mirrors the web
+        // screen's own "Add to bill" / "Leave it off" pair.
+        if (preview.lateCheckoutAgreed > 0) ...[
           const SizedBox(height: AppTheme.s12),
           NeuCard(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Bill the late checkout',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.heading),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Late checkout',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.heading),
+                          ),
+                          Text(
+                            lateCheckoutLabel(preview.lateCheckoutMinutes),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
                       ),
-                      Text(
-                        // Agreed at the desk already; this is the last chance
-                        // to take it back off.
-                        'Agreed with the guest at checkout.',
-                        style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    Text(
+                      formatPrice(preview.lateCheckoutAgreed),
+                      style: TextStyle(
+                        color: state.includeLateCheckout ? AppTheme.heading : AppTheme.muted,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        decoration: state.includeLateCheckout ? null : TextDecoration.lineThrough,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                Switch(
-                  value: state.includeLateCheckout,
-                  activeThumbColor: AppTheme.accent,
-                  onChanged: state.previewing ? null : vm.setLateCheckout,
+                const SizedBox(height: AppTheme.s12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ToggleButton(
+                        label: 'Add to bill',
+                        selected: state.includeLateCheckout,
+                        enabled: !state.previewing,
+                        onTap: () => vm.setLateCheckout(true),
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: _ToggleButton(
+                        label: 'Leave it off',
+                        selected: !state.includeLateCheckout,
+                        enabled: !state.previewing,
+                        onTap: () => vm.setLateCheckout(false),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.s8),
+                Text(
+                  state.includeLateCheckout
+                      ? "Charged as part of the room, so it is taxed at the "
+                            "room's own rate."
+                      : 'Not charged on this bill. The stay stays on record '
+                            'as ${lateCheckoutLabel(preview.lateCheckoutMinutes)}.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
@@ -635,6 +754,124 @@ class _RoomSectionRows extends StatelessWidget {
               strong: true,
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A titled card of line items swept onto the bill — food or other services
+/// — shown above the document itself so staff can check it against what
+/// actually went to the room before committing to paper. Mirrors the web
+/// screen's "Food ordered during the stay" / "Other services" sections.
+class _ItemisedSection extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+  final String? hint;
+
+  const _ItemisedSection({required this.title, required this.children, this.hint});
+
+  @override
+  Widget build(BuildContext context) {
+    return NeuCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppTheme.s8),
+          ...children,
+          if (hint != null) ...[
+            const SizedBox(height: AppTheme.s4),
+            Text(hint!, style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ItemRow extends StatelessWidget {
+  final String name;
+  final String detail;
+  final num value;
+
+  const _ItemRow({required this.name, required this.detail, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(color: AppTheme.text, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  detail,
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.s8),
+          Text(
+            formatPrice(value),
+            style: const TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One half of a two-way choice — "Add to bill" / "Leave it off" — styled
+/// like the web screen's own `.toggle-group` buttons: both always on screen,
+/// the chosen one filled in.
+class _ToggleButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _ToggleButton({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppTheme.accent : AppTheme.bg,
+      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        onTap: enabled ? onTap : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+            border: Border.all(
+              color: selected ? AppTheme.accent : AppTheme.muted.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : AppTheme.text,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -949,7 +1186,7 @@ class _PaymentRows extends ConsumerWidget {
           for (var i = 0; i < state.payment.length; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.s8 + 2),
-              child: _PaymentRow(
+              child: PaymentRow(
                 key: ValueKey(i),
                 line: state.payment[i],
                 onRemove: state.payment.length == 1
@@ -1003,134 +1240,447 @@ class _PaymentRows extends ConsumerWidget {
   }
 }
 
-class _PaymentRow extends StatefulWidget {
-  final PaymentDraft line;
-  final VoidCallback? onRemove;
-  final VoidCallback onChanged;
+// ── The whole stay, on request ──────────────────────────────────────────────
 
-  const _PaymentRow({
-    super.key,
-    required this.line,
-    required this.onRemove,
-    required this.onChanged,
-  });
+/// Shut by default, loaded only when opened — most bills are issued off the
+/// summary above, and this is for the one where the guest queries a figure
+/// and the desk needs the whole stay, night by night, without leaving the
+/// bill it's halfway through writing. Mirrors the web screen's own
+/// `loadStayDetails()` + `<StayDetails showOutstanding={false} />`.
+class _StayDetailsExpander extends ConsumerStatefulWidget {
+  final int bookingId;
+
+  const _StayDetailsExpander({required this.bookingId});
 
   @override
-  State<_PaymentRow> createState() => _PaymentRowState();
+  ConsumerState<_StayDetailsExpander> createState() =>
+      _StayDetailsExpanderState();
 }
 
-class _PaymentRowState extends State<_PaymentRow> {
-  late final _amount = TextEditingController(text: widget.line.amount);
-  late final _reference = TextEditingController(text: widget.line.reference);
+class _StayDetailsExpanderState extends ConsumerState<_StayDetailsExpander> {
+  bool _open = false;
+  bool _loading = false;
+  String? _error;
+  Booking? _booking;
 
-  // The single untouched row is kept tracking the balance due from the view
-  // model (see BillingState.paymentTouched) — a discount typed after the row
-  // was first seeded still has to land in it. Without this the box went on
-  // showing whatever it opened with, even once the model's own figure moved.
-  @override
-  void didUpdateWidget(covariant _PaymentRow old) {
-    super.didUpdateWidget(old);
-    if (_amount.text != widget.line.amount) {
-      _amount.text = widget.line.amount;
+  Future<void> _toggle() async {
+    setState(() => _open = !_open);
+    if (_open && _booking == null && !_loading) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+      final booking = await ref
+          .read(bookingViewModelProvider.notifier)
+          .loadBooking(widget.bookingId);
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _booking = booking;
+        if (booking == null) _error = 'Could not load this stay.';
+      });
     }
   }
 
   @override
-  void dispose() {
-    _amount.dispose();
-    _reference.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return NeuCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: _toggle,
+            child: Padding(
+              padding: const EdgeInsets.all(AppTheme.s12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'View full stay details',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  Icon(
+                    _open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                    color: AppTheme.muted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_open)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s12,
+                0,
+                AppTheme.s12,
+                AppTheme.s12,
+              ),
+              child: _loading
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppTheme.s16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : _error != null
+                  ? Text(_error!, style: const TextStyle(color: AppTheme.danger))
+                  : _booking == null
+                  ? const SizedBox.shrink()
+                  : _StayDetailsContent(booking: _booking!),
+            ),
+        ],
+      ),
+    );
   }
+}
+
+/// The five sections a booking is taken through, read back read-only — same
+/// order and numbering the web's own `StayDetails.jsx` lays them out in, so a
+/// stay read here and read there is one record, not two summaries of it.
+class _StayDetailsContent extends StatelessWidget {
+  final Booking booking;
+
+  const _StayDetailsContent({required this.booking});
+
+  @override
+  Widget build(BuildContext context) {
+    final nights = booking.nights;
+    final lateBy = _lateByLabel(booking.lateCheckoutMinutes);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1 — Stay & room
+        _DetailSection(
+          number: 1,
+          title: 'Stay & room',
+          children: [
+            _Fact(
+              label: booking.isMultiRoom ? 'Rooms' : 'Room',
+              value: booking.isMultiRoom
+                  ? '${booking.roomCount} rooms · ${booking.roomNumbers ?? ''}'
+                  : '${booking.roomNumber ?? '—'} · ${booking.categoryName ?? '—'}',
+            ),
+            _Fact(
+              label: 'Dates',
+              value:
+                  '${formatIsoDate(booking.checkInDate)} – '
+                  '${formatIsoDate(booking.checkOutDate)}'
+                  '${nights != null ? ' · ${nightsLabel(nights)}' : ''}',
+            ),
+            _Fact(
+              label: 'Came in',
+              value: booking.actualCheckInAt != null
+                  ? formatDateTime(booking.actualCheckInAt)
+                  : 'Not arrived yet',
+            ),
+            _Fact(
+              label: 'Left',
+              value: booking.actualCheckOutAt != null
+                  ? formatDateTime(booking.actualCheckOutAt)
+                  : booking.actualCheckInAt != null
+                  ? 'Still staying'
+                  : 'Not arrived yet',
+            ),
+            if (lateBy != null)
+              _Fact(
+                label: 'Left late by',
+                value:
+                    '$lateBy · '
+                    '${booking.lateCheckoutCharge > 0 ? '${formatPrice(booking.lateCheckoutCharge)} agreed' : 'no charge taken'}',
+              ),
+            if (booking.switchableCharges.isNotEmpty)
+              _Fact(
+                label: 'Extras',
+                value: booking.switchableCharges
+                    .map((c) => c.quantity > 1 ? '${c.name} ×${c.quantity}' : c.name)
+                    .join(' · '),
+              ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s12),
+
+        // 2 — Guest details
+        _DetailSection(
+          number: 2,
+          title: 'Guest details',
+          children: [
+            Text(
+              '${booking.numGuests ?? 1} guest'
+              '${(booking.numGuests ?? 1) == 1 ? '' : 's'}'
+              '${booking.childCount > 0 ? ' · ${booking.numGuests! - booking.childCount} adult${booking.numGuests! - booking.childCount == 1 ? '' : 's'} and ${booking.childCount} child${booking.childCount == 1 ? '' : 'ren'}' : ''}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppTheme.s8),
+            _PersonRow(
+              name: booking.guestName ?? '—',
+              role: 'Primary guest',
+              meta: [
+                if (booking.guestPhone != null) booking.guestPhone!,
+                if (booking.idProofType != null) _idProofLabel(booking.idProofType!),
+              ].join(' · '),
+            ),
+            for (final g in booking.guests)
+              _PersonRow(
+                name: g.name,
+                role: g.isChild ? 'Child' : null,
+                meta: [
+                  if (g.phone != null) g.phone!,
+                  if (g.idProofType != null) _idProofLabel(g.idProofType!),
+                ].join(' · '),
+              ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s12),
+
+        // 3 — Advance payment
+        _DetailSection(
+          number: 3,
+          title: booking.paidInFull ? 'Payment' : 'Advance payment',
+          children: [
+            if (booking.advanceAmount != null) ...[
+              _Fact(
+                label: booking.paidInFull ? 'Paid in full' : 'Taken',
+                value:
+                    '${formatPrice(booking.advanceAmount)} · '
+                    '${booking.advanceDescription}',
+              ),
+              if (booking.advanceReference != null)
+                _Fact(label: 'Transaction no.', value: booking.advanceReference!),
+            ] else
+              Text('No advance taken.', style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s12),
+
+        // 4 — Vehicles
+        _DetailSection(
+          number: 4,
+          title: 'Vehicles',
+          children: [
+            if (booking.vehicles.isEmpty)
+              Text('None on file.', style: Theme.of(context).textTheme.bodySmall)
+            else
+              for (final v in booking.vehicles)
+                _PersonRow(
+                  name: v.number,
+                  meta: v.type != null ? _vehicleTypeLabel(v.type!) : 'Type not recorded',
+                ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s12),
+
+        // 5 — Price breakdown
+        _DetailSection(
+          number: 5,
+          title: 'Price breakdown',
+          children: [
+            const Text(
+              'Room',
+              style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w800),
+            ),
+            for (final line in booking.roomCharges)
+              _ItemRow(
+                name: line.label,
+                detail: line.nights > 1 && line.amount > 0 ? '× ${line.nights} nights' : '',
+                value: line.amount,
+              ),
+            _Row(
+              label: 'Room charge for ${nights == 1 ? 'the night' : 'all nights'}',
+              value: booking.totalPrice ?? 0,
+              strong: true,
+            ),
+            if (booking.lateCheckoutCharge > 0)
+              _Row(label: 'Agreed for leaving late', value: booking.lateCheckoutCharge),
+            if (booking.foodOrdersOpen.isNotEmpty) ...[
+              const SizedBox(height: AppTheme.s8),
+              const Text(
+                'Food',
+                style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w800),
+              ),
+              for (final o in booking.foodOrdersOpen)
+                _ItemRow(
+                  name: 'Order #${o.orderNumber}',
+                  detail: o.origin == 'ROOM_SERVICE'
+                      ? 'room service'
+                      : 'from ${o.placedFrom ?? 'restaurant'}',
+                  value: o.subtotal,
+                ),
+              _Row(label: 'Food ordered', value: booking.foodOpenTotal, strong: true),
+            ],
+            if (booking.servicesOpen.isNotEmpty) ...[
+              const SizedBox(height: AppTheme.s8),
+              const Text(
+                'Services',
+                style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w800),
+              ),
+              for (final u in booking.servicesOpen)
+                _ItemRow(
+                  name: u.name,
+                  detail: '${formatPrice(u.unitPrice ?? (u.quantity == 0 ? 0 : u.amount / u.quantity))} '
+                      'per ${u.unitLabel} × ${u.quantity}',
+                  value: u.amount,
+                ),
+              _Row(
+                label: 'Services used · ${booking.servicesOpen.length} '
+                    '${booking.servicesOpen.length == 1 ? 'item' : 'items'}',
+                value: booking.servicesOpenTotal,
+                strong: true,
+              ),
+            ],
+            if (booking.advanceAmount != null) ...[
+              const SizedBox(height: AppTheme.s8),
+              const Text(
+                'Payments',
+                style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w800),
+              ),
+              _Row(
+                label: booking.paidInFull ? 'Paid in full at booking' : 'Advance already paid',
+                value: -booking.advanceAmount!,
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+String? _lateByLabel(int? minutes) {
+  if (minutes == null || minutes <= 0) return null;
+  if (minutes < 60) return '$minutes minutes';
+  final hours = minutes ~/ 60;
+  final mins = minutes % 60;
+  return mins == 0 ? '$hours hours' : '${hours}h ${mins}m';
+}
+
+String _idProofLabel(String type) =>
+    type.isEmpty ? type : type[0] + type.substring(1).toLowerCase().replaceAll('_', ' ');
+
+const _kVehicleTypeLabels = <String, String>{
+  'TWO_WHEELER': 'Two wheeler',
+  'FOUR_WHEELER': 'Four wheeler',
+  'TRAVELLER': 'Traveller',
+  'BUS': 'Bus',
+};
+
+String _vehicleTypeLabel(String type) => _kVehicleTypeLabels[type] ?? type;
+
+/// A numbered section header, same as the web form's own
+/// `<span className="form-section__num">`.
+class _DetailSection extends StatelessWidget {
+  final int number;
+  final String title;
+  final List<Widget> children;
+
+  const _DetailSection({required this.number, required this.title, required this.children});
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Expanded(
-              child: NeuPressed(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: widget.line.method,
-                    isExpanded: true,
-                    dropdownColor: AppTheme.bg,
-                    hint: const Text(
-                      'Choose one',
-                      style: TextStyle(color: AppTheme.muted, fontSize: 14),
-                    ),
-                    items: [
-                      for (final e in kPaymentMethods.entries)
-                        DropdownMenuItem(value: e.key, child: Text(e.value)),
-                    ],
-                    onChanged: (m) {
-                      setState(() => widget.line.method = m);
-                      widget.onChanged();
-                    },
-                  ),
+            Container(
+              width: 18,
+              height: 18,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppTheme.accent.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '$number',
+                style: const TextStyle(
+                  color: AppTheme.accent,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
             const SizedBox(width: AppTheme.s8),
-            SizedBox(
-              width: 96,
-              child: NeuPressed(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                child: TextField(
-                  controller: _amount,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.right,
-                  // The box always holds a figure already and the desk is
-                  // replacing it, never appending.
-                  onTap: () => _amount.selection = TextSelection(
-                    baseOffset: 0,
-                    extentOffset: _amount.text.length,
-                  ),
-                  onChanged: (v) {
-                    widget.line.amount = v;
-                    widget.onChanged();
-                  },
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 13,
-                  ),
-                  decoration: const InputDecoration(
-                    hintText: '0',
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 10),
-                  ),
-                ),
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20),
-              color: widget.onRemove == null
-                  ? AppTheme.muted.withValues(alpha: 0.4)
-                  : AppTheme.danger,
-              onPressed: widget.onRemove,
             ),
           ],
         ),
-        // Only for money that left a trail — what the settlement statement is
-        // matched against at month end.
-        if (needsPaymentReference(widget.line.method)) ...[
-          const SizedBox(height: AppTheme.s8),
-          NeuField(
-            controller: _reference,
-            label: 'Transaction number',
-            hint: widget.line.method == 'UPI'
-                ? 'UPI reference / UTR'
-                : 'Approval code',
-            maxLength: 64,
-            onChanged: (v) {
-              widget.line.reference = v;
-              widget.onChanged();
-            },
-          ),
-        ],
+        const SizedBox(height: AppTheme.s8),
+        ...children,
       ],
+    );
+  }
+}
+
+/// One label/value pair, stacked the way the web's own `.detail-fact` reads.
+class _Fact extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _Fact({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+          Text(value, style: const TextStyle(color: AppTheme.text, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+}
+
+/// One person (a guest or a vehicle) — a name, and whatever is known beside
+/// it. Mirrors the web's own `.detail-person`.
+class _PersonRow extends StatelessWidget {
+  final String name;
+  final String? role;
+  final String meta;
+
+  const _PersonRow({required this.name, this.role, this.meta = ''});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                name,
+                style: const TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              if (role != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    role!,
+                    style: const TextStyle(color: AppTheme.accent, fontSize: 9.5, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (meta.isNotEmpty)
+            Text(meta, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+        ],
+      ),
     );
   }
 }

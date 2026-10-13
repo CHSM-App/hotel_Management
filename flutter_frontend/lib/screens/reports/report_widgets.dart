@@ -35,8 +35,9 @@ class StatItem {
   final String label;
   final String value;
   final bool accent;
+  final String? note;
 
-  const StatItem({required this.label, required this.value, this.accent = false});
+  const StatItem({required this.label, required this.value, this.accent = false, this.note});
 }
 
 /// A wrapping grid of stat tiles, the phone equivalent of the web's
@@ -46,41 +47,64 @@ class StatGrid extends StatelessWidget {
 
   const StatGrid({super.key, required this.items});
 
+  Widget _buildCard(BuildContext context, StatItem item) {
+    return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            item.label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            item.value,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: item.accent ? AppTheme.accent : AppTheme.heading,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (item.note != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              item.note!,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppTheme.s8,
-      runSpacing: AppTheme.s8,
-      children: [
-        for (final item in items)
-          SizedBox(
-            width: (MediaQuery.sizeOf(context).width - AppTheme.s16 * 2 - AppTheme.s8) / 2,
-            child: NeuCard(
-              radius: AppTheme.rMedium,
-              shadow: AppTheme.subtle,
-              padding: const EdgeInsets.all(AppTheme.s12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.label,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.value,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: item.accent ? AppTheme.accent : AppTheme.heading,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
+    final rows = <Widget>[];
+    for (var i = 0; i < items.length; i += 2) {
+      final hasSecond = i + 1 < items.length;
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _buildCard(context, items[i])),
+              if (hasSecond) ...[
+                const SizedBox(width: AppTheme.s8),
+                Expanded(child: _buildCard(context, items[i + 1])),
+              ],
+            ],
           ),
-      ],
-    );
+        ),
+      );
+      if (i + 2 < items.length) rows.add(const SizedBox(height: AppTheme.s8));
+    }
+    return Column(children: rows);
   }
 }
 

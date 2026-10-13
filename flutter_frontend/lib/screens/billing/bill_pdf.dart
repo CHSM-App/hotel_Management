@@ -377,6 +377,7 @@ class BillPdf {
                         ],
                       ),
                       ..._chargeRows(inv, isGst),
+                      ..._itemRows(inv, isGst),
                     ],
                   ),
 
@@ -405,7 +406,9 @@ class BillPdf {
                         // (`T.taxableValue`), so the column doesn't read as
                         // double-charging the two GST lines right under it.
                         isGst ? 'TAXABLE VALUE (excl. GST)' : 'TOTAL AMOUNT',
-                        _round2(inv.roomTaxable + inv.foodTaxable),
+                        _round2(
+                          inv.roomTaxable + inv.foodTaxable + inv.serviceTaxable,
+                        ),
                         rule: true,
                       ),
                       if (inv.cgstAmount > 0)
@@ -421,6 +424,16 @@ class BillPdf {
                         _moneyRow(
                           'SGST ${inv.foodSgstRatePercent} % (Misc)',
                           inv.foodSgstAmount,
+                        ),
+                      if (inv.serviceCgstAmount > 0)
+                        _moneyRow(
+                          'CGST ${inv.serviceCgstRatePercent} % (Services)',
+                          inv.serviceCgstAmount,
+                        ),
+                      if (inv.serviceSgstAmount > 0)
+                        _moneyRow(
+                          'SGST ${inv.serviceSgstRatePercent} % (Services)',
+                          inv.serviceSgstAmount,
                         ),
                       if (inv.roundOff != 0) _moneyRow('Round off', inv.roundOff),
                       _moneyRow(
@@ -524,8 +537,8 @@ class BillPdf {
           ),
           pw.Text(
             ascii(
-              inv.checkinMode == 'NIGHT_BASED' && inv.checkOutTime != null
-                  ? 'Checkout by ${inv.checkOutTime} on the departure date.'
+              inv.checkinMode == 'NIGHT_BASED'
+                  ? 'Checkout by ${_clockLabel(inv.checkOutTime) ?? '11:00 AM'} on the departure date.'
                   : 'Checkout time 24 hours from check-in.',
             ),
             style: const pw.TextStyle(fontSize: 6),
@@ -663,13 +676,24 @@ class BillPdf {
             ]),
           ],
 
-          // Food keeps its items, on a room stay or on its own — a different
-          // supply at a different rate, reported apart in GSTR-1, so a single
-          // folded figure would leave nobody a way to check what they ate.
-          if (inv.foodSubtotal > 0) _miscChargesBlock(inv, isGst),
         ],
       ),
     );
+  }
+
+  /// Food and other-service line items, each as their own ruled row — placed
+  /// after the room's own rate rows ([_chargeRows]), same order the web memo
+  /// prints them in (BillDocument.jsx): the stay's rates first, Misc Charges
+  /// after, Other services last. A food or event bill has no room rate rows
+  /// ahead of these, so they simply open the body in that case.
+  static List<pw.TableRow> _itemRows(Invoice inv, bool isGst) {
+    pw.TableRow blankRow(pw.Widget left) =>
+        pw.TableRow(children: [left, _rsCell(null), _psCell(null)]);
+
+    return [
+      if (inv.foodSubtotal > 0) blankRow(_miscChargesBlock(inv, isGst)),
+      if (inv.serviceSubtotal > 0) blankRow(_servicesBlock(inv, isGst)),
+    ];
   }
 
   static const _sacAccommodation = '996311';
@@ -795,9 +819,17 @@ class BillPdf {
           );
         }
       }
+      // Each rate/extra on its own rule, same as the web memo's `.memo__extra`
+      // (`border-bottom: 1px dotted #8d99a4`) — so Room rent and AC read as
+      // separate written-in lines, not one unbroken block of text.
       for (final line in [block.base, ...block.extras]) {
         rows.add(
           pw.TableRow(
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                bottom: pw.BorderSide(width: 0.4, color: _dotColor),
+              ),
+            ),
             children: [
               pw.Padding(
                 padding: pw.EdgeInsets.only(
@@ -865,6 +897,11 @@ class BillPdf {
     if (inv.lateCheckoutCharge > 0) {
       rows.add(
         pw.TableRow(
+          decoration: const pw.BoxDecoration(
+            border: pw.Border(
+              bottom: pw.BorderSide(width: 0.4, color: _dotColor),
+            ),
+          ),
           children: [
             pw.Padding(
               padding: const pw.EdgeInsets.only(left: 3, top: 1.5, bottom: 1.5),
@@ -992,6 +1029,53 @@ class BillPdf {
                     ),
                     pw.Text(
                       ascii('${_qty(item.quantity)} x ${_amt(item.unitPrice)}'),
+                      style: const pw.TextStyle(
+                        fontSize: 6,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.Text(
+                ascii(_amt(item.lineTotal)),
+                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+              ),
+            ],
+          ),
+      ],
+    ),
+  );
+
+  static pw.Widget _servicesBlock(Invoice inv, bool isGst) => pw.Padding(
+    padding: const pw.EdgeInsets.only(top: 2),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        pw.Text(
+          ascii('Other services'),
+          style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+        ),
+        for (final item in inv.serviceItems)
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      ascii(item.name),
+                      style: pw.TextStyle(
+                        fontSize: 7,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.Text(
+                      ascii(
+                        '${_qty(item.quantity)} x ${_amt(item.unitPrice)}'
+                        '${isGst && item.gstRatePercent > 0 ? ' · GST ${item.gstRatePercent}%' : ''}',
+                      ),
                       style: const pw.TextStyle(
                         fontSize: 6,
                         color: PdfColors.grey700,
@@ -1227,6 +1311,20 @@ class BillPdf {
   }
 
   static String _amt(num n) => NumberFormat('#,##,##0.00', 'en_IN').format(n);
+
+  /// "11:00" as "11:00 AM" — mirrors BillDocument.jsx's own `clockLabel`, so
+  /// the checkout line reads the same way on both documents.
+  static String? _clockLabel(String? hhmm) {
+    if (hhmm == null) return null;
+    final parts = hhmm.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    final suffix = h < 12 ? 'AM' : 'PM';
+    final hour12 = h % 12 == 0 ? 12 : h % 12;
+    return '$hour12:${m.toString().padLeft(2, '0')} $suffix';
+  }
 
   static String _date(String? iso) {
     if (iso == null || iso.isEmpty) return '';

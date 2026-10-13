@@ -1,10 +1,14 @@
 import 'dart:typed_data';
 
+import '../models/event_booking.dart';
 import '../models/invoice.dart';
 import '../models/lodge_service.dart' show ServiceUsage;
 
 abstract class BillingRepository {
   Future<List<BillableStay>> queue();
+
+  /// Functions that are over (or marked complete) and have no bill yet.
+  Future<List<EventBooking>> queueEvents();
 
   Future<BillPreview> preview(
     int bookingId, {
@@ -58,7 +62,11 @@ abstract class BillingRepository {
   Future<Invoice> invoice(int id);
 
   /// What a function's bill will say.
-  Future<EventBillPreview> previewEventBill(int eventId);
+  Future<EventBillPreview> previewEventBill(
+    int eventId, {
+    num discountAmount,
+    String? discountReason,
+  });
 
   /// Cut the bill for a function.
   Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body);

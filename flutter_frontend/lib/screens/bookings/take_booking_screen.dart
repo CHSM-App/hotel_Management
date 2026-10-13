@@ -11,6 +11,7 @@ import '../../domain/models/draft.dart';
 import '../../domain/models/extra_room.dart';
 import '../../domain/models/guest_match.dart';
 import '../../domain/models/multi_room_logic.dart';
+import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
@@ -35,7 +36,11 @@ Future<XFile?> _pickIdProofPhoto(BuildContext context) async {
     subtitle: 'Take a photo or pick one from your gallery',
   );
   if (source == null) return null;
-  return ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 1600);
+  return ImagePicker().pickImage(
+    source: source,
+    imageQuality: 85,
+    maxWidth: 1600,
+  );
 }
 
 /// Taking a booking, in the order the desk actually does it: which nights,
@@ -91,6 +96,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   final _advanceKey = GlobalKey();
   final _bedKey = GlobalKey();
   final _extraRoomsKey = GlobalKey();
+  final _priceKey = GlobalKey();
 
   final _name = TextEditingController();
   final _phone = TextEditingController();
@@ -159,8 +165,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   /// not a help.
   bool _submitAttempted = false;
 
-  String? get _nameError =>
-      _submitAttempted && _name.text.trim().isEmpty
+  String? get _nameError => _submitAttempted && _name.text.trim().isEmpty
       ? 'Enter the guest name.'
       : null;
 
@@ -177,7 +182,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   String? get _datesError {
     if (!_submitAttempted) return null;
     final state = ref.read(bookingViewModelProvider);
-    return state.datesChosen ? null : 'Choose the check-in and check-out dates.';
+    return state.datesChosen
+        ? null
+        : 'Choose the check-in and check-out dates.';
   }
 
   String? get _roomError {
@@ -216,6 +223,34 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     return null;
   }
 
+  /// Any amount box — the room rate or an extra's — the desk actually typed
+  /// into and then cleared, never one simply sitting on its default, which
+  /// is the normal, untouched state for most of these boxes. The `*Touched`
+  /// flags are what tell the two apart.
+  String? get _roomPriceError {
+    if (!_submitAttempted) return null;
+    final state = ref.read(bookingViewModelProvider);
+    const message = 'Enter a price, or tap away to keep the listed rate.';
+    if (state.roomTotalTouched && state.roomTotal.trim().isEmpty) {
+      return message;
+    }
+    for (final e in state.extras.values) {
+      if (e.agreedTotalTouched && e.agreedTotal.trim().isEmpty) {
+        return message;
+      }
+    }
+    for (final r in state.extraRooms) {
+      if (!r.isPicked) continue;
+      if (r.roomTotalTouched && r.roomTotal.trim().isEmpty) return message;
+      for (final e in r.extras.values) {
+        if (e.agreedTotalTouched && e.agreedTotal.trim().isEmpty) {
+          return message;
+        }
+      }
+    }
+    return null;
+  }
+
   /// Whether the chosen check-in is today — housekeeping's status is only
   /// worth showing for a room the desk is about to hand over right now, not
   /// one reserved for a future date. Mirrors the web form's own
@@ -224,7 +259,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     final checkIn = state.checkIn;
     if (checkIn == null) return false;
     final now = DateTime.now();
-    return checkIn.year == now.year && checkIn.month == now.month && checkIn.day == now.day;
+    return checkIn.year == now.year &&
+        checkIn.month == now.month &&
+        checkIn.day == now.day;
   }
 
   // Mirrors the web form's own client-side checks on the advance rows,
@@ -248,7 +285,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   String? get _idProofTypeError {
     if (!_submitAttempted || _editing) return null;
     final state = ref.read(bookingViewModelProvider);
-    return (state.isWalkIn && _idProofType == null) ? 'Choose the ID type.' : null;
+    return (state.isWalkIn && _idProofType == null)
+        ? 'Choose the ID type.'
+        : null;
   }
 
   // Mirrors the web form: either the number or a photo of the document is
@@ -296,7 +335,11 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         );
       _vehicles
         ..clear()
-        ..addAll(edit.vehicles.map((v) => VehicleDraft(number: v.number, type: v.type)));
+        ..addAll(
+          edit.vehicles.map(
+            (v) => VehicleDraft(number: v.number, type: v.type),
+          ),
+        );
       await vm.startEdit(edit);
       return;
     }
@@ -332,7 +375,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     // Today and tomorrow, the same default the web form's own state opens
     // with — a fresh "New booking" is a walk-in for one night until the desk
     // says otherwise, not a blank pair of boxes waiting to be filled first.
-    final checkIn = widget.presetCheckIn ?? DateTime(now.year, now.month, now.day);
+    final checkIn =
+        widget.presetCheckIn ?? DateTime(now.year, now.month, now.day);
     final roomId = widget.presetRoomId;
 
     await vm.setDates(checkIn, checkIn.add(const Duration(days: 1)));
@@ -450,6 +494,10 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       _scrollToError(_extraRoomsKey);
       return;
     }
+    if (_roomPriceError != null) {
+      _scrollToError(_priceKey);
+      return;
+    }
     if (_nameError != null) {
       _scrollToError(_nameKey);
       return;
@@ -512,7 +560,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
 
     if (!mounted) return;
     if (booking == null) {
-      return _say(ref.read(bookingViewModelProvider).error ?? 'Could not save.');
+      return _say(
+        ref.read(bookingViewModelProvider).error ?? 'Could not save.',
+      );
     }
     // The web form's own "Booking saved" card, offered on a fresh booking
     // only — an edit returns straight to the stay that was being corrected,
@@ -579,7 +629,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     if (!mounted) return;
     if (!ok) {
       _say(
-        ref.read(bookingViewModelProvider).error ?? 'Could not save this draft.',
+        ref.read(bookingViewModelProvider).error ??
+            'Could not save this draft.',
       );
       return;
     }
@@ -679,7 +730,12 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     // yet, and a second room's status belongs under that room, not here.
     if (_isCheckInToday(state))
       CheckInRoomStatus(
-        rooms: [CheckInRoomStatusEntry(roomId: state.room!.id, roomNumber: state.room!.roomNumber)],
+        rooms: [
+          CheckInRoomStatusEntry(
+            roomId: state.room!.id,
+            roomNumber: state.room!.roomNumber,
+          ),
+        ],
       ),
 
     if (state.room!.isDormitory) ...[
@@ -697,7 +753,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       ],
     ],
 
-    if (!state.room!.isDormitory && state.room!.switchableCharges.isNotEmpty) ...[
+    if (!state.room!.isDormitory &&
+        state.room!.switchableCharges.isNotEmpty) ...[
       const SizedBox(height: AppTheme.s8),
       const Text(
         'EXTRAS',
@@ -740,7 +797,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       // the booking is already saved and done with, so closing the receipt
       // should land back on the list, not on the form that made it.
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => AdvanceReceiptScreen(booking: booking)),
+        MaterialPageRoute(
+          builder: (_) => AdvanceReceiptScreen(booking: booking),
+        ),
         result: true,
       );
     } else {
@@ -793,7 +852,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                 ],
               ),
               child: Icon(
-                _editing ? Icons.edit_calendar_rounded : Icons.add_home_work_rounded,
+                _editing
+                    ? Icons.edit_calendar_rounded
+                    : Icons.add_home_work_rounded,
                 color: Colors.white,
                 size: 18,
               ),
@@ -944,7 +1005,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                 child: _ExtraRoomCard(
                                   index: i,
                                   draft: state.extraRooms[i],
-                                  showDatePickers: state.multiRoomDifferentDates,
+                                  showDatePickers:
+                                      state.multiRoomDifferentDates,
                                 ),
                               ),
                             NeuButton(
@@ -975,13 +1037,30 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     ],
 
                     const SizedBox(height: AppTheme.s8),
-                    _QuoteCard(state: state),
+                    KeyedSubtree(
+                      key: _priceKey,
+                      child: _QuoteCard(
+                        state: state,
+                        submitAttempted: _submitAttempted,
+                      ),
+                    ),
+                    if (_roomPriceError != null) ...[
+                      const SizedBox(height: AppTheme.s4),
+                      Text(
+                        _roomPriceError!,
+                        style: const TextStyle(
+                          color: AppTheme.danger,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
 
                     const _SectionDivider(),
                     _SectionLabel(
                       'Guest details',
                       number: 2,
-                      trailing: '${1 + _guests.length} guest'
+                      trailing:
+                          '${1 + _guests.length} guest'
                           '${1 + _guests.length == 1 ? '' : 's'}',
                     ),
                     const SizedBox(height: AppTheme.s8),
@@ -1010,8 +1089,10 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                     child: OverlayPortal(
                                       controller: _namePortal,
                                       overlayChildBuilder: (context) {
-                                        final box = _nameFieldKey.currentContext
-                                            ?.findRenderObject() as RenderBox?;
+                                        final box =
+                                            _nameFieldKey.currentContext
+                                                    ?.findRenderObject()
+                                                as RenderBox?;
                                         final width = box?.size.width ?? 280;
                                         return Stack(
                                           children: [
@@ -1025,9 +1106,13 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                             CompositedTransformFollower(
                                               link: _nameLink,
                                               showWhenUnlinked: false,
-                                              targetAnchor: Alignment.bottomLeft,
+                                              targetAnchor:
+                                                  Alignment.bottomLeft,
                                               followerAnchor: Alignment.topLeft,
-                                              offset: const Offset(0, AppTheme.s4),
+                                              offset: const Offset(
+                                                0,
+                                                AppTheme.s4,
+                                              ),
                                               child: Align(
                                                 alignment: Alignment.topLeft,
                                                 child: Material(
@@ -1115,7 +1200,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       onPressed: () => setState(
                         () => _guests.add(GuestDraft(isChild: false)),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.s4,
+                      ),
                       soft: true,
                       minHeight: 38,
                       child: const Text('+ Add adult'),
@@ -1142,7 +1229,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       onPressed: () => setState(
                         () => _guests.add(GuestDraft(isChild: true)),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.s4,
+                      ),
                       soft: true,
                       minHeight: 38,
                       child: const Text('+ Add child'),
@@ -1163,19 +1252,23 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     // squeezed down to fit beside the other.
                     if (!_editing) ...[
                       const _SectionDivider(),
-                      Builder(builder: (context) {
-                        final advanceTotal = sumPayments(
-                          _advance.where((l) => l.value > 0).toList(),
-                        );
-                        return _SectionLabel(
-                          _paidInFull ? 'Payment' : 'Advance payment',
-                          number: 3,
-                          trailing: _paidInFull
-                              ? 'Paid in full · ${formatPrice(advanceTotal)}'
-                              : (advanceTotal > 0 ? formatPrice(advanceTotal) : null),
-                          trailingFull: _paidInFull,
-                        );
-                      }),
+                      Builder(
+                        builder: (context) {
+                          final advanceTotal = sumPayments(
+                            _advance.where((l) => l.value > 0).toList(),
+                          );
+                          return _SectionLabel(
+                            _paidInFull ? 'Payment' : 'Advance payment',
+                            number: 3,
+                            trailing: _paidInFull
+                                ? 'Paid in full · ${formatPrice(advanceTotal)}'
+                                : (advanceTotal > 0
+                                      ? formatPrice(advanceTotal)
+                                      : null),
+                            trailingFull: _paidInFull,
+                          );
+                        },
+                      ),
                       const SizedBox(height: AppTheme.s4),
                       KeyedSubtree(
                         key: _advanceKey,
@@ -1189,7 +1282,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                           hintText: _paidInFull && state.quote != null
                               ? 'Full payment of ${formatPrice(state.quote!.totalPrice)} is being collected at booking.'
                               : null,
-                          onAdd: () => setState(() => _advance.add(PaymentDraft())),
+                          onAdd: () =>
+                              setState(() => _advance.add(PaymentDraft())),
                           onRemove: (i) => setState(() => _advance.removeAt(i)),
                           onChanged: () => setState(() {}),
                         ),
@@ -1200,12 +1294,15 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     _SectionLabel(
                       'Vehicles',
                       number: vehiclesNumber,
-                      trailing: _vehicles.isEmpty ? null : '${_vehicles.length}',
+                      trailing: _vehicles.isEmpty
+                          ? null
+                          : '${_vehicles.length}',
                     ),
                     const SizedBox(height: AppTheme.s4),
                     _VehicleList(
                       vehicles: _vehicles,
-                      onAdd: () => setState(() => _vehicles.add(VehicleDraft())),
+                      onAdd: () =>
+                          setState(() => _vehicles.add(VehicleDraft())),
                       onRemove: (i) => setState(() => _vehicles.removeAt(i)),
                       onChanged: () => setState(() {}),
                     ),
@@ -1440,7 +1537,10 @@ class _RequiredLabel extends StatelessWidget {
         children: const [
           TextSpan(
             text: ' *',
-            style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: AppTheme.danger,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -1596,7 +1696,8 @@ class _BookingSavedDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final paidInFull =
-        booking.totalPrice != null && (booking.totalPrice! - advance).abs() < 0.01;
+        booking.totalPrice != null &&
+        (booking.totalPrice! - advance).abs() < 0.01;
 
     return Dialog(
       backgroundColor: AppTheme.bg,
@@ -1626,17 +1727,27 @@ class _BookingSavedDialog extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const Icon(Icons.check_rounded, color: Colors.white, size: 30),
+              child: const Icon(
+                Icons.check_rounded,
+                color: Colors.white,
+                size: 30,
+              ),
             ),
             const SizedBox(height: AppTheme.s8),
-            Text('Booking saved', style: Theme.of(context).textTheme.headlineSmall),
+            Text(
+              'Booking saved',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
             const SizedBox(height: AppTheme.s4),
             Text.rich(
               TextSpan(
                 children: [
                   TextSpan(
                     text: booking.guestName ?? 'Guest',
-                    style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.heading),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.heading,
+                    ),
                   ),
                   TextSpan(
                     text: booking.roomNumber != null
@@ -1701,7 +1812,8 @@ class _DatesRow extends ConsumerWidget {
     final today = DateTime(now.year, now.month, now.day);
     final initial = isCheckIn
         ? (state.checkIn ?? today)
-        : (state.checkOut ?? (state.checkIn ?? today).add(const Duration(days: 1)));
+        : (state.checkOut ??
+              (state.checkIn ?? today).add(const Duration(days: 1)));
 
     final picked = await showAppDatePicker(
       context: context,
@@ -1732,7 +1844,8 @@ class _DatesRow extends ConsumerWidget {
     if (isCheckIn) {
       // A check-out on or before the new check-in is not a stay, so it moves
       // along with it rather than being left behind.
-      final checkOut = (state.checkOut != null && state.checkOut!.isAfter(picked))
+      final checkOut =
+          (state.checkOut != null && state.checkOut!.isAfter(picked))
           ? state.checkOut!
           : picked.add(const Duration(days: 1));
       await vm.setDates(picked, checkOut);
@@ -1789,7 +1902,9 @@ class _DateBox extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        required ? _RequiredLabel(label) : Text(label, style: Theme.of(context).textTheme.bodySmall),
+        required
+            ? _RequiredLabel(label)
+            : Text(label, style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: AppTheme.s4),
         GestureDetector(
           onTap: onTap,
@@ -1987,7 +2102,8 @@ class _RoomPicker extends ConsumerWidget {
         if (list.isEmpty) {
           return const NeuNotice(
             icon: Icons.bedroom_parent_outlined,
-            message: 'Nothing is free across those nights.\n'
+            message:
+                'Nothing is free across those nights.\n'
                 'Try a different range.',
           );
         }
@@ -2176,7 +2292,11 @@ class _RoomOption extends StatelessWidget {
         ),
         if (selected) ...[
           const SizedBox(width: AppTheme.s8),
-          const Icon(Icons.check_circle_rounded, color: AppTheme.accent, size: 18),
+          const Icon(
+            Icons.check_circle_rounded,
+            color: AppTheme.accent,
+            size: 18,
+          ),
         ],
       ],
     );
@@ -2379,10 +2499,14 @@ class _CategoryFilterChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           gradient: selected
-              ? const LinearGradient(colors: [AppTheme.accent, Color(0xFF434FC1)])
+              ? const LinearGradient(
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                )
               : null,
           color: selected ? null : AppTheme.card,
-          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
+          border: Border.all(
+            color: selected ? AppTheme.accent : AppTheme.border,
+          ),
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
@@ -2420,7 +2544,11 @@ class _RoomGroup extends StatelessWidget {
     final tickedCount = rooms.where((r) => picked.contains(r.id)).length;
     final allTicked = tickedCount == rooms.length;
     final prices = rooms
-        .map((r) => r.isDormitory ? (r.dormitoryPrice ?? r.categoryBasePrice) : r.categoryBasePrice)
+        .map(
+          (r) => r.isDormitory
+              ? (r.dormitoryPrice ?? r.categoryBasePrice)
+              : r.categoryBasePrice,
+        )
         .toSet();
     final low = prices.reduce((a, b) => a < b ? a : b);
     final high = prices.reduce((a, b) => a > b ? a : b);
@@ -2508,10 +2636,14 @@ class _RoomChoiceTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
           gradient: selected
-              ? const LinearGradient(colors: [AppTheme.accent, Color(0xFF434FC1)])
+              ? const LinearGradient(
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                )
               : null,
           color: selected ? null : AppTheme.card,
-          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
+          border: Border.all(
+            color: selected ? AppTheme.accent : AppTheme.border,
+          ),
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
         ),
         child: Column(
@@ -2561,13 +2693,19 @@ class _ExtraRoomCard extends ConsumerWidget {
   /// Whether this room's own check-in — its own date under separate dates,
   /// else the booking's shared one — is today. Only a room arriving right
   /// now has anything for housekeeping's status to say.
-  bool _isCheckInToday(BuildContext context, WidgetRef ref, ExtraRoomDraft draft) {
+  bool _isCheckInToday(
+    BuildContext context,
+    WidgetRef ref,
+    ExtraRoomDraft draft,
+  ) {
     final checkIn = showDatePickers
         ? draft.checkIn
         : ref.watch(bookingViewModelProvider).checkIn;
     if (checkIn == null) return false;
     final now = DateTime.now();
-    return checkIn.year == now.year && checkIn.month == now.month && checkIn.day == now.day;
+    return checkIn.year == now.year &&
+        checkIn.month == now.month &&
+        checkIn.day == now.day;
   }
 
   Future<void> _pickDate(
@@ -2579,7 +2717,8 @@ class _ExtraRoomCard extends ConsumerWidget {
     final today = DateTime(now.year, now.month, now.day);
     final initial = isCheckIn
         ? (draft.checkIn ?? today)
-        : (draft.checkOut ?? (draft.checkIn ?? today).add(const Duration(days: 1)));
+        : (draft.checkOut ??
+              (draft.checkIn ?? today).add(const Duration(days: 1)));
 
     final picked = await showAppDatePicker(
       context: context,
@@ -2605,13 +2744,16 @@ class _ExtraRoomCard extends ConsumerWidget {
 
     final vm = ref.read(bookingViewModelProvider.notifier);
     if (isCheckIn) {
-      final checkOut = (draft.checkOut != null && draft.checkOut!.isAfter(picked))
+      final checkOut =
+          (draft.checkOut != null && draft.checkOut!.isAfter(picked))
           ? draft.checkOut!
           : picked.add(const Duration(days: 1));
       await vm.setExtraRoomDates(index, picked, checkOut);
     } else {
       final checkIn = draft.checkIn ?? today;
-      final checkOut = picked.isAfter(checkIn) ? picked : checkIn.add(const Duration(days: 1));
+      final checkOut = picked.isAfter(checkIn)
+          ? picked
+          : checkIn.add(const Duration(days: 1));
       await vm.setExtraRoomDates(index, checkIn, checkOut);
     }
   }
@@ -2637,7 +2779,9 @@ class _ExtraRoomCard extends ConsumerWidget {
             children: [
               Expanded(
                 child: Text(
-                  room != null ? 'Room ${room.roomNumber}' : 'Room ${index + 2}',
+                  room != null
+                      ? 'Room ${room.roomNumber}'
+                      : 'Room ${index + 2}',
                   style: const TextStyle(
                     color: AppTheme.heading,
                     fontWeight: FontWeight.w700,
@@ -2698,7 +2842,12 @@ class _ExtraRoomCard extends ConsumerWidget {
             // _RoomChips(room: room),
             if (_isCheckInToday(context, ref, draft))
               CheckInRoomStatus(
-                rooms: [CheckInRoomStatusEntry(roomId: room.id, roomNumber: room.roomNumber)],
+                rooms: [
+                  CheckInRoomStatusEntry(
+                    roomId: room.id,
+                    roomNumber: room.roomNumber,
+                  ),
+                ],
               ),
             if (room.isDormitory) ...[
               const SizedBox(height: AppTheme.s8),
@@ -2929,10 +3078,9 @@ class _ExtraRoomExtras extends ConsumerWidget {
             name: charges[i].name,
             pricePerNight: charges[i].chargePerNight,
             selected: draft.extras.containsKey(charges[i].id),
-            onToggle: (on) =>
-                vm.toggleExtraRoomExtra(index, charges[i].id, on),
-            counter: charges[i].isCounter &&
-                    draft.extras.containsKey(charges[i].id)
+            onToggle: (on) => vm.toggleExtraRoomExtra(index, charges[i].id, on),
+            counter:
+                charges[i].isCounter && draft.extras.containsKey(charges[i].id)
                 ? _Stepper(
                     value: draft.extras[charges[i].id]!.quantity,
                     onChanged: (v) =>
@@ -2993,14 +3141,22 @@ class _RoomChips extends StatelessWidget {
         if (room.isDormitory) ...[
           _Chip('Dormitory', icon: Icons.holiday_village_rounded),
           if (room.dormitoryGender != null)
-            _Chip(dormitoryGenderLabel[room.dormitoryGender!] ?? room.dormitoryGender!),
+            _Chip(
+              dormitoryGenderLabel[room.dormitoryGender!] ??
+                  room.dormitoryGender!,
+            ),
           if (room.dormitoryIsAc != null)
-            _Chip(dormitoryAcLabel[room.dormitoryIsAc!] ?? room.dormitoryIsAc!, icon: Icons.ac_unit_rounded),
+            _Chip(
+              dormitoryAcLabel[room.dormitoryIsAc!] ?? room.dormitoryIsAc!,
+              icon: Icons.ac_unit_rounded,
+            ),
         ] else ...[
           if (bedLabel != null) _Chip(bedLabel, icon: Icons.bed_rounded),
-          if (room.maxOccupancy != null) _Chip('Sleeps ${room.maxOccupancy}', icon: Icons.person_rounded),
+          if (room.maxOccupancy != null)
+            _Chip('Sleeps ${room.maxOccupancy}', icon: Icons.person_rounded),
         ],
-        if (bathroomLabel != null) _Chip(bathroomLabel, icon: Icons.bathtub_rounded),
+        if (bathroomLabel != null)
+          _Chip(bathroomLabel, icon: Icons.bathtub_rounded),
       ],
     );
   }
@@ -3115,11 +3271,19 @@ class _BedChoiceChip extends StatelessWidget {
           children: [
             Text(
               label,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12.5),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+              ),
             ),
             Text(
               sublabel,
-              style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -3141,9 +3305,7 @@ class _Chip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5.5),
       decoration: BoxDecoration(
         gradient: accent
-            ? const LinearGradient(
-                colors: [AppTheme.accent, Color(0xFF434FC1)],
-              )
+            ? const LinearGradient(colors: [AppTheme.accent, Color(0xFF434FC1)])
             : null,
         color: accent ? null : AppTheme.bg,
         border: accent ? null : Border.all(color: AppTheme.border),
@@ -3162,11 +3324,7 @@ class _Chip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(
-              icon,
-              size: 12,
-              color: accent ? Colors.white : AppTheme.muted,
-            ),
+            Icon(icon, size: 12, color: accent ? Colors.white : AppTheme.muted),
             const SizedBox(width: 4),
           ],
           Text(
@@ -3204,8 +3362,8 @@ class _ExtrasCard extends ConsumerWidget {
             pricePerNight: charges[i].chargePerNight,
             selected: state.extras.containsKey(charges[i].id),
             onToggle: (on) => vm.toggleExtra(charges[i].id, on),
-            counter: charges[i].isCounter &&
-                    state.extras.containsKey(charges[i].id)
+            counter:
+                charges[i].isCounter && state.extras.containsKey(charges[i].id)
                 ? _Stepper(
                     value: state.extras[charges[i].id]!.quantity,
                     onChanged: (v) => vm.setExtraQuantity(charges[i].id, v),
@@ -3350,8 +3508,54 @@ class _Stepper extends StatelessWidget {
 /// a percentage of the rate above it, so it follows on its own.
 class _QuoteCard extends ConsumerWidget {
   final BookingState state;
+  final bool submitAttempted;
 
-  const _QuoteCard({required this.state});
+  const _QuoteCard({required this.state, this.submitAttempted = false});
+
+  /// Whether one quote line's own box is sitting blank right now, having
+  /// actually been typed into — never one simply carrying its default,
+  /// which is the normal state for most lines. Save is held shut while this
+  /// is true for any line, so [_previewTotal] below is only ever a stand-in
+  /// shown during that in-between moment, not a real, saveable figure.
+  bool _isBlankAndTouched(QuoteLine line) {
+    if (line.roomIndex != null && line.roomIndex! > 0) {
+      if (line.roomIndex! > state.extraRooms.length) return false;
+      final r = state.extraRooms[line.roomIndex! - 1];
+      if (line.isBase) {
+        return r.roomTotalTouched && r.roomTotal.trim().isEmpty;
+      }
+      if (line.isExtra && line.chargeId != null) {
+        final e = r.extras[line.chargeId!];
+        return e != null &&
+            e.agreedTotalTouched &&
+            e.agreedTotal.trim().isEmpty;
+      }
+      return false;
+    }
+    if (line.isBase) {
+      return state.roomTotalTouched && state.roomTotal.trim().isEmpty;
+    }
+    if (line.isExtra && line.chargeId != null) {
+      final e = state.extras[line.chargeId!];
+      return e != null && e.agreedTotalTouched && e.agreedTotal.trim().isEmpty;
+    }
+    return false;
+  }
+
+  /// The server's own total, minus whatever every blanked-out box above is
+  /// still silently contributing at its listed rate — so a box the desk is
+  /// mid-way through clearing reads as "not charged yet" here rather than as
+  /// a rate nobody actually agreed to. Only a display stand-in: Save stays
+  /// shut until every one of those boxes is resolved, so this number is
+  /// never what the server is asked to charge.
+  num _previewTotal(Quote quote) {
+    num deduction = 0;
+    for (final line in quote.charges) {
+      if (_isBlankAndTouched(line)) deduction += line.amount;
+    }
+    final total = quote.totalPrice - deduction;
+    return total < 0 ? 0 : total;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -3423,17 +3627,21 @@ class _QuoteCard extends ConsumerWidget {
                       shown: line.amount,
                       onChanged: (v) =>
                           vm.setExtraRoomTotal(line.roomIndex! - 1, v),
+                      submitAttempted: submitAttempted,
                     )
                   else if (line.roomIndex != null &&
                       line.roomIndex! > 0 &&
                       line.roomIndex! <= state.extraRooms.length &&
                       line.isExtra)
                     _AmountBox(
-                      value: state.extraRooms[line.roomIndex! - 1]
+                      value:
+                          state
+                              .extraRooms[line.roomIndex! - 1]
                               .extras[line.chargeId!]
                               ?.agreedTotal ??
                           '',
                       shown: line.amount,
+                      submitAttempted: submitAttempted,
                       onChanged: (v) => vm.setExtraRoomExtraTotal(
                         line.roomIndex! - 1,
                         line.chargeId!,
@@ -3453,12 +3661,14 @@ class _QuoteCard extends ConsumerWidget {
                       value: state.roomTotal,
                       shown: line.amount,
                       onChanged: vm.setRoomTotal,
+                      submitAttempted: submitAttempted,
                     )
                   else if (line.isExtra)
                     _AmountBox(
                       value: state.extras[line.chargeId!]?.agreedTotal ?? '',
                       shown: line.amount,
                       onChanged: (v) => vm.setExtraTotal(line.chargeId!, v),
+                      submitAttempted: submitAttempted,
                     )
                   else
                     Text(
@@ -3505,7 +3715,9 @@ class _QuoteCard extends ConsumerWidget {
                 ],
               ),
               borderRadius: BorderRadius.circular(AppTheme.rSmall),
-              border: Border.all(color: AppTheme.accent.withValues(alpha: 0.18)),
+              border: Border.all(
+                color: AppTheme.accent.withValues(alpha: 0.18),
+              ),
             ),
             child: Row(
               children: [
@@ -3519,21 +3731,17 @@ class _QuoteCard extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (state.quoting)
-                  const SizedBox(
-                    height: 13,
-                    width: 13,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  Text(
-                    formatPrice(quote.totalPrice),
-                    style: const TextStyle(
-                      color: AppTheme.accent,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
+                // Kept on screen through a re-quote, the way the website's own
+                // total never blanks out mid-edit — only the figure changes
+                // once the new one lands, nothing disappears in between.
+                Text(
+                  formatPrice(_previewTotal(quote)),
+                  style: const TextStyle(
+                    color: AppTheme.accent,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
                   ),
+                ),
               ],
             ),
           ),
@@ -3562,10 +3770,16 @@ class _AmountBox extends StatefulWidget {
   final num shown;
   final ValueChanged<String> onChanged;
 
+  /// Reddens the box, once a save was attempted, if the box itself is
+  /// sitting empty right now — never on a box that simply carries the
+  /// category's own default and was never touched.
+  final bool submitAttempted;
+
   const _AmountBox({
     required this.value,
     required this.shown,
     required this.onChanged,
+    this.submitAttempted = false,
   });
 
   @override
@@ -3577,12 +3791,18 @@ class _AmountBoxState extends State<_AmountBox> {
     text: widget.value.isEmpty ? '${widget.shown}' : widget.value,
   );
 
+  // The website keeps a hard null for "never edited" apart from "" for
+  // "edited to blank", so only the first tells it to keep following the
+  // server price. This box's value is a plain String with no such null, so
+  // the distinction is tracked here instead: once the desk has typed into
+  // this box at all, even clearing it is a deliberate choice, and a refetch
+  // moving the server's own price must not type over them.
+  bool _touched = false;
+
   @override
   void didUpdateWidget(_AmountBox old) {
     super.didUpdateWidget(old);
-    // Only follow the server while the desk has not overridden this line —
-    // otherwise a refetch would overwrite what is being typed.
-    if (widget.value.isEmpty && old.shown != widget.shown) {
+    if (!_touched && widget.value.isEmpty && old.shown != widget.shown) {
       _c.text = '${widget.shown}';
     }
   }
@@ -3595,14 +3815,19 @@ class _AmountBoxState extends State<_AmountBox> {
 
   @override
   Widget build(BuildContext context) {
+    final invalid = widget.submitAttempted && _c.text.trim().isEmpty;
+    final color = invalid ? AppTheme.danger : AppTheme.accent;
     return SizedBox(
       width: 112,
       child: Container(
         padding: const EdgeInsets.only(left: AppTheme.s12, right: AppTheme.s4),
         decoration: BoxDecoration(
-          color: AppTheme.accent.withValues(alpha: 0.06),
+          color: color.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
-          border: Border.all(color: AppTheme.accent.withValues(alpha: 0.35)),
+          border: Border.all(
+            color: color.withValues(alpha: invalid ? 0.7 : 0.35),
+            width: invalid ? 1.4 : 1,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -3616,7 +3841,14 @@ class _AmountBoxState extends State<_AmountBox> {
                   baseOffset: 0,
                   extentOffset: _c.text.length,
                 ),
-                onChanged: widget.onChanged,
+                onChanged: (v) {
+                  _touched = true;
+                  widget.onChanged(v);
+                  // The red border reacts to what's in the box right now, so
+                  // it has to repaint on every keystroke, not just when the
+                  // parent happens to rebuild this widget.
+                  setState(() {});
+                },
                 style: const TextStyle(color: AppTheme.heading, fontSize: 13),
                 decoration: const InputDecoration(
                   border: InputBorder.none,
@@ -3625,7 +3857,7 @@ class _AmountBoxState extends State<_AmountBox> {
                 ),
               ),
             ),
-            const Icon(Icons.edit_rounded, size: 13, color: AppTheme.accent),
+            Icon(Icons.edit_rounded, size: 13, color: color),
           ],
         ),
       ),
@@ -3692,23 +3924,28 @@ class _IdProofFields extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String?>(
-              value: type,
-              isExpanded: true,
-              isDense: true,
-              dropdownColor: AppTheme.bg,
-              hint: Text(
-                required ? 'Choose one' : 'Not recorded',
-                style: const TextStyle(color: AppTheme.muted, fontSize: 14),
-              ),
-              items: [
-                // "Not recorded" is not on offer where an ID is required —
-                // a walk-in has to carry one.
-                if (!required)
-                  const DropdownMenuItem<String?>(child: Text('Not recorded')),
-                for (final e in kIdProofTypes.entries)
-                  DropdownMenuItem<String?>(value: e.key, child: Text(e.value)),
-              ],
-              onChanged: onType,
+                value: type,
+                isExpanded: true,
+                isDense: true,
+                dropdownColor: AppTheme.bg,
+                hint: Text(
+                  required ? 'Choose one' : 'Not recorded',
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 14),
+                ),
+                items: [
+                  // "Not recorded" is not on offer where an ID is required —
+                  // a walk-in has to carry one.
+                  if (!required)
+                    const DropdownMenuItem<String?>(
+                      child: Text('Not recorded'),
+                    ),
+                  for (final e in kIdProofTypes.entries)
+                    DropdownMenuItem<String?>(
+                      value: e.key,
+                      child: Text(e.value),
+                    ),
+                ],
+                onChanged: onType,
               ),
             ),
           ),
@@ -3733,10 +3970,7 @@ class _IdProofFields extends StatelessWidget {
           ),
           if (!required && numberErrorText == null) ...[
             const SizedBox(height: AppTheme.s4),
-            Text(
-              'Not required',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            Text('Not required', style: Theme.of(context).textTheme.bodySmall),
           ],
           if (onFile != null) ...[
             const SizedBox(height: AppTheme.s8),
@@ -3807,7 +4041,10 @@ class _GuestSuggestions extends StatelessWidget {
                         if (guest.lastStayDate != null)
                           'last ${formatIsoDate(guest.lastStayDate)}',
                       ].join(' · '),
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11.5,
+                      ),
                     ),
                     if (guest.hasIdProofDocument) ...[
                       const SizedBox(height: 2),
@@ -4034,7 +4271,10 @@ class _VehicleCardState extends State<_VehicleCard> {
                   ),
                   items: [
                     for (final e in kVehicleTypes.entries)
-                      DropdownMenuItem<String?>(value: e.key, child: Text(e.value)),
+                      DropdownMenuItem<String?>(
+                        value: e.key,
+                        child: Text(e.value),
+                      ),
                   ],
                   onChanged: (t) {
                     setState(() => widget.vehicle.type = t);
@@ -4145,4 +4385,3 @@ class _AdvanceCard extends StatelessWidget {
     );
   }
 }
-

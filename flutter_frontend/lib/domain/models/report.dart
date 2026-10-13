@@ -340,6 +340,7 @@ class BookingsReportSummary {
   final int unbilledCount;
   final num unbilledValue;
   final num billedAmount;
+  final num foodBilledAmount;
   final int billedCount;
   final num stayAdvance;
   final num stayBalance;
@@ -363,6 +364,7 @@ class BookingsReportSummary {
     this.unbilledCount = 0,
     this.unbilledValue = 0,
     this.billedAmount = 0,
+    this.foodBilledAmount = 0,
     this.billedCount = 0,
     this.stayAdvance = 0,
     this.stayBalance = 0,
@@ -391,6 +393,7 @@ class BookingsReportSummary {
       unbilledCount: asInt(json['unbilledCount']),
       unbilledValue: asNum(json['unbilledValue']),
       billedAmount: asNum(json['billedAmount']),
+      foodBilledAmount: asNum(json['foodBilledAmount']),
       billedCount: asInt(json['billedCount']),
       stayAdvance: asNum(json['stayAdvance']),
       stayBalance: asNum(json['stayBalance']),
@@ -1317,6 +1320,389 @@ class FoodOrdersReport {
             ?.map((e) => ReportFoodOrderRow.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
+  );
+}
+
+// ── Other services — GET /reports/services ───────────────────────────────
+
+class ServicesReportTotals {
+  final int count;
+  final int cancelledCount;
+  final int voidedCount;
+  final num completedValue;
+  final num billedValue;
+  final num unbilledValue;
+
+  const ServicesReportTotals({
+    this.count = 0,
+    this.cancelledCount = 0,
+    this.voidedCount = 0,
+    this.completedValue = 0,
+    this.billedValue = 0,
+    this.unbilledValue = 0,
+  });
+
+  factory ServicesReportTotals.fromJson(Map<String, dynamic> json) => ServicesReportTotals(
+    count: asInt(json['count']),
+    cancelledCount: asInt(json['cancelledCount']),
+    voidedCount: asInt(json['voidedCount']),
+    completedValue: asNum(json['completedValue']),
+    billedValue: asNum(json['billedValue']),
+    unbilledValue: asNum(json['unbilledValue']),
+  );
+}
+
+/// One service's totals for the period — the "By service" table row.
+class ServicesByServiceRow {
+  final String serviceName;
+  final int uses;
+  final num quantity;
+  final num value;
+
+  const ServicesByServiceRow({
+    required this.serviceName,
+    this.uses = 0,
+    this.quantity = 0,
+    this.value = 0,
+  });
+
+  factory ServicesByServiceRow.fromJson(Map<String, dynamic> json) => ServicesByServiceRow(
+    serviceName: json['serviceName']?.toString() ?? '',
+    uses: asInt(json['uses']),
+    quantity: asNum(json['quantity']),
+    value: asNum(json['value']),
+  );
+}
+
+/// One use of a service — the "Every use" table row.
+class ServiceUsageRow {
+  final int id;
+  final String serviceName;
+  final String? unitLabel;
+  final num unitPrice;
+  final num quantity;
+  final num lineTotal;
+  final num gstRatePercent;
+  final String? guestName;
+  final String? roomNumber;
+  final String status;
+  final String startedAt;
+  final String? completedAt;
+  final String? invoiceNumber;
+  final bool billed;
+  final bool voided;
+  final bool onRoomBill;
+
+  const ServiceUsageRow({
+    required this.id,
+    required this.serviceName,
+    this.unitLabel,
+    this.unitPrice = 0,
+    this.quantity = 0,
+    this.lineTotal = 0,
+    this.gstRatePercent = 0,
+    this.guestName,
+    this.roomNumber,
+    required this.status,
+    required this.startedAt,
+    this.completedAt,
+    this.invoiceNumber,
+    this.billed = false,
+    this.voided = false,
+    this.onRoomBill = false,
+  });
+
+  factory ServiceUsageRow.fromJson(Map<String, dynamic> json) => ServiceUsageRow(
+    id: asInt(json['id']),
+    serviceName: json['serviceName']?.toString() ?? '',
+    unitLabel: asStringOrNull(json['unitLabel']),
+    unitPrice: asNum(json['unitPrice']),
+    quantity: asNum(json['quantity']),
+    lineTotal: asNum(json['lineTotal']),
+    gstRatePercent: asNum(json['gstRatePercent']),
+    guestName: asStringOrNull(json['guestName']),
+    roomNumber: asStringOrNull(json['roomNumber']),
+    status: json['status']?.toString() ?? '',
+    startedAt: json['startedAt']?.toString() ?? '',
+    completedAt: asStringOrNull(json['completedAt']),
+    invoiceNumber: asStringOrNull(json['invoiceNumber']),
+    billed: asBool(json['billed']),
+    voided: asBool(json['voided']),
+    onRoomBill: asBool(json['onRoomBill']),
+  );
+}
+
+/// GET /reports/services — pool, gaming, guest laundry and any other
+/// service a property sells apart from rooms and food.
+class ServicesReport {
+  final String fromDate;
+  final String toDate;
+  final ServicesReportTotals totals;
+  final List<ServicesByServiceRow> byService;
+  final List<ServiceUsageRow> usages;
+
+  const ServicesReport({
+    required this.fromDate,
+    required this.toDate,
+    this.totals = const ServicesReportTotals(),
+    this.byService = const [],
+    this.usages = const [],
+  });
+
+  factory ServicesReport.fromJson(Map<String, dynamic> json) => ServicesReport(
+    fromDate: json['fromDate']?.toString() ?? '',
+    toDate: json['toDate']?.toString() ?? '',
+    totals: ServicesReportTotals.fromJson(json['totals'] as Map<String, dynamic>? ?? const {}),
+    byService: (json['byService'] as List?)
+            ?.map((e) => ServicesByServiceRow.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    usages: (json['usages'] as List?)
+            ?.map((e) => ServiceUsageRow.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
+}
+
+// ── Laundry — GET /reports/laundry ────────────────────────────────────────
+
+class LinenTotals {
+  final num changed;
+  final num sent;
+  final num received;
+  final num lost;
+  final num damaged;
+  final num inWashNow;
+
+  const LinenTotals({
+    this.changed = 0,
+    this.sent = 0,
+    this.received = 0,
+    this.lost = 0,
+    this.damaged = 0,
+    this.inWashNow = 0,
+  });
+
+  factory LinenTotals.fromJson(Map<String, dynamic> json) => LinenTotals(
+    changed: asNum(json['changed']),
+    sent: asNum(json['sent']),
+    received: asNum(json['received']),
+    lost: asNum(json['lost']),
+    damaged: asNum(json['damaged']),
+    inWashNow: asNum(json['inWashNow']),
+  );
+}
+
+/// One linen item's movement counts for the period — the "By linen item"
+/// table row.
+class LinenItemRow {
+  final String name;
+  final num changed;
+  final num sent;
+  final num received;
+  final num lost;
+  final num damaged;
+  final num owned;
+  final num inWashNow;
+
+  const LinenItemRow({
+    required this.name,
+    this.changed = 0,
+    this.sent = 0,
+    this.received = 0,
+    this.lost = 0,
+    this.damaged = 0,
+    this.owned = 0,
+    this.inWashNow = 0,
+  });
+
+  factory LinenItemRow.fromJson(Map<String, dynamic> json) => LinenItemRow(
+    name: json['name']?.toString() ?? '',
+    changed: asNum(json['changed']),
+    sent: asNum(json['sent']),
+    received: asNum(json['received']),
+    lost: asNum(json['lost']),
+    damaged: asNum(json['damaged']),
+    owned: asNum(json['owned']),
+    inWashNow: asNum(json['inWashNow']),
+  );
+}
+
+/// One washer's (in-house staff or outside laundry) totals — the "By who
+/// washed it" table row.
+class LinenWasherRow {
+  final String washedBy;
+  final num sent;
+  final num received;
+  final num lost;
+  final num damaged;
+  final num notBack;
+  final num charge;
+
+  const LinenWasherRow({
+    required this.washedBy,
+    this.sent = 0,
+    this.received = 0,
+    this.lost = 0,
+    this.damaged = 0,
+    this.notBack = 0,
+    this.charge = 0,
+  });
+
+  factory LinenWasherRow.fromJson(Map<String, dynamic> json) => LinenWasherRow(
+    washedBy: json['washedBy']?.toString() ?? '',
+    sent: asNum(json['sent']),
+    received: asNum(json['received']),
+    lost: asNum(json['lost']),
+    damaged: asNum(json['damaged']),
+    notBack: asNum(json['notBack']),
+    charge: asNum(json['charge']),
+  );
+}
+
+class GuestLaundryTotals {
+  final int takenIn;
+  final int handedOver;
+  final int cancelled;
+  final int open;
+  final num pieces;
+  final num handedOverValue;
+  final num openValue;
+  final num vendorCharge;
+  final num handedOverVendorCharge;
+  final num profit;
+
+  const GuestLaundryTotals({
+    this.takenIn = 0,
+    this.handedOver = 0,
+    this.cancelled = 0,
+    this.open = 0,
+    this.pieces = 0,
+    this.handedOverValue = 0,
+    this.openValue = 0,
+    this.vendorCharge = 0,
+    this.handedOverVendorCharge = 0,
+    this.profit = 0,
+  });
+
+  factory GuestLaundryTotals.fromJson(Map<String, dynamic> json) => GuestLaundryTotals(
+    takenIn: asInt(json['takenIn']),
+    handedOver: asInt(json['handedOver']),
+    cancelled: asInt(json['cancelled']),
+    open: asInt(json['open']),
+    pieces: asNum(json['pieces']),
+    handedOverValue: asNum(json['handedOverValue']),
+    openValue: asNum(json['openValue']),
+    vendorCharge: asNum(json['vendorCharge']),
+    handedOverVendorCharge: asNum(json['handedOverVendorCharge']),
+    profit: asNum(json['profit']),
+  );
+}
+
+/// One guest laundry order — shown only when the property also has Other
+/// services switched on, same gate the web applies.
+class GuestLaundryOrderRow {
+  final int id;
+  final String tagNumber;
+  final String status;
+  final String? guestName;
+  final String? roomNumber;
+  final String receivedAt;
+  final String? deliveredAt;
+  final num pieces;
+  final num total;
+  final String? washedBy;
+  final num? washCharge;
+  final num? profit;
+
+  const GuestLaundryOrderRow({
+    required this.id,
+    required this.tagNumber,
+    required this.status,
+    this.guestName,
+    this.roomNumber,
+    required this.receivedAt,
+    this.deliveredAt,
+    this.pieces = 0,
+    this.total = 0,
+    this.washedBy,
+    this.washCharge,
+    this.profit,
+  });
+
+  factory GuestLaundryOrderRow.fromJson(Map<String, dynamic> json) => GuestLaundryOrderRow(
+    id: asInt(json['id']),
+    tagNumber: json['tagNumber']?.toString() ?? '',
+    status: json['status']?.toString() ?? '',
+    guestName: asStringOrNull(json['guestName']),
+    roomNumber: asStringOrNull(json['roomNumber']),
+    receivedAt: json['receivedAt']?.toString() ?? '',
+    deliveredAt: asStringOrNull(json['deliveredAt']),
+    pieces: asNum(json['pieces']),
+    total: asNum(json['total']),
+    washedBy: asStringOrNull(json['washedBy']),
+    washCharge: json['washCharge'] == null ? null : asNum(json['washCharge']),
+    profit: json['profit'] == null ? null : asNum(json['profit']),
+  );
+}
+
+class LinenReport {
+  final LinenTotals totals;
+  final List<LinenItemRow> byItem;
+  final List<LinenWasherRow> byWasher;
+
+  const LinenReport({
+    this.totals = const LinenTotals(),
+    this.byItem = const [],
+    this.byWasher = const [],
+  });
+
+  factory LinenReport.fromJson(Map<String, dynamic> json) => LinenReport(
+    totals: LinenTotals.fromJson(json['totals'] as Map<String, dynamic>? ?? const {}),
+    byItem: (json['byItem'] as List?)?.map((e) => LinenItemRow.fromJson(e as Map<String, dynamic>)).toList() ??
+        const [],
+    byWasher: (json['byWasher'] as List?)
+            ?.map((e) => LinenWasherRow.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
+}
+
+class GuestLaundryReport {
+  final GuestLaundryTotals totals;
+  final List<GuestLaundryOrderRow> orders;
+
+  const GuestLaundryReport({this.totals = const GuestLaundryTotals(), this.orders = const []});
+
+  factory GuestLaundryReport.fromJson(Map<String, dynamic> json) => GuestLaundryReport(
+    totals: GuestLaundryTotals.fromJson(json['totals'] as Map<String, dynamic>? ?? const {}),
+    orders: (json['orders'] as List?)
+            ?.map((e) => GuestLaundryOrderRow.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
+}
+
+/// GET /reports/laundry — hotel linen through the wash, and (where the
+/// property also takes guest laundry) their orders, shown for information.
+class LaundryReport {
+  final String fromDate;
+  final String toDate;
+  final LinenReport linen;
+  final GuestLaundryReport guest;
+
+  const LaundryReport({
+    required this.fromDate,
+    required this.toDate,
+    this.linen = const LinenReport(),
+    this.guest = const GuestLaundryReport(),
+  });
+
+  factory LaundryReport.fromJson(Map<String, dynamic> json) => LaundryReport(
+    fromDate: json['fromDate']?.toString() ?? '',
+    toDate: json['toDate']?.toString() ?? '',
+    linen: LinenReport.fromJson(json['linen'] as Map<String, dynamic>? ?? const {}),
+    guest: GuestLaundryReport.fromJson(json['guest'] as Map<String, dynamic>? ?? const {}),
   );
 }
 

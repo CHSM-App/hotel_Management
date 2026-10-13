@@ -1,0 +1,208 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../domain/models/invoice.dart';
+import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/format.dart';
+import '../../widgets/neu.dart';
+import '../theme.dart';
+import 'report_widgets.dart';
+
+const List<(String, String)> _kBillTypeFilters = [
+  ('ALL', 'All bills'),
+  ('room', 'Room'),
+  ('restaurant', 'Restaurant'),
+  ('event', 'Events'),
+];
+
+/// Every issued bill in a period, as a spreadsheet — the register itself;
+/// nothing here issues, voids or sends a bill. Mirrors the web's Reports >
+/// Bills tab (BillsReport in Billing.jsx), filtered client-side off the same
+/// `invoices()` list the Billing screen's own history reads.
+class BillsReportPanel extends ConsumerStatefulWidget {
+  final String fromDate;
+  final String toDate;
+
+  const BillsReportPanel({super.key, required this.fromDate, required this.toDate});
+
+  @override
+  ConsumerState<BillsReportPanel> createState() => _BillsReportPanelState();
+}
+
+class _BillsReportPanelState extends ConsumerState<BillsReportPanel> {
+  String _type = 'ALL';
+  String _search = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(reportsViewModelProvider).billsReport;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppTheme.s16, 0, AppTheme.s16, AppTheme.s8),
+          child: Column(
+            children: [
+              TextField(
+                decoration: const InputDecoration(
+                  isDense: true,
+                  prefixIcon: Icon(Icons.search_rounded, size: 18),
+                  hintText: 'Bill number, guest, room or table',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (v) => setState(() => _search = v),
+              ),
+              const SizedBox(height: AppTheme.s8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final (key, label) in _kBillTypeFilters) ...[
+                      ChoiceChip(
+                        label: Text(label),
+                        selected: _type == key,
+                        onSelected: (_) => setState(() => _type = key),
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s16, 0, AppTheme.s16, AppTheme.s32),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              switch (async) {
+                null || AsyncLoading() => const ReportLoading(),
+                AsyncError(:final error) => ReportError(message: error.toString()),
+                AsyncData(:final value) => _Loaded(
+                  invoices: value,
+                  fromDate: widget.fromDate,
+                  toDate: widget.toDate,
+                  type: _type,
+                  search: _search,
+                ),
+                _ => const SizedBox.shrink(),
+              },
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 'ROOM', 'ROOM_FOOD', 'TABLE', 'EVENT', 'ADVANCE' or 'SERVICE' — what a bill
+/// was for, same split the web's billSource() makes.
+String _billSource(Invoice inv) {
+  if (inv.kind == 'EVENT') return 'EVENT';
+  if (inv.kind == 'SERVICE') return 'SERVICE';
+  if (inv.kind == 'FOOD') {
+    return (inv.tableLabel ?? '').startsWith('Room') ? 'ROOM' : 'TABLE';
+  }
+  return 'ROOM';
+}
+
+const Map<String, String> _kSourceLabel = {
+  'ROOM': 'Room',
+  'TABLE': 'Table',
+  'EVENT': 'Function',
+  'ADVANCE': 'Advance',
+  'SERVICE': 'Services',
+};
+
+/// 'room', 'restaurant' or 'event' — which filter chip a bill falls under.
+String _streamOf(Invoice inv) {
+  if (inv.kind == 'FOOD') return 'restaurant';
+  if (inv.kind == 'EVENT') return 'event';
+  return 'room';
+}
+
+bool _matchesSearch(Invoice inv, String needle) {
+  if (needle.isEmpty) return true;
+  final fields = [inv.invoiceNumber, inv.guestName, inv.roomNumber, inv.tableLabel, inv.guestPhone];
+  return fields.any((f) => f != null && f.toLowerCase().contains(needle));
+}
+
+String _billParty(Invoice inv) {
+  if (inv.kind == 'FOOD') return inv.tableLabel ?? 'Counter';
+  if (inv.kind == 'EVENT') return '${inv.guestName} · ${inv.venueName ?? 'Function'}';
+  return inv.guestName ?? '—';
+}
+
+const Map<String, String> _kDocumentLabel = {
+  'TAX_INVOICE': 'Tax invoice',
+  'BILL_OF_SUPPLY': 'Bill of supply',
+  'CASH_RECEIPT': 'Cash receipt',
+  'RECEIPT_VOUCHER': 'Receipt voucher',
+  'ADVANCE_RECEIPT': 'Advance receipt',
+};
+
+class _Loaded extends StatelessWidget {
+  final List<Invoice> invoices;
+  final String fromDate;
+  final String toDate;
+  final String type;
+  final String search;
+
+  const _Loaded({
+    required this.invoices,
+    required this.fromDate,
+    required this.toDate,
+    required this.type,
+    required this.search,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final needle = search.trim().toLowerCase();
+    final rows = invoices.where((inv) {
+      final day = (inv.createdAt ?? '').isEmpty ? null : inv.createdAt!.substring(0, 10);
+      final inRange = day == null || ((fromDate.isEmpty || day.compareTo(fromDate) >= 0) && (toDate.isEmpty || day.compareTo(toDate) <= 0));
+      return inRange && (type == 'ALL' || _streamOf(inv) == type) && _matchesSearch(inv, needle);
+    }).toList()
+      ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
+
+    final live = rows.where((i) => i.status != 'VOID').toList();
+    final total = live.fold<num>(0, (sum, i) => sum + i.totalAmount);
+
+    if (rows.isEmpty) {
+      return const NeuNotice(icon: Icons.receipt_long_outlined, message: 'No bills match.');
+    }
+
+    return ReportDataTable(
+      columns: const [
+        ReportTableColumn('Bill no.', width: 80),
+        ReportTableColumn('Date', width: 80),
+        ReportTableColumn('Billed for', width: 90),
+        ReportTableColumn('Guest / Table', width: 120),
+        ReportTableColumn('Room', width: 60),
+        ReportTableColumn('Document', width: 100),
+        ReportTableColumn('Status', width: 70),
+        ReportTableColumn('Amount', width: 84, align: TextAlign.right),
+      ],
+      rows: [for (final inv in rows) _row(inv)],
+      totals: [
+        '${rows.length} bill${rows.length == 1 ? '' : 's'}',
+        '', '', '', '', '', '',
+        formatPrice(total),
+      ],
+    );
+  }
+
+  List<String> _row(Invoice inv) => [
+    inv.invoiceNumber ?? '—',
+    inv.createdAt == null ? '—' : formatDateTime(inv.createdAt),
+    _kSourceLabel[_billSource(inv)] ?? '—',
+    _billParty(inv),
+    inv.kind == 'FOOD' || inv.kind == 'EVENT' ? '—' : (inv.roomNumber ?? '—'),
+    _kDocumentLabel[inv.documentType] ?? inv.documentType ?? '—',
+    inv.status == 'VOID' ? 'Void' : 'Issued',
+    formatPrice(inv.totalAmount),
+  ];
+}

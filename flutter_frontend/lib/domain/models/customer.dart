@@ -129,3 +129,73 @@ class CustomersResult {
 
   const CustomersResult({required this.customers, required this.stats});
 }
+
+/// One submitted guest-feedback form, as returned by GET /customers/feedback
+/// — mirrors the web's `responses[]` row in Customers.jsx's feedback tab.
+/// Feedback itself is only ever submitted by the guest via their checkout
+/// link; nothing here is created from the customer list.
+class CustomerFeedbackResponse {
+  final int id;
+  final String? guestName;
+  final String? checkOutDate;
+  final int rating;
+  final String comment;
+  final String? submittedAt;
+
+  const CustomerFeedbackResponse({
+    required this.id,
+    this.guestName,
+    this.checkOutDate,
+    required this.rating,
+    this.comment = '',
+    this.submittedAt,
+  });
+
+  factory CustomerFeedbackResponse.fromJson(Map<String, dynamic> json) =>
+      CustomerFeedbackResponse(
+        id: asInt(json['id']),
+        guestName: asStringOrNull(json['guestName']),
+        checkOutDate: asStringOrNull(json['checkOutDate']),
+        rating: asInt(json['rating']),
+        comment: json['comment']?.toString() ?? '',
+        submittedAt: asStringOrNull(json['submittedAt']),
+      );
+}
+
+/// GET /customers/feedback's KPI tile — how many responses are on file and
+/// their average rating, same `totals` the web's feedback tab reads its two
+/// stat cards from.
+class CustomerFeedbackTotals {
+  final int count;
+  final num? averageRating;
+
+  const CustomerFeedbackTotals({this.count = 0, this.averageRating});
+
+  factory CustomerFeedbackTotals.fromJson(Map<String, dynamic> json) =>
+      CustomerFeedbackTotals(
+        count: asInt(json['count']),
+        averageRating: asNumOrNull(json['averageRating']),
+      );
+}
+
+/// GET /customers/feedback's whole payload — the KPI totals and the
+/// responses list together, same as the web's single fetch.
+class CustomerFeedbackResult {
+  final CustomerFeedbackTotals totals;
+  final List<CustomerFeedbackResponse> responses;
+
+  const CustomerFeedbackResult({
+    this.totals = const CustomerFeedbackTotals(),
+    this.responses = const [],
+  });
+
+  factory CustomerFeedbackResult.fromJson(Map<String, dynamic> json) =>
+      CustomerFeedbackResult(
+        totals: CustomerFeedbackTotals.fromJson(
+          (json['totals'] as Map<String, dynamic>?) ?? const {},
+        ),
+        responses: (json['responses'] as List? ?? [])
+            .map((e) => CustomerFeedbackResponse.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}

@@ -57,6 +57,7 @@ class ChargeSelections {
     next[chargeId] = ExtraDraft(
       quantity: quantity,
       agreedTotal: current.agreedTotal,
+      agreedTotalTouched: current.agreedTotalTouched,
     );
     return next;
   }
@@ -71,6 +72,7 @@ class ChargeSelections {
     next[chargeId] = ExtraDraft(
       quantity: current.quantity,
       agreedTotal: agreedTotal,
+      agreedTotalTouched: true,
     );
     return next;
   }

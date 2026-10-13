@@ -259,6 +259,10 @@ class EventBooking {
   final String? refundPaymentMethod;
   final num? cancellationCharge;
   final List<EventAddonLine> addons;
+
+  /// Addons the desk added without a price yet — the bill will not issue
+  /// while any stand. Mirrors unpricedExtras in events.service.js.
+  final int unpricedExtras;
   final EventInvoiceRef? invoice;
   // When the desk marked the function over — not a status: the status walk
   // is about the money, and a function can be over and unbilled, or billed
@@ -304,6 +308,7 @@ class EventBooking {
     this.refundPaymentMethod,
     this.cancellationCharge,
     this.addons = const [],
+    this.unpricedExtras = 0,
     this.invoice,
     this.completedAt,
   });
@@ -351,6 +356,7 @@ class EventBooking {
     addons: (json['addons'] as List? ?? [])
         .map((e) => EventAddonLine.fromJson(e as Map<String, dynamic>))
         .toList(),
+    unpricedExtras: asInt(json['unpricedExtras']),
     invoice: json['invoice'] is Map
         ? EventInvoiceRef.fromJson((json['invoice'] as Map).cast<String, dynamic>())
         : null,

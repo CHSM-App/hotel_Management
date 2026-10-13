@@ -20,6 +20,9 @@ class CustomersState {
   final bool submitting;
   final CustomerDetail? selected;
   final bool detailLoading;
+  final bool feedbackLoading;
+  final String? feedbackError;
+  final CustomerFeedbackResult? feedback;
 
   const CustomersState({
     this.isLoading = false,
@@ -32,6 +35,9 @@ class CustomersState {
     this.submitting = false,
     this.selected,
     this.detailLoading = false,
+    this.feedbackLoading = false,
+    this.feedbackError,
+    this.feedback,
   });
 
   /// Same client-side match the web does: name/phone/email/tags contains the
@@ -61,6 +67,10 @@ class CustomersState {
     CustomerDetail? selected,
     bool clearSelected = false,
     bool? detailLoading,
+    bool? feedbackLoading,
+    String? feedbackError,
+    bool clearFeedbackError = false,
+    CustomerFeedbackResult? feedback,
   }) => CustomersState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
@@ -72,6 +82,9 @@ class CustomersState {
     submitting: submitting ?? this.submitting,
     selected: clearSelected ? null : (selected ?? this.selected),
     detailLoading: detailLoading ?? this.detailLoading,
+    feedbackLoading: feedbackLoading ?? this.feedbackLoading,
+    feedbackError: clearFeedbackError ? null : (feedbackError ?? this.feedbackError),
+    feedback: feedback ?? this.feedback,
   );
 }
 
@@ -138,4 +151,20 @@ class CustomersViewModel extends StateNotifier<CustomersState> {
   }
 
   void clearError() => state = state.copyWith(clearError: true);
+
+  /// Mirrors the web's `if (activeTab !== 'feedback' || feedback) return;` —
+  /// fetched once per visit to the tab, not on every tap, unless [force].
+  Future<void> loadFeedback({bool force = false}) async {
+    if (!force && state.feedback != null) return;
+    state = state.copyWith(feedbackLoading: true, clearFeedbackError: true);
+    try {
+      final result = await usecase.feedback();
+      state = state.copyWith(feedbackLoading: false, feedback: result);
+    } catch (e) {
+      state = state.copyWith(
+        feedbackLoading: false,
+        feedbackError: apiErrorMessage(e),
+      );
+    }
+  }
 }

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../models/event_booking.dart';
 import '../models/invoice.dart';
 import '../models/lodge_service.dart' show ServiceUsage;
 import '../repository/billing_repo.dart';
@@ -11,6 +12,9 @@ class BillingUsecase {
 
   /// Stays that have checked out and have no bill yet.
   Future<List<BillableStay>> queue() => repository.queue();
+
+  /// Functions that are over (or marked complete) and have no bill yet.
+  Future<List<EventBooking>> queueEvents() => repository.queueEvents();
 
   /// What the bill will say.
   Future<BillPreview> preview(
@@ -82,8 +86,15 @@ class BillingUsecase {
   Future<Invoice> invoice(int id) => repository.invoice(id);
 
   /// What a function's bill will say.
-  Future<EventBillPreview> previewEventBill(int eventId) =>
-      repository.previewEventBill(eventId);
+  Future<EventBillPreview> previewEventBill(
+    int eventId, {
+    num discountAmount = 0,
+    String? discountReason,
+  }) => repository.previewEventBill(
+    eventId,
+    discountAmount: discountAmount,
+    discountReason: discountReason,
+  );
 
   /// Cut the bill for a function.
   Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body) =>

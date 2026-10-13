@@ -20,4 +20,7 @@ class CustomersImpl implements CustomersRepository {
   @override
   Future<Customer?> updateCustomer(int id, Map<String, dynamic> body) =>
       api.updateCustomer(id, body);
+
+  @override
+  Future<CustomerFeedbackResult> feedback() => api.customerFeedback();
 }

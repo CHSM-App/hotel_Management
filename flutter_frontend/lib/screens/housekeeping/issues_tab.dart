@@ -45,7 +45,7 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
     final note = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppTheme.bg,
         title: Text('${issue.spaceLabel} · ${(kIssueKindCloseLabel[issue.kind] ?? '').toLowerCase()}?', style: const TextStyle(color: AppTheme.heading)),
         content: Column(
@@ -66,8 +66,8 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Not yet')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: Text(kIssueKindCloseLabel[issue.kind] ?? 'Close')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Not yet')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(kIssueKindCloseLabel[issue.kind] ?? 'Close')),
         ],
       ),
     );

@@ -13,4 +13,8 @@ abstract class CustomersRepository {
   Future<int> createCustomer(Map<String, dynamic> body);
 
   Future<Customer?> updateCustomer(int id, Map<String, dynamic> body);
+
+  /// The guest-submitted feedback tab's data — not scoped per customer, one
+  /// call for the whole property, same as the web's `/customers/feedback`.
+  Future<CustomerFeedbackResult> feedback();
 }
