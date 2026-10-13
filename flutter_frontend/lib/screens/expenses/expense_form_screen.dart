@@ -391,33 +391,76 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 const SizedBox(height: AppTheme.s12),
               ],
               _ExpenseHeroCard(expense: widget.expense!),
-              const SizedBox(height: AppTheme.s12),
-              NeuCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _ViewRow('Category', widget.expense!.categoryName),
-                    if ((widget.expense!.vendorName ?? '').isNotEmpty) _ViewRow('Vendor', widget.expense!.vendorName!),
-                    _ViewRow('Date', formatIsoDate(widget.expense!.expenseDate)),
-                    if (widget.expense!.description.isNotEmpty) _ViewRow('Notes', widget.expense!.description),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(width: 110, child: Text('Receipt', style: TextStyle(color: AppTheme.muted, fontSize: 12.5))),
-                          Expanded(
-                            child: widget.expense!.hasBillDocument
-                                ? GestureDetector(
-                                    onTap: () => _viewBill(context),
-                                    child: const Text('View receipt', style: TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w600)),
-                                  )
-                                : const Text('Not uploaded', style: TextStyle(color: AppTheme.text, fontSize: 13)),
-                          ),
-                        ],
-                      ),
+              const SizedBox(height: AppTheme.s8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _FactTile(
+                      icon: Icons.event_rounded,
+                      label: 'Date',
+                      value: formatIsoDate(widget.expense!.expenseDate),
                     ),
-                  ],
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: _FactTile(
+                      icon: Icons.account_balance_wallet_rounded,
+                      label: widget.expense!.paymentStatus == 'PENDING' ? 'Status' : 'Paid via',
+                      value: widget.expense!.paymentStatus == 'PENDING'
+                          ? (kPaymentStatusLabel[widget.expense!.paymentStatus] ?? 'Pending')
+                          : (kPaymentMethodLabel[widget.expense!.paymentMethod] ?? widget.expense!.paymentMethod),
+                    ),
+                  ),
+                ],
+              ),
+              if (widget.expense!.description.isNotEmpty) ...[
+                const SizedBox(height: AppTheme.s8),
+                NeuCard(
+                  padding: const EdgeInsets.all(AppTheme.s12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.notes_rounded, size: 16, color: AppTheme.muted),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        child: Text(widget.expense!.description, style: const TextStyle(color: AppTheme.text, fontSize: 13, height: 1.35)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppTheme.s8),
+              InkWell(
+                onTap: widget.expense!.hasBillDocument ? () => _viewBill(context) : null,
+                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: widget.expense!.hasBillDocument ? AppTheme.accent.withValues(alpha: 0.06) : AppTheme.card,
+                    borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                    border: Border.all(color: widget.expense!.hasBillDocument ? AppTheme.accent.withValues(alpha: 0.3) : AppTheme.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.receipt_long_rounded,
+                        size: 18,
+                        color: widget.expense!.hasBillDocument ? AppTheme.accent : AppTheme.muted,
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        child: Text(
+                          widget.expense!.hasBillDocument ? 'View receipt' : 'No receipt uploaded',
+                          style: TextStyle(
+                            color: widget.expense!.hasBillDocument ? AppTheme.accent : AppTheme.muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (widget.expense!.hasBillDocument) const Icon(Icons.chevron_right_rounded, size: 18, color: AppTheme.accent),
+                    ],
+                  ),
                 ),
               ),
             ] else ...[
@@ -777,23 +820,38 @@ class _ReceiptPicker extends StatelessWidget {
   }
 }
 
-/// One label/value pair in the read-only summary — same compact row shape
-/// as AssetDetailScreen's `_FactsCard._fact`, so an expense's detail screen
-/// reads as the same "facts card" as an asset's.
-class _ViewRow extends StatelessWidget {
+/// A compact icon/label/value tile — two sit side by side under the hero
+/// card (Date, Paid via/Status) instead of a stacked label/value list, so
+/// the read-only view scans as a quick glance rather than a form to read.
+class _FactTile extends StatelessWidget {
+  final IconData icon;
   final String label;
   final String value;
-  const _ViewRow(this.label, this.value);
+  const _FactTile({required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 110, child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5))),
-          Expanded(child: Text(value, style: const TextStyle(color: AppTheme.text, fontSize: 13))),
+          Icon(icon, size: 15, color: AppTheme.muted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10.5, fontWeight: FontWeight.w600)),
+                Text(value, style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -826,56 +884,67 @@ class _ExpenseHeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _categoryColor(expense.categoryName);
     final statusLabel = kPaymentStatusLabel[expense.paymentStatus];
-    return NeuCard(
-      child: Row(
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color.withValues(alpha: 0.14), color.withValues(alpha: 0.04)],
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AppTheme.rMedium)),
-            child: Icon(Icons.receipt_long_rounded, size: 22, color: color),
-          ),
-          const SizedBox(width: AppTheme.s12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(formatPrice(expense.amount), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 24)),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        expense.paymentStatus == 'PENDING'
-                            ? formatIsoDate(expense.expenseDate)
-                            : '${formatIsoDate(expense.expenseDate)} · ${kPaymentMethodLabel[expense.paymentMethod] ?? expense.paymentMethod}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+                child: Icon(Icons.receipt_long_rounded, size: 16, color: color),
+              ),
+              if (statusLabel != null) ...[
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: TextStyle(
+                      color: expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
                     ),
-                    if (statusLabel != null) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: (expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          statusLabel,
-                          style: TextStyle(
-                            color: expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ],
-            ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(formatPrice(expense.amount), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 20)),
+          const SizedBox(height: 1),
+          Text(expense.title, style: const TextStyle(color: AppTheme.text, fontSize: 12.5, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
+                child: Text(expense.categoryName, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800)),
+              ),
+              if ((expense.vendorName ?? '').isNotEmpty)
+                Text(expense.vendorName!, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+            ],
           ),
         ],
       ),
@@ -990,7 +1059,18 @@ class _PaymentsSection extends StatelessWidget {
                 children: [
                   Text("Add a payment against what's left", style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(dense: true, controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: NeuField(dense: true, controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        child: NeuField(dense: true, controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: AppTheme.s12),
                   OptionDropdown(
                     values: kPaymentMethods,
@@ -998,8 +1078,6 @@ class _PaymentsSection extends StatelessWidget {
                     selected: newMethod,
                     onSelect: onMethodChanged,
                   ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(dense: true, controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate),
                   if (kPaymentReferenceLabel[newMethod] != null) ...[
                     const SizedBox(height: AppTheme.s12),
                     NeuField(dense: true, controller: newReference, label: kPaymentReferenceLabel[newMethod]!),
@@ -1007,10 +1085,22 @@ class _PaymentsSection extends StatelessWidget {
                   const SizedBox(height: AppTheme.s12),
                   NeuButton(
                     expand: true,
+                    soft: true,
                     onPressed: addingPayment ? null : onAddPayment,
                     child: addingPayment
-                        ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Add payment'),
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.sidebarBrandInk),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_rounded, size: 18, color: AppTheme.sidebarBrandInk),
+                              SizedBox(width: 4),
+                              Text('Add another payment'),
+                            ],
+                          ),
                   ),
                 ],
               ),

@@ -582,20 +582,14 @@ class BookingViewModel extends StateNotifier<BookingState> {
 
   BookingViewModel(this.usecase) : super(BookingState());
 
-  /// Delays [refreshQuote] after a typed price edit so a box that is
-  /// momentarily blank — cleared on the way to a new figure — does not get
-  /// snapped back to the server's default the instant that keystroke lands.
-  Timer? _quoteDebounce;
+  /// Counts each [refreshQuote] call so a reply that lands after a newer one
+  /// was already fired — the desk typed again before the first reply came
+  /// back — is dropped instead of clobbering the total with stale figures.
+  /// Mirrors the website's own `current` flag on its price-quote effect.
+  int _quoteRequestId = 0;
 
   void _refreshQuoteDebounced() {
-    _quoteDebounce?.cancel();
-    _quoteDebounce = Timer(const Duration(milliseconds: 500), refreshQuote);
-  }
-
-  @override
-  void dispose() {
-    _quoteDebounce?.cancel();
-    super.dispose();
+    refreshQuote();
   }
 
   static String iso(DateTime d) =>
@@ -608,10 +602,12 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// Reception negotiates a total — "call it 350 for the two nights" — and the
   /// booking stores a rate. Divided by the nights alone, never by the count: an
   /// agreed figure is what the whole line costs, so three beds at an agreed 100
-  /// is 100, not three times 33.33.
+  /// is 100, not three times 33.33. A typed `0` is a deliberate "free", not
+  /// "no override" — only a blank or negative box falls back to the category's
+  /// own rate.
   static num? perNight(String typed, int nights) {
     final total = num.tryParse(typed.trim());
-    if (total == null || total <= 0) return null;
+    if (total == null || total < 0) return null;
     final per = nights <= 0 ? 1 : nights;
     return (total / per * 100).round() / 100;
   }
@@ -1590,6 +1586,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
 
     if (state.isMultiRoom) return _refreshMultiRoomQuote();
 
+    final requestId = ++_quoteRequestId;
     state = state.copyWith(quoting: true, clearError: true);
     try {
       final quote = await usecase.priceQuote(
@@ -1601,8 +1598,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
         discountAmount: wholeAmount(state.discount),
         bedIds: state.bedIds,
       );
+      if (requestId != _quoteRequestId) return;
       state = state.copyWith(quoting: false, quote: quote);
     } catch (e) {
+      if (requestId != _quoteRequestId) return;
       state = state.copyWith(
         quoting: false,
         error: messageFor(e),
@@ -1617,6 +1616,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
   Future<void> _refreshMultiRoomQuote() async {
     final window = MultiRoomLogic.bookingWindow(state);
     if (window == null) return;
+    final requestId = ++_quoteRequestId;
     state = state.copyWith(quoting: true, clearError: true);
     try {
       final rooms = MultiRoomLogic.roomsPayload(state);
@@ -1626,6 +1626,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
         checkOutDate: iso(window.$2),
         discountAmount: wholeAmount(state.discount),
       );
+      if (requestId != _quoteRequestId) return;
       final roomNumbers = MultiRoomLogic.pickedExtraRooms(
         state,
       ).map((r) => r.room!.roomNumber).toList();
@@ -1639,6 +1640,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
         multiQuote: response,
       );
     } catch (e) {
+      if (requestId != _quoteRequestId) return;
       state = state.copyWith(
         quoting: false,
         error: messageFor(e),

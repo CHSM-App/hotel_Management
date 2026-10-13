@@ -25,6 +25,10 @@ class Sidebar extends StatelessWidget {
   final Map<String, bool> groupToggle;
   final ValueChanged<String> onToggleGroup;
 
+  /// Open housekeeping issue count — the same number the web rail's red
+  /// `dash-sidebar__count` pill shows next to "Housekeeping". Zero hides it.
+  final int issueCount;
+
   /// Who is signed in and what property this is — the property's name and
   /// the signed-in user's name/role both show in the header above the nav.
   /// Null while `/me` is still loading.
@@ -57,6 +61,7 @@ class Sidebar extends StatelessWidget {
     required this.onSelect,
     required this.groupToggle,
     required this.onToggleGroup,
+    this.issueCount = 0,
     required this.me,
     required this.onProfileTap,
     required this.onLogoutTap,
@@ -83,6 +88,7 @@ class Sidebar extends StatelessWidget {
               groupToggle: groupToggle,
               onToggleGroup: onToggleGroup,
               collapsed: collapsed,
+              issueCount: issueCount,
               onProfileTap: onProfileTap,
             ),
           ),
@@ -116,6 +122,7 @@ class _SidebarNav extends StatefulWidget {
   final Map<String, bool> groupToggle;
   final ValueChanged<String> onToggleGroup;
   final bool collapsed;
+  final int issueCount;
 
   /// Opens the profile/settings screen — rendered as its own standalone row
   /// right below the last group, always visible and never collapsed with
@@ -130,6 +137,7 @@ class _SidebarNav extends StatefulWidget {
     required this.groupToggle,
     required this.onToggleGroup,
     required this.collapsed,
+    this.issueCount = 0,
     required this.onProfileTap,
   });
 
@@ -194,6 +202,7 @@ class _SidebarNavState extends State<_SidebarNav> {
       feature: f,
       selected: f.key == widget.activeKey,
       collapsed: widget.collapsed,
+      badgeCount: f.key == 'housekeeping' ? widget.issueCount : 0,
       onTap: () => widget.onSelect(f.key),
     ),
   );
@@ -258,6 +267,13 @@ class _SidebarNavState extends State<_SidebarNav> {
                     title: groups[i],
                     expanded: _groupOpen(groups[i], activeGroup),
                     onTap: () => widget.onToggleGroup(groups[i]),
+                    // Mirrors the web rail: the group-level badge only shows
+                    // while the group is collapsed — once it's open, the
+                    // Housekeeping row itself carries the count instead.
+                    badgeCount: groups[i] == 'Housekeeping' &&
+                            !_groupOpen(groups[i], activeGroup)
+                        ? widget.issueCount
+                        : 0,
                   ),
                   if (_groupOpen(groups[i], activeGroup))
                     for (final f in features.where(
@@ -546,12 +562,14 @@ class _SidebarItem extends StatelessWidget {
   final Feature feature;
   final bool selected;
   final bool collapsed;
+  final int badgeCount;
   final VoidCallback onTap;
 
   const _SidebarItem({
     required this.feature,
     required this.selected,
     required this.collapsed,
+    this.badgeCount = 0,
     required this.onTap,
   });
 
@@ -564,7 +582,24 @@ class _SidebarItem extends StatelessWidget {
     );
 
     final row = collapsed
-        ? SizedBox(height: 40, child: Center(child: icon))
+        ? SizedBox(
+            height: 40,
+            child: Center(
+              child: badgeCount <= 0
+                  ? icon
+                  : Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        icon,
+                        Positioned(
+                          right: -6,
+                          top: -4,
+                          child: _CountBadge(count: badgeCount),
+                        ),
+                      ],
+                    ),
+            ),
+          )
         : Row(
             children: [
               // The web's own short left-edge bar on the selected row — a
@@ -600,6 +635,10 @@ class _SidebarItem extends StatelessWidget {
                   ),
                 ),
               ),
+              if (badgeCount > 0) ...[
+                const SizedBox(width: AppTheme.s8),
+                _CountBadge(count: badgeCount),
+              ],
             ],
           );
 
@@ -711,11 +750,13 @@ class _SettingsNavRow extends StatelessWidget {
 class _GroupHeader extends StatelessWidget {
   final String title;
   final bool expanded;
+  final int badgeCount;
   final VoidCallback onTap;
 
   const _GroupHeader({
     required this.title,
     required this.expanded,
+    this.badgeCount = 0,
     required this.onTap,
   });
 
@@ -748,6 +789,10 @@ class _GroupHeader extends StatelessWidget {
                   ),
                 ),
               ),
+              if (badgeCount > 0) ...[
+                _CountBadge(count: badgeCount),
+                const SizedBox(width: AppTheme.s8),
+              ],
               AnimatedRotation(
                 duration: const Duration(milliseconds: 150),
                 turns: expanded ? 0.5 : 0,
@@ -759,6 +804,39 @@ class _GroupHeader extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The small red count pill both the item row and the group header use —
+/// same red (`AppTheme.danger`) pill the Housekeeping screen's own "Issues"
+/// sub-tab badge already uses, so the number reads the same wherever it
+/// shows up in the app.
+class _CountBadge extends StatelessWidget {
+  final int count;
+
+  const _CountBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 18),
+      height: 18,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      decoration: const BoxDecoration(
+        color: AppTheme.danger,
+        borderRadius: BorderRadius.all(Radius.circular(999)),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          height: 1,
         ),
       ),
     );

@@ -1172,37 +1172,31 @@ class _DiscountSectionState extends ConsumerState<_DiscountSection> {
     final discountAmount = widget.state.preview?.amounts?.discountAmount ?? 0;
 
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Discount',
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleSmall,
           ),
-          const SizedBox(height: AppTheme.s12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: NeuField(
-                  controller: _amount,
-                  label: 'Amount',
-                  hint: '0',
-                  keyboardType: TextInputType.number,
-                  onChanged: vm.setDiscount,
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              Expanded(
-                child: NeuField(
-                  controller: _reason,
-                  label: 'Reason (printed on bill)',
-                  hint: 'e.g. Leaving early, regular guest',
-                  maxLength: 100,
-                  onChanged: vm.setDiscountReason,
-                ),
-              ),
-            ],
+          const SizedBox(height: AppTheme.s8),
+          NeuField(
+            controller: _amount,
+            label: 'Amount',
+            hint: '0',
+            keyboardType: TextInputType.number,
+            dense: true,
+            onChanged: vm.setDiscount,
+          ),
+          const SizedBox(height: AppTheme.s8),
+          NeuField(
+            controller: _reason,
+            label: 'Reason (printed on bill)',
+            hint: 'e.g. Leaving early, regular guest',
+            maxLength: 100,
+            dense: true,
+            onChanged: vm.setDiscountReason,
           ),
           const SizedBox(height: AppTheme.s8),
           Text(

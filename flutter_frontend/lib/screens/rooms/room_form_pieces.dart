@@ -246,26 +246,39 @@ class OptionDropdown extends StatelessWidget {
             itemHeight: null,
             hint: Text(hint, style: const TextStyle(color: AppTheme.muted, fontSize: 13.5)),
             icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
+            // Each row as its own inset, rounded pill rather than a bare
+            // Material list tile — the selected one gets the sidebar's soft
+            // brand wash so it reads as chosen at a glance, not just bolder
+            // text.
             items: [
               for (final v in values)
                 DropdownMenuItem(
                   value: v,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          labels[v] ?? v,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: v == selected ? AppTheme.accent : AppTheme.text,
-                            fontWeight: v == selected ? FontWeight.w700 : FontWeight.w400,
+                  child: Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: v == selected ? AppTheme.sidebarBrandWash : Colors.transparent,
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            labels[v] ?? v,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: v == selected ? AppTheme.sidebarBrandInk : AppTheme.text,
+                              fontWeight: v == selected ? FontWeight.w700 : FontWeight.w400,
+                            ),
                           ),
                         ),
-                      ),
-                      if (v == selected)
-                        const Icon(Icons.check_rounded, color: AppTheme.accent, size: 16),
-                    ],
+                        if (v == selected)
+                          const Icon(Icons.check_rounded, color: AppTheme.sidebarBrandInk, size: 16),
+                      ],
+                    ),
                   ),
                 ),
             ],
