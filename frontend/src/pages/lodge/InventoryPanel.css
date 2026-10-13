@@ -246,6 +246,25 @@
   outline-offset: 1px;
 }
 
+/* The recipes list has nothing beside its search box, so at full width it was a
+   bar across the whole page for a word or two. Narrower and shorter there;
+   on a phone it keeps the full width and the height a thumb needs. */
+@media (min-width: 641px) {
+  .inv-search--compact {
+    flex: 0 1 300px;
+  }
+
+  .inv-search--compact .inv-search__icon {
+    left: 11px;
+  }
+
+  .inv-search--compact input {
+    padding: 5px 10px 5px 29px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+}
+
 /* ----------------------------------------------------------------- tallies */
 
 .inv-stats {

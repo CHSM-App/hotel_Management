@@ -7,6 +7,7 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../bookings/receipt_download.dart';
 import '../theme.dart';
+import '../housekeeping/housekeeping_parts.dart' show ago;
 import 'laundry_parts.dart';
 import 'linen_history_excel.dart';
 import 'linen_item_form_screen.dart';
@@ -176,30 +177,11 @@ class _LinenTabState extends ConsumerState<LinenTab> {
               const Text('Receive from each person when they hand their linen to you.', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
               const SizedBox(height: AppTheme.s8),
               for (final g in groups)
-                NeuCard(
-                  margin: const EdgeInsets.only(bottom: AppTheme.s8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(g.name, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13.5)),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${g.handovers.length} ${g.handovers.length == 1 ? 'place' : 'places'} · ${g.pieces} ${g.pieces == 1 ? 'piece' : 'pieces'}',
-                              style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
-                            ),
-                          ],
-                        ),
-                      ),
-                      NeuButton(
-                        onPressed: state.submitting ? null : () => _receiveHandover(g.movementIds),
-                        child: Text('Receive ${g.pieces}'),
-                      ),
-                    ],
-                  ),
+                _StaffHandoverCard(
+                  group: g,
+                  busy: state.submitting,
+                  onReceiveGroup: () => _receiveHandover(g.movementIds),
+                  onReceiveOne: (h) => _receiveHandover(h.movementIds),
                 ),
             ],
             const SizedBox(height: AppTheme.s16),
@@ -272,6 +254,106 @@ class _EmptyLinenBoard extends StatelessWidget {
           ),
           const SizedBox(height: AppTheme.s12),
           NeuButton(onPressed: onAdd, child: const Text('Add another type')),
+        ],
+      ),
+    );
+  }
+}
+
+/// One person waiting with housekeeping's linen — mirrors the web's
+/// hk-handover group: a header with the item breakdown and a "Receive N"
+/// button for everything at once, with every place listed below it, each
+/// with its own "Receive this one only".
+class _StaffHandoverCard extends StatelessWidget {
+  final LinenStaffGroup group;
+  final bool busy;
+  final VoidCallback onReceiveGroup;
+  final ValueChanged<LinenHandover> onReceiveOne;
+
+  const _StaffHandoverCard({
+    required this.group,
+    required this.busy,
+    required this.onReceiveGroup,
+    required this.onReceiveOne,
+  });
+
+  static String _itemsOf(LinenStaffGroup g) => g.byItem.entries.map((e) => '${e.value} ${e.key}').join(', ');
+
+  @override
+  Widget build(BuildContext context) {
+    final g = group;
+    final expandable = g.handovers.length > 1;
+    final now = DateTime.now();
+
+    return NeuCard(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+      margin: const EdgeInsets.only(bottom: AppTheme.s8 - 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(g.name, style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13)),
+                    Text(
+                      '${g.handovers.length} ${g.handovers.length == 1 ? 'place' : 'places'} · ${g.pieces} ${g.pieces == 1 ? 'piece' : 'pieces'}'
+                      '${g.byItem.isEmpty ? '' : ' · ${_itemsOf(g)}'}',
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              SizedBox(
+                height: 32,
+                child: NeuButton(
+                  primary: true,
+                  minHeight: 32,
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
+                  onPressed: busy ? null : onReceiveGroup,
+                  child: Text('Receive ${g.pieces}'),
+                ),
+              ),
+            ],
+          ),
+          if (expandable) ...[
+            const SizedBox(height: 6),
+            const Divider(height: 1, color: AppTheme.border),
+            for (final h in g.handovers)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: h.lines.map((l) => '${l.quantity} ${l.name}').join(', '),
+                              style: const TextStyle(color: AppTheme.text, fontSize: 12),
+                            ),
+                            TextSpan(
+                              text: ' · ${ago(h.changedAt, now)} ago',
+                              style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: busy ? null : () => onReceiveOne(h),
+                      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4), visualDensity: VisualDensity.compact, minimumSize: Size.zero),
+                      child: const Text('Receive only', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );

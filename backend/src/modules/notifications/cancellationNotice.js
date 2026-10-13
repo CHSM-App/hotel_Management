@@ -48,6 +48,15 @@ function clean(value) {
 // own '-' fallback is what every other slot already relies on; the reason
 // slot needs the same guarantee of never being empty.
 
+// The reason slot is a bare line in the template, with no caption of its own —
+// "Change of plans" on a line by itself, between the dates and the refund,
+// did not say what it was. The label is always sent, in WhatsApp's bold
+// (*…*), and a missing reason still reads "Reason: -" rather than leaving the
+// slot empty.
+function reasonLine(reason) {
+  return `*Reason:* ${clean(reason)}`;
+}
+
 function dateParts(value) {
   if (typeof value === 'string') {
     const [y, m, d] = value.slice(0, 10).split('-').map(Number);
@@ -95,7 +104,7 @@ function buildCancellationSample(booking, lodge) {
     clean(booking.roomNumbers),
     clean(formatDate(booking.checkInDate)),
     clean(formatDate(booking.checkOutDate)),
-    clean(booking.cancelReason),
+    reasonLine(booking.cancelReason),
     clean(refundModeAmount(booking)),
   ];
 }

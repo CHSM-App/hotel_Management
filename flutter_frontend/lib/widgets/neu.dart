@@ -101,11 +101,21 @@ class NeuRowMenu extends StatelessWidget {
   final VoidCallback onDelete;
   final double iconSize;
 
+  /// An optional middle action between Edit and Delete — a section's
+  /// "Hide from guests"/"Show to guests" toggle, say. Omitted entirely
+  /// (same two-item menu as always) when null.
+  final String? extraLabel;
+  final IconData? extraIcon;
+  final VoidCallback? onExtra;
+
   const NeuRowMenu({
     super.key,
     required this.onEdit,
     required this.onDelete,
     this.iconSize = 18,
+    this.extraLabel,
+    this.extraIcon,
+    this.onExtra,
   });
 
   @override
@@ -146,7 +156,15 @@ class NeuRowMenu extends StatelessWidget {
         side: const BorderSide(color: AppTheme.border),
       ),
       constraints: const BoxConstraints(minWidth: 148),
-      onSelected: (v) => v == 'edit' ? onEdit() : onDelete(),
+      onSelected: (v) {
+        if (v == 'edit') {
+          onEdit();
+        } else if (v == 'extra') {
+          onExtra?.call();
+        } else {
+          onDelete();
+        }
+      },
       itemBuilder: (context) => [
         PopupMenuItem(
           value: 'edit',
@@ -154,6 +172,19 @@ class NeuRowMenu extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
           child: item(Icons.edit_outlined, 'Edit', AppTheme.heading),
         ),
+        if (extraLabel != null && onExtra != null) ...[
+          const PopupMenuDivider(height: 1),
+          PopupMenuItem(
+            value: 'extra',
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+            child: item(
+              extraIcon ?? Icons.visibility_off_outlined,
+              extraLabel!,
+              AppTheme.heading,
+            ),
+          ),
+        ],
         const PopupMenuDivider(height: 1),
         PopupMenuItem(
           value: 'delete',

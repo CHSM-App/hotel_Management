@@ -281,31 +281,8 @@
   transition: opacity 120ms ease;
 }
 
-.sim-empty {
-  margin-top: 18px;
-  padding: 18px;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  font-size: 13.5px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
 .sim-fields .field {
   margin-bottom: 0;
-}
-
-/* Under everything the price depends on, on the right where the form's other
-   submit buttons sit. */
-.sim-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 4px;
-}
-
-.sim-actions button {
-  min-height: 44px;
-  white-space: nowrap;
 }
 
 .sim-nights-hint {
@@ -322,10 +299,6 @@
   .sim-fields .field:first-child {
     grid-column: 1 / -1;
   }
-
-  .sim-actions button {
-    width: 100%;
-  }
 }
 
 /* The two columns left here are check-in and check-out. At the 16px floor this
@@ -335,6 +308,491 @@
 @media (max-width: 480px) {
   .sim-fields {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Price simulator layout
+   ---------------------------------------------------------------------------
+   On top, one block per room being priced — room, dates, extras — with the
+   add strip after the last of them. Under it two cards: what each room is on
+   the left, what the stay costs on the right. Everything here hangs off
+   .price-sim, the panel's own wrapper — .sim-result and .checkbox-chip are
+   shared with the booking form, which must not pick any of this up. */
+
+.price-sim {
+  gap: 14px;
+}
+
+/* Kept tight: pinned, every pixel of this block is one the cards under it do
+   not get. */
+.price-sim__top {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+}
+
+/* Under the app's own sticky topbar, as the menu's tab strip is. Only while
+   there is one room: several blocks pinned would leave no screen for the
+   cards they are there to feed. */
+.price-sim__top--pinned {
+  position: sticky;
+  top: var(--dash-topbar-h, 0px);
+  z-index: 5;
+}
+
+.price-sim__top .chart-section__header {
+  margin-bottom: 0;
+}
+
+.price-sim__top .chart-section__header h3 {
+  font-size: 15px;
+}
+
+.price-sim .sim-block {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.price-sim .sim-block--boxed {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.price-sim .sim-block--boxed:hover {
+  border-color: var(--brand-wash-edge);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.price-sim .sim-block__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.price-sim .sim-block__num {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.price-sim .sim-block__title,
+.price-sim .sim-card__title {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.price-sim .sim-block__remove {
+  margin-left: auto;
+  min-height: 22px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+
+.price-sim .sim-block__remove:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
+.price-sim .sim-block .form-banner {
+  margin-bottom: 0;
+}
+
+.price-sim .sim-fields {
+  gap: 10px;
+}
+
+.price-sim .sim-nights-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.price-sim .sim-block .field {
+  margin-bottom: 0;
+}
+
+.price-sim .sim-block .field label,
+.price-sim .sim-block .field__group-label {
+  margin-bottom: 2px;
+  font-size: 11.5px;
+}
+
+.price-sim .checkbox-grid {
+  gap: 6px;
+}
+
+.price-sim .checkbox-chip:hover {
+  border-color: var(--brand-band);
+  box-shadow: var(--shadow-raised);
+}
+
+/* A filled button at the right edge, under the last room's extras: the one
+   action in this card, so it reads as one. */
+.price-sim__add {
+  align-self: flex-end;
+  padding: 7px 14px;
+  border: 1px solid var(--brand);
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--shadow-raised);
+  transition: background-color 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.price-sim__add:hover:not(:disabled) {
+  background: var(--brand-ink);
+  border-color: var(--brand-ink);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.price-sim__add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.price-sim .sim-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.price-sim .sim-card {
+  min-width: 0;
+  border-color: var(--border);
+  border-radius: 14px;
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.price-sim .sim-card:hover {
+  border-color: var(--brand-wash-edge);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.price-sim .sim-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.price-sim .sim-card__count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.price-sim .sim-card__empty {
+  padding: 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.price-sim .sim-card__empty + .sim-card__empty,
+.price-sim .sim-result + .sim-card__empty,
+.price-sim .sim-card__empty + .sim-result {
+  border-top: 1px solid var(--border);
+}
+
+.price-sim .sim-card__empty strong {
+  color: var(--ink);
+}
+
+/* Room details: one section per room. */
+.price-sim .sim-det {
+  padding: 12px 14px;
+  transition: background-color 150ms ease;
+}
+
+.price-sim .sim-det + .sim-det {
+  border-top: 1px solid var(--border);
+}
+
+.price-sim .sim-det:hover,
+.price-sim .sim-result:hover {
+  background: var(--neu-base);
+}
+
+.price-sim .sim-det__top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.price-sim .sim-det__room {
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.price-sim .sim-det__cat {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.price-sim .sim-det__rate {
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.price-sim .sim-det__rate strong {
+  display: block;
+  font-size: 16px;
+  color: var(--brand-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.price-sim .chart-list {
+  margin-bottom: 0;
+}
+
+.price-sim .chart-row {
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.price-sim .chart-row:last-child {
+  padding-bottom: 0;
+}
+
+.price-sim .chart-row__name {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.price-sim .chart-row__value {
+  color: var(--ink);
+  text-align: right;
+}
+
+/* Price details: one section per room, then the one figure for all of them. */
+.price-sim .sim-result {
+  margin-top: 0;
+  padding: 12px 14px;
+  border-top: none;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 150ms ease, opacity 120ms ease;
+}
+
+.price-sim .sim-result + .sim-result {
+  border-top: 1px solid var(--border);
+}
+
+.price-sim .sim-result__room {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.price-sim .sim-result__room span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.price-sim .sim-result__line {
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.price-sim .sim-result__line > span:last-child {
+  color: var(--ink);
+}
+
+.price-sim .sim-result__line--room-total {
+  margin-top: 4px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--border);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.price-sim .sim-result__nights {
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+/* A short block at the right, under the amounts it adds up, rather than a band
+   across the whole card. */
+.price-sim .sim-grand {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 270px;
+  max-width: calc(100% - 28px);
+  margin: 10px 14px 14px auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.price-sim .sim-grand strong {
+  font-size: 16px;
+}
+
+/* Under the total: who the quotation is for, and the button that makes it. */
+.price-sim .sim-quote {
+  padding: 0 14px 14px;
+}
+
+.price-sim .sim-quote__title {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.price-sim .sim-quote__title span {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+.price-sim .sim-quote__fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.price-sim .sim-quote .field {
+  margin-bottom: 0;
+}
+
+.price-sim .sim-quote__hint {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.price-sim .sim-quote .form-banner {
+  margin: 10px 0 0;
+}
+
+.price-sim .sim-quote__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.price-sim .sim-quote__actions .btn-accent {
+  min-height: 38px;
+  padding: 8px 16px;
+  font-size: 13.5px;
+}
+
+.price-sim .sim-quote__actions .btn-accent:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+}
+
+@media (max-width: 480px) {
+  .price-sim .sim-quote__fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Shorter boxes and chips only where there is a pointer to hit them with: on
+   a phone the fields keep the height and the 16px type the rest of the app
+   gives them. */
+@media (min-width: 721px) {
+  .price-sim .sim-quote .field input {
+    min-height: 34px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  .price-sim .sim-fields .field input,
+  .price-sim .sim-fields .field select {
+    min-height: 30px;
+    padding: 3px 9px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  .price-sim .checkbox-grid--fit .checkbox-chip {
+    min-height: 28px;
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 720px) {
+  /* Pinned, the block would cover half a phone's screen. */
+  .price-sim__top--pinned {
+    position: static;
+  }
+
+  .price-sim .sim-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .price-sim *,
+  .price-sim__add {
+    transition: none;
   }
 }
 

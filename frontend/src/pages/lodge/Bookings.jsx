@@ -1429,9 +1429,24 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   const reportFormError = (message) => {
     setFormError(message);
     requestAnimationFrame(() => {
+      // The cursor as well as the view: a keyboard or a screen reader is left
+      // on Save otherwise, with the message somewhere above it.
+      formErrorRef.current?.focus({ preventScroll: true });
       formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
   };
+
+  // The two failures that arrive on their own, from loading the rooms or the
+  // beds for the dates just picked. Nothing was pressed, so the cursor stays
+  // where it is being typed with — the message is only brought into view.
+  const roomsErrorRef = useRef(null);
+  const bedsErrorRef = useRef(null);
+  useEffect(() => {
+    if (availableRoomsError) roomsErrorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [availableRoomsError]);
+  useEffect(() => {
+    if (availableBedsError) bedsErrorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [availableBedsError]);
 
   // Reports a failure against the control that caused it and takes the cursor
   // there. The form is tall enough that a message about the guest's phone is
@@ -4443,7 +4458,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
               <div className="booking-form__body">
                 {formError && (
-                  <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  <div ref={formErrorRef} tabIndex={-1} role="alert" className="form-banner form-banner--error form-banner--flash">
                     {formError}
                   </div>
                 )}
@@ -4560,7 +4575,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
                 {!validRange && <p className="bookings-panel__hint">Choose a valid date range first.</p>}
                 {validRange && availableRoomsError && (
-                  <div className="form-banner form-banner--error">{availableRoomsError}</div>
+                  <div ref={roomsErrorRef} className="form-banner form-banner--error">{availableRoomsError}</div>
                 )}
                 {/* Room and its rate sit on one line once a room is picked —
                     the rate only ever qualifies the room above it. */}
@@ -4715,7 +4730,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                       <Req />
                     </label>
                     {availableBedsError && (
-                      <div className="form-banner form-banner--error">{availableBedsError}</div>
+                      <div ref={bedsErrorRef} className="form-banner form-banner--error">{availableBedsError}</div>
                     )}
                     {!availableBeds && !availableBedsError && (
                       <PageLoader inline label="Loading beds" />

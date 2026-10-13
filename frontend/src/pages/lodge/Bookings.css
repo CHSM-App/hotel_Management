@@ -984,9 +984,11 @@
   padding: 8px 14px;
 }
 
+/* The dashed full-width strip, tinted: on a bare background it read as a label
+   rather than as something to press. */
 .bookings-panel__add-btn {
-  background: none;
-  border: 1px dashed var(--border);
+  background: var(--brand-wash);
+  border: 1px dashed var(--brand-band);
   border-radius: 8px;
   color: var(--brand-ink);
   font-size: 13px;
@@ -994,6 +996,10 @@
   cursor: pointer;
   padding: 10px 14px;
   width: 100%;
+}
+
+.bookings-panel__add-btn:hover:not(:disabled) {
+  background: var(--brand-wash-edge);
 }
 
 .bookings-panel__add-btn:disabled {

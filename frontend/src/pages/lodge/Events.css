@@ -1371,6 +1371,32 @@
   letter-spacing: 0;
 }
 
+/* The one thing in a card's heading that takes money, so a filled pill rather
+   than one more underlined link beside the title. */
+.events-detail__action-btn {
+  background: var(--brand-wash);
+  border: 1px solid var(--brand-wash-edge);
+  border-radius: 999px;
+  color: var(--brand-ink);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+  padding: 7px 14px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-raised);
+}
+
+.events-detail__action-btn:hover {
+  background: var(--brand-wash-edge);
+}
+
+.events-detail__action-btn:focus-visible {
+  outline: 2px solid var(--brand-ink);
+  outline-offset: 2px;
+}
+
 .events-detail__fact {
   display: flex;
   justify-content: space-between;

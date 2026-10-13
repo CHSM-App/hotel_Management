@@ -374,11 +374,9 @@ function RoomTypeCard({ lodge, type, onOpenPhotos, onEnquireRoom }) {
 
   const beds = type.bedSizes.map((b) => bedSizeLabel[b]).filter(Boolean);
   const baths = type.bathroomTypes.map((b) => bathroomTypeLabel[b]).filter(Boolean);
-  const sleeps =
-    type.maxOccupancy &&
-    (type.minOccupancy === type.maxOccupancy
-      ? `Sleeps ${type.maxOccupancy}`
-      : `Sleeps ${type.minOccupancy}–${type.maxOccupancy}`);
+  // The ceiling only: rooms of one type can differ ("2–4"), and "Max" over a
+  // range would say nothing a guest counting heads could use.
+  const sleeps = type.maxOccupancy && `Max ${type.maxOccupancy} ${type.maxOccupancy === 1 ? 'Guest' : 'Guests'}`;
 
   const chips = [beds.length > 0 && `${joinWords(beds)} bed`, baths.length > 0 && joinWords(baths), sleeps].filter(
     Boolean

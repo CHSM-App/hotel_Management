@@ -60,7 +60,7 @@ test('a cancellation fills the seven template variables in order', () => {
     '204',
     '12 Sep 2026',
     '14 Sep 2026',
-    'Change of plans',
+    '*Reason:* Change of plans',
     'Refund: Rs 1500.00 via UPI',
   ]);
 });
@@ -95,12 +95,12 @@ test('neither a refund nor a charge reads as "No refund due"', () => {
 // the rest of the template.
 test('a missing reason falls back to a placeholder, same as every other slot', () => {
   const sample = buildCancellationSample({ ...booking, cancelReason: null }, lodge);
-  assert.strictEqual(sample[5], '-');
+  assert.strictEqual(sample[5], '*Reason:* -');
 });
 
 test('a blank or whitespace-only reason also falls back to a placeholder', () => {
   const sample = buildCancellationSample({ ...booking, cancelReason: '   ' }, lodge);
-  assert.strictEqual(sample[5], '-');
+  assert.strictEqual(sample[5], '*Reason:* -');
 });
 
 test('no value ever carries a comma — it is the variable separator', () => {
