@@ -1260,6 +1260,10 @@ class FoodOrdersReportSummary {
   final int billedCount;
   final num billedValue;
   final num unbilledDeliveredValue;
+  // Food ordered to a room rides on that stay's combined bill rather than
+  // its own — the Room Bookings report excludes it from the room total, so
+  // it needs a home here instead. Mirrors onStayBillValue in reports.service.js.
+  final num onStayBillValue;
 
   const FoodOrdersReportSummary({
     this.totalOrders = 0,
@@ -1271,6 +1275,7 @@ class FoodOrdersReportSummary {
     this.billedCount = 0,
     this.billedValue = 0,
     this.unbilledDeliveredValue = 0,
+    this.onStayBillValue = 0,
   });
 
   factory FoodOrdersReportSummary.fromJson(Map<String, dynamic> json) {
@@ -1286,6 +1291,7 @@ class FoodOrdersReportSummary {
       billedCount: asInt(json['billedCount']),
       billedValue: asNum(json['billedValue']),
       unbilledDeliveredValue: asNum(json['unbilledDeliveredValue']),
+      onStayBillValue: asNum(json['onStayBillValue']),
     );
   }
 

@@ -136,18 +136,30 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
   }
 
+  static num _round2(num n) => (n * 100).round() / 100;
+
   List<_AddonLineDraft> _initialLines(List<EventAddon> addons) {
     final ev = widget.event;
     final lines = addons.where((a) => a.isActive || (ev?.addons.any((x) => x.addonId == a.id) ?? false)).map((a) {
       final saved = ev?.addons.firstWhereOrNull((x) => x.addonId == a.id);
+      final quantity = saved?.quantity ?? 1;
+      // If what's saved still equals unit × quantity, the desk never actually
+      // overrode the catalogue rate — it's safe to keep following the Qty
+      // stepper. If it doesn't match, someone negotiated a flat total for
+      // this line, and the stepper must leave that number alone.
+      final autoAmount = saved?.agreedAmount == null || _round2(a.defaultAmount * quantity) == _round2(saved!.agreedAmount!);
       return _AddonLineDraft(
         addonId: a.id,
         label: a.name,
         unitAmount: a.defaultAmount,
-        quantity: saved?.quantity ?? 1,
-        agreedAmount: saved?.agreedAmount?.toString(),
+        quantity: quantity,
+        // Pre-filled as a real value — same as the venue charge defaults to
+        // the venue's base charge — not left as a greyed placeholder the
+        // desk has to notice and retype.
+        agreedAmount: saved?.agreedAmount?.toString() ?? a.defaultAmount.toString(),
         selected: saved != null,
         isPerUnit: a.isPerUnit,
+        autoAmount: autoAmount,
       );
     }).toList();
     if (ev != null) {
@@ -161,6 +173,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           isExtra: saved.isExtra,
           needsPricing: saved.needsPricing,
           notedAt: saved.notedAt,
+          autoAmount: false,
         ));
       }
     }
@@ -381,6 +394,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         quantity: 1,
         agreedAmount: _oneOffAmount.text.trim().isEmpty ? null : _oneOffAmount.text.trim(),
         selected: true,
+        autoAmount: false,
       ));
       _oneOffLabel.clear();
       _oneOffAmount.clear();
@@ -664,17 +678,11 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                           onChanged: _pickSlot,
                         ),
                         const SizedBox(height: AppTheme.s8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _DateTimeField(label: 'Starts', date: _startDate, time: _startTime, onDate: () => _pickDate(isStart: true), onTime: () => _pickTime(isStart: true)),
-                            ),
-                            const SizedBox(width: AppTheme.s8),
-                            Expanded(
-                              key: _fieldKeys['end'],
-                              child: _DateTimeField(label: 'Ends', date: _endDate, time: _endTime, onDate: () => _pickDate(isStart: false), onTime: () => _pickTime(isStart: false)),
-                            ),
-                          ],
+                        _DateTimeField(label: 'Starts', date: _startDate, time: _startTime, onDate: () => _pickDate(isStart: true), onTime: () => _pickTime(isStart: true)),
+                        const SizedBox(height: AppTheme.s8),
+                        KeyedSubtree(
+                          key: _fieldKeys['end'],
+                          child: _DateTimeField(label: 'Ends', date: _endDate, time: _endTime, onDate: () => _pickDate(isStart: false), onTime: () => _pickTime(isStart: false)),
                         ),
                         if (_submitAttempted && _fieldError == 'end')
                           Padding(padding: const EdgeInsets.only(top: 4), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
@@ -710,26 +718,18 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                         const SectionDivider(),
                         const SectionLabel('Guests & pricing', number: 3, icon: Icons.groups_rounded),
                         const SizedBox(height: AppTheme.s8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: NeuField(
-                                key: _fieldKeys['expectedPax'],
-                                controller: _expectedPax,
-                                label: 'Expected guests',
-                                required: true,
-                                keyboardType: TextInputType.number,
-                                errorText: _submitAttempted && _fieldError == 'expectedPax' ? _error : null,
-                                onChanged: (_) => _scheduleQuote(),
-                                dense: true,
-                              ),
-                            ),
-                            const SizedBox(width: AppTheme.s8),
-                            Expanded(
-                              child: NeuField(controller: _venueCharge, label: 'Venue hire charge (per day)', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote(), dense: true),
-                            ),
-                          ],
+                        NeuField(
+                          key: _fieldKeys['expectedPax'],
+                          controller: _expectedPax,
+                          label: 'Expected guests',
+                          required: true,
+                          keyboardType: TextInputType.number,
+                          errorText: _submitAttempted && _fieldError == 'expectedPax' ? _error : null,
+                          onChanged: (_) => _scheduleQuote(),
+                          dense: true,
                         ),
+                        const SizedBox(height: AppTheme.s8),
+                        NeuField(controller: _venueCharge, label: 'Venue hire charge (per day)', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote(), dense: true),
                         if (_quote != null && _quote!.pricing.numberOfDays > 1)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
@@ -908,7 +908,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                   else
                     Column(
                       children: [
-                        NeuButton(expand: true, onPressed: submitting ? null : () => _save(status: 'DRAFT'), child: Text(submitting ? 'Saving…' : 'Save as draft')),
+                        NeuButton(
+                          expand: true,
+                          outlineColor: AppTheme.accent,
+                          onPressed: submitting ? null : () => _save(status: 'DRAFT'),
+                          child: Text(submitting ? 'Saving…' : 'Save as draft'),
+                        ),
                         const SizedBox(height: AppTheme.s8),
                         NeuButton(expand: true, primary: true, onPressed: submitting ? null : () => _save(status: 'CONFIRMED'), child: Text(submitting ? 'Saving…' : 'Confirm now')),
                       ],
@@ -937,6 +942,14 @@ class _AddonLineDraft {
   /// never shown).
   final bool isPerUnit;
 
+  /// Whether agreedAmount is still "unit rate × quantity" rather than a
+  /// figure typed in by hand. While true, the Qty stepper keeps agreedAmount
+  /// in step with the quantity; the moment the desk edits the amount box
+  /// directly it drops to false, and from then on it's a flat negotiated
+  /// total the backend won't second-guess (see addonLineAmount in
+  /// eventPricing.js — an agreedAmount, once present, is the whole line).
+  bool autoAmount;
+
   _AddonLineDraft({
     this.addonId,
     required this.label,
@@ -948,6 +961,7 @@ class _AddonLineDraft {
     this.needsPricing = false,
     this.notedAt,
     this.isPerUnit = false,
+    this.autoAmount = true,
   });
 }
 
@@ -956,6 +970,15 @@ class _AddonLineTile extends StatelessWidget {
   final VoidCallback onChanged;
 
   const _AddonLineTile({required this.line, required this.onChanged});
+
+  /// Still following the catalogue rate? Keep the shown amount in step with
+  /// the new quantity. Once the desk has typed their own figure in
+  /// (autoAmount false), quantity changes leave it alone.
+  static void _followQuantity(_AddonLineDraft line) {
+    if (line.autoAmount && line.unitAmount != null) {
+      line.agreedAmount = _EventFormScreenState._round2(line.unitAmount! * line.quantity).toString();
+    }
+  }
 
   Widget _stepperButton(IconData icon, VoidCallback? onTap) {
     return GestureDetector(
@@ -1033,6 +1056,7 @@ class _AddonLineTile extends StatelessWidget {
                     const Spacer(),
                     _stepperButton(Icons.remove_rounded, line.quantity > 1 ? () {
                       line.quantity -= 1;
+                      _followQuantity(line);
                       onChanged();
                     } : null),
                     SizedBox(
@@ -1041,6 +1065,7 @@ class _AddonLineTile extends StatelessWidget {
                     ),
                     _stepperButton(Icons.add_rounded, () {
                       line.quantity += 1;
+                      _followQuantity(line);
                       onChanged();
                     }),
                     const SizedBox(width: 8),
@@ -1125,6 +1150,7 @@ class _AmountBoxState extends State<_AmountBox> {
               ),
               onChanged: (v) {
                 line.agreedAmount = v;
+                line.autoAmount = false;
                 widget.onChanged();
               },
             ),
@@ -1216,6 +1242,10 @@ class _Dropdown<T> extends StatelessWidget {
   }
 }
 
+/// One pill holding both the date and the time, so "Starts" and "Ends"
+/// read as a single compact unit each — the date and its own time grouped
+/// together — rather than two separately-bordered boxes whose widths drift
+/// apart as the date and time text lengths differ.
 class _DateTimeField extends StatelessWidget {
   final String label;
   final DateTime date;
@@ -1230,24 +1260,65 @@ class _DateTimeField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
-        Row(
-          children: [
-            Expanded(
-              child: InkWell(
-                onTap: onDate,
-                child: NeuPressed(padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s12), child: Text(formatDate(date), style: const TextStyle(color: AppTheme.heading, fontSize: 12))),
-              ),
+        NeuPressed(
+          padding: EdgeInsets.zero,
+          child: IntrinsicHeight(
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: InkWell(
+                    borderRadius: const BorderRadius.horizontal(left: Radius.circular(AppTheme.rSmall)),
+                    onTap: onDate,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.calendar_today_rounded, size: 12, color: AppTheme.muted),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              formatDate(date),
+                              style: const TextStyle(color: AppTheme.heading, fontSize: 12, fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const VerticalDivider(width: 1, thickness: 1, color: AppTheme.border),
+                Expanded(
+                  flex: 2,
+                  child: InkWell(
+                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(AppTheme.rSmall)),
+                    onTap: onTime,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.schedule_rounded, size: 12, color: AppTheme.muted),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              time.format(context),
+                              style: const TextStyle(color: AppTheme.heading, fontSize: 12, fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: InkWell(
-                onTap: onTime,
-                child: NeuPressed(padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s12), child: Text(time.format(context), style: const TextStyle(color: AppTheme.heading, fontSize: 12))),
-              ),
-            ),
-          ],
+          ),
         ),
       ],
     );

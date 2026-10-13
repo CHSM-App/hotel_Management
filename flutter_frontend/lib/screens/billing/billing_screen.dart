@@ -320,28 +320,56 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         ];
       }
 
+      final groups = _groupServiceUsages(usages);
+
       if (_view == 'table') {
         return [
           _ServiceQueueTable(
-            usages: usages,
-            onAddToRoom: (u) => _addServicesToRoom([u]),
-            onBill: (u) => _billSelectedServices([u]),
+            groups: groups,
+            onAddToRoom: (g) => _addServicesToRoom(g.members),
+            onBill: (g) => _billSelectedServices(g.members),
           ),
         ];
       }
       return [
-        for (final u in usages)
+        for (final g in groups)
           Padding(
             padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
             child: _ServiceUsageRow(
-              usage: u,
-              onAddToRoom: () => _addServicesToRoom([u]),
-              onBill: () => _billSelectedServices([u]),
+              usage: g.display,
+              itemCount: g.display.laundryOrderId != null ? g.members.length : null,
+              onAddToRoom: () => _addServicesToRoom(g.members),
+              onBill: () => _billSelectedServices(g.members),
             ),
           ),
       ];
     },
   );
+
+  /// A laundry order makes one row per garment (each can have its own
+  /// price), but it's one order the guest handed over and should be one
+  /// bill — so rows sharing a laundryOrderId are collapsed into a single
+  /// group. Mirrors groupedServiceUsages in Billing.jsx.
+  List<_ServiceUsageGroup> _groupServiceUsages(List<ServiceUsage> usages) {
+    final groups = <_ServiceUsageGroup>[];
+    final indexByOrder = <int, int>{};
+    for (final u in usages) {
+      final orderId = u.laundryOrderId;
+      if (orderId == null) {
+        groups.add(_ServiceUsageGroup(u, [u]));
+        continue;
+      }
+      final idx = indexByOrder[orderId];
+      if (idx == null) {
+        indexByOrder[orderId] = groups.length;
+        groups.add(_ServiceUsageGroup(u.asLaundryHead(), [u]));
+      } else {
+        final existing = groups[idx];
+        groups[idx] = _ServiceUsageGroup(existing.display.mergedWith(u), [...existing.members, u]);
+      }
+    }
+    return groups;
+  }
 
   /// "Add to room bill": a use already tied to a stay goes straight on it;
   /// otherwise the desk picks one of the guests staying in-house — mirrors
@@ -498,7 +526,9 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     // shown and looking out of place among room/stay bills.
     final streamRows = restaurantOnly
         ? allRows.where((d) => d.kind == 'FOOD').toList()
-        : allRows.where((d) => d.kind != 'FOOD' && !d.isEventBill).toList();
+        : allRows
+              .where((d) => d.kind != 'FOOD' && !d.isEventBill && !d.isLaundryInvoice)
+              .toList();
     final needle = _search.text.trim().toLowerCase();
     final searched = needle.isEmpty
         ? streamRows
@@ -992,6 +1022,16 @@ class _EdgeFade extends StatelessWidget {
   }
 }
 
+/// One row of the Services-to-bill queue after laundry garments have been
+/// folded together — [display] is what's shown, [members] is every real
+/// [ServiceUsage] it stands for, used when billing or adding to a room bill.
+class _ServiceUsageGroup {
+  final ServiceUsage display;
+  final List<ServiceUsage> members;
+
+  const _ServiceUsageGroup(this.display, this.members);
+}
+
 // ── A service waiting to be billed ─────────────────────────────────────────
 
 /// One completed, unbilled service — laundry, pool, gaming ... — with a
@@ -1000,11 +1040,16 @@ class _EdgeFade extends StatelessWidget {
 /// Billing.jsx's own Services to bill tab.
 class _ServiceUsageRow extends StatelessWidget {
   final ServiceUsage usage;
+  // Set, with the garment count, when [usage] is a laundry group head —
+  // a per-garment "qty × price" doesn't mean anything once garments with
+  // different prices are folded into one row, so an item count stands in.
+  final int? itemCount;
   final VoidCallback onAddToRoom;
   final VoidCallback onBill;
 
   const _ServiceUsageRow({
     required this.usage,
+    this.itemCount,
     required this.onAddToRoom,
     required this.onBill,
   });
@@ -1012,7 +1057,9 @@ class _ServiceUsageRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final detail = [
-      '${usage.quantity} × ${formatPrice(usage.unitPrice)}',
+      itemCount != null
+          ? '$itemCount item${itemCount == 1 ? '' : 's'}'
+          : '${usage.quantity} × ${formatPrice(usage.unitPrice)}',
       if (usage.roomNumber != null) 'Room ${usage.roomNumber}',
       if (usage.guestName != null && usage.guestName!.isNotEmpty)
         usage.guestName!,
@@ -1068,7 +1115,7 @@ class _ServiceUsageRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                CompactActionButton(label: 'Add to room bill', color: AppTheme.edit, onTap: onAddToRoom),
+                CompactActionButton(label: 'Add to room bill', color: AppTheme.sidebarBrandInk, fillColor: AppTheme.sidebarBrandWash, onTap: onAddToRoom),
                 const SizedBox(height: 6),
                 CompactActionButton(label: 'Bill', color: AppTheme.accent, primary: true, onTap: onBill),
               ],
@@ -1084,12 +1131,12 @@ class _ServiceUsageRow extends StatelessWidget {
 /// with an actions column holding "Add to room bill" and "Bill", one row at
 /// a time, same as the per-row buttons on Billing.jsx's own table.
 class _ServiceQueueTable extends StatelessWidget {
-  final List<ServiceUsage> usages;
-  final ValueChanged<ServiceUsage> onAddToRoom;
-  final ValueChanged<ServiceUsage> onBill;
+  final List<_ServiceUsageGroup> groups;
+  final ValueChanged<_ServiceUsageGroup> onAddToRoom;
+  final ValueChanged<_ServiceUsageGroup> onBill;
 
   const _ServiceQueueTable({
-    required this.usages,
+    required this.groups,
     required this.onAddToRoom,
     required this.onBill,
   });
@@ -1153,12 +1200,15 @@ class _ServiceQueueTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < usages.length; i++)
+                for (var i = 0; i < groups.length; i++)
                   _ServiceTableRow(
-                    usage: usages[i],
+                    usage: groups[i].display,
+                    itemCount: groups[i].display.laundryOrderId != null
+                        ? groups[i].members.length
+                        : null,
                     shaded: i.isOdd,
-                    onAddToRoom: () => onAddToRoom(usages[i]),
-                    onBill: () => onBill(usages[i]),
+                    onAddToRoom: () => onAddToRoom(groups[i]),
+                    onBill: () => onBill(groups[i]),
                   ),
               ],
             ),
@@ -1171,12 +1221,14 @@ class _ServiceQueueTable extends StatelessWidget {
 
 class _ServiceTableRow extends StatelessWidget {
   final ServiceUsage usage;
+  final int? itemCount;
   final bool shaded;
   final VoidCallback onAddToRoom;
   final VoidCallback onBill;
 
   const _ServiceTableRow({
     required this.usage,
+    this.itemCount,
     required this.shaded,
     required this.onAddToRoom,
     required this.onBill,
@@ -1185,7 +1237,9 @@ class _ServiceTableRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final detail = [
-      '${usage.quantity} × ${formatPrice(usage.unitPrice)}',
+      itemCount != null
+          ? '$itemCount item${itemCount == 1 ? '' : 's'}'
+          : '${usage.quantity} × ${formatPrice(usage.unitPrice)}',
       if (usage.roomNumber != null) 'Room ${usage.roomNumber}',
       if (usage.guestName != null && usage.guestName!.isNotEmpty)
         usage.guestName!,
@@ -1254,7 +1308,7 @@ class _ServiceTableRow extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CompactActionButton(label: 'Add to room', color: AppTheme.edit, onTap: onAddToRoom),
+                  CompactActionButton(label: 'Add to room', color: AppTheme.sidebarBrandInk, fillColor: AppTheme.sidebarBrandWash, onTap: onAddToRoom),
                   const SizedBox(width: 6),
                   CompactActionButton(label: 'Bill', color: AppTheme.accent, primary: true, onTap: onBill),
                 ],

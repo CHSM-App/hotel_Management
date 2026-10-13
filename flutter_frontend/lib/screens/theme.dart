@@ -64,6 +64,12 @@ class AppTheme {
   static const Color draft = Color(0xFFF2C31D);
   static const Color danger = Color(0xFFB42318);
 
+  /// A problem worth flagging but not stopping the desk over — over
+  /// capacity being the first use, where Save still has to work. Mirrors
+  /// .form-banner--warning / --color-warning in forms.css.
+  static const Color warningWash = Color(0xFFFBF1DA);
+  static const Color warningInk = Color(0xFF8A6710);
+
   // ── Spacing ───────────────────────────────────────────────────────────────
   static const double s4 = 4;
   static const double s8 = 8;

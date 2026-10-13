@@ -64,7 +64,17 @@ class _Loaded extends StatelessWidget {
           ReportBarList(title: 'Occupancy by room category', rows: categoryRows),
           const SizedBox(height: AppTheme.s16),
         ],
-        Text('This period at a glance', style: Theme.of(context).textTheme.titleMedium),
+        // Two bases, same split the PDF/Excel export prints as Part 1 and
+        // Part 2 — one card grid mixing them read as a single total that
+        // should foot, when it never was one. Labelling each half what it
+        // actually is stops that expectation before it forms.
+        Text('Stays checking in this period', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: AppTheme.s4),
+        Text(
+          'Counted by check-in date. Cancelled stays are excluded except for the cancellation '
+          'charge kept on them, which belongs to the money received below instead.',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted),
+        ),
         const SizedBox(height: AppTheme.s8),
         StatGrid(
           items: [
@@ -72,14 +82,20 @@ class _Loaded extends StatelessWidget {
             StatItem(label: 'Checked out', value: '${s.statusCount('CHECKED_OUT')}'),
             StatItem(label: 'Cancelled', value: '$cancelled'),
             StatItem(label: 'Room nights', value: '${s.roomNights}'),
-            StatItem(
-              label: 'Room billed',
-              value: formatPrice(s.billedAmount),
-              accent: true,
-              note: s.foodBilledAmount > 0
-                  ? '+ ${formatPrice(s.foodBilledAmount)} food, in Restaurant'
-                  : null,
-            ),
+            StatItem(label: 'Room billed', value: formatPrice(s.billedAmount), accent: true),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s16),
+        Text('Money received this period', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: AppTheme.s4),
+        Text(
+          'Cash basis — dated by when the payment came in, whichever stay it was for. '
+          'Not expected to match the figures above.',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted),
+        ),
+        const SizedBox(height: AppTheme.s8),
+        StatGrid(
+          items: [
             StatItem(label: 'Advance collected', value: formatPrice(s.advanceCollected)),
             StatItem(label: 'Total collected', value: formatPrice(s.totalCollected)),
             if (s.cancellationChargesKept > 0)

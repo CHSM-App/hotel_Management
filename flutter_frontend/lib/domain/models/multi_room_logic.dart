@@ -69,6 +69,22 @@ class MultiRoomLogic {
     for (final r in pickedExtraRooms(state)) r.room!.id,
   };
 
+  /// Every room actually on the booking, room 1 first — used to total up
+  /// capacity against the party size.
+  static List<Room> capacityRooms(BookingState state) => [
+    if (state.room != null) state.room!,
+    for (final r in pickedExtraRooms(state)) r.room!,
+  ];
+
+  /// The combined sleeping capacity of every room on the booking — null if
+  /// any of them doesn't have one recorded, since a room that can't be
+  /// counted can't be meaningfully summed either.
+  static int? totalCapacity(BookingState state) {
+    final rooms = capacityRooms(state);
+    if (rooms.isEmpty || rooms.any((r) => r.maxOccupancy == null)) return null;
+    return rooms.fold<int>(0, (sum, r) => sum + r.maxOccupancy!);
+  }
+
   /// A short display label for a room, e.g. "101 · Deluxe".
   static String roomMeta(Room room) => room.categoryName.isEmpty
       ? room.roomNumber

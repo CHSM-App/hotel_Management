@@ -244,6 +244,26 @@ class NeuButton extends StatefulWidget {
   /// over [primary] when both are set.
   final bool soft;
 
+  /// Overrides the tinted fill [soft] uses in place of
+  /// [AppTheme.sidebarBrandWash] — lets a caller give one soft button its
+  /// own color (e.g. the draft-amber wash on "Save draft") without losing
+  /// the pill look every other soft button shares.
+  final Color? softColor;
+
+  /// Overrides the tinted text [soft] uses in place of
+  /// [AppTheme.sidebarBrandInk]. Ignored unless [softColor] is also set.
+  final Color? softTextColor;
+
+  /// Overrides the border color on the plain white/border look (neither
+  /// [primary] nor [soft]) — e.g. an accent-blue outline on "Save draft" to
+  /// set it apart from a neighboring plain button like "Close" without
+  /// going as heavy as a filled button.
+  final Color? outlineColor;
+
+  /// Overrides the label color on the plain white/border look. Ignored
+  /// unless [outlineColor] is also set.
+  final Color? outlineTextColor;
+
   /// The floor on the button's own height — 44px (the touch-target minimum)
   /// by default. Callers that already sit inside a tight row of their own
   /// (a repeatable "+ Add …" row under a list, say) can pass a smaller
@@ -262,6 +282,10 @@ class NeuButton extends StatefulWidget {
     ),
     this.color,
     this.soft = false,
+    this.softColor,
+    this.softTextColor,
+    this.outlineColor,
+    this.outlineTextColor,
     this.minHeight = 44,
   });
 
@@ -280,10 +304,12 @@ class _NeuButtonState extends State<NeuButton> {
     final label = DefaultTextStyle(
       style: TextStyle(
         color: widget.soft
-            ? AppTheme.sidebarBrandInk
+            ? (widget.softTextColor ?? AppTheme.sidebarBrandInk)
             : widget.primary
             ? Colors.white
-            : AppTheme.heading,
+            : (widget.outlineColor != null
+                  ? (widget.outlineTextColor ?? widget.outlineColor!)
+                  : AppTheme.heading),
         fontSize: 14,
         fontWeight: FontWeight.w600,
       ),
@@ -311,14 +337,14 @@ class _NeuButtonState extends State<NeuButton> {
           padding: widget.padding,
           decoration: BoxDecoration(
             color: widget.soft
-                ? AppTheme.sidebarBrandWash
+                ? (widget.softColor ?? AppTheme.sidebarBrandWash)
                 : widget.primary
                 ? (widget.color ?? AppTheme.accent)
                 : AppTheme.card,
             borderRadius: BorderRadius.circular(AppTheme.rMedium),
             border: (widget.primary || widget.soft)
                 ? null
-                : Border.all(color: AppTheme.border),
+                : Border.all(color: widget.outlineColor ?? AppTheme.border),
             boxShadow: widget.primary ? AppTheme.subtle : null,
           ),
           child: label,

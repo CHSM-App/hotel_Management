@@ -118,6 +118,7 @@ class _Body extends ConsumerWidget {
         if (preview.foodItems.isNotEmpty) ...[
           _ItemisedSection(
             title: 'Food ordered during the stay',
+            icon: Icons.restaurant_rounded,
             hint: preview.orderNumbers.isEmpty
                 ? null
                 : 'From order${preview.orderNumbers.length == 1 ? '' : 's'} '
@@ -136,6 +137,7 @@ class _Body extends ConsumerWidget {
         if (preview.serviceItems.isNotEmpty) ...[
           _ItemisedSection(
             title: 'Other services',
+            icon: Icons.design_services_rounded,
             children: [
               for (final item in preview.serviceItems)
                 _ItemRow(
@@ -765,24 +767,73 @@ class _RoomSectionRows extends StatelessWidget {
 /// screen's "Food ordered during the stay" / "Other services" sections.
 class _ItemisedSection extends StatelessWidget {
   final String title;
+  final IconData icon;
   final List<Widget> children;
   final String? hint;
 
-  const _ItemisedSection({required this.title, required this.children, this.hint});
+  const _ItemisedSection({
+    required this.title,
+    required this.icon,
+    required this.children,
+    this.hint,
+  });
 
   @override
   Widget build(BuildContext context) {
     return NeuCard(
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppTheme.s8),
-          ...children,
-          if (hint != null) ...[
-            const SizedBox(height: AppTheme.s4),
-            Text(hint!, style: Theme.of(context).textTheme.bodySmall),
-          ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s8),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppTheme.accent.withValues(alpha: 0.16),
+                        AppTheme.sidebarBrand.withValues(alpha: 0.08),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                  ),
+                  child: Icon(icon, size: 14, color: AppTheme.accent),
+                ),
+                const SizedBox(width: AppTheme.s8),
+                Expanded(
+                  child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final (i, child) in children.indexed) ...[
+                  if (i > 0)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppTheme.s4),
+                      child: Divider(height: 1, color: AppTheme.bg),
+                    ),
+                  child,
+                ],
+                if (hint != null) ...[
+                  const SizedBox(height: AppTheme.s4),
+                  Text(hint!, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -809,9 +860,14 @@ class _ItemRow extends StatelessWidget {
               children: [
                 Text(
                   name,
-                  style: const TextStyle(color: AppTheme.text, fontSize: 13),
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 1),
                 Text(
                   detail,
                   style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
@@ -822,7 +878,7 @@ class _ItemRow extends StatelessWidget {
           const SizedBox(width: AppTheme.s8),
           Text(
             formatPrice(value),
-            style: const TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w500),
+            style: const TextStyle(color: AppTheme.heading, fontSize: 13.5, fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -1196,11 +1252,25 @@ class _PaymentRows extends ConsumerWidget {
               ),
             ),
           if (state.payment.length < 5)
-            NeuButton(
-              expand: true,
-              onPressed: vm.addPaymentRow,
-              padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-              child: const Text('+ Add another payment'),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: NeuButton(
+                soft: true,
+                minHeight: 36,
+                onPressed: vm.addPaymentRow,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.s16,
+                  vertical: AppTheme.s8,
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add_rounded, size: 15, color: AppTheme.sidebarBrandInk),
+                    SizedBox(width: 4),
+                    Text('Add another payment'),
+                  ],
+                ),
+              ),
             ),
           const Divider(height: AppTheme.s24),
           Row(
@@ -1290,20 +1360,47 @@ class _StayDetailsExpanderState extends ConsumerState<_StayDetailsExpander> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
             onTap: _toggle,
             child: Padding(
               padding: const EdgeInsets.all(AppTheme.s12),
               child: Row(
                 children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppTheme.accent.withValues(alpha: 0.16),
+                          AppTheme.sidebarBrand.withValues(alpha: 0.08),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                    ),
+                    child: const Icon(
+                      Icons.fact_check_rounded,
+                      color: AppTheme.accent,
+                      size: 16,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
                   Expanded(
                     child: Text(
                       'View full stay details',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
-                  Icon(
-                    _open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                    color: AppTheme.muted,
+                  AnimatedRotation(
+                    duration: const Duration(milliseconds: 150),
+                    turns: _open ? 0.5 : 0,
+                    child: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: AppTheme.muted,
+                    ),
                   ),
                 ],
               ),
@@ -1353,6 +1450,7 @@ class _StayDetailsContent extends StatelessWidget {
         // 1 — Stay & room
         _DetailSection(
           number: 1,
+          icon: Icons.meeting_room_rounded,
           title: 'Stay & room',
           children: [
             _Fact(
@@ -1403,6 +1501,7 @@ class _StayDetailsContent extends StatelessWidget {
         // 2 — Guest details
         _DetailSection(
           number: 2,
+          icon: Icons.people_alt_rounded,
           title: 'Guest details',
           children: [
             Text(
@@ -1436,6 +1535,7 @@ class _StayDetailsContent extends StatelessWidget {
         // 3 — Advance payment
         _DetailSection(
           number: 3,
+          icon: Icons.payments_rounded,
           title: booking.paidInFull ? 'Payment' : 'Advance payment',
           children: [
             if (booking.advanceAmount != null) ...[
@@ -1456,6 +1556,7 @@ class _StayDetailsContent extends StatelessWidget {
         // 4 — Vehicles
         _DetailSection(
           number: 4,
+          icon: Icons.directions_car_filled_rounded,
           title: 'Vehicles',
           children: [
             if (booking.vehicles.isEmpty)
@@ -1473,6 +1574,7 @@ class _StayDetailsContent extends StatelessWidget {
         // 5 — Price breakdown
         _DetailSection(
           number: 5,
+          icon: Icons.receipt_long_rounded,
           title: 'Price breakdown',
           children: [
             const Text(
@@ -1566,53 +1668,93 @@ const _kVehicleTypeLabels = <String, String>{
 
 String _vehicleTypeLabel(String type) => _kVehicleTypeLabels[type] ?? type;
 
-/// A numbered section header, same as the web form's own
-/// `<span className="form-section__num">`.
+/// One of the five sections a booking is taken through — its own tinted
+/// sub-card with an icon badge, a number chip, and a hairline divider before
+/// the facts it holds, so a long read-only stay record breaks into
+/// scannable pieces instead of one unbroken column of text.
 class _DetailSection extends StatelessWidget {
   final int number;
+  final IconData icon;
   final String title;
   final List<Widget> children;
 
-  const _DetailSection({required this.number, required this.title, required this.children});
+  const _DetailSection({
+    required this.number,
+    required this.icon,
+    required this.title,
+    required this.children,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 18,
-              height: 18,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppTheme.accent.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppTheme.accent.withValues(alpha: 0.18),
+                      AppTheme.sidebarBrand.withValues(alpha: 0.10),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 14, color: AppTheme.accent),
               ),
-              child: Text(
-                '$number',
-                style: const TextStyle(
-                  color: AppTheme.accent,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.1,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            Text(
-              title,
-              style: const TextStyle(
-                color: AppTheme.heading,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
+              Container(
+                width: 18,
+                height: 18,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: AppTheme.card,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '$number',
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppTheme.s8),
-        ...children,
-      ],
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
+            child: Divider(height: 1),
+          ),
+          ...children,
+        ],
+      ),
     );
   }
 }
@@ -1627,12 +1769,24 @@ class _Fact extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
+      padding: const EdgeInsets.only(bottom: AppTheme.s8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
-          Text(value, style: const TextStyle(color: AppTheme.text, fontSize: 13)),
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(color: AppTheme.heading, fontSize: 13.5, fontWeight: FontWeight.w500),
+          ),
         ],
       ),
     );

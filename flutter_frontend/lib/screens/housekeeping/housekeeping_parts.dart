@@ -224,7 +224,13 @@ class CompactActionButton extends StatelessWidget {
   final VoidCallback? onTap;
   final bool expand;
 
-  const CompactActionButton({super.key, required this.label, required this.color, this.primary = false, required this.onTap, this.expand = false});
+  /// Overrides the 10%-alpha wash used behind the label when [primary] is
+  /// false — e.g. [AppTheme.sidebarBrandWash] for the same solid-pill look
+  /// [NeuButton]'s own `soft` gives "View bill", instead of a faint tint of
+  /// [color].
+  final Color? fillColor;
+
+  const CompactActionButton({super.key, required this.label, required this.color, this.primary = false, required this.onTap, this.expand = false, this.fillColor});
 
   @override
   Widget build(BuildContext context) {
@@ -237,7 +243,7 @@ class CompactActionButton extends StatelessWidget {
           height: 34,
           padding: EdgeInsets.symmetric(horizontal: expand ? 0 : 14),
           alignment: Alignment.center,
-          decoration: BoxDecoration(color: primary ? color : color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+          decoration: BoxDecoration(color: primary ? color : (fillColor ?? color.withValues(alpha: 0.10)), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
           child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: primary ? Colors.white : color, fontSize: 12.5, fontWeight: FontWeight.w700)),
         ),
       ),

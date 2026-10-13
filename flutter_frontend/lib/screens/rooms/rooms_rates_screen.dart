@@ -81,10 +81,13 @@ class _RoomsRatesScreenState extends ConsumerState<RoomsRatesScreen> {
   }
 }
 
-/// Same sliding-pill segmented control the billing screen's To-bill/Issued
-/// switch uses — one connected control with a moving highlight, rather than
-/// two separate boxes that don't read as a single tab bar.
-class _SubTabs extends StatelessWidget {
+/// Same scrollable pill-strip the billing screen's tab toggle uses — each
+/// segment sized to its own label (not an equal Expanded split), so a long
+/// label like "Checkout policy" never gets truncated on a narrow phone. The
+/// strip scrolls sideways when the segments don't all fit, with an edge fade
+/// showing there's more past either side, and the selected tab is scrolled
+/// into view whenever it changes.
+class _SubTabs extends StatefulWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
@@ -97,33 +100,116 @@ class _SubTabs extends StatelessWidget {
     'checkout': 'Checkout policy',
   };
 
-  static const double _height = 44;
+  @override
+  State<_SubTabs> createState() => _SubTabsState();
+}
+
+class _SubTabsState extends State<_SubTabs> {
+  static const double _height = 40;
+
+  final _scroll = ScrollController();
+  final Map<String, GlobalKey> _segmentKeys = {};
+
+  GlobalKey _keyFor(String key) =>
+      _segmentKeys.putIfAbsent(key, () => GlobalKey());
+
+  bool _moreLeft = false;
+  bool _moreRight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_updateEdges);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateEdges();
+      _scrollToSelected(animate: false);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _SubTabs old) {
+    super.didUpdateWidget(old);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateEdges());
+    if (old.selected != widget.selected) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToSelected(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_updateEdges);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _updateEdges() {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    final moreLeft = pos.pixels > 2;
+    final moreRight = pos.pixels < pos.maxScrollExtent - 2;
+    if (moreLeft != _moreLeft || moreRight != _moreRight) {
+      setState(() {
+        _moreLeft = moreLeft;
+        _moreRight = moreRight;
+      });
+    }
+  }
+
+  void _scrollToSelected({bool animate = true}) {
+    final context = _segmentKeys[widget.selected]?.currentContext;
+    if (context == null) return;
+    Scrollable.ensureVisible(
+      context,
+      duration: animate ? const Duration(milliseconds: 220) : Duration.zero,
+      curve: Curves.easeOut,
+      alignment: 0.5,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final keys = _tabs.keys.toList();
-    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
-
     Widget segment(String key, String label) {
-      final isSelected = key == selected;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => onSelect(key),
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: _height,
-            child: Center(
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : AppTheme.heading,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                  fontSize: 13,
-                ),
-                child: Text(label, overflow: TextOverflow.ellipsis),
-              ),
+      final isSelected = key == widget.selected;
+      return GestureDetector(
+        key: _keyFor(key),
+        onTap: () => widget.onSelect(key),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          height: _height - 8,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: isSelected
+                ? const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: AppTheme.accent.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : null,
+          ),
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            style: TextStyle(
+              color: isSelected ? Colors.white : AppTheme.heading,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              fontSize: 13,
             ),
+            child: Text(label, maxLines: 1, softWrap: false),
           ),
         ),
       );
@@ -137,47 +223,68 @@ class _SubTabs extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         border: Border.all(color: AppTheme.border),
       ),
-      child: Stack(
-        children: [
-          // Same gradient "glow" pill the billing screen's To-bill/Issued
-          // switch uses, rather than a flat card — a selected tab should
-          // read as the clear active one at a glance, not just slightly
-          // lighter than the rest.
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(
-              -1 + (2 / (keys.length - 1)) * selectedIndex,
-              0,
-            ),
-            child: FractionallySizedBox(
-              widthFactor: 1 / keys.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
-                  ),
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.accent.withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
+        child: Stack(
+          children: [
+            NotificationListener<ScrollMetricsNotification>(
+              onNotification: (_) {
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _updateEdges(),
+                );
+                return false;
+              },
+              child: SingleChildScrollView(
+                controller: _scroll,
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final entry in _SubTabs._tabs.entries) ...[
+                      segment(entry.key, entry.value),
+                      const SizedBox(width: 4),
+                    ],
                   ],
                 ),
               ),
             ),
+            if (_moreLeft) const _EdgeFade(alignment: Alignment.centerLeft),
+            if (_moreRight) const _EdgeFade(alignment: Alignment.centerRight),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A faded strip at one edge of the tab row — the visual cue that there is
+/// more to scroll to past that edge. `IgnorePointer`ed so it never steals
+/// the tap meant for the segment under it.
+class _EdgeFade extends StatelessWidget {
+  final Alignment alignment;
+
+  const _EdgeFade({required this.alignment});
+
+  @override
+  Widget build(BuildContext context) {
+    final fromLeft = alignment == Alignment.centerLeft;
+    return Positioned(
+      left: fromLeft ? 0 : null,
+      right: fromLeft ? null : 0,
+      top: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        child: Container(
+          width: 18,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: fromLeft ? Alignment.centerLeft : Alignment.centerRight,
+              end: fromLeft ? Alignment.centerRight : Alignment.centerLeft,
+              colors: [AppTheme.bg, AppTheme.bg.withValues(alpha: 0)],
+            ),
           ),
-          Row(
-            children: [
-              for (final entry in _tabs.entries) segment(entry.key, entry.value),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

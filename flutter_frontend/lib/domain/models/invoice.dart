@@ -431,6 +431,10 @@ class ServiceItemLine {
   final num quantity;
   final num lineTotal;
   final num gstRatePercent;
+  // Non-null when this line is a guest-laundry garment — used to keep a
+  // laundry-only SERVICE invoice out of the general Bills list, since it
+  // already has its own history under Housekeeping -> Guest laundry.
+  final int? laundryOrderId;
 
   const ServiceItemLine({
     required this.name,
@@ -438,6 +442,7 @@ class ServiceItemLine {
     this.quantity = 0,
     this.lineTotal = 0,
     this.gstRatePercent = 0,
+    this.laundryOrderId,
   });
 
   factory ServiceItemLine.fromJson(Map<String, dynamic> json) =>
@@ -447,6 +452,7 @@ class ServiceItemLine {
         quantity: asNum(json['quantity']),
         lineTotal: asNum(json['lineTotal']),
         gstRatePercent: asNum(json['gstRatePercent']),
+        laundryOrderId: asIntOrNull(json['laundryOrderId']),
       );
 }
 
@@ -1410,6 +1416,14 @@ class BillDocument {
   /// stream off of — an EVENT invoice, or a receipt taken against a
   /// function's booking.
   bool get isEventBill => isReceipt ? receipt!.isEventReceipt : invoice!.isEventBill;
+
+  /// A guest-laundry invoice is a SERVICE bill whose lines all trace back to
+  /// a laundry order — it already has its own history under Housekeeping ->
+  /// Guest laundry, so the Bills list would just be showing it twice.
+  bool get isLaundryInvoice =>
+      !isReceipt &&
+      kind == 'SERVICE' &&
+      invoice!.serviceItems.any((item) => item.laundryOrderId != null);
 }
 
 /// One document series' numbering — GET/PATCH /billing/series, the same
