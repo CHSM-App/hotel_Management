@@ -543,9 +543,11 @@ const initialBookingForm = {
   // derived box is ever rewritten. See the setters.
   discountSource: '',
   // The party is the guest count — adults[0] is the primary guest, and the
-  // total is however many names reception actually types in.
+  // total is however many names reception actually types in, plus whatever
+  // extraGuests bumps it by for occupants whose details aren't being taken.
   adults: [{ ...emptyGuest }],
   children: [],
+  extraGuests: '0',
   // The nightly rate reception agreed for this stay, blank where it is the
   // category's own — which is most stays. Held as the per-night figure because
   // that is what the booking stores; the box on screen shows it across the
@@ -1364,6 +1366,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // check that has to be remembered when it does is a dirty check that will
   // one day quietly say clean.
   const [openedAs, setOpenedAs] = useState('');
+  // Bumped on every beginForm call so the over-capacity effect below can tell
+  // "this render is a fresh form opening" from "overOccupancy didn't change
+  // since last render" — the two look identical from a dependency array's
+  // point of view otherwise, and this component never unmounts between opens.
+  const [formOpenSeq, setFormOpenSeq] = useState(0);
   // Non-null while the "you have unsaved details" prompt is up.
   const [closePrompt, setClosePrompt] = useState(null);
   // Bumped to re-ask which rooms are free when nothing the room list keys on
@@ -1482,6 +1489,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     setAvailableRoomsError('');
     setRoomTakenNote('');
     setQuote(null);
+    // Tells the over-capacity effect a new form session has begun, so it
+    // resyncs silently to whatever state this one opens in instead of
+    // alerting for it — see the effect itself for why a ref reset alone
+    // isn't enough.
+    setFormOpenSeq((n) => n + 1);
     setFormMode(mode);
   };
 
@@ -1927,7 +1939,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   }, [availableRooms, bookingForm.multiRoom, bookingForm.sameDates, bookingForm.extraRooms, showBookingForm]);
 
   const selectedBeds = availableBeds?.beds?.filter((b) => bookingForm.bedIds.some((id) => String(id) === String(b.id))) ?? [];
-  const numGuests = bookingForm.adults.length + bookingForm.children.length;
+  // extraGuests bumps the head count for occupants reception isn't taking
+  // names for — cleared or garbage input counts as 0 rather than crashing.
+  const extraGuestCount = Math.max(0, Math.floor(Number(bookingForm.extraGuests)) || 0);
+  const numGuests = bookingForm.adults.length + bookingForm.children.length + extraGuestCount;
   // Advice against the rooms' combined capacity — a party of five over two
   // rooms that sleep three each is fine. A room whose capacity isn't recorded
   // can't be counted, so no warning rather than a wrong one.
@@ -1936,6 +1951,42 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     ? capacityRooms.reduce((sum, r) => sum + r.maxOccupancy, 0)
     : null;
   const overOccupancy = Boolean(totalCapacity && numGuests > totalCapacity);
+
+  // A toast (plus a scroll to the banner) fires once when the party crosses
+  // into over-capacity, not on every render it stays there — and never
+  // merely for reopening a booking that's already over. This component never
+  // unmounts between form opens, so "a fresh session started" and "nothing
+  // changed since last render" are indistinguishable to a plain [overOccupancy]
+  // dependency array — a reused ref set straight from beginForm can get stuck
+  // true if the form happens to open not-over (the common case), silently
+  // disarming the very next real crossing. formOpenSeq (bumped once per
+  // beginForm call) forces this effect to run at least once per session, so
+  // the first run after an open always resyncs silently instead of alerting,
+  // and only a later run — a genuine in-session crossing — can alert.
+  const wasOverOccupancy = useRef(overOccupancy);
+  const lastSeenOpenSeq = useRef(formOpenSeq);
+  const capacityBannerRef = useRef(null);
+  useEffect(() => {
+    const justOpened = lastSeenOpenSeq.current !== formOpenSeq;
+    lastSeenOpenSeq.current = formOpenSeq;
+    if (justOpened) {
+      wasOverOccupancy.current = overOccupancy;
+      return;
+    }
+    if (overOccupancy && !wasOverOccupancy.current) {
+      toast.show(
+        capacityRooms.length > 1
+          ? `Over capacity — these ${capacityRooms.length} rooms sleep ${totalCapacity}, this booking has ${numGuests}.`
+          : `Over capacity — Room ${selectedRoom?.roomNumber} sleeps ${totalCapacity}, this booking has ${numGuests}.`,
+        'warning'
+      );
+      requestAnimationFrame(() => {
+        capacityBannerRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
+    wasOverOccupancy.current = overOccupancy;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overOccupancy, formOpenSeq]);
 
   // Whether each numbered section has what it needs. The numbers were already
   // there, but a marker that looks the same full or empty only says where you
@@ -2071,6 +2122,8 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       [key]: f[key].map((g, i) => (i === index ? { ...g, ...patch } : g)),
     }));
   };
+
+  const setExtraGuests = (value) => setBookingForm((f) => ({ ...f, extraGuests: value }));
 
   const addVehicle = () => {
     setBookingForm((f) => ({ ...f, vehicles: [...f.vehicles, { ...emptyVehicle }] }));
@@ -2657,6 +2710,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         ...bookingDetail.guests.filter((g) => !g.isChild).map(partyRowOf),
       ],
       children: bookingDetail.guests.filter((g) => g.isChild).map(partyRowOf),
+      // A head count on file above the named rows was recorded without every
+      // guest's details — preserve it rather than silently dropping it here.
+      extraGuests: String(Math.max(0, (bookingDetail.numGuests ?? 0) - (1 + bookingDetail.guests.length))),
       vehicles: bookingDetail.vehicles.map((v) => ({ number: v.number, type: v.type ?? '' })),
       basePriceOverride: (() => {
         const rate = first ? first.basePriceOverride : bookingDetail.basePriceOverride;
@@ -4857,15 +4913,15 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                       {numGuests} guest{numGuests === 1 ? '' : 's'}
                     </span>
                     <span className="booking-form__party-split">
-                      {describeParty(bookingForm.adults.length, bookingForm.children.length)}
+                      {describeParty(bookingForm.adults.length + extraGuestCount, bookingForm.children.length)}
                     </span>
                   </div>
                   {overOccupancy && (
-                    <p className="booking-form__warn">
+                    <div ref={capacityBannerRef} className="form-banner form-banner--warning" role="alert">
                       {capacityRooms.length > 1
-                        ? `These ${capacityRooms.length} rooms sleep ${totalCapacity} in all.`
-                        : `Room ${selectedRoom.roomNumber} sleeps ${selectedRoom.maxOccupancy}.`}
-                    </p>
+                        ? `These ${capacityRooms.length} rooms sleep ${totalCapacity} in all — this booking has ${numGuests}.`
+                        : `Room ${selectedRoom.roomNumber} sleeps ${selectedRoom.maxOccupancy} — this booking has ${numGuests}.`}
+                    </div>
                   )}
 
                   <PartyEditor
@@ -4888,6 +4944,8 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                     // whole of it to check-in, which asks for it there.
                     idRequired={!editing && bookingForm.bookingType === 'WALK_IN'}
                     fieldErr={fieldErr}
+                    extraGuests={bookingForm.extraGuests}
+                    onExtraGuestsChange={setExtraGuests}
                   />
                 </div>
 
@@ -6252,6 +6310,8 @@ function PartyEditor({
   // stopped on those.
   idRequired = false,
   fieldErr,
+  extraGuests,
+  onExtraGuestsChange,
 }) {
   // Adding a row and then having to click into it is two actions for one
   // intention. The new row's name field takes the cursor instead, so the desk
@@ -6571,6 +6631,15 @@ function PartyEditor({
       >
         + Add child
       </button>
+      {onExtraGuestsChange && (
+        // A bump to the head count for occupants reception isn't taking
+        // names for — counted as adults, same convention the stay-detail
+        // view already uses for numGuests.
+        <span className="booking-form__party-extra">
+          <span className="booking-form__party-extra-label">+ more guests (no details taken)</span>
+          <QtyStepper label="extra guest" min={0} value={extraGuests} onChange={onExtraGuestsChange} />
+        </span>
+      )}
       <p className="bookings-panel__hint">
         {/* The bracket over the two fields says one of them is enough; this
             says which stay is asking and what else it wants alongside — the

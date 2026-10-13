@@ -107,7 +107,7 @@ async function updateService(lodgeId, id, input) {
 const USAGE_SELECT = `
   SELECT u.id, u.service_id, u.service_name, u.unit_label, u.unit_price, u.gst_rate_percent, u.quantity,
          u.line_total, u.room_id, u.booking_id, u.guest_name, u.guest_phone, u.note, u.status,
-         u.on_room_bill, u.invoice_id, u.started_at, u.completed_at, r.room_number
+         u.on_room_bill, u.invoice_id, u.started_at, u.completed_at, u.laundry_order_id, r.room_number
   FROM dbo.service_usages u
   LEFT JOIN dbo.rooms r ON r.id = u.room_id
 `;
@@ -131,6 +131,7 @@ function mapUsage(row) {
     status: row.status,
     onRoomBill: !!row.on_room_bill,
     billed: row.invoice_id != null,
+    laundryOrderId: row.laundry_order_id ?? null,
     startedAt: row.started_at,
     completedAt: row.completed_at,
   };
@@ -139,19 +140,24 @@ function mapUsage(row) {
 // status: 'active' (in use), 'unbilled' (completed, not yet on a bill) or
 // 'all' (the last 200). Unbilled includes uses already put on a room bill so
 // the desk can see where they went.
+//
+// Guest laundry writes to this same table so it can be billed alongside other
+// services, but it already has its own history under Housekeeping -> Guest
+// laundry. Every status except 'tobill' (what Billing's "Services to bill"
+// reads) excludes it so it isn't listed twice.
 async function listUsages(lodgeId, status = 'all') {
   const pool = await getPool();
   const where =
     status === 'active'
-      ? "u.status = 'IN_USE'"
+      ? "u.status = 'IN_USE' AND u.laundry_order_id IS NULL"
       : status === 'unbilled'
-        ? "u.status = 'COMPLETED' AND u.invoice_id IS NULL"
+        ? "u.status = 'COMPLETED' AND u.invoice_id IS NULL AND u.laundry_order_id IS NULL"
         : // What Billing's "Services to bill" lists: ready, and not riding on a
           // stay's open room bill (see SERVICE_NOT_ON_STAY_BILL in billing.service).
           status === 'tobill'
           ? `u.status = 'COMPLETED' AND u.invoice_id IS NULL AND (u.on_room_bill = 0 OR EXISTS (
                SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = u.booking_id AND bi.status = 'ISSUED'))`
-          : '1 = 1';
+          : 'u.laundry_order_id IS NULL';
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)

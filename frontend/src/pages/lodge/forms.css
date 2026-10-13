@@ -361,6 +361,15 @@
   color: var(--brand-ink);
 }
 
+/* A problem worth flagging but not stopping the desk over — over capacity is
+   the first use, where Save still has to work. Its own tint and ink (off
+   --color-warning) rather than reusing --error, so it doesn't read as a
+   blocking failure. */
+.form-banner--warning {
+  background: #FBF1DA;
+  color: #8A6710;
+}
+
 /* Extruded rather than outlined — it carries no fill of its own, so the
    shadow pair is the whole affordance. */
 .btn-secondary {

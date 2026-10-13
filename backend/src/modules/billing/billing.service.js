@@ -922,7 +922,7 @@ function serviceSideOf(usages, netSubtotal) {
 const SERVICE_NOT_ON_STAY_BILL = `(on_room_bill = 0 OR EXISTS (
   SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = dbo.service_usages.booking_id AND bi.status = 'ISSUED'))`;
 
-const SERVICE_COLUMNS = `id, service_name, unit_price, gst_rate_percent, quantity, line_total, guest_name, guest_phone, room_id, booking_id`;
+const SERVICE_COLUMNS = `id, service_name, unit_price, gst_rate_percent, quantity, line_total, guest_name, guest_phone, room_id, booking_id, laundry_order_id`;
 
 function mapServiceUsage(row) {
   return {
@@ -936,6 +936,7 @@ function mapServiceUsage(row) {
     guestPhone: row.guest_phone ?? null,
     roomId: row.room_id ?? null,
     bookingId: row.booking_id ?? null,
+    laundryOrderId: row.laundry_order_id ?? null,
   };
 }
 

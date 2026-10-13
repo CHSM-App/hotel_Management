@@ -19,7 +19,7 @@ const ToastContext = createContext(null);
 // Long enough to read a sentence twice, short enough not to sit over the
 // screen. Errors get longer: they are the ones worth reading carefully, and
 // they often carry a provider's own wording that is not guessable from memory.
-const DURATION = { success: 4000, error: 7000, info: 4500 };
+const DURATION = { success: 4000, error: 7000, info: 4500, warning: 6000 };
 
 let nextId = 1;
 
