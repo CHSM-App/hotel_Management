@@ -96,13 +96,18 @@ class _Loaded extends StatelessWidget {
         const SizedBox(height: AppTheme.s8),
         StatGrid(
           items: [
-            StatItem(label: 'Advance collected', value: formatPrice(s.advanceCollected)),
-            StatItem(label: 'Total collected', value: formatPrice(s.totalCollected)),
+            StatItem(label: 'Advances received', value: formatPrice(s.advanceCollected)),
+            // The other half of what foots to the total below — same figure
+            // the PDF/Excel export prints as "Final payments received",
+            // missing here before even though the money was always counted
+            // into Total collected.
+            StatItem(label: 'Final payments received', value: formatPrice(s.balanceCollected)),
             if (s.cancellationChargesKept > 0)
               StatItem(
-                label: 'Cancellation charges',
+                label: 'Cancellation charges kept',
                 value: formatPrice(s.cancellationChargesKept),
               ),
+            StatItem(label: 'Total received', value: formatPrice(s.totalCollected), accent: true),
           ],
         ),
         const SizedBox(height: AppTheme.s16),
