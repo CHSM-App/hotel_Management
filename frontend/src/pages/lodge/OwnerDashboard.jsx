@@ -10,6 +10,13 @@ import ServicesPanel from './ServicesPanel';
 import HousekeepingPanel from './HousekeepingPanel';
 import LaundryPanel from './LaundryPanel';
 import { useOpenIssues } from './useOpenIssues';
+import { useCheckoutAlerts } from './useCheckoutAlerts';
+import { useCheckinAlerts } from './useCheckinAlerts';
+import { useWorkOrderAlerts } from './useWorkOrderAlerts';
+import { useCoverageAlerts } from './useCoverageAlerts';
+import { usePendingOrderAlerts } from './usePendingOrderAlerts';
+import { useReportsReminder } from './useReportsReminder';
+import StaffAlertsBell from '../../components/StaffAlertsBell';
 import Bookings from './Bookings';
 import Billing from './Billing';
 import GuestRegister from './GuestRegister';
@@ -404,8 +411,48 @@ export default function OwnerDashboard() {
   })).filter((g) => g.features.length > 0);
 
   // Problems housekeeping has reported and nobody has closed: a count on the
-  // sidebar, and an alert at the desk when a new one comes in.
-  const issueCount = useOpenIssues(session?.token, visibleFeatures.some((f) => f.key === 'housekeeping'));
+  // sidebar, an alert at the desk when a new one comes in, and the full rows
+  // for the nav bell's housekeeping section (see useOpenIssues — one poll
+  // now feeds both).
+  const canSeeHousekeeping = visibleFeatures.some((f) => f.key === 'housekeeping');
+  const { count: issueCount, issues: housekeepingIssues } = useOpenIssues(session?.token, canSeeHousekeeping);
+
+  // Each alert category checks its own permission — a role sees only the
+  // sections it can actually act on, not every category bundled behind one
+  // gate. Rooms whose check-in or check-out time is due soon or already
+  // overdue; open maintenance work orders and assets whose cover is lapsing;
+  // table orders the kitchen hasn't accepted; and once a month, a reminder
+  // that the reports are ready.
+  const canManageBookings = permissions.includes('bookings.manage');
+  const canManageAssets = permissions.includes('assets.manage') || permissions.includes('reports.view');
+  const canManageOrders = permissions.includes('orders.manage');
+  const canViewReports = permissions.includes('reports.view');
+
+  const checkoutAlerts = useCheckoutAlerts(session?.token, canManageBookings);
+  const checkinAlerts = useCheckinAlerts(session?.token, canManageBookings);
+  const workOrderAlerts = useWorkOrderAlerts(session?.token, canManageAssets);
+  const coverageAlerts = useCoverageAlerts(session?.token, canManageAssets);
+  const pendingOrderAlerts = usePendingOrderAlerts(session?.token, canManageOrders);
+  const reportsReminder = useReportsReminder(canViewReports);
+
+  const housekeepingAlerts = housekeepingIssues.map((i) => ({
+    id: `housekeeping-${i.logId}-${i.kind}`,
+    category: 'housekeeping',
+    message: `${i.space === 'VENUE' ? i.roomNumber : `Room ${i.roomNumber}`}: ${i.kind === 'FOUND' ? 'Item found' : 'Problem reported'} — ${i.text}`,
+    urgent: false,
+  }));
+
+  const staffAlerts = [
+    ...checkinAlerts,
+    ...checkoutAlerts,
+    ...pendingOrderAlerts,
+    ...workOrderAlerts,
+    ...coverageAlerts,
+    ...housekeepingAlerts,
+    ...reportsReminder,
+  ];
+  const canSeeStaffAlerts =
+    canManageBookings || canManageAssets || canManageOrders || canViewReports || canSeeHousekeeping;
 
   return (
     <div className="dash-shell">
@@ -485,6 +532,7 @@ export default function OwnerDashboard() {
               {linkCopied === 'copied' ? 'Copied!' : linkCopied === 'failed' ? 'Press Ctrl+C' : 'Copy public link'}
             </button>
           ) : null}
+          {canSeeStaffAlerts && <StaffAlertsBell alerts={staffAlerts} />}
           {me?.user ? (
             <ProfileMenu
               user={me.user}

@@ -651,7 +651,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
               <h4>
                 Advances
                 {canTakeAdvance && (
-                  <button type="button" className="chart-row__link-btn" onClick={() => setTakingAdvance(true)}>
+                  <button type="button" className="events-detail__action-btn" onClick={() => setTakingAdvance(true)}>
                     Take advance / print receipt
                   </button>
                 )}

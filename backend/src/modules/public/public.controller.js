@@ -57,7 +57,7 @@ async function getLodgePageHandler(req, res, next) {
     // Each part of the page is gated on what the property is: a rooms-only
     // lodge sends no venues and no menu, so the page has nothing to hide, and
     // the flags on `lodge` tell the client which sections to draw at all.
-    const [roomTypes, roomAddons, venues, addons, menu, reviews] = await Promise.all([
+    const [roomTypes, roomAddons, venues, addons, menu, reviews, otherServices] = await Promise.all([
       lodge.hasRooms
         ? publicService.listPublicRoomTypes(
             lodge.id,
@@ -72,8 +72,9 @@ async function getLodgePageHandler(req, res, next) {
       // Not gated on any lodge flag — every property can be reviewed
       // regardless of what it sells.
       publicService.listPublicReviews(lodge.id),
+      lodge.hasOtherServices ? publicService.listPublicServices(lodge.id) : [],
     ]);
-    res.json({ lodge, roomTypes, roomAddons, venues, addons, menu, reviews });
+    res.json({ lodge, roomTypes, roomAddons, venues, addons, menu, reviews, otherServices });
   } catch (err) {
     next(err);
   }

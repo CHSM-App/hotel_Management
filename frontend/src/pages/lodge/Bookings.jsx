@@ -1429,9 +1429,24 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   const reportFormError = (message) => {
     setFormError(message);
     requestAnimationFrame(() => {
+      // The cursor as well as the view: a keyboard or a screen reader is left
+      // on Save otherwise, with the message somewhere above it.
+      formErrorRef.current?.focus({ preventScroll: true });
       formErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
   };
+
+  // The two failures that arrive on their own, from loading the rooms or the
+  // beds for the dates just picked. Nothing was pressed, so the cursor stays
+  // where it is being typed with — the message is only brought into view.
+  const roomsErrorRef = useRef(null);
+  const bedsErrorRef = useRef(null);
+  useEffect(() => {
+    if (availableRoomsError) roomsErrorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [availableRoomsError]);
+  useEffect(() => {
+    if (availableBedsError) bedsErrorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [availableBedsError]);
 
   // Reports a failure against the control that caused it and takes the cursor
   // there. The form is tall enough that a message about the guest's phone is
@@ -2097,6 +2112,12 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     const typed = room ? extraLineTotals[`${room.key}:${charge.isBase ? 'base' : charge.chargeId}`] : undefined;
     return typed ?? String(charge.amount);
   };
+  // The DOM id an extra room's line is reachable at, for failOn to focus and
+  // scroll to when the figure typed there turns out blank or invalid.
+  const extraLineFieldId = (charge) => {
+    const room = pickedExtraRooms(bookingForm)[charge.roomIndex - 1];
+    return `extraLine-${room?.key}-${charge.isBase ? 'base' : charge.chargeId}`;
+  };
 
   const setChargeAgreed = (chargeId, agreedAmount) => {
     setBookingForm((f) => ({
@@ -2186,6 +2207,32 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       const span = roomDates(bookingForm, room);
       if (!(span.checkOutDate > span.checkInDate)) {
         failOn(`extraOut-${room.key}`, 'Check-out date must be after check-in date.');
+        return;
+      }
+    }
+    // The rate boxes on the quote are typed over, not chosen, so a desk can
+    // clear one by mistake and never notice — the box just sits empty while
+    // everything above and below it still shows real numbers. Caught here
+    // rather than left to fall back to the category's own price: silently
+    // repricing a stay the desk believes it just set is worse than making
+    // them type it again.
+    if (baseTotal !== null && (String(baseTotal).trim() === '' || !(Number(baseTotal) > 0))) {
+      failOn('roomBaseTotal', 'Please enter a valid amount.');
+      return;
+    }
+    for (const [chargeId, value] of Object.entries(chargeTotals)) {
+      if (String(value).trim() === '' || !(Number(value) >= 0)) {
+        failOn(`chargeTotal-${chargeId}`, 'Please enter a valid amount.');
+        return;
+      }
+    }
+    for (const [key, value] of Object.entries(extraLineTotals)) {
+      const isBaseLine = key.endsWith(':base');
+      const num = Number(value);
+      const blank = String(value).trim() === '';
+      if (blank || !Number.isFinite(num) || (isBaseLine ? num <= 0 : num < 0)) {
+        const [roomKey, suffix] = key.split(':');
+        failOn(`extraLine-${roomKey}-${suffix}`, 'Please enter a valid amount.');
         return;
       }
     }
@@ -4411,7 +4458,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
               <div className="booking-form__body">
                 {formError && (
-                  <div ref={formErrorRef} className="form-banner form-banner--error form-banner--flash">
+                  <div ref={formErrorRef} tabIndex={-1} role="alert" className="form-banner form-banner--error form-banner--flash">
                     {formError}
                   </div>
                 )}
@@ -4528,7 +4575,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
                 {!validRange && <p className="bookings-panel__hint">Choose a valid date range first.</p>}
                 {validRange && availableRoomsError && (
-                  <div className="form-banner form-banner--error">{availableRoomsError}</div>
+                  <div ref={roomsErrorRef} className="form-banner form-banner--error">{availableRoomsError}</div>
                 )}
                 {/* Room and its rate sit on one line once a room is picked —
                     the rate only ever qualifies the room above it. */}
@@ -4683,7 +4730,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                       <Req />
                     </label>
                     {availableBedsError && (
-                      <div className="form-banner form-banner--error">{availableBedsError}</div>
+                      <div ref={bedsErrorRef} className="form-banner form-banner--error">{availableBedsError}</div>
                     )}
                     {!availableBeds && !availableBedsError && (
                       <PageLoader inline label="Loading beds" />
@@ -4869,26 +4916,41 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                             the rate above it, so it follows on its own. */}
                         {charge.roomIndex && (charge.isBase || charge.chargeId) ? (
                           <EditableAmount
+                            id={extraLineFieldId(charge)}
                             label={charge.label}
                             value={extraLineValue(charge)}
                             onChange={(v) => setExtraRoomLine(charge, v)}
+                            invalid={invalid(extraLineFieldId(charge))}
                           />
                         ) : charge.isBase ? (
                           <EditableAmount
+                            id="roomBaseTotal"
                             label={charge.label}
                             value={baseTotal ?? String(charge.amount)}
                             onChange={setRoomTotal}
+                            invalid={invalid('roomBaseTotal')}
                           />
                         ) : charge.chargeId ? (
                           <EditableAmount
+                            id={`chargeTotal-${charge.chargeId}`}
                             label={charge.label}
                             value={chargeTotals[charge.chargeId] ?? String(charge.amount)}
                             onChange={(v) => setChargeTotal(charge, v)}
+                            invalid={invalid(`chargeTotal-${charge.chargeId}`)}
                           />
                         ) : (
                           <span>{formatPrice(charge.amount)}</span>
                         )}
                       </div>
+                      {fieldErr(
+                        charge.roomIndex && (charge.isBase || charge.chargeId)
+                          ? extraLineFieldId(charge)
+                          : charge.isBase
+                            ? 'roomBaseTotal'
+                            : charge.chargeId
+                              ? `chargeTotal-${charge.chargeId}`
+                              : null
+                      )}
                       </Fragment>
                     ))}
                     <div className="sim-result__total">
@@ -6047,7 +6109,7 @@ const BAND_LABEL = {
 // the picture lies, which costs more than the hint was worth. Pressing it does
 // what pressing it looks like it should — puts the cursor in the figure with
 // the old value selected, so the new one types straight over it.
-function EditableAmount({ label, value, onChange }) {
+function EditableAmount({ id, label, value, onChange, invalid }) {
   const inputRef = useRef(null);
 
   const startEditing = () => {
@@ -6060,6 +6122,7 @@ function EditableAmount({ label, value, onChange }) {
   return (
     <span className="amount-edit">
       <input
+        id={id}
         ref={inputRef}
         className="sim-result__amount-input"
         type="number"
@@ -6067,6 +6130,7 @@ function EditableAmount({ label, value, onChange }) {
         step="1"
         inputMode="decimal"
         aria-label={`Total for ${label} — editable`}
+        aria-invalid={invalid || undefined}
         onFocus={(e) => e.target.select()}
         value={value}
         onChange={(e) => onChange(e.target.value)}

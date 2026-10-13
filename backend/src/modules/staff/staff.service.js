@@ -56,13 +56,18 @@ async function createStaff(lodgeId, input) {
   const pool = await getPool();
   await assertRoleExists(lodgeId, input.roleKey);
 
-  // phone is globally unique and email is too when present — check both up
-  // front so the user gets a readable message instead of a constraint error.
+  // phone and email only need to be unique within this lodge — the same
+  // number can staff a different property.
   const clash = await pool
     .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
     .input('phone', sql.NVarChar, input.phone)
     .input('email', sql.NVarChar, input.email || null)
-    .query('SELECT id FROM dbo.users WHERE phone = @phone OR (@email IS NOT NULL AND email = @email)');
+    .query(`
+      SELECT id FROM dbo.users
+      WHERE lodge_id = @lodgeId
+        AND (phone = @phone OR (@email IS NOT NULL AND email = @email))
+    `);
   if (clash.recordset.length > 0) {
     throw new ApiError('Someone already uses that phone number or email.', 409);
   }
@@ -129,12 +134,13 @@ async function updateStaff(lodgeId, userId, input) {
   if (input.phone || input.email !== undefined) {
     const clash = await pool
       .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
       .input('userId', sql.BigInt, userId)
       .input('phone', sql.NVarChar, input.phone || null)
       .input('email', sql.NVarChar, input.email || null)
       .query(`
         SELECT id FROM dbo.users
-        WHERE id <> @userId
+        WHERE lodge_id = @lodgeId AND id <> @userId
           AND ((@phone IS NOT NULL AND phone = @phone) OR (@email IS NOT NULL AND email = @email))
       `);
     if (clash.recordset.length > 0) {
@@ -147,7 +153,7 @@ async function updateStaff(lodgeId, userId, input) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('userId', sql.BigInt, userId)
     .input('name', sql.NVarChar, input.name ?? null)
-    .input('email', sql.NVarChar, input.email ?? null)
+    .input('email', sql.NVarChar, input.email || null)
     .input('emailProvided', sql.Bit, input.email !== undefined ? 1 : 0)
     .input('phone', sql.NVarChar, input.phone ?? null)
     .input('role', sql.NVarChar, input.roleKey ?? null)

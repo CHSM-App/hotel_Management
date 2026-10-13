@@ -1,0 +1,455 @@
+/* The quotation the Price simulator downloads.
+
+   Paper, not screen: its colours are its own — deep indigo ink and a thin gold
+   rule, the pairing the welcome screen uses — and are literals on purpose. A
+   sheet that followed the app's tokens would change with a theme it is never
+   seen in. Sizes are pixels at A4's 794px width (quotationPdf.js), so a pixel
+   here is the same fraction of the page in the file. */
+
+/* Where the sheet waits to be photographed: laid out for real — a display:none
+   node has no dimensions to capture — but parked off the left edge, out of
+   reach and out of the page's flow. */
+.quote-pdf-source {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 794px;
+  pointer-events: none;
+}
+
+.quote {
+  --q-ink: #1b1640;
+  --q-indigo: #2d2270;
+  --q-indigo-soft: #f3f1fa;
+  --q-gold: #b8893a;
+  --q-gold-soft: #f6eedd;
+  --q-body: #414b5e;
+  --q-quiet: #7a8497;
+  --q-rule: #dce0ea;
+
+  display: flex;
+  flex-direction: column;
+  width: 794px;
+  padding-bottom: 26px;
+  background: #fff;
+  color: var(--q-body);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.quote__edge {
+  height: 13px;
+  background: var(--q-indigo);
+  border-bottom: 3px solid var(--q-gold);
+}
+
+.quote__pad {
+  padding-left: 48px;
+  padding-right: 48px;
+}
+
+/* Letterhead */
+.quote__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  padding-top: 30px;
+  padding-bottom: 20px;
+}
+
+.quote__brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.quote__logo {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  padding: 3px;
+  border: 2px solid var(--q-gold);
+  border-radius: 50%;
+}
+
+.quote__logo span,
+.quote__logo img {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.quote__logo span {
+  background: var(--q-indigo);
+  color: #fff;
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.quote__logo img {
+  object-fit: contain;
+  background: #fff;
+}
+
+.quote__name {
+  font-family: var(--serif);
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--q-ink);
+  overflow-wrap: anywhere;
+}
+
+.quote__line {
+  margin-top: 5px;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--q-quiet);
+}
+
+.quote__doc {
+  flex: none;
+  text-align: right;
+}
+
+.quote__title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--q-ink);
+}
+
+.quote__doc dl {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: end;
+  gap: 2px 10px;
+  margin: 8px 0 0;
+  font-size: 10.5px;
+}
+
+.quote__doc dt {
+  color: var(--q-quiet);
+}
+
+.quote__doc dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--q-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.quote__rule {
+  height: 1px;
+  margin: 0 48px;
+  background: var(--q-rule);
+}
+
+/* Who it is for, and the stay in four figures */
+.quote__meet {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.quote__meet--solo {
+  grid-template-columns: 1fr;
+}
+
+.quote__cap {
+  margin-bottom: 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--q-gold);
+}
+
+.quote__for {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  align-items: baseline;
+  gap: 0 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--q-rule);
+}
+
+.quote__for:first-of-type {
+  border-top: 1px solid var(--q-rule);
+}
+
+.quote__for span {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--q-quiet);
+}
+
+.quote__for b {
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--q-ink);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.quote__glance {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--q-rule);
+}
+
+.quote__glance div {
+  padding: 9px 10px;
+  border-left: 1px solid var(--q-rule);
+}
+
+.quote__glance div:first-child {
+  border-left: none;
+}
+
+.quote__glance span {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--q-quiet);
+}
+
+.quote__glance b {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--q-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rooms and their charges */
+.quote__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.quote__table th {
+  padding: 8px 10px;
+  background: var(--q-indigo);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: right;
+}
+
+.quote__table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--q-rule);
+  text-align: right;
+}
+
+.quote__table th:first-child,
+.quote__table td:first-child {
+  padding-left: 14px;
+  text-align: left;
+}
+
+.quote__table th:last-child,
+.quote__table td:last-child {
+  padding-right: 14px;
+}
+
+.quote__table td:last-child {
+  color: var(--q-ink);
+}
+
+.quote__room td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+  background: var(--q-indigo-soft);
+}
+
+.quote__room strong {
+  display: block;
+  font-family: var(--serif);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--q-ink);
+}
+
+.quote__room small {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--q-quiet);
+}
+
+.quote__table td.quote__stay {
+  font-size: 11px;
+  color: var(--q-body);
+  white-space: nowrap;
+}
+
+.quote__stay b {
+  color: var(--q-ink);
+}
+
+.quote__table td.quote__item,
+.quote__sub td:first-child {
+  padding-left: 28px;
+}
+
+.quote__sub td {
+  border-bottom-width: 2px;
+  font-weight: 600;
+  color: var(--q-ink);
+}
+
+/* Terms beside the totals */
+.quote__close {
+  display: grid;
+  grid-template-columns: 1fr 268px;
+  gap: 32px;
+  align-items: start;
+  padding-top: 20px;
+}
+
+.quote__terms {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding-left: 15px;
+  font-size: 10.5px;
+}
+
+.quote__words {
+  margin-top: 14px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--q-gold);
+  background: var(--q-gold-soft);
+  font-size: 10.5px;
+}
+
+.quote__words b {
+  color: var(--q-ink);
+}
+
+.quote__totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--q-rule);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.quote__totals > div span:last-child {
+  font-weight: 600;
+  color: var(--q-ink);
+}
+
+.quote__totals > .quote__grand {
+  align-items: baseline;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-bottom: none;
+  background: var(--q-indigo);
+  color: #fff;
+}
+
+.quote__grand span:first-child {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.quote__totals > .quote__grand span:last-child {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+}
+
+.quote__totals small {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  text-align: right;
+  color: var(--q-quiet);
+}
+
+/* The sign-off rides at the foot of a one-page sheet: quotationPdf.js stretches
+   the sheet to a full A4 and this takes up the slack. */
+.quote__spacer {
+  flex: 1;
+  min-height: 36px;
+}
+
+.quote__sign {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  padding-bottom: 18px;
+}
+
+.quote__thanks {
+  max-width: 36ch;
+  font-family: var(--serif);
+  font-size: 13px;
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--q-ink);
+}
+
+.quote__sign-box {
+  flex: none;
+  font-size: 10.5px;
+  text-align: center;
+  color: var(--q-quiet);
+}
+
+.quote__sign-box i {
+  display: block;
+  width: 190px;
+  height: 34px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--q-ink);
+}
+
+.quote__sign-box b {
+  display: block;
+  font-weight: 600;
+  color: var(--q-ink);
+}
+
+.quote__foot {
+  margin: 0 48px;
+  padding-top: 10px;
+  border-top: 1px solid var(--q-rule);
+  font-size: 9.5px;
+  color: var(--q-quiet);
+}

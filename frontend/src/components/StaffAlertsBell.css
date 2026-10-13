@@ -1,0 +1,167 @@
+.staff-bell {
+  position: relative;
+}
+
+/* Icon-only twin of .dash-topbar__link-copy — same surface, border and
+   shadow, just square instead of a pill with a label. */
+.staff-bell__trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: var(--shadow-raised);
+}
+
+.staff-bell__trigger:hover {
+  background: var(--primary-bg, var(--surface-muted, #f3f3f3));
+  border-color: var(--primary, var(--border));
+}
+
+.staff-bell__count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  color: #fff;
+  background: var(--accent, #b45309);
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* At least one genuinely time-critical item (an overdue stay, an order the
+   kitchen still hasn't seen) outranks the rest — the badge turns to the same
+   danger red the app reserves for problems that need acting on now. */
+.staff-bell__count--urgent {
+  background: var(--danger);
+}
+
+.staff-bell__panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  z-index: 50;
+  color: var(--text);
+  max-height: min(75vh, 560px);
+  overflow-y: auto;
+}
+
+.staff-bell__panel-head {
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  background: linear-gradient(135deg, var(--brand-wash, #f3f0fe), transparent);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.staff-bell__empty {
+  margin: 0;
+  padding: 20px 16px;
+  font-size: 13px;
+  color: var(--text-muted, #5b6670);
+  text-align: center;
+}
+
+.staff-bell__section {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.staff-bell__section:last-child {
+  border-bottom: none;
+}
+
+/* Colour comes inline per category (see CATEGORY_META) — the label, like the
+   icon beside it, is the first signal for which kind of thing this section
+   holds, read before any of the rows underneath it. */
+.staff-bell__section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.staff-bell__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.staff-bell__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--surface-muted, #f7f7f9);
+}
+
+/* The icon chip: tinted to the category colour at rest (set inline per row),
+   so a row's kind reads from its colour and shape before the sentence next
+   to it does. */
+.staff-bell__row-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  margin-top: 1px;
+}
+
+.staff-bell__row-text {
+  padding-top: 2px;
+}
+
+/* Urgency is layered on top of category colour, not instead of it: the chip
+   turns solid danger-red (losing its category tint) while the row keeps its
+   own red wash and bold text — so "this needs action now" is unmistakable
+   even though every category already has a colour of its own. */
+.staff-bell__row--urgent {
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.staff-bell__row--urgent .staff-bell__row-icon {
+  background: var(--danger);
+  color: #fff;
+}
+
+@media (max-width: 640px) {
+  .staff-bell__panel {
+    width: calc(100vw - 32px);
+    max-width: 380px;
+  }
+}

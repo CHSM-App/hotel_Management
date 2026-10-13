@@ -452,6 +452,29 @@ async function updateBookingHandler(req, res, next) {
   }
 }
 
+// The rooms whose check-out is due soon or already past it, for the bell in
+// the nav bar — the same deadline getLateCheckoutHandler reads for one
+// booking, swept across every room currently checked in.
+async function listCheckoutAlertsHandler(req, res, next) {
+  try {
+    const alerts = await bookingsService.listCheckoutAlerts(req.user.lodgeId);
+    res.json({ alerts });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The check-in mirror of listCheckoutAlertsHandler — today's arrivals due
+// soon or already overdue.
+async function listCheckinAlertsHandler(req, res, next) {
+  try {
+    const alerts = await bookingsService.listCheckinAlerts(req.user.lodgeId);
+    res.json({ alerts });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Read before the desk commits to anything: how overdue the stay is and what
 // the property's policy suggests that is worth.
 async function getLateCheckoutHandler(req, res, next) {
@@ -575,6 +598,8 @@ module.exports = {
   checkInHandler,
   updateBookingHandler,
   getLateCheckoutHandler,
+  listCheckoutAlertsHandler,
+  listCheckinAlertsHandler,
   checkOutHandler,
   cancelBookingHandler,
 };

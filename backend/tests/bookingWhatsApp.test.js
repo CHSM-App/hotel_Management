@@ -52,26 +52,40 @@ const stay = {
   // Both shapes must read as the same calendar day.
   check_in_date: new Date('2026-09-12T00:00:00Z'),
   check_out_date: '2026-09-14',
+  room_numbers: '204',
+  advance_amount: 2000,
+  total_price: 5000,
 };
 
 // ---------------------------------------------------------------------------
-// The seven variables, in template order
+// The ten variables, in template order
 // ---------------------------------------------------------------------------
 
-test('a stay fills the seven template variables in order', () => {
+test('a stay fills the ten template variables in order', () => {
   const sample = buildStaySample(stay, lodge);
   assert.deepStrictEqual(sample, [
     'Rahul Patil',
     'Sea View Lodge',
-    '#41',
+    '204',
     '12 Sep 2026 12:00 PM',
     '14 Sep 2026 10:30 AM',
+    '2000.00',
+    '5000.00',
+    '3000.00',
     'https://www.google.com/maps/search/?api=1&query=15.861%2C73.632',
     '02366-123456',
   ]);
 });
 
-test('a function fills the same seven, with the venue and IST instants', () => {
+test('a multi-room booking sends every room, not just the first', () => {
+  const sample = buildStaySample({ ...stay, room_numbers: '204, 205' }, lodge);
+  // The comma joining the rooms becomes " - ": clean() always turns a real
+  // comma into that, since a comma is the variable separator in the sample
+  // string sent to the provider.
+  assert.strictEqual(sample[2], '204 - 205');
+});
+
+test('a function fills the same ten, with the venue and IST instants', () => {
   const sample = buildEventSample(
     {
       id: 7,
@@ -80,15 +94,21 @@ test('a function fills the same seven, with the venue and IST instants', () => {
       venueName: 'Lawn',
       startAt: '2026-09-12T12:30:00.000Z',
       endAt: '2026-09-12T19:30:00.000Z',
+      advanceAmount: 10000,
+      totalAmount: 40000,
+      balanceDue: 30000,
     },
     lodge
   );
   assert.deepStrictEqual(sample, [
     'Sharma',
-    'Sea View Lodge (Lawn)',
-    'EV-7',
+    'Sea View Lodge',
+    'Lawn',
     '12 Sep 2026 6:00 PM',
     '13 Sep 2026 1:00 AM',
+    '10000.00',
+    '40000.00',
+    '30000.00',
     'https://www.google.com/maps/search/?api=1&query=15.861%2C73.632',
     '02366-123456',
   ]);
@@ -132,8 +152,8 @@ test('directions prefer the map pin and fall back to the address', () => {
 });
 
 test('the property phone falls back to its WhatsApp number', () => {
-  assert.strictEqual(buildStaySample(stay, { ...lodge, phone: null })[6], '9876500000');
-  assert.strictEqual(buildStaySample(stay, { ...lodge, phone: null, whatsapp_number: null })[6], '-');
+  assert.strictEqual(buildStaySample(stay, { ...lodge, phone: null })[9], '9876500000');
+  assert.strictEqual(buildStaySample(stay, { ...lodge, phone: null, whatsapp_number: null })[9], '-');
 });
 
 // ---------------------------------------------------------------------------
@@ -193,4 +213,28 @@ test('a new stay and a function taking its venue both fire the confirmation, una
 
 test('.env.example documents the template switch', () => {
   assert.match(read('.env.example'), /^WHATSAPP_BOOKING_TEMPLATE_ID=/m);
+});
+
+// ---------------------------------------------------------------------------
+// Money — balance due is computed, not typed in anywhere
+// ---------------------------------------------------------------------------
+
+test('balance due is total minus advance, formatted as plain digits with no currency mark', () => {
+  const sample = buildStaySample({ ...stay, advance_amount: 1234.5, total_price: 9000 }, lodge);
+  assert.strictEqual(sample[5], '1234.50');
+  assert.strictEqual(sample[6], '9000.00');
+  assert.strictEqual(sample[7], '7765.50');
+});
+
+test('a booking with no advance on file reads as zero, not a blank or a dash', () => {
+  const sample = buildStaySample({ ...stay, advance_amount: null }, lodge);
+  assert.strictEqual(sample[5], '0.00');
+  assert.strictEqual(sample[7], sample[6]); // balance due equals the full total
+});
+
+test('loadBooking reads room_numbers/advance_amount/total_price, not the raw column names', () => {
+  const src = read('src/modules/notifications/bookingConfirmation.js');
+  assert.match(src, /booking\.room_numbers/);
+  assert.match(src, /booking\.advance_amount/);
+  assert.match(src, /booking\.total_price/);
 });

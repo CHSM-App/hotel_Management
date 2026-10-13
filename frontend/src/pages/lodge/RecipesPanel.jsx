@@ -409,7 +409,7 @@ export default function RecipesPanel() {
 
       <div className="inv-bar">
         <div className="inv-bar__row">
-          <div className="inv-search">
+          <div className="inv-search inv-search--compact">
             <span className="inv-search__icon" />
             <input
               value={query}
