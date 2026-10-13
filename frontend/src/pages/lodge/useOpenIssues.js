@@ -3,12 +3,14 @@ import { apiGet } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { ISSUES_CHANGED } from './housekeepingFormat';
 
-// How many problems and found items housekeeping has reported that nobody has
-// closed yet — the number on the sidebar. It also tells the desk when a new one
-// arrives: a cleaner reports from a room upstairs, and without this the report
-// sits unseen until someone happens to open Housekeeping.
+// Problems and found items housekeeping has reported that nobody has closed
+// yet: a count for the sidebar badge, a toast when a new one arrives, and now
+// also the full rows themselves, so the nav bell's housekeeping section reads
+// off the same poll rather than opening a second one against a second
+// endpoint — two independent polls on two schedules let the sidebar badge and
+// the bell briefly disagree about how many were open.
 export function useOpenIssues(token, enabled) {
-  const [count, setCount] = useState(0);
+  const [issues, setIssues] = useState([]);
   const toast = useToast();
   // The newest report already seen. Null until the first answer, so opening the
   // app does not announce everything that was already waiting.
@@ -18,18 +20,23 @@ export function useOpenIssues(token, enabled) {
     if (!enabled) return undefined;
     let stopped = false;
     const load = () =>
-      apiGet('/housekeeping/issues/count', { token })
+      apiGet('/housekeeping/issues?scope=open', { token })
         .then((d) => {
           if (stopped) return;
-          if (seen.current !== null && d.latestKey && d.latestKey !== seen.current.key && d.count > seen.current.count) {
-            const what = d.latest.kind === 'FOUND' ? 'Item found' : 'Problem reported';
-            const where = d.latest.space === 'VENUE' ? d.latest.roomNumber : `Room ${d.latest.roomNumber}`;
-            toast.show(`${where}: ${what} — ${d.latest.text}`, 'info');
+          const list = d.issues || [];
+          const latest = list[0] ?? null;
+          const latestKey = latest ? `${latest.logId}:${latest.kind}` : null;
+          if (seen.current !== null && latestKey && latestKey !== seen.current.key && list.length > seen.current.count) {
+            const what = latest.kind === 'FOUND' ? 'Item found' : 'Problem reported';
+            const where = latest.space === 'VENUE' ? latest.roomNumber : `Room ${latest.roomNumber}`;
+            toast.show(`${where}: ${what} — ${latest.text}`, 'info');
           }
-          seen.current = { key: d.latestKey, count: d.count };
-          setCount(d.count);
+          seen.current = { key: latestKey, count: list.length };
+          setIssues(list);
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!stopped) setIssues([]);
+        });
     load();
     const timer = setInterval(load, 30000);
     window.addEventListener(ISSUES_CHANGED, load);
@@ -41,5 +48,8 @@ export function useOpenIssues(token, enabled) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, enabled]);
 
-  return enabled ? count : 0;
+  return {
+    count: enabled ? issues.length : 0,
+    issues: enabled ? issues : [],
+  };
 }

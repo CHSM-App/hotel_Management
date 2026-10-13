@@ -2528,6 +2528,129 @@ function toClockTime(value) {
   return `${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}:${pad(value.getUTCSeconds())}`;
 }
 
+// The stays whose check-out deadline has arrived or is close enough to be
+// worth a word to reception — same deadline getLateCheckout works out for one
+// booking at a time, swept here across every room currently occupied. A guest
+// still in-house past their own deadline stays on the list (ever more
+// overdue) until the room is actually checked out, rather than dropping off
+// once the minute has passed.
+async function listCheckoutAlerts(lodgeId, { windowMinutes = 60, at = new Date() } = {}) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT br.id AS booking_room_id, br.booking_id, br.room_id, r.room_number,
+             br.check_in_date, br.check_out_date, br.actual_check_in_at,
+             b.guest_name, l.checkin_mode, l.check_out_time
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      JOIN dbo.rooms r ON r.id = br.room_id
+      JOIN dbo.lodges l ON l.id = b.lodge_id
+      WHERE b.lodge_id = @lodgeId AND br.status = 'CHECKED_IN'
+    `);
+
+  const alerts = [];
+  for (const row of result.recordset) {
+    const deadline = lateCheckout.checkoutDeadline({
+      checkinMode: row.checkin_mode,
+      checkOutTime: toClockTime(row.check_out_time),
+      checkInDate: toIsoDate(row.check_in_date),
+      checkOutDate: toIsoDate(row.check_out_date),
+      actualCheckInAt: row.actual_check_in_at,
+    });
+    const minutesUntil = Math.round((deadline.getTime() - at.getTime()) / 60000);
+    if (minutesUntil > windowMinutes) continue;
+
+    const overdue = minutesUntil <= 0;
+    // Asia/Kolkata — the same wall clock the deadline itself is pinned to
+    // (see lateCheckout.js), so the time named in the message is the one
+    // printed on the room's own checkout policy, not the server's own zone.
+    const dueTimeLabel = deadline.toLocaleTimeString('en-IN', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata',
+    });
+
+    alerts.push({
+      bookingId: row.booking_id,
+      bookingRoomId: row.booking_room_id,
+      roomId: row.room_id,
+      roomNumber: row.room_number,
+      guestName: row.guest_name,
+      deadline: deadline.toISOString(),
+      minutesUntil,
+      overdue,
+      message: overdue
+        ? `Room ${row.room_number} · ${row.guest_name} — check-out is overdue by ${lateCheckout.lateLabel(lateCheckout.overdueMinutes(deadline, at))} (was due ${dueTimeLabel}).`
+        : `Room ${row.room_number} · ${row.guest_name} — check-out time approaching, due ${dueTimeLabel}.`,
+    });
+  }
+
+  // Most pressing first — the longest overdue, then the soonest due.
+  alerts.sort((a, b) => a.minutesUntil - b.minutesUntil);
+  return alerts;
+}
+
+// The stays due to arrive today, early enough to be worth a word before the
+// desk is surprised by a walk-in — the check-in mirror of listCheckoutAlerts
+// above. check_in_date <= today rather than = today on purpose: a booking
+// still BOOKED past its own arrival date (nobody checked them in, nobody
+// cancelled) is an unresolved no-show, and it keeps surfacing with a growing
+// overdue figure rather than silently dropping off the list once the
+// calendar date moves on — the same persistence listCheckoutAlerts gives an
+// overdue checkout.
+async function listCheckinAlerts(lodgeId, { windowMinutes = 60, at = new Date() } = {}) {
+  const pool = await getPool();
+  const today = lateCheckout.isoDateInLodgeZone(at);
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('today', sql.Date, today)
+    .query(`
+      SELECT br.id AS booking_room_id, br.booking_id, br.room_id, r.room_number,
+             br.check_in_date, b.guest_name, l.check_in_time
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      JOIN dbo.rooms r ON r.id = br.room_id
+      JOIN dbo.lodges l ON l.id = b.lodge_id
+      WHERE b.lodge_id = @lodgeId AND br.status = 'BOOKED' AND br.check_in_date <= @today
+    `);
+
+  const alerts = [];
+  for (const row of result.recordset) {
+    const deadline = lateCheckout.atLocalTime(toIsoDate(row.check_in_date), toClockTime(row.check_in_time));
+    const minutesUntil = Math.round((deadline.getTime() - at.getTime()) / 60000);
+    if (minutesUntil > windowMinutes) continue;
+
+    const overdue = minutesUntil <= 0;
+    const dueTimeLabel = deadline.toLocaleTimeString('en-IN', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata',
+    });
+
+    alerts.push({
+      bookingId: row.booking_id,
+      bookingRoomId: row.booking_room_id,
+      roomId: row.room_id,
+      roomNumber: row.room_number,
+      guestName: row.guest_name,
+      deadline: deadline.toISOString(),
+      minutesUntil,
+      overdue,
+      message: overdue
+        ? `Room ${row.room_number} · ${row.guest_name} — arrival is overdue by ${lateCheckout.lateLabel(lateCheckout.overdueMinutes(deadline, at))} (expected ${dueTimeLabel}).`
+        : `Room ${row.room_number} · ${row.guest_name} — arrival time approaching, expected ${dueTimeLabel}.`,
+    });
+  }
+
+  alerts.sort((a, b) => a.minutesUntil - b.minutesUntil);
+  return alerts;
+}
+
 // Checks out one room (roomId) or every room still in. lateCharge is whatever
 // reception decided, including 0 for "waived" — it is never recomputed from the
 // policy here. The policy only ever produced a suggestion, and overriding it is
@@ -3171,6 +3294,8 @@ module.exports = {
   createBooking,
   checkIn,
   getLateCheckout,
+  listCheckoutAlerts,
+  listCheckinAlerts,
   checkOut,
   updateBooking,
   cancelBooking,

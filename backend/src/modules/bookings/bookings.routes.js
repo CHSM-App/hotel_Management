@@ -16,6 +16,8 @@ const {
   checkInHandler,
   updateBookingHandler,
   getLateCheckoutHandler,
+  listCheckoutAlertsHandler,
+  listCheckinAlertsHandler,
   checkOutHandler,
   cancelBookingHandler,
   listDraftsHandler,
@@ -47,6 +49,9 @@ router.get('/available-rooms', authenticate, staff, listAvailableRoomsHandler);
 router.get('/available-beds', authenticate, staff, listAvailableBedsHandler);
 router.get('/price-quote', authenticate, staff, priceQuoteHandler);
 router.get('/tape-chart', authenticate, staff, getTapeChartHandler);
+// Ahead of /:id for the same reason as /drafts above.
+router.get('/checkout-alerts', authenticate, staff, listCheckoutAlertsHandler);
+router.get('/checkin-alerts', authenticate, staff, listCheckinAlertsHandler);
 router.get('/:id', authenticate, staff, getBookingHandler);
 router.get('/:id/available-rooms', authenticate, staff, listAvailableRoomsForBookingHandler);
 router.get('/:id/late-checkout', authenticate, staff, getLateCheckoutHandler);

@@ -33,8 +33,8 @@ CREATE TABLE dbo.users (
     id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
     lodge_id            BIGINT NULL REFERENCES dbo.lodges(id),
     name                NVARCHAR(200) NOT NULL,
-    email               NVARCHAR(255) NULL UNIQUE,
-    phone               NVARCHAR(20) NOT NULL UNIQUE,
+    email               NVARCHAR(255) NULL,
+    phone               NVARCHAR(20) NOT NULL,
     password_hash       NVARCHAR(255) NOT NULL,
     role                NVARCHAR(20) NOT NULL DEFAULT 'OWNER'
         CONSTRAINT ck_users_role CHECK (role IN ('SUPERADMIN', 'OWNER', 'RECEPTION', 'KITCHEN')),
@@ -1094,7 +1094,12 @@ WHERE lodge_id IS NULL AND role_key = 'KITCHEN';
 -- uses: emails stay unique among rows that have one, and any number of rows may
 -- have none. The original constraint is auto-named, so it's looked up rather
 -- than dropped by name.
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_users_email' AND object_id = OBJECT_ID('dbo.users'))
+--
+-- Both email and phone (below) were originally unique across the whole table,
+-- which blocked the same person from staffing two different lodges. Staff
+-- only need to be unique within their own lodge, so both indexes are scoped
+-- to (lodge_id, ...) and skip SUPERADMIN rows (lodge_id IS NULL).
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_users_lodge_email' AND object_id = OBJECT_ID('dbo.users'))
 BEGIN
     DECLARE @emailConstraint SYSNAME = (
         SELECT TOP 1 kc.name
@@ -1106,8 +1111,35 @@ BEGIN
     IF @emailConstraint IS NOT NULL
         EXEC('ALTER TABLE dbo.users DROP CONSTRAINT ' + @emailConstraint);
 
-    EXEC('CREATE UNIQUE INDEX uq_users_email ON dbo.users(email) WHERE email IS NOT NULL');
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_users_email' AND object_id = OBJECT_ID('dbo.users'))
+        DROP INDEX uq_users_email ON dbo.users;
+
+    EXEC('CREATE UNIQUE INDEX uq_users_lodge_email ON dbo.users(lodge_id, email) WHERE lodge_id IS NOT NULL AND email IS NOT NULL');
 END
+
+-- Same story for phone: it shipped as a bare table-level UNIQUE constraint,
+-- so one phone number could only ever staff one lodge in the system.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_users_lodge_phone' AND object_id = OBJECT_ID('dbo.users'))
+BEGIN
+    DECLARE @phoneConstraint SYSNAME = (
+        SELECT TOP 1 kc.name
+        FROM sys.key_constraints kc
+        JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+        JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+        WHERE kc.parent_object_id = OBJECT_ID('dbo.users') AND kc.type = 'UQ' AND c.name = 'phone'
+    );
+    IF @phoneConstraint IS NOT NULL
+        EXEC('ALTER TABLE dbo.users DROP CONSTRAINT ' + @phoneConstraint);
+
+    EXEC('CREATE UNIQUE INDEX uq_users_lodge_phone ON dbo.users(lodge_id, phone) WHERE lodge_id IS NOT NULL');
+END
+
+-- A staff edit that left the email field blank used to write '' rather than
+-- NULL. The filtered index above only excludes NULL, so a second staff member
+-- edited the same way collided with the first on email = '' and crashed the
+-- save with a raw constraint-violation error. Clears the leftover '' rows back
+-- to NULL now that the write path is fixed.
+UPDATE dbo.users SET email = NULL WHERE email = '';
 
 -- ---------------------------------------------------------------------------
 -- Single-link ordering: PIN brute-force defence

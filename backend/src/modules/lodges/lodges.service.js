@@ -20,14 +20,6 @@ async function createLodgeWithOwner(input) {
       throw new ApiError('That slug is already taken.', 409, 'slug');
     }
 
-    const existingPhone = await new sql.Request(transaction)
-      .input('phone', sql.NVarChar, input.ownerPhone)
-      .query('SELECT id FROM dbo.users WHERE phone = @phone');
-
-    if (existingPhone.recordset.length > 0) {
-      throw new ApiError('A user with that phone number already exists.', 409, 'ownerPhone');
-    }
-
     const lodgeResult = await new sql.Request(transaction)
       .input('name', sql.NVarChar, input.lodgeName)
       .input('slug', sql.NVarChar, input.slug)

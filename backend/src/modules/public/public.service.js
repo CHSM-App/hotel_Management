@@ -13,7 +13,7 @@ async function getLodgeBySlug(slug) {
     .query(`
       SELECT id, name, slug, phone, whatsapp_number, address, city, state,
              has_rooms, serves_food, food_room_service, food_table_service, has_events,
-             checkin_mode, latitude, longitude, logo_path
+             has_other_services, checkin_mode, latitude, longitude, logo_path
       FROM dbo.lodges
       WHERE slug = @slug AND is_active = 1
     `);
@@ -37,6 +37,7 @@ async function getLodgeBySlug(slug) {
     foodRoomService: !!row.food_room_service,
     foodTableService: !!row.food_table_service,
     hasEvents: !!row.has_events,
+    hasOtherServices: !!row.has_other_services,
     // How a stay is counted — 24 hours from arrival, by the night, or a
     // fixed cycle — and the pin for a directions link. The exact clock times
     // stay off the page; the desk quotes those when a booking is made.
@@ -307,6 +308,33 @@ async function listPublicRoomAddons(lodgeId) {
     id: row.id,
     name: row.name,
     chargePerNight: Number(row.charge_per_night),
+  }));
+}
+
+// The extras sold per use rather than per night or per function — a private
+// pool, a games room — same idea as a venue add-on but with no booking behind
+// it: a guest just shows up and pays for the use. Laundry is excluded: it has
+// its own guest-facing flow and isn't something a visitor browsing the page
+// would "enquire" about the way a pool slot or a round of pool table is.
+async function listPublicServices(lodgeId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT id, name, unit_label, price, image_filename
+      FROM dbo.lodge_services
+      WHERE lodge_id = @lodgeId AND is_active = 1 AND is_laundry = 0
+      ORDER BY name ASC
+    `);
+  return result.recordset.map((row) => ({
+    id: row.id,
+    name: row.name,
+    unitLabel: row.unit_label,
+    price: Number(row.price),
+    // A bare filename the browser resolves against the /service-images mount,
+    // the same pattern as a dish or room photo.
+    image: row.image_filename ?? null,
   }));
 }
 
@@ -920,6 +948,7 @@ module.exports = {
   listPublicVenues,
   listPublicAddons,
   listPublicRoomAddons,
+  listPublicServices,
   getPublicMenu,
   getLodgeOrderingContext,
   getTableOrderingContext,

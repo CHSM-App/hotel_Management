@@ -80,6 +80,7 @@ function availabilityOf(type) {
 const roomImageUrl = (filename) => `${API_BASE}/room-images/${filename}`;
 const venueImageUrl = (filename) => `${API_BASE}/venue-images/${filename}`;
 const menuImageUrl = (filename) => `${API_BASE}/menu-images/${filename}`;
+const serviceImageUrl = (filename) => `${API_BASE}/service-images/${filename}`;
 // logoUrl already carries the /hotel-logos/ prefix from the API (see
 // public.service.js), unlike the filenames above.
 const logoUrl = (lodge) => (lodge.logoUrl ? `${API_BASE}${lodge.logoUrl}` : null);
@@ -138,6 +139,60 @@ function VenueCard({ lodge, venue, onOpenPhotos, onEnquireEvent }) {
           >
             Enquire for Venue
           </button>
+        ) : (
+          <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the property'} to enquire.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Something sold per use rather than per night or per function — a private
+// pool slot, a round on the games table. No dates or booking behind it, so
+// the card is the same shape as a venue's but the enquiry is a single
+// pre-filled WhatsApp message rather than the full room/event form.
+function ServiceCard({ lodge, service, onOpenPhotos }) {
+  const message = `Hi! I'd like to know more about ${service.name} at ${lodge.name}.`;
+  const whatsappLink = buildWhatsAppLink(lodge.whatsappNumber, message);
+  const telLink = lodge.phone ? `tel:${lodge.phone}` : null;
+
+  return (
+    <div className="lodge-public__room">
+      <div className="lodge-public__room-cover">
+        {service.image ? (
+          <button
+            type="button"
+            className="lodge-public__room-cover-btn"
+            onClick={() => onOpenPhotos([serviceImageUrl(service.image)], 0)}
+            aria-label={`View photo of ${service.name}`}
+          >
+            <img src={serviceImageUrl(service.image)} alt={`${service.name} at ${lodge.name}`} className="lodge-public__room-img" />
+          </button>
+        ) : (
+          <div className="lodge-public__room-placeholder">{service.name}</div>
+        )}
+      </div>
+
+      <div className="lodge-public__room-body">
+        <div className="lodge-public__room-top">
+          <div>
+            <div className="lodge-public__room-number">{service.name}</div>
+            <div className="lodge-public__room-category">Other service</div>
+          </div>
+          <div className="lodge-public__room-rate">
+            {formatPrice(service.price)}
+            <span className="lodge-public__room-rate-unit"> /{service.unitLabel}</span>
+          </div>
+        </div>
+
+        {whatsappLink ? (
+          <a className="site-btn site-btn--whatsapp" href={whatsappLink} target="_blank" rel="noopener noreferrer">
+            Enquire on WhatsApp
+          </a>
+        ) : telLink ? (
+          <a className="site-btn site-btn--whatsapp" href={telLink}>
+            Call {lodge.phone}
+          </a>
         ) : (
           <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the property'} to enquire.</p>
         )}
@@ -723,7 +778,7 @@ export default function LodgePublicPage() {
   const [heroLoaded, setHeroLoaded] = useState(false);
   useEffect(() => {
     if (!data || typeof IntersectionObserver === 'undefined') return undefined;
-    const targets = ['home', 'rooms', 'events', 'menu', 'reviews', 'contact'].map((id) => document.getElementById(id)).filter(Boolean);
+    const targets = ['home', 'rooms', 'events', 'menu', 'services', 'reviews', 'contact'].map((id) => document.getElementById(id)).filter(Boolean);
     if (targets.length === 0) return undefined;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -808,7 +863,7 @@ export default function LodgePublicPage() {
     );
   }
 
-  const { lodge, roomTypes, roomAddons = [], venues = [], addons = [], menu = [], reviews = [] } = data;
+  const { lodge, roomTypes, roomAddons = [], venues = [], addons = [], menu = [], reviews = [], otherServices = [] } = data;
   const generalMessage = `Hi! I'd like to know more about ${lodge.name}.`;
 
   // Which parts of the page this property has. The nav strip only appears
@@ -817,6 +872,7 @@ export default function LodgePublicPage() {
     lodge.hasRooms && { id: 'rooms', label: 'Rooms' },
     lodge.hasEvents && venues.length > 0 && { id: 'events', label: 'Venues & functions' },
     lodge.servesFood && menu.length > 0 && { id: 'menu', label: 'Menu' },
+    lodge.hasOtherServices && otherServices.length > 0 && { id: 'services', label: 'Other services' },
     reviews.length > 0 && { id: 'reviews', label: 'Guest reviews' },
   ].filter(Boolean);
   const nothingListed = sections.length === 0 && roomTypes.length === 0;
@@ -872,6 +928,13 @@ export default function LodgePublicPage() {
         title: allVegMenu ? 'Pure-veg restaurant' : 'Restaurant',
         detail: `${totalDishes} dish${totalDishes === 1 ? '' : 'es'} across ${menu.length} section${menu.length === 1 ? '' : 's'}${lodge.foodRoomService ? ' · room service' : ''}`,
         cta: 'See menu',
+      },
+    lodge.hasOtherServices &&
+      otherServices.length > 0 && {
+        id: 'services',
+        title: 'Other services',
+        detail: `${otherServices.length} service${otherServices.length === 1 ? '' : 's'} available`,
+        cta: 'See services',
       },
     {
       id: 'contact',
@@ -1275,6 +1338,23 @@ export default function LodgePublicPage() {
             </p>
           </div>
           <MenuCard menu={menu} onOpenPhotos={openLightbox} />
+          </div>
+        </section>
+      )}
+
+      {lodge.hasOtherServices && otherServices.length > 0 && (
+        <section className="lodge-public__services site-section site-section--tinted" id="services">
+          <div className="site-container">
+          <div className="lodge-public__section-head">
+            <span className="lodge-public__eyebrow">More to enjoy</span>
+            <h2>Other services</h2>
+            <p>Extras billed per use — message us to check availability.</p>
+          </div>
+          <div className="lodge-public__room-grid">
+            {otherServices.map((service) => (
+              <ServiceCard key={service.id} lodge={lodge} service={service} onOpenPhotos={openLightbox} />
+            ))}
+          </div>
           </div>
         </section>
       )}

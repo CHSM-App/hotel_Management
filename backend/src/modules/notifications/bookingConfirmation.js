@@ -5,20 +5,24 @@ const { toClockTime } = require('../rooms/checkoutPolicy.service');
 
 // The WhatsApp confirmation a guest gets when their booking is written down.
 //
-// One approved template serves both a stay and a function, because the
-// message says the same thing about either: who, where, which booking, when
-// it starts, when it ends, how to get there, whom to call. The template's
-// seven variables, in order:
+// One approved template serves both a stay and a function — for a stay,
+// {{3}} carries the room number(s); for a function, the same slot carries
+// the venue name, since neither booking kind shows a guest its booking ID
+// anywhere else in the system (same reasoning as cancellationNotice.js's
+// room_no and stayReminder.js's days_away: the template says something
+// different depending on the caller, not something generic). The template's
+// ten variables, in order:
 //
-//   {{1}} customer        {{5}} checkout_time
-//   {{2}} rest_name       {{6}} location
-//   {{3}} booking_id      {{7}} phone
-//   {{4}} checkin_time
+//   {{1}} customer         {{6}} advance_paid
+//   {{2}} property_name    {{7}} total_amount
+//   {{3}} room_no/venue    {{8}} balance_due
+//   {{4}} checkin_time     {{9}} directions
+//   {{5}} checkout_time    {{10}} phone
 //
-// "Dear {{1}}, Thank you for choosing Us. Your booking for {{2}} is
-//  confirmed. Booking ID: {{3}} / Check-in Date & Time: {{4}} /
-//  Check-out Date & Time: {{5}} / Property Directions: {{6}} /
-//  Property Phone Number: {{7}} ..."
+// "Dear {{1}}, Thank you for choosing us! Your booking for {{2}} is
+//  confirmed. Room No: {{3}} / Check-in: {{4}} / Check-out: {{5}} /
+//  Advance Paid: ₹{{6}} / Total Amount: ₹{{7}} / Balance Due: ₹{{8}} /
+//  Directions: {{9}} / Contact: {{10}} ..."
 //
 // Best-effort, by design. The booking is already committed when this runs,
 // and a provider outage must not turn into "the booking failed" at the desk —
@@ -116,34 +120,51 @@ function lodgeContact(lodge) {
   return lodge.phone || lodge.whatsapp_number || '-';
 }
 
-// The seven template values for a stay, in template order. Pure, so it can be
-// checked without a database; booking is the dbo.bookings row, lodge the
+// Plain digits, no currency mark — the template's own text already carries
+// the ₹ sign in front of each of these three slots, same convention
+// cancellationNotice.js's refundModeAmount uses.
+function money(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+// The ten template values for a stay, in template order. Pure, so it can be
+// checked without a database; booking is the dbo.bookings row (plus
+// room_numbers, advance_amount, total_price — see loadBooking), lodge the
 // dbo.lodges row.
 function buildStaySample(booking, lodge) {
   const times = stayTimes(booking, lodge);
+  const advance = Number(booking.advance_amount || 0);
+  const total = Number(booking.total_price || 0);
   return [
     booking.guest_name,
     lodge.name,
-    `#${booking.id}`,
+    booking.room_numbers,
     times.checkIn,
     times.checkOut,
+    money(advance),
+    money(total),
+    money(total - advance),
     directionsFor(lodge),
     lodgeContact(lodge),
   ].map(clean);
 }
 
-// The same seven for a function. `event` is the API shape getEventBooking
-// returns (camelCase, ISO instants), which is what the events service holds
-// at the moment it fires this. The venue name rides with the property name so
-// a lodge with a hall and a lawn tells the organiser which one they have.
+// The same ten for a function. `event` is the API shape getEventBooking
+// returns (camelCase, ISO instants, and already-computed advanceAmount/
+// totalAmount/balanceDue — see events.service.js), which is what the events
+// service holds at the moment it fires this. venueName takes the room-number
+// slot; the property name alone (not "name (venue)") now that the venue has
+// its own slot to be named in.
 function buildEventSample(event, lodge) {
-  const where = event.venueName ? `${lodge.name} (${event.venueName})` : lodge.name;
   return [
     event.organiserName,
-    where,
-    `EV-${event.id}`,
+    lodge.name,
+    event.venueName || '-',
     formatInstantIST(event.startAt),
     formatInstantIST(event.endAt),
+    money(event.advanceAmount),
+    money(event.totalAmount),
+    money(event.balanceDue ?? Number(event.totalAmount || 0) - Number(event.advanceAmount || 0)),
     directionsFor(lodge),
     lodgeContact(lodge),
   ].map(clean);
@@ -170,9 +191,21 @@ async function loadBooking(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT id, guest_name, guest_phone, check_in_date, check_out_date
-      FROM dbo.bookings
-      WHERE id = @bookingId AND lodge_id = @lodgeId
+      SELECT b.id, b.guest_name, b.guest_phone, b.check_in_date, b.check_out_date,
+             b.advance_amount, b.total_price,
+             -- Every room the booking holds, same STRING_AGG shape
+             -- bookings.service.js's own listBookings/mapBooking uses for
+             -- roomNumbers — a fresh booking's rooms are all still 'BOOKED'
+             -- (confirmation fires right after createBooking), but the
+             -- CANCELLED exclusion is kept for consistency with that query.
+             (
+               SELECT STRING_AGG(r.room_number, ', ') WITHIN GROUP (ORDER BY br.id)
+               FROM dbo.booking_rooms br
+               JOIN dbo.rooms r ON r.id = br.room_id
+               WHERE br.booking_id = b.id AND br.status <> 'CANCELLED'
+             ) AS room_numbers
+      FROM dbo.bookings b
+      WHERE b.id = @bookingId AND b.lodge_id = @lodgeId
     `);
   return result.recordset[0] ?? null;
 }
