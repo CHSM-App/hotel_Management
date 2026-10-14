@@ -143,18 +143,20 @@ function login(credentials) {
 // sees one generic error either way.
 
 // Step 1: look the account up and send it a code. Takes the same identifier
-// shape as login() (phone or email), scoped to the same lodge-only roles, so
-// this can never touch a SUPERADMIN account.
-async function sendForgotPasswordOtp(identifier) {
+// shape as login() (phone or email). `isAllowedRole` and `door` are what let
+// this same core serve two separate doors below — a lodge-staff one and a
+// SUPERADMIN one — without either being reachable through the other's door
+// name or lockout budget.
+async function sendForgotPasswordOtpFor(identifier, isAllowedRole, door) {
   // Same durable per-identifier lockout the login doors use, on its own
   // "door" name — this is the only check standing between knowing a phone
   // or email and taking over that account, so it gets the same defence a
   // wrong password would.
-  await loginLockout.assertNotLockedOut(identifier, 'FORGOT');
+  await loginLockout.assertNotLockedOut(identifier, door);
 
   const user = await findUserByIdentifier(identifier);
-  if (!user || !user.is_active || !isLodgeRole(user.role)) {
-    await loginLockout.recordFailure(identifier, 'FORGOT');
+  if (!user || !user.is_active || !isAllowedRole(user.role)) {
+    await loginLockout.recordFailure(identifier, door);
     throw new ApiError('No account found for that phone or email.', 404);
   }
 
@@ -188,18 +190,18 @@ async function sendForgotPasswordOtp(identifier) {
 // Step 2: spend the code and write the new password. A wrong or missing code
 // counts against the identifier's lockout budget exactly like a wrong
 // password would, since it is the thing standing in for one here.
-async function resetPasswordByIdentifier(identifier, otp, newPassword) {
-  await loginLockout.assertNotLockedOut(identifier, 'FORGOT');
+async function resetPasswordByIdentifierFor(identifier, otp, newPassword, isAllowedRole, door) {
+  await loginLockout.assertNotLockedOut(identifier, door);
 
   const user = await findUserByIdentifier(identifier);
-  if (!user || !user.is_active || !isLodgeRole(user.role)) {
-    await loginLockout.recordFailure(identifier, 'FORGOT');
+  if (!user || !user.is_active || !isAllowedRole(user.role)) {
+    await loginLockout.recordFailure(identifier, door);
     throw new ApiError('No account found for that phone or email.', 404);
   }
 
   const { valid, reason } = await verifyAndConsumeOtp({ userId: user.id, otp, purpose: FORGOT_PASSWORD });
   if (!valid) {
-    await loginLockout.recordFailure(identifier, 'FORGOT');
+    await loginLockout.recordFailure(identifier, door);
     throw new ApiError(reason, 400);
   }
 
@@ -211,7 +213,27 @@ async function resetPasswordByIdentifier(identifier, otp, newPassword) {
     .input('passwordHash', sql.NVarChar, passwordHash)
     .query('UPDATE dbo.users SET password_hash = @passwordHash WHERE id = @userId');
 
-  await loginLockout.clearFailures(identifier, 'FORGOT');
+  await loginLockout.clearFailures(identifier, door);
+}
+
+// Lodge staff only — reached from the public /login page.
+function sendForgotPasswordOtp(identifier) {
+  return sendForgotPasswordOtpFor(identifier, isLodgeRole, 'FORGOT');
+}
+
+function resetPasswordByIdentifier(identifier, otp, newPassword) {
+  return resetPasswordByIdentifierFor(identifier, otp, newPassword, isLodgeRole, 'FORGOT');
+}
+
+// SUPERADMIN only — reached from the hidden /vt-internal login. Its own door
+// name keeps its lockout budget separate from the lodge-staff one above, the
+// same way adminLogin's 'ADMIN' door is separate from login's 'STAFF'.
+function sendAdminForgotPasswordOtp(identifier) {
+  return sendForgotPasswordOtpFor(identifier, (role) => role === 'SUPERADMIN', 'ADMIN_FORGOT');
+}
+
+function resetAdminPasswordByIdentifier(identifier, otp, newPassword) {
+  return resetPasswordByIdentifierFor(identifier, otp, newPassword, (role) => role === 'SUPERADMIN', 'ADMIN_FORGOT');
 }
 
 // Vengurla Tech only — the hidden /vtadmin page. Counted separately from the
@@ -236,4 +258,13 @@ async function refresh(userClaims) {
   return issueToken(user);
 }
 
-module.exports = { login, adminLogin, sendForgotPasswordOtp, resetPasswordByIdentifier, refresh, touchLastSeen };
+module.exports = {
+  login,
+  adminLogin,
+  sendForgotPasswordOtp,
+  resetPasswordByIdentifier,
+  sendAdminForgotPasswordOtp,
+  resetAdminPasswordByIdentifier,
+  refresh,
+  touchLastSeen,
+};

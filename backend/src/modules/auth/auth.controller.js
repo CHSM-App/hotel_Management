@@ -67,10 +67,42 @@ async function forgotPasswordHandler(req, res, next) {
   }
 }
 
+async function sendAdminForgotPasswordOtpHandler(req, res, next) {
+  try {
+    const parsed = sendForgotPasswordOtpSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const result = await authService.sendAdminForgotPasswordOtp(parsed.data.identifier.trim());
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function adminForgotPasswordHandler(req, res, next) {
+  try {
+    const parsed = forgotPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    await authService.resetAdminPasswordByIdentifier(
+      parsed.data.identifier.trim(),
+      parsed.data.otp,
+      parsed.data.newPassword
+    );
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   loginHandler,
   adminLoginHandler,
   refreshHandler,
   sendForgotPasswordOtpHandler,
   forgotPasswordHandler,
+  sendAdminForgotPasswordOtpHandler,
+  adminForgotPasswordHandler,
 };

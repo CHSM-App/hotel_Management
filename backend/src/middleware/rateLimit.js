@@ -159,6 +159,23 @@ const forgotPasswordLimiter = createRateLimiter({
   message: 'Too many password reset attempts. Please wait a few minutes and try again.',
 });
 
+// The SUPERADMIN forgot-password doors, mirroring the pair above one-for-one
+// but counted separately — same reasoning as adminLoginAttemptLimiter vs
+// loginAttemptLimiter: this door opens every property, so it gets its own,
+// tighter budget rather than sharing one with the lodge-staff flow.
+const adminForgotPasswordOtpSendLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 6,
+  message: 'Too many code requests. Please wait a few minutes and try again.',
+  countWhen: (res) => res.statusCode < 400,
+});
+
+const adminForgotPasswordLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 6,
+  message: 'Too many password reset attempts. Please wait a few minutes and try again.',
+});
+
 // Generous: a legitimate client refreshes a few times an hour. This only caps
 // a stolen token being replayed in a loop.
 const refreshLimiter = createRateLimiter({
@@ -176,4 +193,6 @@ module.exports = {
   otpSendLimiter,
   forgotPasswordOtpSendLimiter,
   forgotPasswordLimiter,
+  adminForgotPasswordOtpSendLimiter,
+  adminForgotPasswordLimiter,
 };

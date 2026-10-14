@@ -106,15 +106,16 @@ async function listLodges() {
 
   const result = await pool.request().query(`
     SELECT
-      l.id, l.name, l.slug, l.city, l.state, l.latitude, l.longitude, l.checkin_mode, l.is_gst_registered,
+      l.id, l.name, l.slug, l.phone AS lodge_phone, l.city, l.state, l.latitude, l.longitude,
+      l.checkin_mode, l.is_gst_registered,
       l.is_specified_premises, l.is_active, l.created_at,
       l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
       l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry,
       l.logo_path, l.show_logo_on_receipt,
-      u.name AS owner_name, u.phone AS owner_phone
+      u.name AS owner_name, u.phone AS owner_phone, u.email AS owner_email
     FROM dbo.lodges l
     OUTER APPLY (
-      SELECT TOP 1 name, phone
+      SELECT TOP 1 name, phone, email
       FROM dbo.users
       WHERE lodge_id = l.id AND role = 'OWNER'
       ORDER BY created_at

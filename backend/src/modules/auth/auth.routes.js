@@ -5,6 +5,8 @@ const {
   refreshHandler,
   sendForgotPasswordOtpHandler,
   forgotPasswordHandler,
+  sendAdminForgotPasswordOtpHandler,
+  adminForgotPasswordHandler,
 } = require('./auth.controller');
 const { authenticate } = require('../../middleware/authenticate');
 const {
@@ -12,6 +14,8 @@ const {
   adminLoginAttemptLimiter,
   forgotPasswordOtpSendLimiter,
   forgotPasswordLimiter,
+  adminForgotPasswordOtpSendLimiter,
+  adminForgotPasswordLimiter,
   refreshLimiter,
 } = require('../../middleware/rateLimit');
 
@@ -35,5 +39,11 @@ router.post('/refresh', refreshLimiter, authenticate, refreshHandler);
 // see auth.service.js.
 router.post('/forgot-password/send-otp', forgotPasswordOtpSendLimiter, sendForgotPasswordOtpHandler);
 router.post('/forgot-password', forgotPasswordLimiter, forgotPasswordHandler);
+
+// Same split, for the SUPERADMIN door — see auth.service.js's
+// sendAdminForgotPasswordOtp/resetAdminPasswordByIdentifier. Its own limiters
+// so a busy night on the lodge side never spends the admin door's budget.
+router.post('/admin-forgot-password/send-otp', adminForgotPasswordOtpSendLimiter, sendAdminForgotPasswordOtpHandler);
+router.post('/admin-forgot-password', adminForgotPasswordLimiter, adminForgotPasswordHandler);
 
 module.exports = router;
