@@ -191,6 +191,136 @@ const guestRow = (o) => [
   `${sheetDate(o.deliveredAt)} ${sheetTime(o.deliveredAt)}`.trim(), Number(o.total), o.washedBy || '', o.vendorPhone || '', o.washCharge ?? '', o.note || '',
 ];
 
+// The two ways the guest laundry list can be read: the spreadsheet, for
+// scanning many orders and their columns at once, and cards, one order each,
+// for the desk working through them one at a time.
+const GUEST_VIEWS = [
+  {
+    key: 'sheet',
+    label: 'Table view',
+    icon: (
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden="true">
+        <rect x="2.5" y="3.5" width="15" height="13" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+        <line x1="2.5" y1="8" x2="17.5" y2="8" stroke="currentColor" strokeWidth="1.6" />
+        <line x1="2.5" y1="12.3" x2="17.5" y2="12.3" stroke="currentColor" strokeWidth="1.6" />
+        <line x1="7.3" y1="3.5" x2="7.3" y2="16.5" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+    ),
+  },
+  {
+    key: 'cards',
+    label: 'Cards view',
+    icon: (
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden="true">
+        <rect x="2.5" y="2.5" width="6.5" height="6.5" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+        <rect x="11" y="2.5" width="6.5" height="6.5" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+        <rect x="2.5" y="11" width="6.5" height="6.5" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+        <rect x="11" y="11" width="6.5" height="6.5" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+    ),
+  },
+];
+
+// The status chip's colour on a card: in the wash, back and waiting for the
+// guest, handed over, or cancelled.
+const GUEST_STATUS_TONE = { RECEIVED: 'wash', WASHING: 'wash', READY: 'back', DELIVERED: 'done', CANCELLED: 'off' };
+
+// One order as a card: the same facts as its row in the table, laid out to be
+// read rather than scanned — who and which tag at the top, the clothes, the
+// times, and the amount with what can be done next along the foot.
+function LaundryCard({ order, busy, onReceive, onDeliver, onCancel }) {
+  const sent = `${sheetDate(order.receivedAt)}, ${sheetTime(order.receivedAt)}`;
+  const handed = order.deliveredAt ? `${sheetDate(order.deliveredAt)}, ${sheetTime(order.deliveredAt)}` : '';
+  const open = isOpenOrder(order);
+  return (
+    <li className="lg-card">
+      <div className="lg-card__top">
+        <span className="lg-card__tag">
+          Tag <b>{order.tagNumber}</b>
+        </span>
+        <span className={`lg-card__status lg-card__status--${GUEST_STATUS_TONE[order.status] || 'done'}`}>
+          {GUEST_STATUS[order.status] || order.status}
+        </span>
+      </div>
+
+      <div className="lg-card__who">
+        <div className="lg-card__guest">{order.guestName || 'Guest'}</div>
+        <div className="lg-card__room">{order.roomNumber ? `Room ${order.roomNumber}` : 'Walk-in'}</div>
+      </div>
+
+      <div className="lg-card__clothes">
+        <div className="lg-card__clothes-head">
+          <span>Clothes</span>
+          <span>
+            {order.pieces} {order.pieces === 1 ? 'piece' : 'pieces'}
+          </span>
+        </div>
+        <div className="lg-card__chips">
+          {order.items.map((i) => (
+            <span className="lg-card__chip" key={i.id ?? i.name}>
+              {i.name} <small>×{i.quantity}</small>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <dl className="lg-card__facts">
+        {order.receivedAt && (
+          <>
+            <dt>Sent to wash</dt>
+            <dd>{sent}</dd>
+          </>
+        )}
+        {handed && (
+          <>
+            <dt>Handed over</dt>
+            <dd>{handed}</dd>
+          </>
+        )}
+        {order.washedBy && (
+          <>
+            <dt>Washed by</dt>
+            <dd>{order.washedBy}</dd>
+          </>
+        )}
+        {order.note && (
+          <>
+            <dt>Note</dt>
+            <dd>{order.note}</dd>
+          </>
+        )}
+      </dl>
+
+      <div className="lg-card__foot">
+        <div className="lg-card__amount">
+          <small>Amount</small>
+          <b>{formatPrice(order.total)}</b>
+        </div>
+        {open ? (
+          <div className="lg-card__actions">
+            <button type="button" className="lg-card__btn lg-card__btn--quiet" disabled={busy} onClick={onCancel}>
+              Cancel
+            </button>
+            {order.status === 'READY' ? (
+              <button type="button" className="lg-card__btn" disabled={busy} onClick={onDeliver}>
+                Hand over
+              </button>
+            ) : (
+              <button type="button" className="lg-card__btn" disabled={busy} onClick={onReceive}>
+                Receive
+              </button>
+            )}
+          </div>
+        ) : (
+          <span className="lg-card__done">
+            {order.status === 'CANCELLED' ? 'Cancelled — not charged' : 'Charge sent to Services to bill'}
+          </span>
+        )}
+      </div>
+    </li>
+  );
+}
+
 // A date cell shows "08 Oct 2026", which does not sort as a date; these are
 // what the date and time columns sort on instead.
 const timeOfDay = (value) => {
@@ -983,6 +1113,8 @@ function GuestLaundryTab({ token }) {
   // Opens on what is still out; the rest is one choice away under Show.
   const [filter, setFilter] = useState('WASH');
   const [search, setSearch] = useState('');
+  // Always opens on the table; cards are there for the visit they are asked for.
+  const [view, setView] = useState('sheet');
   const [error, setError] = useState('');
   const [form, setForm] = useState(null); // new order
   const [formError, setFormError] = useState('');
@@ -1098,7 +1230,6 @@ function GuestLaundryTab({ token }) {
 
   // ---- the entry form: every garment is a row with its own price -----------
 
-  const priceOf = new Map(recent.map((g) => [g.name.toLowerCase(), g.price]));
   const starters = [...new Set([...recent.map((g) => g.name), ...COMMON_GARMENTS])].slice(0, 10);
 
   const lines = form?.lines ?? [];
@@ -1122,20 +1253,19 @@ function GuestLaundryTab({ token }) {
     });
   };
 
-  // Tapping a garment adds a row at the price it was last charged. Tapping the
-  // same one again adds a piece instead of a second row.
+  // Tapping a garment adds a row with the price left empty, to be typed for
+  // this order. It used to be filled in with whatever that garment cost last
+  // time, and a stale price carried onto a new order went unnoticed. Tapping
+  // the same one again adds a piece instead of a second row.
   const addLine = (name = '') =>
     setForm((f) => {
       const same = name && f.lines.find((l) => l.name.toLowerCase() === name.toLowerCase());
       if (same) return { ...f, lines: f.lines.map((l) => (l === same ? { ...l, qty: l.qty + 1 } : l)) };
-      const price = name && priceOf.has(name.toLowerCase()) ? String(priceOf.get(name.toLowerCase())) : '';
-      return { ...f, nextKey: f.nextKey + 1, lines: [...f.lines, { key: f.nextKey, name, price, qty: 1 }] };
+      return { ...f, nextKey: f.nextKey + 1, lines: [...f.lines, { key: f.nextKey, name, price: '', qty: 1 }] };
     });
   const patchLine = (key, patch) => setForm((f) => ({ ...f, lines: f.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
   const removeLine = (key) => setForm((f) => ({ ...f, lines: f.lines.filter((l) => l.key !== key) }));
-  // Typing a name that was used before offers its last price, only if none is set.
-  const renameLine = (line, name) =>
-    patchLine(line.key, { name, ...(line.price === '' && priceOf.has(name.trim().toLowerCase()) ? { price: String(priceOf.get(name.trim().toLowerCase())) } : {}) });
+  const renameLine = (line, name) => patchLine(line.key, { name });
 
   // The banner sits at the top of a form that is usually scrolled down to the
   // garment rows or the washer by the time Send to wash is pressed, so a
@@ -1200,6 +1330,27 @@ function GuestLaundryTab({ token }) {
     }
   };
 
+  // What can be done to an order, whichever view it is shown in.
+  const orderActions = (o) => {
+    if (!isOpenOrder(o)) return null;
+    return (
+      <>
+        {o.status === 'READY' ? (
+          <button type="button" className="hk-action" disabled={busy} onClick={() => setConfirm({ order: o, kind: 'deliver' })}>
+            Hand over
+          </button>
+        ) : (
+          <button type="button" className="hk-action" disabled={busy} onClick={() => openReceive(o)}>
+            Receive
+          </button>
+        )}
+        <button type="button" className="hk-link" onClick={() => setConfirm({ order: o, kind: 'cancel' })}>
+          Cancel
+        </button>
+      </>
+    );
+  };
+
   return (
     <div className="chart-section hk-board">
       <div className="hk-toolbar">
@@ -1236,6 +1387,20 @@ function GuestLaundryTab({ token }) {
             >
               Download Excel
             </button>
+            <div className="toggle-group hk-view-toggle" role="group" aria-label="Guest laundry view">
+              {GUEST_VIEWS.map((v) => (
+                <button
+                  key={v.key}
+                  type="button"
+                  aria-pressed={view === v.key}
+                  aria-label={v.label}
+                  title={v.label}
+                  onClick={() => setView(v.key)}
+                >
+                  {v.icon}
+                </button>
+              ))}
+            </div>
           </span>
         )}
       </div>
@@ -1243,33 +1408,29 @@ function GuestLaundryTab({ token }) {
       {error && <div className="form-banner form-banner--error">{error}</div>}
       {!orders && !error && <PageLoader inline label="Loading" />}
 
-      {orders && shown.length > 0 && (
+      {orders && shown.length > 0 && view === 'sheet' && (
         <SheetTable
           columns={GUEST_COLS}
           rows={shown.map(guestRow)}
           sortRows={shown.map(guestSortRow)}
           numericCols={[0, 4, 8, 11]}
-          actions={(i) => {
-            const o = shown[i];
-            if (!isOpenOrder(o)) return null;
-            return (
-              <>
-                {o.status === 'READY' ? (
-                  <button type="button" className="hk-action" disabled={busy} onClick={() => setConfirm({ order: o, kind: 'deliver' })}>
-                    Hand over
-                  </button>
-                ) : (
-                  <button type="button" className="hk-action" disabled={busy} onClick={() => openReceive(o)}>
-                    Receive
-                  </button>
-                )}
-                <button type="button" className="hk-link" onClick={() => setConfirm({ order: o, kind: 'cancel' })}>
-                  Cancel
-                </button>
-              </>
-            );
-          }}
+          actions={(i) => orderActions(shown[i])}
         />
+      )}
+
+      {orders && shown.length > 0 && view === 'cards' && (
+        <ul className="lg-cards">
+          {shown.map((o) => (
+            <LaundryCard
+              key={o.id}
+              order={o}
+              busy={busy}
+              onReceive={() => openReceive(o)}
+              onDeliver={() => setConfirm({ order: o, kind: 'deliver' })}
+              onCancel={() => setConfirm({ order: o, kind: 'cancel' })}
+            />
+          ))}
+        </ul>
       )}
 
       {orders && shown.length === 0 && (

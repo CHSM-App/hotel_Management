@@ -43,6 +43,17 @@ const formatDay = (iso) =>
     timeZone: 'UTC',
   });
 
+// An Indian mobile number as the desk would key or paste it — "+91 98765
+// 43210", "098765 43210" — brought down to its ten digits. Anything that is not
+// a digit never reaches the box.
+const toMobileDigits = (value) => {
+  let digits = value.replace(/\D/g, '');
+  if (digits.length > 10 && digits.startsWith('91')) digits = digits.slice(2);
+  else if (digits.length > 10 && digits.startsWith('0')) digits = digits.slice(1);
+  return digits.slice(0, 10);
+};
+const isIndianMobile = (digits) => /^[6-9]\d{9}$/.test(digits);
+
 const nightsLabel = (n) => `${n} night${n === 1 ? '' : 's'}`;
 
 // One room being priced: which room, for which nights, with which extras, and
@@ -74,6 +85,10 @@ export default function PriceSimulatorPanel() {
   // leaves the block out.
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+  // The phone's message waits until the box has been left or Download pressed:
+  // "not a valid number" under every keystroke of a number being typed is noise.
+  const [phoneChecked, setPhoneChecked] = useState(false);
+  const phoneInvalid = guestPhone !== '' && !isIndianMobile(guestPhone);
   // The sheet being photographed, while it is. Null the rest of the time, so
   // nothing is laid out offscreen for a button nobody has pressed.
   const [quoteDoc, setQuoteDoc] = useState(null);
@@ -150,6 +165,15 @@ export default function PriceSimulatorPanel() {
 
   const downloadQuotation = async (quoteRooms, total) => {
     setPdfError('');
+    // Optional, but a number on the quotation has to be one the guest can be
+    // rung on.
+    if (phoneInvalid) {
+      setPhoneChecked(true);
+      const box = document.getElementById('simGuestPhone');
+      box?.focus({ preventScroll: true });
+      box?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
     setPreparingPdf(true);
     try {
       // The letterhead is the hotel's own record, read fresh so a profile
@@ -164,7 +188,7 @@ export default function PriceSimulatorPanel() {
           logoSrc,
           date: now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
           preparedBy: session?.name || '',
-          guest: { name: guestName, phone: guestPhone },
+          guest: { name: guestName, phone: guestPhone && `+91 ${guestPhone.slice(0, 5)} ${guestPhone.slice(5)}` },
           rooms: quoteRooms,
           total,
         })
@@ -506,12 +530,20 @@ export default function PriceSimulatorPanel() {
                   <input
                     id="simGuestPhone"
                     type="tel"
-                    inputMode="tel"
+                    inputMode="numeric"
                     autoComplete="off"
-                    maxLength={20}
+                    placeholder="10-digit mobile"
                     value={guestPhone}
-                    onChange={(e) => setGuestPhone(e.target.value)}
+                    aria-invalid={phoneChecked && phoneInvalid}
+                    aria-describedby={phoneChecked && phoneInvalid ? 'simGuestPhoneError' : undefined}
+                    onChange={(e) => setGuestPhone(toMobileDigits(e.target.value))}
+                    onBlur={() => setPhoneChecked(true)}
                   />
+                  {phoneChecked && phoneInvalid && (
+                    <p className="field__error" id="simGuestPhoneError">
+                      Enter a valid 10-digit mobile number.
+                    </p>
+                  )}
                 </div>
               </div>
               <p className="sim-quote__hint">
