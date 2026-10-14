@@ -85,7 +85,10 @@ class BookingActions {
       bookingId,
       idProofType: result.idProofType,
       idProofNumber: result.idProofNumber,
+      idProofFile: result.idProofFile,
       advanceLines: result.advanceLines,
+      guests: result.guests,
+      vehicles: result.vehicles,
     );
     if (!context.mounted) return false;
     if (done == null) {

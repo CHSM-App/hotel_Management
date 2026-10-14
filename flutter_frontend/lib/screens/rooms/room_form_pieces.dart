@@ -209,6 +209,13 @@ class OptionDropdown extends StatelessWidget {
   /// chosen here.
   final bool hasError;
 
+  /// A small round badge ahead of every row's label, filled solid on the
+  /// chosen one — optional, since this picker covers everything from a
+  /// room to a payment method and a generic circle icon reads right for
+  /// none of them. Left null, a row is just its label and (when chosen) the
+  /// check mark, same as before.
+  final IconData? itemIcon;
+
   const OptionDropdown({
     super.key,
     required this.values,
@@ -217,13 +224,19 @@ class OptionDropdown extends StatelessWidget {
     required this.onSelect,
     this.hint = 'Choose one',
     this.hasError = false,
+    this.itemIcon,
   });
 
   @override
   Widget build(BuildContext context) {
     return NeuPressed(
       hasError: hasError,
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+      // The same accent ring a focused field draws — here read as "filled"
+      // rather than "being typed into", so a picked option doesn't sit in
+      // the same flat grey well as an empty one.
+      focused: selected != null,
+      radius: AppTheme.rMedium,
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 6),
       child: Theme(
         // The framework paints the open menu's selected row with
         // Theme.focusColor — an accent tint here instead of Material's
@@ -238,32 +251,92 @@ class OptionDropdown extends StatelessWidget {
             value: selected,
             isExpanded: true,
             dropdownColor: AppTheme.card,
-            borderRadius: BorderRadius.circular(AppTheme.rMedium),
-            elevation: 3,
+            borderRadius: BorderRadius.circular(AppTheme.rLarge),
+            elevation: 6,
+            menuMaxHeight: 340,
             // Null, rather than the framework's 48px floor, so this box
             // matches a dense NeuField's height instead of standing taller
             // than the field right beside it.
             itemHeight: null,
-            hint: Text(hint, style: const TextStyle(color: AppTheme.muted, fontSize: 13.5)),
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
-            // Each row as its own inset, rounded pill rather than a bare
-            // Material list tile — the selected one gets the sidebar's soft
-            // brand wash so it reads as chosen at a glance, not just bolder
-            // text.
+            hint: Text(hint, style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
+            // A small tinted circle around the chevron rather than a bare
+            // grey arrow — the same touch of colour the date pills and
+            // "add another" buttons carry, so a plain picker doesn't read
+            // as flatter than everything around it.
+            icon: Container(
+              width: 22,
+              height: 22,
+              margin: const EdgeInsets.only(left: 4),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.12), shape: BoxShape.circle),
+              child: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.accent, size: 16),
+            ),
+            // Without this, the framework reuses each `items` entry's own
+            // widget for the closed box too — the picked option's purple
+            // pill-and-checkmark row, sized to a list item rather than a
+            // compact field. A plain line of text here keeps the closed box
+            // the same height as a dense NeuField; the pill-and-checkmark
+            // look stays in the open list below, where it's chosen from.
+            selectedItemBuilder: (context) => [
+              for (final v in values)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (itemIcon != null) ...[
+                        Icon(itemIcon, size: 15, color: AppTheme.accent),
+                        const SizedBox(width: 6),
+                      ],
+                      Flexible(
+                        child: Text(
+                          labels[v] ?? v,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppTheme.heading, fontSize: 13.5, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+            // Each row as its own inset, rounded card rather than a bare
+            // Material list tile — a small round badge ahead of the label
+            // (filled solid once chosen) and the sidebar's soft brand wash
+            // behind the whole row, so the picked option reads as chosen
+            // at a glance from either cue, not just bolder text.
             items: [
               for (final v in values)
                 DropdownMenuItem(
                   value: v,
                   child: Container(
                     width: double.infinity,
-                    margin: const EdgeInsets.symmetric(vertical: 2),
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+                    margin: const EdgeInsets.symmetric(vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 9),
                     decoration: BoxDecoration(
                       color: v == selected ? AppTheme.sidebarBrandWash : Colors.transparent,
-                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                      border: v == selected ? Border.all(color: AppTheme.sidebarBrandWashEdge) : null,
                     ),
                     child: Row(
                       children: [
+                        if (itemIcon != null) ...[
+                          Container(
+                            width: 26,
+                            height: 26,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: v == selected ? AppTheme.sidebarBrandInk : AppTheme.bg,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              itemIcon,
+                              size: 13,
+                              color: v == selected ? Colors.white : AppTheme.muted,
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.s8),
+                        ],
                         Expanded(
                           child: Text(
                             labels[v] ?? v,
@@ -271,12 +344,14 @@ class OptionDropdown extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               color: v == selected ? AppTheme.sidebarBrandInk : AppTheme.text,
-                              fontWeight: v == selected ? FontWeight.w700 : FontWeight.w400,
+                              fontWeight: v == selected ? FontWeight.w700 : FontWeight.w500,
                             ),
                           ),
                         ),
-                        if (v == selected)
-                          const Icon(Icons.check_rounded, color: AppTheme.sidebarBrandInk, size: 16),
+                        if (v == selected) ...[
+                          const SizedBox(width: AppTheme.s4),
+                          const Icon(Icons.check_rounded, color: AppTheme.sidebarBrandInk, size: 17),
+                        ],
                       ],
                     ),
                   ),
