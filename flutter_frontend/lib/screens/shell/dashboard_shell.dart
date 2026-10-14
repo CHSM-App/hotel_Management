@@ -290,12 +290,15 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
 
   void _select(String key) => setState(() {
     _section = key;
-    // Leaving Reports for any other section must drop its PDF/Excel icons
-    // from the shared top bar right away — relying only on ReportsScreen's
-    // own dispose() left a stale pair showing on whatever section opened
-    // next (e.g. Room Chart) when the clear lost the race within the same
-    // build.
-    if (!key.startsWith('report-')) _headerActions.value = null;
+    // Every section change drops whatever icon is up there right away,
+    // unconditionally — relying on the outgoing screen's own dispose() to
+    // clear it instead left a stale icon showing on whatever opened next
+    // (e.g. Services' PDF icon still up once Laundry's own Hotel Laundry
+    // tab, which has none, had already loaded) whenever dispose() lost the
+    // race within the same build. A section that wants one puts it back
+    // itself, from its own build's addPostFrameCallback, once it is
+    // actually on screen — so the gap is at most a single frame.
+    _headerActions.value = null;
   });
 
   /// Same confirmation ProfileScreen's own sign-out carries. No popUntil
@@ -418,9 +421,9 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       case 'housekeeping':
         return const HousekeepingScreen();
       case 'laundry':
-        return const LaundryScreen();
+        return LaundryScreen(headerActions: _headerActions);
       case 'otherServices':
-        return const ServicesScreen();
+        return ServicesScreen(headerActions: _headerActions);
       case 'menu':
         return const MenuSetupScreen();
       // The three keyed separately (not just a different initialTab on the

@@ -141,7 +141,19 @@ class _TapeChartState extends ConsumerState<TapeChart>
   /// the horizontal one's offset against a tile width.
   String? _activeCategory;
 
+  /// True for the span of a chip-triggered [_jumpToKey] animation — guards
+  /// [_updateActiveCategoryFromScroll] against overwriting the chip that was
+  /// actually tapped with a stale read of its own in-flight scroll. Each
+  /// frame of that animation fires the scroll listener before this frame's
+  /// layout has repositioned the section boxes for the new offset, so a mid-
+  /// flight read sees last frame's positions — often still naming the
+  /// category being scrolled *away* from — and was winning the race against
+  /// [_jumpTo]'s own immediate `setState`, landing the highlight back on the
+  /// old chip once the animation settled with nothing left to correct it.
+  bool _jumpingToChip = false;
+
   void _updateActiveCategoryFromScroll() {
+    if (_jumpingToChip) return;
     if (!mounted || !_vScroll.hasClients) return;
     final sections = ref.read(bookingViewModelProvider).chartSections;
     if (sections.isEmpty) return;
@@ -194,9 +206,18 @@ class _TapeChartState extends ConsumerState<TapeChart>
   GlobalKey _roomKeyFor(int roomId) =>
       _roomKeys.putIfAbsent(roomId, () => GlobalKey());
 
-  void _jumpTo(String category) => _jumpToKey(_sectionKeys[category]);
+  // A chip tap already names the category the desk wants highlighted — set
+  // it immediately rather than waiting on [_updateActiveCategoryFromScroll]
+  // to notice the destination once the jump settles. That scroll-driven
+  // detector only got nudged by the unrelated 30s housekeeping poll
+  // ([_hkTimer]) causing a stray rebuild, which is why the highlight used to
+  // lag a tap by up to a minute instead of switching the instant it's tapped.
+  void _jumpTo(String category) {
+    if (category != _activeCategory) setState(() => _activeCategory = category);
+    _jumpToKey(_sectionKeys[category], isChipTap: true);
+  }
 
-  void _jumpToKey(GlobalKey? key) {
+  void _jumpToKey(GlobalKey? key, {bool isChipTap = false}) {
     if (!_vScroll.hasClients) return;
     final targetBox = key?.currentContext?.findRenderObject();
     final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
@@ -218,11 +239,22 @@ class _TapeChartState extends ConsumerState<TapeChart>
       _vScroll.position.minScrollExtent,
       _vScroll.position.maxScrollExtent,
     );
-    _vScroll.animateTo(
-      target,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
+    if (isChipTap) _jumpingToChip = true;
+    _vScroll
+        .animateTo(
+          target,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        )
+        .whenComplete(() {
+          if (!isChipTap) return;
+          _jumpingToChip = false;
+          // One settled read once the boxes have actually laid out at the
+          // landed offset, so a target that got clamped short of the tapped
+          // section (the last, short band, say) still ends up matching
+          // whatever chip the chart actually lands on.
+          if (mounted) _updateActiveCategoryFromScroll();
+        });
   }
 
   @override

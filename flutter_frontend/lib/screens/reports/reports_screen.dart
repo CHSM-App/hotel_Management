@@ -33,11 +33,15 @@ import 'gst_report_panel.dart';
 import 'income_report_excel.dart';
 import 'income_report_pdf.dart';
 import 'income_report_tab.dart';
+import 'laundry_report_excel.dart';
 import 'laundry_report_panel.dart';
+import 'laundry_report_pdf.dart';
 import 'overview_report_panel.dart';
 import 'profit_loss_panel.dart';
 import 'report_widgets.dart';
+import 'services_report_excel.dart';
 import 'services_report_panel.dart';
+import 'services_report_pdf.dart';
 
 enum _ReportFormat { pdf, excel }
 
@@ -163,7 +167,7 @@ const _kLocalRangedTabs = {'expenses', 'income', 'assets', 'bills'};
 /// preview/export buttons for Bookings/Events/Food/GST/Expenses/Other
 /// Income/Assets. Profit & Loss has no PDF/Excel on the website either, so it
 /// stays data-only.
-const _kDownloadableTabs = {'bookings', 'events', 'food', 'gst', 'expenses', 'income', 'assets'};
+const _kDownloadableTabs = {'bookings', 'events', 'food', 'services', 'laundry', 'gst', 'expenses', 'income', 'assets'};
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _tab = 'overview';
@@ -186,6 +190,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   bool _canDownload(ReportsState state) => switch (_tab) {
     'events' => state.events is AsyncData,
     'food' => state.foodOrders is AsyncData,
+    'services' => state.services is AsyncData,
+    'laundry' => state.laundry is AsyncData,
     'gst' => state.gst is AsyncData,
     'bookings' => state.bookings is AsyncData,
     'expenses' => state.expensesReport is AsyncData,
@@ -211,6 +217,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           path = format == _ReportFormat.pdf
               ? await FoodOrderReportPdf.download(report)
               : await FoodOrderReportExcel.download(report);
+        case 'services':
+          final report = (state.services as AsyncData<ServicesReport>).value;
+          path = format == _ReportFormat.pdf
+              ? await ServicesReportPdf.download(report, lodgeName: lodge?.name)
+              : await ServicesReportExcel.download(report, lodgeName: lodge?.name);
+        case 'laundry':
+          final report = (state.laundry as AsyncData<LaundryReport>).value;
+          final guestLaundry = lodge?.hasOtherServices ?? false;
+          path = format == _ReportFormat.pdf
+              ? await LaundryReportPdf.download(report, guestLaundry: guestLaundry)
+              : await LaundryReportExcel.download(report, guestLaundry: guestLaundry);
         case 'gst':
           final report = (state.gst as AsyncData<GstSummaryReport>).value;
           final gstin = lodge?.isGstRegistered == true ? lodge?.gstin : null;

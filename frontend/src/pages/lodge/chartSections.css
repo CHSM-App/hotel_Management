@@ -685,8 +685,10 @@
 }
 
 /* Under the total: who the quotation is for, and the button that makes it. */
+/* A rule under the total closes the figures off from the guest's details. */
 .price-sim .sim-quote {
-  padding: 0 14px 14px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border);
 }
 
 .price-sim .sim-quote__title {
