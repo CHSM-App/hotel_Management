@@ -425,7 +425,10 @@ export default function OwnerDashboard() {
   // that the reports are ready.
   const canManageBookings = permissions.includes('bookings.manage');
   const canManageAssets = permissions.includes('assets.manage') || permissions.includes('reports.view');
-  const canManageOrders = permissions.includes('orders.manage');
+  // Whoever can act on a stray guest order — the kitchen (orders.manage) or
+  // the captain who walks it over (orders.take) — should hear about one
+  // that's gone stale, not just the kitchen.
+  const canManageOrders = permissions.includes('orders.manage') || permissions.includes('orders.take');
   const canViewReports = permissions.includes('reports.view');
 
   const checkoutAlerts = useCheckoutAlerts(session?.token, canManageBookings);

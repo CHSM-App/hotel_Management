@@ -7,7 +7,17 @@ const PENDING_THRESHOLD_MINUTES = 20;
 // Table orders nobody has accepted yet. Only table orders can sit in PENDING
 // at all — a room order is PIN-verified straight into QUEUED (see
 // placeRoomOrder in public.service.js) — so every alert here is a QR order
-// waiting on the kitchen with no captain behind it to chase it up in person.
+// waiting on someone to accept it, kitchen or captain alike (both can take a
+// PENDING order into the queue).
+//
+// Deliberately /orders?status=PENDING rather than /orders/queue: the queue
+// endpoint is kitchen/owner-only (orders.manage) by design, but a captain
+// (orders.take) is exactly who walks over and accepts a stray QR order in
+// person — and until this hook existed, a captain had no way to learn an
+// order had gone stale, only that a new one had arrived (see the chime on
+// the Orders tab in OrdersPanel.jsx, which never repeats for a delay). The
+// general list endpoint is open to both permissions and, with no from/to
+// given, defaults server-side to today in the lodge's own timezone.
 export function usePendingOrderAlerts(token, enabled) {
   const [alerts, setAlerts] = useState([]);
   const toast = useToast();
@@ -17,7 +27,7 @@ export function usePendingOrderAlerts(token, enabled) {
     if (!enabled) return undefined;
     let stopped = false;
     const load = () =>
-      apiGet('/orders/queue', { token })
+      apiGet('/orders?status=PENDING', { token })
         .then((d) => {
           if (stopped) return;
           const now = Date.now();

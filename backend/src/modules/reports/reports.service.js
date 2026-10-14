@@ -1105,6 +1105,10 @@ async function getEventsReport(lodgeId, fromDate, toDate) {
 // sold nor waiting to be billed.
 async function getServicesReport(lodgeId, fromDate, toDate) {
   const pool = await getPool();
+  const lodgeResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT name FROM dbo.lodges WHERE id = @lodgeId');
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -1169,6 +1173,8 @@ async function getServicesReport(lodgeId, fromDate, toDate) {
   return {
     fromDate,
     toDate,
+    generatedAt: new Date().toISOString(),
+    lodgeName: lodgeResult.recordset[0]?.name || '',
     totals,
     byService: [...byService.values()].sort((a, b) => b.value - a.value),
     usages,
@@ -1187,6 +1193,11 @@ async function getLaundryReport(lodgeId, fromDate, toDate) {
   const pool = await getPool();
   const request = () =>
     pool.request().input('lodgeId', sql.BigInt, lodgeId).input('fromDate', sql.Date, fromDate).input('toDate', sql.Date, toDate);
+
+  const lodgeResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT name FROM dbo.lodges WHERE id = @lodgeId');
 
   const [moves, orderRows, stock] = await Promise.all([
     request().query(`
@@ -1297,6 +1308,8 @@ async function getLaundryReport(lodgeId, fromDate, toDate) {
   return {
     fromDate,
     toDate,
+    generatedAt: new Date().toISOString(),
+    lodgeName: lodgeResult.recordset[0]?.name || '',
     linen: {
       totals: { ...totals, inWashNow: stock.reduce((n, i) => n + i.inLaundry, 0) },
       byItem,
