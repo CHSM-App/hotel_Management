@@ -60,7 +60,7 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
   void _setRange(String from, String to) {
     setState(() {
       _fromDate = from;
-      _toDate = to;
+      _toDate = to.compareTo(from) < 0 ? from : to;
     });
     _load();
   }

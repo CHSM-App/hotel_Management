@@ -27,6 +27,26 @@ Future<XFile?> pickIdProofPhoto(BuildContext context) async {
   );
 }
 
+/// One glyph per [kIdProofTypes] entry — purely decorative, so a type with
+/// no obvious icon (anything added later, or "Other") just falls back to a
+/// generic card glyph rather than the map needing an entry for it.
+IconData _idProofIcon(String key) {
+  switch (key) {
+    case 'AADHAAR':
+      return Icons.fingerprint;
+    case 'PAN':
+      return Icons.badge_outlined;
+    case 'PASSPORT':
+      return Icons.menu_book_outlined;
+    case 'DRIVING_LICENSE':
+      return Icons.directions_car_filled_outlined;
+    case 'VOTER_ID':
+      return Icons.how_to_vote_outlined;
+    default:
+      return Icons.credit_card_outlined;
+  }
+}
+
 /// The ID proof type/number/photo trio, used both for the primary guest on
 /// the booking form and for every additional guest row — here and at
 /// check-in alike.
@@ -83,7 +103,7 @@ class IdProofFields extends StatelessWidget {
             : Text('ID proof', style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: AppTheme.s4),
         SizedBox(
-          height: 34,
+          height: 40,
           child: NeuPressed(
             padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
             child: DropdownButtonHideUnderline(
@@ -91,18 +111,65 @@ class IdProofFields extends StatelessWidget {
                 value: type,
                 isExpanded: true,
                 isDense: true,
-                dropdownColor: AppTheme.bg,
-                hint: Text(
-                  required ? 'Choose one' : 'Not recorded',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 14),
+                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                dropdownColor: AppTheme.card,
+                elevation: 3,
+                itemHeight: 48,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
+                hint: Row(
+                  children: [
+                    const Icon(Icons.badge_outlined, size: 18, color: AppTheme.muted),
+                    const SizedBox(width: AppTheme.s8),
+                    Text(
+                      required ? 'Choose one' : 'Not recorded',
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 14),
+                    ),
+                  ],
                 ),
+                selectedItemBuilder: (context) => [
+                  if (!required)
+                    const Row(
+                      children: [
+                        Icon(Icons.badge_outlined, size: 18, color: AppTheme.muted),
+                        SizedBox(width: AppTheme.s8),
+                        Text(
+                          'Not recorded',
+                          style: TextStyle(color: AppTheme.muted, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  for (final e in kIdProofTypes.entries)
+                    Row(
+                      children: [
+                        Icon(_idProofIcon(e.key), size: 18, color: AppTheme.accent),
+                        const SizedBox(width: AppTheme.s8),
+                        Text(
+                          e.value,
+                          style: const TextStyle(
+                            color: AppTheme.heading,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
                 items: [
                   // "Not recorded" is not on offer where an ID is required —
                   // a walk-in has to carry one.
                   if (!required)
-                    const DropdownMenuItem<String?>(child: Text('Not recorded')),
+                    const DropdownMenuItem<String?>(
+                      child: Text('Not recorded', style: TextStyle(color: AppTheme.muted)),
+                    ),
                   for (final e in kIdProofTypes.entries)
-                    DropdownMenuItem<String?>(value: e.key, child: Text(e.value)),
+                    DropdownMenuItem<String?>(
+                      value: e.key,
+                      child: _IdProofMenuRow(
+                        icon: _idProofIcon(e.key),
+                        label: e.value,
+                        selected: e.key == type,
+                      ),
+                    ),
                 ],
                 onChanged: onType,
               ),
@@ -146,6 +213,55 @@ class IdProofFields extends StatelessWidget {
               ),
           ],
         ],
+      ],
+    );
+  }
+}
+
+/// A menu row for the ID proof dropdown: an icon badge in a tinted circle,
+/// the label, and a trailing check on whichever type is already picked — so
+/// the open menu reads at a glance instead of as a plain text list.
+class _IdProofMenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+
+  const _IdProofMenuRow({
+    required this.icon,
+    required this.label,
+    required this.selected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.accent : AppTheme.accent.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: selected ? Colors.white : AppTheme.accent,
+          ),
+        ),
+        const SizedBox(width: AppTheme.s12),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? AppTheme.heading : AppTheme.text,
+              fontSize: 14,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+        if (selected)
+          const Icon(Icons.check_rounded, size: 18, color: AppTheme.accent),
       ],
     );
   }
