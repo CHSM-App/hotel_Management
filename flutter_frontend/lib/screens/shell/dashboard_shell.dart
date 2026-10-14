@@ -31,6 +31,7 @@ import '../theme.dart';
 import 'feature.dart';
 import 'sidebar.dart';
 import 'sign_out_dialog.dart';
+import 'staff_alerts_bell.dart';
 
 /// The signed-in app: a top bar, a section, and the sidebar that chooses it —
 /// the same rail the web dashboard uses, rather than a phone bottom bar.
@@ -76,6 +77,10 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   Timer? _issueCountTimer;
   bool _issuePollingStarted = false;
 
+  // The staff alerts bell's own polling — started once, the same way the
+  // housekeeping badge's timer above is, right after `me` first loads.
+  bool _staffAlertsStarted = false;
+
   @override
   void dispose() {
     _headerActions.dispose();
@@ -96,6 +101,22 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     _issueCountTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => ref.read(housekeepingViewModelProvider.notifier).loadIssueSummary(),
+    );
+  }
+
+  /// Gated per category on the same permissions OwnerDashboard.jsx checks
+  /// (lines 426-429/417): a role sees only the alert categories it can
+  /// actually act on, not every one bundled behind a single gate.
+  void _startStaffAlerts(Me me) {
+    final permissions = me.user;
+    ref.read(staffAlertsViewModelProvider.notifier).start(
+      canCheckin: permissions.can('bookings.manage'),
+      canCheckout: permissions.can('bookings.manage'),
+      canWorkOrders: permissions.canAny(['assets.manage', 'reports.view']),
+      canCoverage: permissions.canAny(['assets.manage', 'reports.view']),
+      canPendingOrders: permissions.can('orders.manage'),
+      canHousekeeping: _features(me).any((f) => f.key == 'housekeeping'),
+      canReports: permissions.can('reports.view'),
     );
   }
 
@@ -120,6 +141,23 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _startIssuePolling());
     }
 
+    if (!_staffAlertsStarted && me != null) {
+      _staffAlertsStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startStaffAlerts(me));
+    }
+
+    final staffAlerts = ref.watch(staffAlertsViewModelProvider.select((s) => s.alerts));
+    ref.listen(staffAlertsViewModelProvider.select((s) => s.toast), (previous, toast) {
+      if (toast == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(toast.message),
+          backgroundColor: toast.urgent ? AppTheme.danger : AppTheme.heading,
+        ),
+      );
+      ref.read(staffAlertsViewModelProvider.notifier).clearToast();
+    });
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: AppTheme.card,
@@ -143,6 +181,9 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                     ? () => _scaffoldKey.currentState?.openDrawer()
                     : null,
                 actions: _headerActions,
+                bell: (me != null && _canSeeStaffAlerts(me))
+                    ? StaffAlertsBell(alerts: staffAlerts)
+                    : null,
               ),
               const _OfflineBanner(),
               Expanded(
@@ -203,6 +244,17 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
 
   List<Feature> _features(Me me) =>
       kFeatures.where((f) => f.availableTo(me)).toList();
+
+  /// Mirrors canSeeStaffAlerts in OwnerDashboard.jsx:454-455 — the bell shows
+  /// if any one of the categories it feeds would have something to say.
+  bool _canSeeStaffAlerts(Me me) {
+    final p = me.user;
+    return p.can('bookings.manage') ||
+        p.canAny(['assets.manage', 'reports.view']) ||
+        p.can('orders.manage') ||
+        p.can('reports.view') ||
+        _features(me).any((f) => f.key == 'housekeeping');
+  }
 
   /// `_section` stays null until the desk actually taps something — it is
   /// never written on load, only read. Everywhere that needs "the section
@@ -522,7 +574,11 @@ class _TopBar extends StatelessWidget {
   /// common case) shows nothing extra.
   final ValueNotifier<Widget?>? actions;
 
-  const _TopBar({this.title, this.onMenuTap, this.actions});
+  /// The staff alerts bell — null when the signed-in login holds none of the
+  /// permissions any alert category needs (see [_canSeeStaffAlerts]).
+  final Widget? bell;
+
+  const _TopBar({this.title, this.onMenuTap, this.actions, this.bell});
 
   @override
   Widget build(BuildContext context) {
@@ -569,6 +625,7 @@ class _TopBar extends StatelessWidget {
                 valueListenable: actions!,
                 builder: (context, child, _) => child ?? const SizedBox.shrink(),
               ),
+            if (bell != null) bell!,
           ],
         ),
       ),

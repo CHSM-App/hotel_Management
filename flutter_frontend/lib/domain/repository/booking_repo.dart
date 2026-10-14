@@ -6,6 +6,7 @@ import '../models/guest_match.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
+import '../models/staff_alert.dart';
 import '../models/tape_chart.dart';
 
 abstract class BookingRepository {
@@ -50,6 +51,12 @@ abstract class BookingRepository {
   Future<List<Booking>> bookings({String? fromDate, String? toDate});
 
   Future<Booking> booking(int id);
+
+  /// Today's arrivals, due soon or already overdue.
+  Future<List<CheckAlert>> checkinAlerts();
+
+  /// Rooms whose check-out is due soon or already overdue.
+  Future<List<CheckAlert>> checkoutAlerts();
 
   /// Guests this property has had before, matched on a partly-typed name.
   Future<List<GuestMatch>> searchGuests(String query);

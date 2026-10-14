@@ -6,6 +6,7 @@ import '../../domain/models/guest_match.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
+import '../../domain/models/staff_alert.dart';
 import '../../domain/models/tape_chart.dart';
 import '../../domain/repository/booking_repo.dart';
 import '../api/api_service.dart';
@@ -86,6 +87,12 @@ class BookingImpl implements BookingRepository {
 
   @override
   Future<Booking> booking(int id) => api.booking(id);
+
+  @override
+  Future<List<CheckAlert>> checkinAlerts() => api.checkinAlerts();
+
+  @override
+  Future<List<CheckAlert>> checkoutAlerts() => api.checkoutAlerts();
 
   @override
   Future<List<GuestMatch>> searchGuests(String query) =>
