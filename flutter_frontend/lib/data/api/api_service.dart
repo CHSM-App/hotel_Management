@@ -29,6 +29,7 @@ import '../../domain/models/room.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/session.dart';
 import '../../domain/models/staff.dart';
+import '../../domain/models/staff_alert.dart';
 import '../../domain/models/switchable_charge_listing.dart';
 import '../../domain/models/tape_chart.dart';
 
@@ -254,6 +255,26 @@ class ApiService {
   Future<Booking> booking(int id) async {
     final res = await _dio.get('/bookings/$id');
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
+  }
+
+  /// Today's arrivals, due soon or already overdue — feeds the staff alerts
+  /// bell's "Arrivals today" section.
+  Future<List<CheckAlert>> checkinAlerts() async {
+    final res = await _dio.get('/bookings/checkin-alerts');
+    final body = _map(res.data);
+    return (body['alerts'] as List? ?? [])
+        .map((e) => CheckAlert.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Rooms whose check-out is due soon or already overdue — the bell's
+  /// "Check-outs" section.
+  Future<List<CheckAlert>> checkoutAlerts() async {
+    final res = await _dio.get('/bookings/checkout-alerts');
+    final body = _map(res.data);
+    return (body['alerts'] as List? ?? [])
+        .map((e) => CheckAlert.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// Guests this property has had before, matched on a partly-typed name —

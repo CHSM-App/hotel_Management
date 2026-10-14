@@ -17,6 +17,7 @@ import '../view_models/menu_viewmodel.dart';
 import '../view_models/orders_viewmodel.dart';
 import '../view_models/reports_viewmodel.dart';
 import '../view_models/rooms_viewmodel.dart';
+import '../view_models/staff_alerts_viewmodel.dart';
 import '../view_models/staff_viewmodel.dart';
 import '../view_models/tables_viewmodel.dart';
 import 'usecase_provider.dart';
@@ -160,4 +161,17 @@ final housekeepingViewModelProvider =
 final lodgeServicesViewModelProvider =
     StateNotifierProvider.autoDispose<LodgeServicesViewModel, LodgeServicesState>(
       (ref) => LodgeServicesViewModel(ref.watch(lodgeServicesUsecaseProvider)),
+    );
+
+/// The staff alerts bell — kept warm the same way housekeepingViewModelProvider
+/// is: DashboardShell watches it continuously for the life of the signed-in
+/// session, so autoDispose never actually tears it down while signed in.
+final staffAlertsViewModelProvider =
+    StateNotifierProvider.autoDispose<StaffAlertsViewModel, StaffAlertsState>(
+      (ref) => StaffAlertsViewModel(
+        ref.watch(bookingUsecaseProvider),
+        ref.watch(assetsUsecaseProvider),
+        ref.watch(ordersUsecaseProvider),
+        ref.watch(housekeepingUsecaseProvider),
+      ),
     );
