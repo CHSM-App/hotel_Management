@@ -71,6 +71,12 @@ class QuoteLine {
   /// Zero-based position in a multi-room quote; null for a single-room quote.
   final int? roomIndex;
 
+  /// How many of the stay's nights this line applied to — only
+  /// /pricing/simulate's lines carry it, so a quotation can print each
+  /// line's own rate per night (amount / nights) even when a season line
+  /// didn't run the whole stay.
+  final int? nights;
+
   const QuoteLine({
     required this.label,
     required this.amount,
@@ -78,6 +84,7 @@ class QuoteLine {
     this.chargeId,
     this.quantity,
     this.roomIndex,
+    this.nights,
   });
 
   factory QuoteLine.fromJson(Map<String, dynamic> json) => QuoteLine(
@@ -88,6 +95,7 @@ class QuoteLine {
     chargeId: asIntOrNull(json['chargeId']),
     quantity: asIntOrNull(json['quantity']),
     roomIndex: asIntOrNull(json['roomIndex']),
+    nights: asIntOrNull(json['nights']),
   );
 
   bool get isExtra => chargeId != null;

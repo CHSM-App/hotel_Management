@@ -92,11 +92,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     }
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// [silent] skips the full-list spinner — used coming back from a stay's
+  /// own detail screen, where the list underneath is already on the right
+  /// range and losing it to a blank loader for the moment a refetch takes
+  /// would read as the whole register reloading rather than one row
+  /// quietly catching up.
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final rows = await ref
           .read(bookingUsecaseProvider)
@@ -114,6 +121,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      // A silent refresh that fails leaves the list exactly as it was —
+      // the desk didn't ask for this fetch, so it shouldn't lose the rows
+      // it can already see over it failing quietly in the background.
+      if (silent) return;
       setState(() {
         _loading = false;
         _error = 'Could not load the register.';
@@ -288,7 +299,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           builder: (_) => BookingDetailScreen(bookingId: b.id),
                         ),
                       );
-                      _load();
+                      _load(silent: true);
                     },
                   ),
                 ),
@@ -301,7 +312,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     await Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => TakeBookingScreen(draft: d)),
                     );
-                    _load();
+                    _load(silent: true);
                   },
                 ),
               ),

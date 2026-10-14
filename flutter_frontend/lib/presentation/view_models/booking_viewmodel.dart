@@ -846,7 +846,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
     int bookingId, {
     String? idProofType,
     String? idProofNumber,
+    XFile? idProofFile,
     List<PaymentDraft> advanceLines = const [],
+    List<GuestDraft> guests = const [],
+    List<VehicleDraft> vehicles = const [],
   }) async {
     if (state.submitting) return null;
     state = state.copyWith(submitting: true, clearError: true);
@@ -867,6 +870,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
           if (paid.length > 1)
             'advanceLines': _jsonList(paid.map((l) => l.toJson())),
         },
+        'guests': _jsonList(guests.map((g) => g.toJson())),
+        'vehicles': _jsonList(
+          vehicles.where((v) => !v.isEmpty).map((v) => v.toJson()),
+        ),
+        ..._idProofParts(idProofFile, guests),
       });
 
       final booking = await usecase.checkIn(bookingId, form);

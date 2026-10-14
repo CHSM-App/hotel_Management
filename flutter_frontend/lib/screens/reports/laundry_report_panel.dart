@@ -8,13 +8,9 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'report_widgets.dart';
 
-const Map<String, String> _kGuestLaundryStatusLabel = {
-  'RECEIVED': 'In wash',
-  'WASHING': 'In wash',
-  'READY': 'Received',
-  'DELIVERED': 'Handed over',
-  'CANCELLED': 'Cancelled',
-};
+import 'laundry_report_excel.dart' show kLaundryOrderStatusLabel;
+
+const Map<String, String> _kGuestLaundryStatusLabel = kLaundryOrderStatusLabel;
 
 /// Laundry register — hotel linen through the wash, plus (where the
 /// property also takes guest laundry) their orders, shown for information
