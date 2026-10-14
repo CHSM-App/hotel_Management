@@ -73,9 +73,9 @@ async function createLodgeWithOwner(input) {
       .input('passwordHash', sql.NVarChar, passwordHash)
       .query(`
         INSERT INTO dbo.users
-          (lodge_id, name, email, phone, password_hash, role, must_reset_password)
+          (lodge_id, name, email, phone, password_hash, role)
         VALUES
-          (@lodgeId, @name, @email, @phone, @passwordHash, 'OWNER', 1)
+          (@lodgeId, @name, @email, @phone, @passwordHash, 'OWNER')
       `);
 
     // Every property that lets rooms has an extra bed to sell, so it starts
@@ -151,7 +151,7 @@ async function getLodgeDetail(id) {
 
     -- Every login on the property, owner and staff alike. No password
     -- material is selected: this screen shows who can sign in, never how.
-    SELECT id, name, email, phone, role, is_active, must_reset_password, created_at, last_seen
+    SELECT id, name, email, phone, role, is_active, created_at, last_seen
     FROM dbo.users
     WHERE lodge_id = @id
     ORDER BY CASE WHEN role = 'OWNER' THEN 0 ELSE 1 END, created_at;

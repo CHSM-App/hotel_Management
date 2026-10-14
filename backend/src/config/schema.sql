@@ -38,7 +38,6 @@ CREATE TABLE dbo.users (
     password_hash       NVARCHAR(255) NOT NULL,
     role                NVARCHAR(20) NOT NULL DEFAULT 'OWNER'
         CONSTRAINT ck_users_role CHECK (role IN ('SUPERADMIN', 'OWNER', 'RECEPTION', 'KITCHEN')),
-    must_reset_password BIT NOT NULL DEFAULT 1,
     is_active           BIT NOT NULL DEFAULT 1,
     created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     CONSTRAINT ck_users_lodge_scope CHECK (
@@ -742,13 +741,14 @@ CREATE UNIQUE INDEX uq_receipt_shares_token ON dbo.receipt_shares(token);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_receipt_shares_receipt' AND object_id = OBJECT_ID('dbo.receipt_shares'))
 CREATE INDEX ix_receipt_shares_receipt ON dbo.receipt_shares(receipt_id, id DESC);
 
--- The guest side of "how was your stay" — a page this app hosts itself (see
--- migration 137), not a link the owner has to go find and paste in. One row
--- is both the WhatsApp message's credential (token) and the answer to "has
--- this booking already been asked" — the daily sweep only considers a
--- booking with no row here yet, and inserts before attempting the send, so
--- a retry can never double-ask. rating/comment/submitted_at stay NULL until
--- the guest actually fills the page in.
+-- The guest side of "how was your stay" (or, since 141, "how was your event")
+-- — a page this app hosts itself (see migration 137), not a link the owner
+-- has to go find and paste in. One row is both the WhatsApp message's
+-- credential (token) and the answer to "has this already been asked" — the
+-- sweep behind it only considers a booking or function with no row here
+-- yet, and inserts before attempting the send, so a retry can never
+-- double-ask. rating/comment/submitted_at stay NULL until the guest or
+-- organiser actually fills the page in.
 IF OBJECT_ID('dbo.feedback_requests', 'U') IS NULL
 CREATE TABLE dbo.feedback_requests (
     id             BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -764,6 +764,37 @@ CREATE TABLE dbo.feedback_requests (
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_feedback_requests_token' AND object_id = OBJECT_ID('dbo.feedback_requests'))
 CREATE UNIQUE INDEX uq_feedback_requests_token ON dbo.feedback_requests(token);
+
+-- A request against a stay or a function, never both and never neither (141)
+-- — same "stay or function" split dbo.advance_receipts and dbo.invoices
+-- already took. A plain UNIQUE constraint allows only one NULL in SQL
+-- Server, so once booking_id started going NULL for every event's row, that
+-- dedup had to move to a pair of filtered unique indexes instead.
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.feedback_requests') AND name = 'booking_id' AND is_nullable = 0
+)
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = 'uq_feedback_requests_booking' AND parent_object_id = OBJECT_ID('dbo.feedback_requests'))
+        ALTER TABLE dbo.feedback_requests DROP CONSTRAINT uq_feedback_requests_booking;
+
+    ALTER TABLE dbo.feedback_requests ALTER COLUMN booking_id BIGINT NULL;
+
+    CREATE UNIQUE INDEX uq_feedback_requests_booking_active ON dbo.feedback_requests(booking_id)
+        WHERE booking_id IS NOT NULL;
+END;
+
+IF COL_LENGTH('dbo.feedback_requests', 'event_booking_id') IS NULL
+    EXEC('ALTER TABLE dbo.feedback_requests ADD event_booking_id BIGINT NULL REFERENCES dbo.event_bookings(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_feedback_requests_parent')
+    EXEC('ALTER TABLE dbo.feedback_requests ADD CONSTRAINT ck_feedback_requests_parent CHECK (
+        (CASE WHEN booking_id IS NULL THEN 0 ELSE 1 END)
+      + (CASE WHEN event_booking_id IS NULL THEN 0 ELSE 1 END) = 1)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_feedback_requests_event_active' AND object_id = OBJECT_ID('dbo.feedback_requests'))
+    EXEC('CREATE UNIQUE INDEX uq_feedback_requests_event_active ON dbo.feedback_requests(event_booking_id)
+          WHERE event_booking_id IS NOT NULL');
 
 -- Roles and their permission sets. A row with lodge_id IS NULL is a built-in
 -- default shared by every lodge; a row with lodge_id set belongs to that lodge
@@ -1213,7 +1244,7 @@ CREATE TABLE dbo.otp_store (
     phone        NVARCHAR(20) NOT NULL,
     otp_hash     NVARCHAR(255) NOT NULL,
     purpose      NVARCHAR(30) NOT NULL
-        CONSTRAINT ck_otp_store_purpose CHECK (purpose IN ('password_change')),
+        CONSTRAINT ck_otp_store_purpose CHECK (purpose IN ('password_change', 'forgot_password')),
     attempts     INT NOT NULL DEFAULT 0,
     expires_at   DATETIMEOFFSET NOT NULL,
     used         BIT NOT NULL DEFAULT 0,
@@ -2024,6 +2055,12 @@ IF COL_LENGTH('dbo.event_bookings', 'refund_payment_method') IS NULL
     EXEC('ALTER TABLE dbo.event_bookings ADD refund_payment_method NVARCHAR(20) NULL
             CONSTRAINT ck_event_bookings_refund_method
             CHECK (refund_payment_method IN (''CASH'', ''UPI'', ''CARD''))');
+
+-- When the "your event is coming up" WhatsApp reminder went out (140) — the
+-- same dedup NULL-means-not-sent-yet column bookings.reminder_sent_at (136)
+-- gave the stay reminder sweep.
+IF COL_LENGTH('dbo.event_bookings', 'reminder_sent_at') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD reminder_sent_at DATETIMEOFFSET NULL');
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_venue_time' AND object_id = OBJECT_ID('dbo.event_bookings'))
     CREATE INDEX ix_event_bookings_venue_time ON dbo.event_bookings(venue_id, start_at, end_at) INCLUDE (status);

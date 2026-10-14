@@ -1,9 +1,16 @@
 const { Router } = require('express');
-const { loginHandler, adminLoginHandler, refreshHandler, forgotPasswordHandler } = require('./auth.controller');
+const {
+  loginHandler,
+  adminLoginHandler,
+  refreshHandler,
+  sendForgotPasswordOtpHandler,
+  forgotPasswordHandler,
+} = require('./auth.controller');
 const { authenticate } = require('../../middleware/authenticate');
 const {
   loginAttemptLimiter,
   adminLoginAttemptLimiter,
+  forgotPasswordOtpSendLimiter,
   forgotPasswordLimiter,
   refreshLimiter,
 } = require('../../middleware/rateLimit');
@@ -22,9 +29,11 @@ router.post('/admin-login', adminLoginAttemptLimiter, adminLoginHandler);
 // token can't be replayed in a loop.
 router.post('/refresh', refreshLimiter, authenticate, refreshHandler);
 
-// No OTP — resets the password for whoever's phone or email is given. Charged
-// on every attempt, not just failures, and backed by the same durable
-// per-identifier lockout the login doors use. See auth.service.js.
+// Forgot-password, split the same way /me/password is: the first sends a
+// code to the account's own phone, the second spends it. Knowing a phone or
+// email is no longer enough on its own to reset that account's password —
+// see auth.service.js.
+router.post('/forgot-password/send-otp', forgotPasswordOtpSendLimiter, sendForgotPasswordOtpHandler);
 router.post('/forgot-password', forgotPasswordLimiter, forgotPasswordHandler);
 
 module.exports = router;

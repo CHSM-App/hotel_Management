@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
 const { uploadDir } = require('../config/uploadRoot');
+const { compressUploadedImages } = require('./imageCompression');
 
 // Guest ID proofs (Aadhaar, passport, ...) are sensitive documents, so they
 // live outside any statically-served directory — access goes through the
@@ -42,7 +43,7 @@ const upload = multer({
 // "guestIdProofDocument_<index>", and the guest count (and so the set of
 // field names) varies per booking.
 function idProofUpload(req, res, next) {
-  upload.any()(req, res, (err) => {
+  upload.any()(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(new ApiError('ID proof file must be 5MB or smaller.', 400));
@@ -50,6 +51,10 @@ function idProofUpload(req, res, next) {
       return next(new ApiError('Could not upload the ID proof.', 400));
     }
     if (err) return next(err);
+    // Higher dimension and quality than a gallery photo — this is a KYC
+    // document, and the ID number printed on it has to stay readable, not
+    // just recognisable as a photo of a card.
+    await compressUploadedImages(req, { maxDimension: 2000, quality: 85 });
     next();
   });
 }

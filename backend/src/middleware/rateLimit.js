@@ -137,11 +137,22 @@ const otpSendLimiter = createRateLimiter({
   countWhen: (res) => res.statusCode < 400,
 });
 
-// Guards the no-OTP forgot-password endpoint. Whoever can reach it can set
-// any staff member's password by phone or email alone, so unlike the
-// limiters above this charges every attempt, success included — a source
-// that resets six different accounts in quick succession is exactly the
-// pattern worth slowing down, not just its failures.
+// Guards "send me a forgot-password code". Same shape as otpSendLimiter
+// above and for the same reason: a success here is a real WhatsApp message
+// the property pays for, so it is successes that are charged, not failures.
+const forgotPasswordOtpSendLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 6,
+  message: 'Too many code requests. Please wait a few minutes and try again.',
+  countWhen: (res) => res.statusCode < 400,
+});
+
+// Guards the forgot-password endpoint that spends the code. Whoever can
+// reach it is trying to take over an account by phone or email plus a
+// guessed code, so unlike the limiter above this charges every attempt,
+// success included — a source working through several accounts in quick
+// succession is exactly the pattern worth slowing down, not just its
+// failures.
 const forgotPasswordLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 6,
@@ -163,5 +174,6 @@ module.exports = {
   loginAttemptLimiter,
   adminLoginAttemptLimiter,
   otpSendLimiter,
+  forgotPasswordOtpSendLimiter,
   forgotPasswordLimiter,
 };

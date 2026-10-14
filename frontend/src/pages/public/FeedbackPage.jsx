@@ -3,10 +3,12 @@ import { useParams } from 'react-router-dom';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import './FeedbackPage.css';
 
-// What the post-checkout WhatsApp link opens: one focused page, no dashboard
-// chrome, same trust model as AssetQrPage.jsx — the token in the URL is the
-// whole credential, issued once by feedbackRequests.service.js and never
-// reused.
+// What the post-checkout (or post-event-completion) WhatsApp link opens: one
+// focused page, no dashboard chrome, same trust model as AssetQrPage.jsx —
+// the token in the URL is the whole credential, issued once by
+// feedbackRequests.service.js or eventFeedbackRequests.service.js and never
+// reused. The copy stays generic (no "stay" or "event" wording) since the
+// same page serves either.
 export default function FeedbackPage() {
   const { token } = useParams();
   const [context, setContext] = useState(null);
@@ -91,9 +93,9 @@ export default function FeedbackPage() {
         ) : (
           <>
             <header className="feedback-header">
-              <h1>How was your stay?</h1>
+              <h1>How was your experience?</h1>
               <p>
-                Hi {context.guestName}, we&rsquo;d love to hear how your time at{' '}
+                Hi {context.guestName}, we&rsquo;d love to hear how your time with{' '}
                 <strong>{context.hotelName}</strong> went.
               </p>
             </header>

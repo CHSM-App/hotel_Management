@@ -21,9 +21,14 @@ const { publicBaseUrl } = require('../../config/publicBaseUrl');
 //   {{2}} hotel_name       {{5}} payment_method
 //   {{3}} receipt_number   {{6}} link to the PDF
 //
-// "Dear {{1}}, [hotel_name] {{2}}, We've received your advance payment.
-//  Receipt No. {{3}} / Amount: {{4}} / Paid via: {{5}}
-//  / View / Download Receipt: {{6}}"
+// "Dear {{1}}, Thank you for choosing {{2}}! We've received your advance
+//  payment. Receipt No: {{3}} / Amount: ₹{{4}} / Paid via: {{5}} / View /
+//  Download Receipt: {{6}}. Thank you for choosing us!"
+//
+// Generic by design, unlike the bill template: no room number, no check-in/
+// check-out, no venue — so one approved template covers an advance against
+// either a room stay or an event booking, and loadReceipt below already
+// reads whichever of the two a given receipt belongs to.
 const RECEIPT_CAMPAIGN = 'receipt_share';
 
 // Same TTL as a shared bill — a guest reopening a receipt from the same chat
@@ -57,10 +62,6 @@ function buildReceiptSample(receipt, link) {
     clean(PAYMENT_METHOD_LABEL[receipt.payment_method] || receipt.payment_method),
     // Not cleaned: a URL has no commas and clean() would mangle one that did.
     link,
-    // The approved template uses {{2}} twice ("payment to {{2}}" and "Thank you
-    // for choosing {{2}}"); the provider counts occurrences, so it expects a
-    // seventh value, the hotel name again.
-    clean(receipt.lodge_name),
   ].join(',');
 }
 

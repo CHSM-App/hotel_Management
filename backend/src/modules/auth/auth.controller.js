@@ -1,4 +1,4 @@
-const { loginSchema, forgotPasswordSchema } = require('./auth.schema');
+const { loginSchema, sendForgotPasswordOtpSchema, forgotPasswordSchema } = require('./auth.schema');
 const authService = require('./auth.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
@@ -37,17 +37,40 @@ async function refreshHandler(req, res, next) {
   }
 }
 
+async function sendForgotPasswordOtpHandler(req, res, next) {
+  try {
+    const parsed = sendForgotPasswordOtpSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const result = await authService.sendForgotPasswordOtp(parsed.data.identifier.trim());
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function forgotPasswordHandler(req, res, next) {
   try {
     const parsed = forgotPasswordSchema.safeParse(req.body);
     if (!parsed.success) {
       throw new ApiError(parsed.error.issues[0].message, 400);
     }
-    await authService.resetPasswordByIdentifier(parsed.data.identifier.trim(), parsed.data.newPassword);
+    await authService.resetPasswordByIdentifier(
+      parsed.data.identifier.trim(),
+      parsed.data.otp,
+      parsed.data.newPassword
+    );
     res.status(204).end();
   } catch (err) {
     next(err);
   }
 }
 
-module.exports = { loginHandler, adminLoginHandler, refreshHandler, forgotPasswordHandler };
+module.exports = {
+  loginHandler,
+  adminLoginHandler,
+  refreshHandler,
+  sendForgotPasswordOtpHandler,
+  forgotPasswordHandler,
+};

@@ -70,10 +70,10 @@ const ALL_TABS = [
   { key: 'services', label: 'Other services', capability: 'hasOtherServices' },
   // Counts, not sales: linen through the wash, and guest laundry orders.
   { key: 'laundry', label: 'Laundry', capability: 'hasLaundry' },
-  // Submitted responses to the post-checkout "how was your stay" WhatsApp
-  // link — no capability gate, since it rides on room bookings every
-  // property with rooms already has.
-  { key: 'feedback', label: 'Guest Feedback', capability: 'hasRooms' },
+  // Submitted responses to the "how was your stay" / "how was your event"
+  // WhatsApp link — shown for either, since a property can run just one of
+  // the two and still have feedback worth seeing.
+  { key: 'feedback', label: 'Guest Feedback', capabilityAny: ['hasRooms', 'hasEvents'] },
   { key: 'bills', label: 'Bills' },
   { key: 'gst', label: 'Tax & GST' },
   // Needs both permissions, not either — P&L surfaces the same expense
@@ -250,6 +250,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
     (t) =>
       (!only || (REPORT_SECTIONS[only] || []).includes(t.key)) &&
       (!t.capability || Boolean(lodge?.[t.capability])) &&
+      (!t.capabilityAny || t.capabilityAny.some((c) => Boolean(lodge?.[c]))) &&
       (!t.permission || permissions.includes(t.permission)) &&
       (!t.requiresAll || t.requiresAll.every((p) => permissions.includes(p)))
   );
@@ -2199,8 +2200,8 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                     <table className="dash-table">
                       <thead>
                         <tr>
-                          <th>Guest</th>
-                          <th>Checked out</th>
+                          <th>Guest / Organiser</th>
+                          <th>Stay / Event date</th>
                           <th>Rating</th>
                           <th>Comment</th>
                           <th>Submitted</th>

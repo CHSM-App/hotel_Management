@@ -449,12 +449,6 @@ export default function LodgeDetail() {
                               <span className={`badge ${user.is_active ? 'badge--on' : 'badge--inactive'}`}>
                                 {user.is_active ? 'Active' : 'Disabled'}
                               </span>
-                              {/* Still on the password handed over at onboarding —
-                                  worth seeing when an owner reports they can't
-                                  get in. */}
-                              {user.must_reset_password && (
-                                <span className="badge badge--off detail-badge-gap">First login pending</span>
-                              )}
                             </td>
                             <td>{formatDate(user.created_at)}</td>
                             <td>{formatDateTime(user.last_seen)}</td>

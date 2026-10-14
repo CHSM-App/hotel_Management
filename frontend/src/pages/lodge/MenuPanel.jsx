@@ -1091,6 +1091,7 @@ export default function MenuPanel() {
                               src={`${API_BASE}/menu-images/${item.image}`}
                               alt=""
                               loading="lazy"
+                              decoding="async"
                             />
                           )}
                           <div className="dish-card__main">

@@ -299,20 +299,6 @@ class _StaffRow extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                if (member.mustResetPassword) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.schedule_rounded, size: 11, color: AppTheme.draft),
-                      const SizedBox(width: 3),
-                      Text(
-                        'Temporary password',
-                        style: const TextStyle(color: AppTheme.draft, fontSize: 11, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),

@@ -19,7 +19,7 @@ async function getMe(userId) {
     .input('userId', sql.BigInt, userId)
     .query(`
       SELECT
-        u.id, u.name, u.email, u.phone, u.role, u.must_reset_password,
+        u.id, u.name, u.email, u.phone, u.role,
         l.id AS lodge_id, l.name AS lodge_name, l.slug, l.phone AS lodge_phone,
         l.whatsapp_number, l.address, l.city, l.state, l.checkin_mode,
         l.name_mr, l.address_mr, l.latitude, l.longitude,
@@ -50,7 +50,6 @@ async function getMe(userId) {
       role: row.role,
       roleName: effectiveRole?.name || row.role,
       permissions: effectiveRole?.permissions || [],
-      mustResetPassword: !!row.must_reset_password,
     },
     lodge: {
       id: row.lodge_id,
@@ -145,15 +144,7 @@ async function sendPasswordChangeOtp(userId, currentPassword) {
     throw new ApiError('Could not send the code right now. Please try again in a moment.', 502);
   }
 
-  return { phone: maskPhone(phone), expiresAt };
-}
-
-// 919876543210 -> +91 ******3210. Enough for the right person to recognise
-// their own number and not enough for anyone else to learn it.
-function maskPhone(normalised) {
-  const digits = String(normalised);
-  const last4 = digits.slice(-4);
-  return `+${digits.slice(0, 2)} ${'*'.repeat(Math.max(0, digits.length - 6))}${last4}`;
+  return { phone: whatsapp.maskPhone(phone), expiresAt };
 }
 
 // Step 2: the change itself. The current password is re-checked here rather
@@ -173,7 +164,7 @@ async function changePassword(userId, currentPassword, newPassword, otp) {
     .request()
     .input('userId', sql.BigInt, userId)
     .input('passwordHash', sql.NVarChar, passwordHash)
-    .query('UPDATE dbo.users SET password_hash = @passwordHash, must_reset_password = 0 WHERE id = @userId');
+    .query('UPDATE dbo.users SET password_hash = @passwordHash WHERE id = @userId');
 }
 
 // The owner correcting their own property's contact/location details from the

@@ -873,9 +873,11 @@ async function listPublicReviews(lodgeId, limit = 6) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('limit', sql.Int, limit)
     .query(`
-      SELECT TOP (@limit) fr.id, fr.rating, fr.comment, fr.submitted_at, b.guest_name
+      SELECT TOP (@limit) fr.id, fr.rating, fr.comment, fr.submitted_at,
+             COALESCE(b.guest_name, eb.organiser_name) AS guest_name
       FROM dbo.feedback_requests fr
-      JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.event_bookings eb ON eb.id = fr.event_booking_id
       WHERE fr.lodge_id = @lodgeId AND fr.submitted_at IS NOT NULL
         AND fr.comment IS NOT NULL AND LTRIM(RTRIM(fr.comment)) <> ''
       ORDER BY fr.submitted_at DESC
@@ -899,9 +901,10 @@ async function getFeedbackContext(token) {
     .request()
     .input('token', sql.NVarChar(32), token)
     .query(`
-      SELECT b.guest_name, l.name AS lodge_name, fr.submitted_at
+      SELECT COALESCE(b.guest_name, eb.organiser_name) AS guest_name, l.name AS lodge_name, fr.submitted_at
       FROM dbo.feedback_requests fr
-      JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.event_bookings eb ON eb.id = fr.event_booking_id
       JOIN dbo.lodges l ON l.id = fr.lodge_id
       WHERE fr.token = @token
     `);

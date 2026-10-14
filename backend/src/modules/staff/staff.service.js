@@ -12,7 +12,6 @@ function mapUser(row) {
     roleKey: row.role,
     roleName: row.role_name || row.role,
     isActive: !!row.is_active,
-    mustResetPassword: !!row.must_reset_password,
     createdAt: row.created_at,
   };
 }
@@ -25,7 +24,7 @@ async function listStaff(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT u.id, u.name, u.email, u.phone, u.role, u.is_active, u.must_reset_password, u.created_at,
+      SELECT u.id, u.name, u.email, u.phone, u.role, u.is_active, u.created_at,
              r.name AS role_name
       FROM dbo.users u
       OUTER APPLY (
@@ -82,9 +81,9 @@ async function createStaff(lodgeId, input) {
     .input('passwordHash', sql.NVarChar, passwordHash)
     .input('role', sql.NVarChar, input.roleKey)
     .query(`
-      INSERT INTO dbo.users (lodge_id, name, email, phone, password_hash, role, must_reset_password)
+      INSERT INTO dbo.users (lodge_id, name, email, phone, password_hash, role)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @name, @email, @phone, @passwordHash, @role, 1)
+      VALUES (@lodgeId, @name, @email, @phone, @passwordHash, @role)
     `);
 
   return { id: inserted.recordset[0].id };
@@ -172,8 +171,8 @@ async function updateStaff(lodgeId, userId, input) {
   return staff.find((s) => String(s.id) === String(userId));
 }
 
-// Sets a fresh temporary password and forces a change at next sign-in — the
-// recovery path when a staff member is locked out.
+// Sets a fresh temporary password — the recovery path when a staff member
+// is locked out.
 async function resetStaffPassword(lodgeId, userId, tempPassword) {
   const pool = await getPool();
   await loadLodgeUser(pool, lodgeId, userId);
@@ -184,7 +183,7 @@ async function resetStaffPassword(lodgeId, userId, tempPassword) {
     .input('userId', sql.BigInt, userId)
     .input('passwordHash', sql.NVarChar, passwordHash)
     .query(`
-      UPDATE dbo.users SET password_hash = @passwordHash, must_reset_password = 1
+      UPDATE dbo.users SET password_hash = @passwordHash
       WHERE id = @userId AND lodge_id = @lodgeId
     `);
 }

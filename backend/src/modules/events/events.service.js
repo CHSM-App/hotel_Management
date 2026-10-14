@@ -1,7 +1,9 @@
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { priceEvent, billablePax, round2 } = require('./eventPricing');
-const notifications = require('../notifications/bookingConfirmation');
+const eventConfirmation = require('../notifications/eventConfirmation');
+const eventCancellation = require('../notifications/eventCancellation');
+const eventReschedule = require('../notifications/eventReschedule');
 const customersService = require('../customers/customers.service');
 
 // The statuses that keep a venue busy. A draft does not — two families can
@@ -699,7 +701,7 @@ async function createEventBooking(lodgeId, userId, input) {
     // The organiser hears from us once the venue is theirs. A draft holds
     // nothing, so it is not told "confirmed"; it gets the message when it is
     // confirmed (see transition). Not awaited — best-effort, logged.
-    if (blocks) void notifications.notifyEventBooked(lodgeId, event);
+    if (blocks) void eventConfirmation.notifyEventBooked(lodgeId, event);
     return event;
   } catch (err) {
     await transaction.rollback();
@@ -826,7 +828,17 @@ async function updateEventBooking(lodgeId, id, input) {
     await transaction.rollback();
     throw err;
   }
-  return getEventBooking(lodgeId, id);
+  const updated = await getEventBooking(lodgeId, id);
+  // Only a function that already held its venue has anything to tell an
+  // organiser was "updated" — the same `blocks` guard notifyEventBooked's
+  // own transition() uses, and only when the venue or date/time actually
+  // moved, not an edit to pax or pricing alone. Unawaited, like the
+  // confirmation notice: the desk is saving an edit, not asking specifically
+  // whether the organiser was told.
+  if (moved && blocks) {
+    void eventReschedule.notifyEventRescheduled(lodgeId, updated);
+  }
+  return updated;
 }
 
 // ---------------------------------------------------------------------------
@@ -929,7 +941,7 @@ async function transition(lodgeId, id, { from, to, set = '', bind = () => {}, ta
   const updated = await getEventBooking(lodgeId, id);
   // First time this function takes the venue: a draft becoming confirmed.
   if (BLOCKING.includes(to) && !BLOCKING.includes(current.status)) {
-    void notifications.notifyEventBooked(lodgeId, updated);
+    void eventConfirmation.notifyEventBooked(lodgeId, updated);
   }
   return updated;
 }
@@ -994,7 +1006,14 @@ async function cancelEventBooking(lodgeId, id, { reason, refundAmount = null, re
       amount: current.totalAmount,
     });
   }
-  return updated;
+  // Awaited, unlike the booking confirmation: the desk asked to cancel and
+  // wants to know whether the organiser was told, so the result rides back
+  // on the same response instead of only reaching the log. Still never
+  // throws — notifyEventCancelled catches everything itself — so a WhatsApp
+  // outage cannot turn into an error for a cancellation that has already
+  // committed.
+  const whatsappResult = await eventCancellation.notifyEventCancelled(lodgeId, updated);
+  return { ...updated, whatsapp: whatsappResult };
 }
 
 // "Mark as Completed": the function is over, so the venue goes to housekeeping

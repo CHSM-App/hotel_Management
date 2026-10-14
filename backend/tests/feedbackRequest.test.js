@@ -15,7 +15,12 @@ process.env.JWT_SECRET ||= 'a'.repeat(40);
 delete process.env.WHATSAPP_FEEDBACK_TEMPLATE_ID;
 delete process.env.PUBLIC_BASE_URL;
 
-const { buildFeedbackSample, clean, notifyFeedbackRequest } = require('../src/modules/notifications/feedbackRequest');
+const {
+  buildFeedbackSample,
+  buildGreetMessage,
+  clean,
+  notifyFeedbackRequest,
+} = require('../src/modules/notifications/feedbackRequest');
 const { sendDueFeedbackRequests, newFeedbackToken } = require('../src/modules/bookings/feedbackRequests.service');
 const whatsapp = require('../src/config/whatsapp');
 
@@ -26,12 +31,38 @@ const booking = { id: 41, guestName: 'Rahul Patil', guestPhone: '9876543210' };
 const link = 'https://hotel.example.com/public/feedback/abc123';
 
 // ---------------------------------------------------------------------------
-// The three variables, in template order
+// The two variables, in template order
 // ---------------------------------------------------------------------------
 
-test('a feedback request fills the three template variables in order', () => {
+test('a feedback request fills the two template variables in order', () => {
   const sample = buildFeedbackSample(booking, lodge, link);
-  assert.deepStrictEqual(sample, ['Rahul Patil', 'Sea View Lodge', link]);
+  assert.strictEqual(sample.length, 2, `expected 2 variables, got ${sample.length}`);
+  assert.strictEqual(sample[0], 'Rahul Patil');
+  assert.strictEqual(sample[1], buildGreetMessage(lodge, link));
+});
+
+// An earlier three-variable version of this template ({{1}} name {{2}}
+// hotel_name {{3}} feedback_link) was rejected by WhatsApp's reviewers —
+// collapsing hotel name, the ask, and the link into one composed block is
+// what passed. The static wording carries no comma, and the hotel name is
+// cleaned before it goes in, so the whole block is guaranteed comma-free.
+test('greet_message carries the hotel name, the ask, and the link as one block, with no stray comma', () => {
+  const message = buildGreetMessage(lodge, link);
+  assert.match(message, /Thank you for choosing Sea View Lodge\./);
+  assert.match(message, /Please use the link below to leave your feedback:/);
+  assert.ok(message.includes(link), 'expected the link to appear in the composed message');
+  assert.ok(!message.includes(','), `comma in greet_message: "${message}"`);
+});
+
+test('a comma in the hotel name is replaced, not left to break the variable packing', () => {
+  const message = buildGreetMessage({ name: 'Hotel Sai, Vengurla' }, link);
+  assert.ok(!message.includes(','), `comma in greet_message: "${message}"`);
+  assert.match(message, /Hotel Sai - Vengurla/);
+});
+
+test('greet_message keeps its line breaks rather than collapsing them like clean() would', () => {
+  const message = buildGreetMessage(lodge, link);
+  assert.ok(message.includes('\n\n'), 'expected a blank line before the link line');
 });
 
 test('clean() collapses whitespace, replaces commas, and never yields an empty variable', () => {

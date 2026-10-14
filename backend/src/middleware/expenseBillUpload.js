@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
 const { uploadDir } = require('../config/uploadRoot');
+const { compressUploadedImages } = require('./imageCompression');
 
 // The receipt/bill for an expense. Same shape as assetBillUpload.js: outside
 // any statically-served directory, so access goes through the authenticated
@@ -32,7 +33,7 @@ const upload = multer({
 });
 
 function expenseBillUpload(req, res, next) {
-  upload.single('billDocument')(req, res, (err) => {
+  upload.single('billDocument')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(new ApiError('The receipt file must be 5MB or smaller.', 400));
@@ -40,6 +41,7 @@ function expenseBillUpload(req, res, next) {
       return next(new ApiError('Could not upload the receipt.', 400));
     }
     if (err) return next(err);
+    await compressUploadedImages(req, { maxDimension: 2000, quality: 85 });
     next();
   });
 }

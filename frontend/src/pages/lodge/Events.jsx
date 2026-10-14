@@ -1407,7 +1407,13 @@ function VenuesTab({ venues, reloadCatalogue }) {
               <div className="room-card venue-card" key={v.id}>
                 <div className={`room-card__cover${cover ? '' : ' room-card__cover--empty'}`}>
                   {cover ? (
-                    <img src={urlFor(cover.filename)} alt={v.name} className="room-card__cover-img" />
+                    <img
+                      src={urlFor(cover.filename)}
+                      alt={v.name}
+                      className="room-card__cover-img"
+                      loading="lazy"
+                      decoding="async"
+                    />
                   ) : (
                     <div className="room-card__cover-placeholder">{v.name}</div>
                   )}

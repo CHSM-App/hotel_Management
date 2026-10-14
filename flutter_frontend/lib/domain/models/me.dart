@@ -26,7 +26,6 @@ class MeUser {
   final String role;
   final String? roleName;
   final List<String> permissions;
-  final bool mustResetPassword;
 
   const MeUser({
     required this.id,
@@ -36,7 +35,6 @@ class MeUser {
     required this.role,
     this.roleName,
     this.permissions = const [],
-    this.mustResetPassword = false,
   });
 
   factory MeUser.fromJson(Map<String, dynamic> json) => MeUser(
@@ -51,7 +49,6 @@ class MeUser {
     permissions:
         (json['permissions'] as List?)?.map((e) => e.toString()).toList() ??
         const [],
-    mustResetPassword: asBool(json['mustResetPassword']),
   );
 
   bool can(String permission) => permissions.contains(permission);
