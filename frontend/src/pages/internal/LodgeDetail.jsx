@@ -227,6 +227,9 @@ export default function LodgeDetail() {
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState('');
   const logoInputRef = useRef(null);
+  const [heroBusy, setHeroBusy] = useState(false);
+  const [heroError, setHeroError] = useState('');
+  const heroInputRef = useRef(null);
 
   const handleLogoPick = async (e) => {
     const file = e.target.files?.[0];
@@ -256,6 +259,37 @@ export default function LodgeDetail() {
       setLogoError(err instanceof ApiError ? err.message : 'Could not remove the logo.');
     } finally {
       setLogoBusy(false);
+    }
+  };
+
+  const handleHeroImagePick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setHeroError('');
+    setHeroBusy(true);
+    try {
+      const formData = new FormData();
+      formData.append('heroImage', file);
+      const detail = await apiPutForm(`/internal/lodges/${id}/hero-image`, formData, { token: session?.token });
+      setData(detail);
+    } catch (err) {
+      setHeroError(err instanceof ApiError ? err.message : 'Could not upload the hero image.');
+    } finally {
+      setHeroBusy(false);
+    }
+  };
+
+  const handleHeroImageRemove = async () => {
+    setHeroError('');
+    setHeroBusy(true);
+    try {
+      const detail = await apiDelete(`/internal/lodges/${id}/hero-image`, { token: session?.token });
+      setData(detail);
+    } catch (err) {
+      setHeroError(err instanceof ApiError ? err.message : 'Could not remove the hero image.');
+    } finally {
+      setHeroBusy(false);
     }
   };
 
@@ -465,11 +499,41 @@ export default function LodgeDetail() {
                     Remove
                   </button>
                 )}
+                <input
+                  ref={heroInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleHeroImagePick}
+                  hidden
+                />
+                <button
+                  type="button"
+                  className="btn-view"
+                  onClick={() => heroInputRef.current?.click()}
+                  disabled={heroBusy}
+                >
+                  {heroBusy ? 'Uploading…' : lodge.hero_image_path ? 'Replace hero image' : 'Upload hero image'}
+                </button>
+                {lodge.hero_image_path && (
+                  <button type="button" className="btn-view" onClick={handleHeroImageRemove} disabled={heroBusy}>
+                    Remove hero image
+                  </button>
+                )}
                 <button type="button" className="btn-accent" onClick={() => setEditing(true)}>
                   Edit lodge
                 </button>
               </div>
               {logoError && <span className="detail-hero__logo-error">{logoError}</span>}
+              {heroError && <span className="detail-hero__logo-error">{heroError}</span>}
+              {/* Not set: the public page falls back to the first room/venue
+                  photo, which is worth saying here since there's no visible
+                  cue for it otherwise (unlike the logo, which always shows
+                  something — itself or a monogram). */}
+              {!lodge.hero_image_path && (
+                <span className="detail-hero__hero-hint">
+                  No hero image set — the public page uses the first room/venue photo.
+                </span>
+              )}
             </div>
 
             {/* Side nav + one continuous document, Stripe/GitHub-settings

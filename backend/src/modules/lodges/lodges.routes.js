@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { authenticate, requireRole } = require('../../middleware/authenticate');
 const { logoUpload } = require('../../middleware/logoUpload');
+const { heroImageUpload } = require('../../middleware/heroImageUpload');
 const {
   createLodgeHandler,
   listLodgesHandler,
@@ -8,6 +9,8 @@ const {
   updateLodgeHandler,
   updateLodgeLogoHandler,
   removeLodgeLogoHandler,
+  updateLodgeHeroImageHandler,
+  removeLodgeHeroImageHandler,
   importLodgeMenuHandler,
 } = require('./lodges.controller');
 
@@ -20,6 +23,8 @@ router.get('/:id', authenticate, requireRole('SUPERADMIN'), getLodgeHandler);
 router.patch('/:id', authenticate, requireRole('SUPERADMIN'), updateLodgeHandler);
 router.put('/:id/logo', authenticate, requireRole('SUPERADMIN'), logoUpload, updateLodgeLogoHandler);
 router.delete('/:id/logo', authenticate, requireRole('SUPERADMIN'), removeLodgeLogoHandler);
+router.put('/:id/hero-image', authenticate, requireRole('SUPERADMIN'), heroImageUpload, updateLodgeHeroImageHandler);
+router.delete('/:id/hero-image', authenticate, requireRole('SUPERADMIN'), removeLodgeHeroImageHandler);
 
 // Same spreadsheet import a lodge owner has on their own menu screen, run here
 // against whichever lodge id is in the URL — see importLodgeMenuHandler.

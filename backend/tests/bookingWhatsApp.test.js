@@ -18,6 +18,8 @@ delete process.env.WHATSAPP_BOOKING_TEMPLATE_ID;
 
 const {
   buildStaySample,
+  buildPerRoomSample,
+  sameDatesAcrossRooms,
   directionsFor,
   clean,
   notifyStayBooked,
@@ -187,4 +189,65 @@ test('loadBooking reads room_numbers/advance_amount/total_price, not the raw col
   assert.match(src, /booking\.room_numbers/);
   assert.match(src, /booking\.advance_amount/);
   assert.match(src, /booking\.total_price/);
+});
+
+// ---------------------------------------------------------------------------
+// Rooms on different date ranges — one message per room instead of one
+// shared {{4}}/{{5}} pair that couldn't honestly speak for all of them
+// ---------------------------------------------------------------------------
+
+const roomA = { room_number: '204', check_in_date: '2026-09-12', check_out_date: '2026-09-14', total_price: 3000 };
+const roomB = { room_number: '205', check_in_date: '2026-09-13', check_out_date: '2026-09-15', total_price: 2000 };
+
+test('sameDatesAcrossRooms is true for one room, or for several sharing a range', () => {
+  assert.strictEqual(sameDatesAcrossRooms([roomA]), true);
+  assert.strictEqual(sameDatesAcrossRooms([roomA, { ...roomA, room_number: '206' }]), true);
+});
+
+test('sameDatesAcrossRooms is false the moment one room disagrees, on either end', () => {
+  assert.strictEqual(sameDatesAcrossRooms([roomA, roomB]), false);
+  assert.strictEqual(sameDatesAcrossRooms([roomA, { ...roomA, room_number: '206', check_out_date: '2026-09-15' }]), false);
+});
+
+test('sameDatesAcrossRooms compares calendar days, not Date-vs-string shape', () => {
+  const asDate = { ...roomA, check_in_date: new Date('2026-09-12T00:00:00Z'), check_out_date: new Date('2026-09-14T00:00:00Z') };
+  assert.strictEqual(sameDatesAcrossRooms([roomA, asDate]), true);
+});
+
+test('buildPerRoomSample names just that room and its own dates', () => {
+  const sample = buildPerRoomSample(roomA, { guest_name: 'Rahul Patil', advance_amount: 1000, total_price: 5000 }, lodge, 2);
+  assert.strictEqual(sample[0], 'Rahul Patil');
+  assert.strictEqual(sample[2], '204');
+  assert.strictEqual(sample[3], '12 Sep 2026 12:00 PM');
+  assert.strictEqual(sample[4], '14 Sep 2026 10:30 AM');
+});
+
+test('buildPerRoomSample splits the one advance payment in proportion to each room\'s own price', () => {
+  // roomA is 3000 of a 5000 total (60%), roomB is 2000 (40%) — a 1000 advance
+  // splits 600/400, and each room's own total_price is reported whole.
+  const booking = { guest_name: 'Rahul Patil', advance_amount: 1000, total_price: 5000 };
+  const sampleA = buildPerRoomSample(roomA, booking, lodge, 2);
+  const sampleB = buildPerRoomSample(roomB, booking, lodge, 2);
+  assert.strictEqual(sampleA[5], '600.00'); // advance paid
+  assert.strictEqual(sampleA[6], '3000.00'); // total
+  assert.strictEqual(sampleA[7], '2400.00'); // balance due
+  assert.strictEqual(sampleB[5], '400.00');
+  assert.strictEqual(sampleB[6], '2000.00');
+  assert.strictEqual(sampleB[7], '1600.00');
+  // The two rooms' advance shares add back up to the one real payment —
+  // nothing invented, nothing dropped.
+  assert.strictEqual(Number(sampleA[5]) + Number(sampleB[5]), 1000);
+});
+
+test('buildPerRoomSample splits evenly rather than dividing by zero when the booking has no price yet', () => {
+  const booking = { guest_name: 'Rahul Patil', advance_amount: 1000, total_price: 0 };
+  const sample = buildPerRoomSample({ ...roomA, total_price: 0 }, booking, lodge, 2);
+  assert.strictEqual(sample[5], '500.00');
+});
+
+test('notifyStayBooked sends one message per room when the rooms disagree on dates, one message otherwise', () => {
+  const src = read('src/modules/notifications/bookingConfirmation.js');
+  const fn = src.slice(src.indexOf('async function notifyStayBooked('));
+  assert.match(fn, /if \(sameDatesAcrossRooms\(rooms\)\)/);
+  assert.match(fn, /buildPerRoomSample\(room, booking, lodge, rooms\.length\)/);
 });

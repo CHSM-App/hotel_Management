@@ -1844,7 +1844,7 @@ async function getBooking(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT id, service_name, unit_label, quantity, line_total, status, on_room_bill, invoice_id, started_at
+      SELECT id, service_name, unit_label, quantity, headcount, line_total, status, on_room_bill, invoice_id, started_at
       FROM dbo.service_usages
       WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND status <> 'CANCELLED'
       ORDER BY started_at ASC
@@ -1854,6 +1854,7 @@ async function getBooking(lodgeId, bookingId) {
     name: u.service_name,
     unitLabel: u.unit_label,
     quantity: Number(u.quantity),
+    headcount: Number(u.headcount),
     amount: Number(u.line_total),
     status: u.status,
     billed: u.invoice_id != null,

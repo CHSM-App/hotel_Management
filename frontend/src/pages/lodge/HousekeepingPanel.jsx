@@ -520,6 +520,9 @@ function RoomsTab({ token, hasLaundry, hasEvents, view, toolsHost }) {
                       <Stepper
                         label={i.name}
                         value={finish.counts[i.id] ?? 0}
+                        // Can't change in more than is clean and in the store
+                        // right now — the server enforces the same ceiling.
+                        max={i.clean}
                         onChange={(n) => setFinish({ ...finish, counts: { ...finish.counts, [i.id]: n } })}
                       />
                     </div>

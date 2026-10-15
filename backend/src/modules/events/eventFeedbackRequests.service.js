@@ -7,10 +7,10 @@ const feedbackRequest = require('../notifications/feedbackRequest');
 
 // The event side of feedbackRequests.service.js — same sweep shape, same
 // delay, same dedup idea, fired off a function's completed_at instead of a
-// stay's actual_check_out_at. Reuses notifications/feedbackRequest.js
-// unchanged: that notifier's three variables (name, hotel_name,
-// feedback_link) name nothing stay-specific, so the same approved template
-// already covers an organiser exactly as well as a guest.
+// stay's actual_check_out_at. Reuses the same approved template as the stay
+// sweep via notifications/feedbackRequest.js, passing 'event' as the `kind`
+// so the one sentence that actually differs (the opening line) reads right
+// for an organiser rather than a guest — see OPENING_LINE in that file.
 //
 // One ask per function, ever — dbo.feedback_requests' own filtered unique
 // index on event_booking_id (see migration 141) is the whole of the dedup,
@@ -103,7 +103,7 @@ async function sendDueEventFeedbackRequests() {
     const lodge = { name: row.lodge_name, phone: row.lodge_phone, whatsappNumber: row.lodge_whatsapp_number };
     const link = `${publicBaseUrl()}/public/feedback/${token}`;
 
-    const outcome = await feedbackRequest.notifyFeedbackRequest(row.lodge_id, booking, lodge, link);
+    const outcome = await feedbackRequest.notifyFeedbackRequest(row.lodge_id, booking, lodge, link, 'event');
     if (outcome.status === 'sent') sent += 1;
     else if (outcome.status === 'failed') failed += 1;
     else skipped += 1;

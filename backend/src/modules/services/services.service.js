@@ -106,7 +106,7 @@ async function updateService(lodgeId, id, input) {
 
 const USAGE_SELECT = `
   SELECT u.id, u.service_id, u.service_name, u.unit_label, u.unit_price, u.gst_rate_percent, u.quantity,
-         u.line_total, u.room_id, u.booking_id, u.guest_name, u.guest_phone, u.note, u.status,
+         u.headcount, u.line_total, u.room_id, u.booking_id, u.guest_name, u.guest_phone, u.note, u.status,
          u.on_room_bill, u.invoice_id, u.started_at, u.completed_at, u.laundry_order_id, r.room_number
   FROM dbo.service_usages u
   LEFT JOIN dbo.rooms r ON r.id = u.room_id
@@ -121,6 +121,7 @@ function mapUsage(row) {
     unitPrice: Number(row.unit_price),
     gstRatePercent: Number(row.gst_rate_percent),
     quantity: Number(row.quantity),
+    headcount: Number(row.headcount),
     lineTotal: Number(row.line_total),
     roomId: row.room_id,
     roomNumber: row.room_number ?? null,
@@ -190,7 +191,7 @@ async function startUsage(lodgeId, userId, input) {
     guestPhone = guestPhone || stay.recordset[0].guest_phone;
   }
 
-  const lineTotal = round2(Number(service.price) * input.quantity);
+  const lineTotal = round2(Number(service.price) * input.quantity * input.headcount);
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -200,6 +201,7 @@ async function startUsage(lodgeId, userId, input) {
     .input('price', sql.Decimal(10, 2), service.price)
     .input('gst', sql.Decimal(5, 2), service.gst_rate_percent)
     .input('qty', sql.Decimal(8, 2), input.quantity)
+    .input('headcount', sql.Int, input.headcount)
     .input('total', sql.Decimal(10, 2), lineTotal)
     .input('roomId', sql.BigInt, roomId)
     .input('bookingId', sql.BigInt, input.bookingId ?? null)
@@ -209,13 +211,85 @@ async function startUsage(lodgeId, userId, input) {
     .input('userId', sql.BigInt, userId ?? null)
     .query(`
       INSERT INTO dbo.service_usages
-        (lodge_id, service_id, service_name, unit_label, unit_price, gst_rate_percent, quantity, line_total,
+        (lodge_id, service_id, service_name, unit_label, unit_price, gst_rate_percent, quantity, headcount, line_total,
          room_id, booking_id, guest_name, guest_phone, note, created_by)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @serviceId, @name, @unit, @price, @gst, @qty, @total,
+      VALUES (@lodgeId, @serviceId, @name, @unit, @price, @gst, @qty, @headcount, @total,
               @roomId, @bookingId, @guestName, @guestPhone, @note, @userId)
     `);
   return getUsage(lodgeId, result.recordset[0].id);
+}
+
+// A desk correction to a use still open — wrong headcount typed, a walk-in
+// turned out to be a staying guest, a few more hours added. Once it's on an
+// invoice the amount is already printed somewhere, so editing stops there;
+// cancel and start again instead. The service, unit, price and GST rate stay
+// exactly as snapshotted — only how much of it, and for whom, can change.
+async function updateUsage(lodgeId, id, input) {
+  const pool = await getPool();
+  const existing = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('id', sql.BigInt, id)
+    .query('SELECT * FROM dbo.service_usages WHERE id = @id AND lodge_id = @lodgeId');
+  const row = existing.recordset[0];
+  if (!row) throw new ApiError('Service use not found.', 404);
+  if (row.status === 'CANCELLED') throw new ApiError('A cancelled use cannot be edited.', 409);
+  if (row.invoice_id != null) throw new ApiError('This use has already been billed and cannot be edited.', 409);
+
+  const quantity = input.quantity ?? Number(row.quantity);
+  const headcount = input.headcount ?? Number(row.headcount);
+
+  let roomId = row.room_id;
+  let bookingId = row.booking_id;
+  let guestName = input.guestName ?? row.guest_name;
+  let guestPhone = input.guestPhone ?? row.guest_phone;
+  // The edit form always resends whatever booking is currently on the use,
+  // touched or not, so "present" alone can't mean "the picker changed" —
+  // re-checking CHECKED_IN on a booking that was never actually touched
+  // would fail an otherwise-unrelated edit the moment that guest checks out.
+  // Only a bookingId that differs from what's already stored is resolved.
+  const nextBookingId = input.bookingId !== undefined ? input.bookingId : row.booking_id;
+  if (nextBookingId !== row.booking_id) {
+    bookingId = nextBookingId;
+    if (bookingId) {
+      const stay = await pool
+        .request()
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('id', sql.BigInt, bookingId)
+        .query("SELECT room_id, guest_name, guest_phone FROM dbo.bookings WHERE id = @id AND lodge_id = @lodgeId AND status = 'CHECKED_IN'");
+      if (stay.recordset.length === 0) throw new ApiError('That guest is not checked in.', 409);
+      roomId = stay.recordset[0].room_id;
+      guestName = input.guestName || stay.recordset[0].guest_name;
+      guestPhone = input.guestPhone || stay.recordset[0].guest_phone;
+    } else {
+      roomId = null;
+    }
+  }
+
+  const lineTotal = round2(Number(row.unit_price) * quantity * headcount);
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('id', sql.BigInt, id)
+    .input('qty', sql.Decimal(8, 2), quantity)
+    .input('headcount', sql.Int, headcount)
+    .input('total', sql.Decimal(10, 2), lineTotal)
+    .input('roomId', sql.BigInt, roomId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('guestName', sql.NVarChar, guestName || null)
+    .input('guestPhone', sql.NVarChar, guestPhone || null)
+    .input('note', sql.NVarChar, input.note !== undefined ? input.note || null : row.note)
+    .query(`
+      UPDATE dbo.service_usages
+      SET quantity = @qty, headcount = @headcount, line_total = @total, room_id = @roomId,
+          booking_id = @bookingId, guest_name = @guestName, guest_phone = @guestPhone, note = @note
+      WHERE id = @id AND lodge_id = @lodgeId AND status <> 'CANCELLED' AND invoice_id IS NULL
+    `);
+  if (result.rowsAffected[0] === 0) {
+    throw new ApiError('This use was billed or cancelled while editing — refresh and try again.', 409);
+  }
+  return getUsage(lodgeId, id);
 }
 
 async function getUsage(lodgeId, id) {
@@ -256,4 +330,4 @@ async function cancelUsage(lodgeId, id) {
   return getUsage(lodgeId, id);
 }
 
-module.exports = { listServices, createService, updateService, listUsages, startUsage, completeUsage, cancelUsage };
+module.exports = { listServices, createService, updateService, listUsages, startUsage, updateUsage, completeUsage, cancelUsage };

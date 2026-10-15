@@ -141,8 +141,9 @@ const EVENT_RESCHEDULE_TEMPLATE_ID = process.env.WHATSAPP_EVENT_RESCHEDULE_TEMPL
 // the rest.
 //
 // Its two variables, in order, are built by feedbackRequest.js:
-//   {{1}} name  {{2}} greet_message (hotel name, the ask, and the feedback
-//   link, composed server-side as one block — an earlier three-variable
+//   {{1}} name  {{2}} greet_message (an opening line that differs by
+//   whether this is a stay or a function, then the ask and the feedback
+//   link — composed server-side as one block. An earlier three-variable
 //   version was rejected by WhatsApp's reviewers; one placeholder per line
 //   of static text is what passed)
 const FEEDBACK_TEMPLATE_ID = process.env.WHATSAPP_FEEDBACK_TEMPLATE_ID || '';

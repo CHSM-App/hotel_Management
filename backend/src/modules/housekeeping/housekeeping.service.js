@@ -187,6 +187,25 @@ async function assertLinenItems(request, lodgeId, ids) {
   if (found.recordset.length !== new Set(ids).size) throw new ApiError('One of those linen items was not found.', 404);
 }
 
+// A room/venue can only be changed with — and a loss can only be taken off —
+// linen that is actually clean and in the store right now. Without this, a
+// hotel owning 3 bedsheets could have 5 "changed" into a room or "lost" in
+// one entry, and the stock board would show more out than it owns (see
+// linenStockOf's `short` flag, which this stops from ever being set).
+async function assertLinenAvailable(lodgeId, lines) {
+  if (lines.length === 0) return;
+  const stock = await stockById(lodgeId);
+  for (const line of lines) {
+    const item = stock.get(String(line.linenItemId));
+    if (item && line.quantity > item.clean) {
+      throw new ApiError(
+        `Only ${item.clean} ${item.name} ${item.clean === 1 ? 'is' : 'are'} clean and in the store. Check how many you own, or lower the count.`,
+        409
+      );
+    }
+  }
+}
+
 // Done: the room is clean, the linen changed in it waits for the laundry to
 // receive it, and anything found is logged. Works whether or not Start was pressed first.
 async function finishCleaning(lodgeId, userId, roomId, input) {
@@ -199,6 +218,7 @@ async function finishCleaning(lodgeId, userId, roomId, input) {
   // Blocking a room needs a reason to show for it.
   const blockRoom = Boolean(input.blockRoom && input.issues);
   await assertLinenItems(pool.request(), lodgeId, linen.map((l) => l.linenItemId));
+  await assertLinenAvailable(lodgeId, linen);
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
@@ -457,6 +477,7 @@ async function finishVenueCleaning(lodgeId, userId, venueId, input) {
   const linen = (await hasLaundry(pool, lodgeId)) ? input.linen : [];
   const blockVenue = Boolean(input.blockRoom && input.issues);
   await assertLinenItems(pool.request(), lodgeId, linen.map((l) => l.linenItemId));
+  await assertLinenAvailable(lodgeId, linen);
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
@@ -1060,8 +1081,10 @@ async function receiveFromLaundry(lodgeId, userId, input) {
 }
 
 // A loss from the room or store, not at the laundry.
-const recordLoss = (lodgeId, userId, input) =>
-  addMovements(lodgeId, userId, [{ linenItemId: input.linenItemId, kind: input.kind, source: 'STORE', quantity: input.quantity, note: input.note }]);
+async function recordLoss(lodgeId, userId, input) {
+  await assertLinenAvailable(lodgeId, [input]);
+  await addMovements(lodgeId, userId, [{ linenItemId: input.linenItemId, kind: input.kind, source: 'STORE', quantity: input.quantity, note: input.note }]);
+}
 
 async function listLinenMovements(lodgeId) {
   const pool = await getPool();

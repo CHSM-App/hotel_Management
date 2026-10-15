@@ -1115,7 +1115,7 @@ async function getServicesReport(lodgeId, fromDate, toDate) {
     .input('fromDate', sql.Date, fromDate)
     .input('toDate', sql.Date, toDate)
     .query(`
-      SELECT u.id, u.service_name, u.unit_label, u.unit_price, u.quantity, u.line_total, u.gst_rate_percent,
+      SELECT u.id, u.service_name, u.unit_label, u.unit_price, u.quantity, u.headcount, u.line_total, u.gst_rate_percent,
              u.guest_name, u.status, u.on_room_bill, u.started_at, u.completed_at,
              r.room_number, i.invoice_number, i.status AS invoice_status
       FROM dbo.service_usages u
@@ -1132,6 +1132,7 @@ async function getServicesReport(lodgeId, fromDate, toDate) {
     unitLabel: row.unit_label,
     unitPrice: Number(row.unit_price),
     quantity: Number(row.quantity),
+    headcount: Number(row.headcount),
     lineTotal: Number(row.line_total),
     gstRatePercent: Number(row.gst_rate_percent),
     guestName: row.guest_name || null,
@@ -1340,7 +1341,12 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
     .input('fromDate', sql.Date, fromDate)
     .input('toDate', sql.Date, toDate)
     .query(`
-      SELECT o.id, o.order_number, o.order_date, o.source, o.guest_name, o.guest_phone,
+      SELECT o.id, o.order_number, o.order_date, o.source,
+             -- A room order taken at the counter carries its guest's identity
+             -- on the booking, not typed again onto the order itself — same
+             -- fallback listOrders/getOrder use for the live queue and billing.
+             COALESCE(o.guest_name, bk.guest_name) AS guest_name,
+             COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
              o.status, o.subtotal, o.placed_at, o.delivered_at, o.cancelled_at, o.cancel_reason,
              r.room_number, t.label AS table_label,
              i.invoice_number, i.document_type, i.status AS invoice_status,
@@ -1348,6 +1354,7 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
       FROM dbo.food_orders o
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+      LEFT JOIN dbo.bookings bk ON bk.id = o.booking_id
       -- The bill whatever its state: a voided one must still be reported, as voided.
       LEFT JOIN dbo.invoices i ON i.id = o.invoice_id
       WHERE o.lodge_id = @lodgeId AND o.order_date BETWEEN @fromDate AND @toDate

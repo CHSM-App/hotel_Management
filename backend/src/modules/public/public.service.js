@@ -13,7 +13,7 @@ async function getLodgeBySlug(slug) {
     .query(`
       SELECT id, name, slug, phone, whatsapp_number, address, city, state,
              has_rooms, serves_food, food_room_service, food_table_service, has_events,
-             has_other_services, checkin_mode, latitude, longitude, logo_path
+             has_other_services, checkin_mode, latitude, longitude, logo_path, hero_image_path
       FROM dbo.lodges
       WHERE slug = @slug AND is_active = 1
     `);
@@ -45,6 +45,9 @@ async function getLodgeBySlug(slug) {
     latitude: row.latitude == null ? null : Number(row.latitude),
     longitude: row.longitude == null ? null : Number(row.longitude),
     logoUrl: row.logo_path ? `/hotel-logos/${row.logo_path}` : null,
+    // Set by an owner or Vengurla Tech staff; the page falls back to the
+    // first room/venue photo when this is null.
+    heroImageUrl: row.hero_image_path ? `/lodge-hero-images/${row.hero_image_path}` : null,
   };
 }
 

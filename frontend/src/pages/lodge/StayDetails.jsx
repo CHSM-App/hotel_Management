@@ -489,9 +489,13 @@ export default function StayDetails({
                   <span>
                     {u.name}
                     {/* Rate × quantity, as the room lines say rate × nights. The
-                        rate is the one snapshotted when the service was used. */}
+                        rate is the one snapshotted when the service was used.
+                        A × headcount only appears when more than one person
+                        shared the use — the common solo case stays unchanged. */}
                     <span className="sim-result__part-nights">
-                      {formatPrice(u.unitPrice ?? u.amount / u.quantity)} per {u.unitLabel} × {u.quantity}
+                      {formatPrice(u.unitPrice ?? u.amount / (u.quantity * (u.headcount || 1)))} per {u.unitLabel} ×{' '}
+                      {u.quantity}
+                      {u.headcount > 1 ? ` × ${u.headcount} people` : ''}
                       {u.gstRatePercent > 0 ? ` · incl. ${u.gstRatePercent}% GST` : ''}
                     </span>
                   </span>

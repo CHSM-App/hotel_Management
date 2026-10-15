@@ -1068,7 +1068,16 @@ function LinenTab({ token }) {
               </div>
               <div className="hk-row">
                 <span>How many</span>
-                <Stepper label="quantity" value={modal.quantity} onChange={(n) => setModal({ ...modal, quantity: Math.max(1, n) })} />
+                <Stepper
+                  label="quantity"
+                  value={modal.quantity}
+                  // A loss here is always from the store (recordLoss's
+                  // source is always 'STORE'), so it can't take off more than
+                  // is currently clean and in the store — the server enforces
+                  // the same ceiling.
+                  max={items.find((i) => String(i.id) === String(modal.linenItemId))?.clean}
+                  onChange={(n) => setModal({ ...modal, quantity: Math.max(1, n) })}
+                />
               </div>
             </>
           )}

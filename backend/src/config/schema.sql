@@ -3267,3 +3267,10 @@ IF COL_LENGTH('dbo.lodge_services', 'image_filename') IS NULL
 -- was last actually used. NULL means "never signed in".
 IF COL_LENGTH('dbo.users', 'last_seen') IS NULL
     EXEC('ALTER TABLE dbo.users ADD last_seen DATETIMEOFFSET NULL');
+
+-- hero_image_path (145): the public page's hero background, set by an owner
+-- or Vengurla Tech staff. NULL falls back to the first room/venue photo, as
+-- the page always has. Relative to the uploads root, not a URL, matching
+-- logo_path.
+IF COL_LENGTH('dbo.lodges', 'hero_image_path') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD hero_image_path NVARCHAR(500) NULL');

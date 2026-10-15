@@ -22,16 +22,23 @@ const whatsapp = require('../src/config/whatsapp');
 const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 
 // ---------------------------------------------------------------------------
-// The notifier is reused unchanged — its two variables name nothing
-// stay-specific, so an organiser's shape fits the same buildFeedbackSample
-// a guest's shape already did.
+// The notifier is reused, same template, same two variables — only the
+// `kind` passed in differs, picking the one opening line that reads right
+// for an organiser instead of a guest.
 // ---------------------------------------------------------------------------
 
-test('an organiser fits the same two template variables a guest does', () => {
+test('an organiser fits the same two template variables a guest does, with the event opening', () => {
   const lodge = { name: 'Sea View Lodge' };
   const organiserAsBooking = { id: 7, guestName: 'Sharma', guestPhone: '9876543210' };
   const link = 'https://hotel.example.com/public/feedback/abc123';
-  assert.deepStrictEqual(buildFeedbackSample(organiserAsBooking, lodge, link), ['Sharma', buildGreetMessage(lodge, link)]);
+  const sample = buildFeedbackSample(organiserAsBooking, lodge, link, 'event');
+  assert.deepStrictEqual(sample, ['Sharma', buildGreetMessage(lodge, link, 'event')]);
+  assert.match(sample[1], /hosting your event/);
+});
+
+test('the event sweep passes the event opening, not the stay one', () => {
+  const src = read('src/modules/events/eventFeedbackRequests.service.js');
+  assert.match(src, /notifyFeedbackRequest\(row\.lodge_id, booking, lodge, link, 'event'\)/);
 });
 
 // ---------------------------------------------------------------------------

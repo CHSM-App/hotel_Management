@@ -1617,7 +1617,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                         <td className="history-table__num">
                           {u.laundryOrderId
                             ? `${u.usageIds.length} item${u.usageIds.length === 1 ? '' : 's'}`
-                            : `${u.quantity} × ${formatPrice(u.unitPrice)}`}
+                            : `${u.quantity}${u.headcount > 1 ? ` × ${u.headcount}` : ''} × ${formatPrice(u.unitPrice)}`}
                         </td>
                         <td className="history-table__num history-table__strong">{formatPrice(u.lineTotal)}</td>
                         <td className="history-table__actions">
@@ -2415,10 +2415,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       </>
                     )}
 
-                    {/* A cycle-property guest who left before their booked
-                        nights ran out. The bill still carries every night that
-                        was sold; this is where the desk decides whether to
-                        give the unused ones back. It fills the discount below. */}
+                    {/* A guest who left before their booked nights ran out.
+                        The bill still carries every night that was sold; this
+                        is where the desk decides whether to give the unused
+                        ones back. It fills the discount below. */}
                     {preview.earlyCheckout && (
                       <div
                         className={`billing-panel__early${earlyReducing ? ' billing-panel__early--on' : ''}`}
@@ -2576,7 +2576,8 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                           <span className="chart-row__name">
                             {item.name}
                             <span className="chart-row__dates">
-                              {item.quantity} × {formatPrice(item.unitPrice)}
+                              {item.quantity}
+                              {item.headcount > 1 ? ` × ${item.headcount}` : ''} × {formatPrice(item.unitPrice)}
                               {item.gstRatePercent > 0 ? ` · GST ${item.gstRatePercent}%` : ''}
                             </span>
                           </span>

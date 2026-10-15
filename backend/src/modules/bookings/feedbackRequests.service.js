@@ -108,7 +108,7 @@ async function sendDueFeedbackRequests() {
     const lodge = { name: row.lodge_name, phone: row.lodge_phone, whatsappNumber: row.lodge_whatsapp_number };
     const link = `${publicBaseUrl()}/public/feedback/${token}`;
 
-    const outcome = await feedbackRequest.notifyFeedbackRequest(row.lodge_id, booking, lodge, link);
+    const outcome = await feedbackRequest.notifyFeedbackRequest(row.lodge_id, booking, lodge, link, 'stay');
     if (outcome.status === 'sent') sent += 1;
     else if (outcome.status === 'failed') failed += 1;
     else skipped += 1;

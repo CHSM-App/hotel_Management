@@ -34,11 +34,11 @@ const link = 'https://hotel.example.com/public/feedback/abc123';
 // The two variables, in template order
 // ---------------------------------------------------------------------------
 
-test('a feedback request fills the two template variables in order', () => {
+test('a feedback request fills the two template variables in order, defaulting to the stay opening', () => {
   const sample = buildFeedbackSample(booking, lodge, link);
   assert.strictEqual(sample.length, 2, `expected 2 variables, got ${sample.length}`);
   assert.strictEqual(sample[0], 'Rahul Patil');
-  assert.strictEqual(sample[1], buildGreetMessage(lodge, link));
+  assert.strictEqual(sample[1], buildGreetMessage(lodge, link, 'stay'));
 });
 
 // An earlier three-variable version of this template ({{1}} name {{2}}
@@ -46,23 +46,48 @@ test('a feedback request fills the two template variables in order', () => {
 // collapsing hotel name, the ask, and the link into one composed block is
 // what passed. The static wording carries no comma, and the hotel name is
 // cleaned before it goes in, so the whole block is guaranteed comma-free.
-test('greet_message carries the hotel name, the ask, and the link as one block, with no stray comma', () => {
-  const message = buildGreetMessage(lodge, link);
-  assert.match(message, /Thank you for choosing Sea View Lodge\./);
+test('greet_message carries the ask and the link, with no stray comma', () => {
+  const message = buildGreetMessage(lodge, link, 'stay');
   assert.match(message, /Please use the link below to leave your feedback:/);
   assert.ok(message.includes(link), 'expected the link to appear in the composed message');
   assert.ok(!message.includes(','), `comma in greet_message: "${message}"`);
 });
 
+// The one sentence that actually differs between a stay and a function —
+// everything after it (the ask, the link) is identical either way.
+test('the opening line reads right for a stay and for an event, picked by kind', () => {
+  const stayMessage = buildGreetMessage(lodge, link, 'stay');
+  assert.match(stayMessage, /Thank you for staying with us at Sea View Lodge\./);
+  assert.doesNotMatch(stayMessage, /hosting your event/);
+
+  const eventMessage = buildGreetMessage(lodge, link, 'event');
+  assert.match(eventMessage, /Thank you for hosting your event with us at Sea View Lodge\./);
+  assert.doesNotMatch(eventMessage, /staying with us/);
+});
+
+test('an unknown kind falls back to the stay opening rather than throwing', () => {
+  const message = buildGreetMessage(lodge, link, 'bogus');
+  assert.match(message, /Thank you for staying with us at Sea View Lodge\./);
+});
+
 test('a comma in the hotel name is replaced, not left to break the variable packing', () => {
-  const message = buildGreetMessage({ name: 'Hotel Sai, Vengurla' }, link);
+  const message = buildGreetMessage({ name: 'Hotel Sai, Vengurla' }, link, 'stay');
   assert.ok(!message.includes(','), `comma in greet_message: "${message}"`);
   assert.match(message, /Hotel Sai - Vengurla/);
 });
 
-test('greet_message keeps its line breaks rather than collapsing them like clean() would', () => {
-  const message = buildGreetMessage(lodge, link);
-  assert.ok(message.includes('\n\n'), 'expected a blank line before the link line');
+// Confirmed in production: WhatsApp's own API rejects a parameter value
+// outright if it contains a newline, a tab, or a run of more than 4 spaces
+// ("Param text cannot have new-line/tab characters or more than 4
+// consecutive spaces"). An earlier version joined the ask and the link with
+// "\n\n", which got every send rejected — this is the regression guard.
+test('greet_message never contains a newline, a tab, or more than 4 consecutive spaces', () => {
+  for (const kind of ['stay', 'event']) {
+    const message = buildGreetMessage(lodge, link, kind);
+    assert.ok(!message.includes('\n'), `newline in greet_message (${kind}): "${message}"`);
+    assert.ok(!message.includes('\t'), `tab in greet_message (${kind}): "${message}"`);
+    assert.ok(!/ {5,}/.test(message), `5+ consecutive spaces in greet_message (${kind}): "${message}"`);
+  }
 });
 
 test('clean() collapses whitespace, replaces commas, and never yields an empty variable', () => {
@@ -112,6 +137,11 @@ test('reads the camelCase fields buildFeedbackSample expects, not raw snake_case
 // ---------------------------------------------------------------------------
 // One ask per booking, ever — the row is written before the send, not after
 // ---------------------------------------------------------------------------
+
+test('the stay sweep passes the stay opening, not the event one', () => {
+  const src = read('src/modules/bookings/feedbackRequests.service.js');
+  assert.match(src, /notifyFeedbackRequest\(row\.lodge_id, booking, lodge, link, 'stay'\)/);
+});
 
 test('the sweep records the feedback request before attempting the send', () => {
   const src = read('src/modules/bookings/feedbackRequests.service.js');

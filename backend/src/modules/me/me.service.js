@@ -8,6 +8,7 @@ const whatsapp = require('../../config/whatsapp');
 const { logger } = require('../../config/logger');
 const { issueOtp, verifyAndConsumeOtp } = require('./otp.service');
 const { UPLOAD_DIR: LOGO_DIR } = require('../../middleware/logoUpload');
+const { UPLOAD_DIR: HERO_IMAGE_DIR } = require('../../middleware/heroImageUpload');
 
 const PASSWORD_CHANGE = 'password_change';
 
@@ -26,7 +27,7 @@ async function getMe(userId) {
         l.is_gst_registered, l.gstin, l.is_specified_premises,
         l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
         l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry,
-        l.logo_path, l.show_logo_on_receipt
+        l.logo_path, l.show_logo_on_receipt, l.hero_image_path
       FROM dbo.users u
       JOIN dbo.lodges l ON l.id = u.lodge_id
       WHERE u.id = @userId
@@ -83,6 +84,7 @@ async function getMe(userId) {
       hasLaundry: !!row.has_laundry,
       logoUrl: row.logo_path ? `/hotel-logos/${row.logo_path}` : null,
       showLogoOnReceipt: !!row.show_logo_on_receipt,
+      heroImageUrl: row.hero_image_path ? `/lodge-hero-images/${row.hero_image_path}` : null,
     },
   };
 }
@@ -260,6 +262,49 @@ async function removeMyLodgeLogo(lodgeId) {
   await deleteLogoFile(current.logo_path);
 }
 
+// Deletes the file backing a stored hero_image_path, best-effort — same
+// reasoning as deleteLogoFile.
+async function deleteHeroImageFile(heroImagePath) {
+  if (!heroImagePath) return;
+  try {
+    await fs.unlink(path.join(HERO_IMAGE_DIR, heroImagePath));
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      logger.warn({ err, heroImagePath }, 'Could not delete old lodge hero image file');
+    }
+  }
+}
+
+// The owner setting or replacing their public page's hero background. Left
+// unset, the page falls back to the first room/venue photo, as it always has.
+async function updateMyLodgeHeroImage(lodgeId, filename) {
+  const pool = await getPool();
+  const current = (
+    await pool.request().input('id', sql.BigInt, lodgeId).query('SELECT hero_image_path FROM dbo.lodges WHERE id = @id')
+  ).recordset[0];
+  if (!current) throw new ApiError('Lodge not found.', 404);
+
+  await pool
+    .request()
+    .input('id', sql.BigInt, lodgeId)
+    .input('heroImagePath', sql.NVarChar, filename)
+    .query('UPDATE dbo.lodges SET hero_image_path = @heroImagePath WHERE id = @id');
+
+  await deleteHeroImageFile(current.hero_image_path);
+}
+
+async function removeMyLodgeHeroImage(lodgeId) {
+  const pool = await getPool();
+  const current = (
+    await pool.request().input('id', sql.BigInt, lodgeId).query('SELECT hero_image_path FROM dbo.lodges WHERE id = @id')
+  ).recordset[0];
+  if (!current) throw new ApiError('Lodge not found.', 404);
+
+  await pool.request().input('id', sql.BigInt, lodgeId).query('UPDATE dbo.lodges SET hero_image_path = NULL WHERE id = @id');
+
+  await deleteHeroImageFile(current.hero_image_path);
+}
+
 module.exports = {
   getMe,
   changePassword,
@@ -267,4 +312,6 @@ module.exports = {
   updateMyLodge,
   updateMyLodgeLogo,
   removeMyLodgeLogo,
+  updateMyLodgeHeroImage,
+  removeMyLodgeHeroImage,
 };

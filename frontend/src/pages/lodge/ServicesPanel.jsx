@@ -24,8 +24,14 @@ const emptyService = {
   removeImage: false,
 };
 // What a service is usually charged per. Anything else is typed under "Other".
-const UNIT_SUGGESTIONS = ['use', 'hour', 'day', 'person', 'session', 'game', 'trip', 'km'];
-const emptyUse = { serviceId: '', quantity: '1', bookingId: '', guestName: '', guestPhone: '', note: '' };
+// "person" isn't offered here: a group sharing one service is handled as a
+// head count at use time (see the use modal below), not a catalogue unit.
+const UNIT_SUGGESTIONS = ['use', 'hour', 'day', 'session', 'game', 'trip', 'km'];
+const emptyUse = { serviceId: '', quantity: '1', headcount: '1', bookingId: '', guestName: '', guestPhone: '', note: '' };
+
+// The unit's own word as the field's label ("Hour", "Km", "Session") rather
+// than a generic "Quantity" — the unit already says what's being counted.
+const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 // The table's own badge reads "Completed" — the filter chip beside "Active"
 // below reads "History" instead, since that chip stands for completed and
@@ -68,6 +74,12 @@ const USAGE_COLUMNS = [
     value: (u) => Number(u.quantity) || 0,
     className: 'history-table__num svc-usage__qty-col',
   },
+  {
+    key: 'headcount',
+    label: 'Head count',
+    value: (u) => Number(u.headcount) || 1,
+    className: 'history-table__num svc-usage__qty-col',
+  },
   { key: 'entryType', label: 'Entry Type', value: (u) => (u.roomNumber ? `Room guest ${u.roomNumber}` : 'Walk-in') },
   { key: 'name', label: 'Customer Name', value: (u) => u.guestName ?? '' },
   { key: 'phone', label: 'Phone', value: (u) => u.guestPhone ?? '' },
@@ -87,6 +99,7 @@ const USAGE_SHEET_COLS = [
   // number — "2 person" as one string would total nothing in Excel.
   { label: 'Units', value: (u) => Number(u.quantity) || 0, numeric: true },
   { label: 'Unit', value: (u) => u.unitLabel || '' },
+  { label: 'Head count', value: (u) => Number(u.headcount) || 1, numeric: true },
   { label: 'Entry type', value: (u) => (u.roomNumber ? 'Room guest' : 'Walk-in') },
   { label: 'Room', value: (u) => u.roomNumber || '' },
   { label: 'Customer name', value: (u) => u.guestName || '' },
@@ -142,7 +155,7 @@ async function downloadUsagesExcel(rows, lodge, scopeLabel) {
         // the property's details only need reading once, not kept on screen
         // while scrolling past a hundred rows of usage.
         stickyRowsCount: letterhead.length + 1,
-        columns: [22, 6, 8, 14, 10, 20, 16, 12, 16, 12].map((width) => ({ width })),
+        columns: [22, 6, 8, 10, 14, 10, 20, 16, 12, 16, 12].map((width) => ({ width })),
       },
     ],
     { fontFamily: 'Calibri', fontSize: 11 }
@@ -152,7 +165,7 @@ async function downloadUsagesExcel(rows, lodge, scopeLabel) {
 
 // Column widths for the PDF table only — the same cells as the Excel sheet,
 // laid out on an A4 landscape page (792pt wide, minus two 36pt margins).
-const USAGE_PDF_WIDTHS = [94, 30, 40, 60, 40, 88, 70, 54, 68, 54];
+const USAGE_PDF_WIDTHS = [94, 30, 40, 40, 60, 40, 88, 70, 54, 68, 54];
 const PDF_INK = '#16212E';
 const PDF_MUTED = '#78859A';
 const PDF_BRAND = '#5B3FD9';
@@ -398,25 +411,60 @@ export default function ServicesPanel({ lodge }) {
       .catch((err) => fail(err, 'Could not update the service.'));
   };
 
-  const startUse = async (e) => {
+  // One form, two destinations: a fresh use starts here (POST), an existing
+  // one still open and unbilled is corrected in place (PATCH) — see editUse,
+  // which is what puts an id on useForm to switch this into edit mode.
+  const submitUse = async (e) => {
     e.preventDefault();
     setFormError('');
-    if (!useForm.serviceId) return setFormError('Choose a service.');
+    const editing = !!useForm.id;
+    if (!editing && !useForm.serviceId) return setFormError('Choose a service.');
     if (!(Number(useForm.quantity) > 0)) return setFormError('Quantity must be more than 0.');
+    if (!(Number.isInteger(Number(useForm.headcount)) && Number(useForm.headcount) >= 1)) {
+      return setFormError('Head count must be at least 1.');
+    }
     setBusy(true);
     try {
-      await apiPost(
-        '/lodge-services/usages',
-        { ...useForm, serviceId: Number(useForm.serviceId), quantity: Number(useForm.quantity) },
-        { token }
-      );
+      const body = {
+        quantity: Number(useForm.quantity),
+        headcount: Number(useForm.headcount),
+        bookingId: useForm.bookingId,
+        guestName: useForm.guestName,
+        guestPhone: useForm.guestPhone,
+      };
+      if (editing) {
+        await apiPatch(`/lodge-services/usages/${useForm.id}`, body, { token });
+      } else {
+        await apiPost('/lodge-services/usages', { ...body, serviceId: Number(useForm.serviceId), note: useForm.note }, { token });
+      }
       setUseForm(null);
       loadUsages();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not start this service.');
+      setFormError(err instanceof ApiError ? err.message : `Could not ${editing ? 'save this' : 'start this'} service.`);
     } finally {
       setBusy(false);
     }
+  };
+
+  // Prefills the same modal from an existing, still-editable use. The
+  // service, its rate and unit travel along read-only (unitPrice/unitLabel)
+  // so the amount preview matches what editing will actually charge — the
+  // snapshot a use was started with, not whatever the catalogue says today.
+  const editUse = (u) => {
+    setFormError('');
+    setUseForm({
+      id: u.id,
+      serviceId: String(u.serviceId),
+      serviceName: u.serviceName,
+      unitLabel: u.unitLabel,
+      unitPrice: u.unitPrice,
+      quantity: String(u.quantity),
+      headcount: String(u.headcount),
+      bookingId: u.bookingId ? String(u.bookingId) : '',
+      guestName: u.guestName || '',
+      guestPhone: u.guestPhone || '',
+      note: '',
+    });
   };
 
   const act = (usage, action) =>
@@ -426,6 +474,17 @@ export default function ServicesPanel({ lodge }) {
 
   const active = (services ?? []).filter((s) => s.isActive);
   const picked = active.find((s) => String(s.id) === String(useForm?.serviceId));
+  const editingUse = !!useForm?.id;
+  // Editing prices off the use's own snapshot (what it actually charges),
+  // not the live catalogue — the service there may since have been
+  // repriced, renamed, or deactivated, none of which should be able to
+  // retroactively change what an existing use is worth.
+  const useUnitLabel = editingUse ? useForm.unitLabel : picked?.unitLabel;
+  const useUnitPrice = editingUse ? Number(useForm.unitPrice) : picked?.price;
+  // The unit's own word, not a generic "Quantity" — it already says what's
+  // being counted (hours, km, sessions...). Head count is its own field,
+  // always shown, for however many people shared this use.
+  const qtyLabel = useUnitLabel ? capitalize(useUnitLabel) : 'Quantity';
 
   const catalogueQuery = catalogueSearch.trim().toLowerCase();
   const filteredServices = (services ?? []).filter(
@@ -1013,49 +1072,70 @@ export default function ServicesPanel({ lodge }) {
       {useForm && (
         <div className="glass-backdrop menu-panel__backdrop" onClick={() => !busy && setUseForm(null)}>
           <div className="glass-panel menu-panel__modal modal-form__panel" onClick={(e) => e.stopPropagation()}>
-            <form className="modal-form" onSubmit={startUse} noValidate>
+            <form className="modal-form" onSubmit={submitUse} noValidate>
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
-                  <h3>New service use</h3>
+                  <h3>{editingUse ? 'Edit service use' : 'New service use'}</h3>
                   <button type="button" className="modal-form__close" onClick={() => setUseForm(null)} aria-label="Close">
                     ×
                   </button>
                 </div>
-                <p className="modal-form__sub">Pick a guest staying in-house, or type a walk-in’s name.</p>
+                <p className="modal-form__sub">
+                  {editingUse
+                    ? 'Correcting what was already started — the service itself can’t change here.'
+                    : 'Pick a guest staying in-house, or type a walk-in’s name.'}
+                </p>
               </div>
               <div className="modal-form__body">
                 {formError && <div className="form-banner form-banner--error">{formError}</div>}
-                {active.length === 0 && (
+                {!editingUse && active.length === 0 && (
                   <div className="form-banner form-banner--error">Add a service under “Services &amp; prices” first.</div>
                 )}
                 <div className="field">
                   <label htmlFor="useService">
                     Service
-                    <Req />
+                    {!editingUse && <Req />}
                   </label>
-                  <select
-                    id="useService"
-                    value={useForm.serviceId}
-                    onChange={(e) => setUseForm({ ...useForm, serviceId: e.target.value })}
-                  >
-                    <option value="">Choose…</option>
-                    {active.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} — {formatPrice(s.price)} per {s.unitLabel}
-                      </option>
-                    ))}
-                  </select>
+                  {editingUse ? (
+                    <input id="useService" value={`${useForm.serviceName} — ${formatPrice(useForm.unitPrice)} per ${useForm.unitLabel}`} disabled />
+                  ) : (
+                    <select
+                      id="useService"
+                      value={useForm.serviceId}
+                      onChange={(e) => setUseForm({ ...useForm, serviceId: e.target.value })}
+                    >
+                      <option value="">Choose…</option>
+                      {active.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} — {formatPrice(s.price)} per {s.unitLabel}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-                <div className="field">
-                  <label htmlFor="useQty">Quantity{picked ? ` (${picked.unitLabel})` : ''}</label>
-                  <input
-                    id="useQty"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={useForm.quantity}
-                    onChange={(e) => setUseForm({ ...useForm, quantity: e.target.value })}
-                  />
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="useQty">{qtyLabel}</label>
+                    <input
+                      id="useQty"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={useForm.quantity}
+                      onChange={(e) => setUseForm({ ...useForm, quantity: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="useHeadcount">Head count</label>
+                    <input
+                      id="useHeadcount"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={useForm.headcount}
+                      onChange={(e) => setUseForm({ ...useForm, headcount: e.target.value })}
+                    />
+                  </div>
                 </div>
                 <div className="field">
                   <label htmlFor="useGuest">Staying guest</label>
@@ -1097,7 +1177,9 @@ export default function ServicesPanel({ lodge }) {
                 <div className="modal-form__summary">
                   <span className="modal-form__summary-label">Amount</span>
                   <span className="modal-form__summary-value">
-                    {picked ? formatPrice(picked.price * (Number(useForm.quantity) || 0)) : '—'}
+                    {useUnitPrice != null
+                      ? formatPrice(useUnitPrice * (Number(useForm.quantity) || 0) * (Number(useForm.headcount) || 1))
+                      : '—'}
                   </span>
                 </div>
                 <div className="modal-form__foot-actions">
@@ -1105,7 +1187,7 @@ export default function ServicesPanel({ lodge }) {
                     Cancel
                   </button>
                   <button type="submit" className="btn-accent" disabled={busy}>
-                    {busy ? 'Starting…' : 'Start'}
+                    {editingUse ? (busy ? 'Saving…' : 'Save') : busy ? 'Starting…' : 'Start'}
                   </button>
                 </div>
               </div>
@@ -1227,6 +1309,25 @@ export default function ServicesPanel({ lodge }) {
                 </div>
               </div>
             </div>
+
+            {/* Editing lives here rather than as its own row button — once a
+                use is billed or cancelled there's nothing left to correct, so
+                the action only makes sense next to the detail that explains
+                why it's still available (or isn't). */}
+            {detailUsage.status !== 'CANCELLED' && !detailUsage.billed && (
+              <div className="modal-form__foot-actions">
+                <button
+                  type="button"
+                  className="btn-accent"
+                  onClick={() => {
+                    editUse(detailUsage);
+                    setDetailUsage(null);
+                  }}
+                >
+                  Edit
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -902,10 +902,12 @@ export default function LodgePublicPage() {
     .filter(Boolean)
     .join(' · ');
 
-  // The photos across the top: rooms first, then venues, the first three shown
-  // and the rest reachable through the lightbox. A property with no photos
-  // gets a single-column hero rather than an empty frame.
+  // The photos across the top: the owner's own hero pick first if they set
+  // one, then room photos, then venues — the first shown as the actual
+  // background, the rest reachable through the lightbox. A property with no
+  // photos gets a single-column hero rather than an empty frame.
   const heroImages = [
+    ...(lodge.heroImageUrl ? [`${API_BASE}${lodge.heroImageUrl}`] : []),
     ...roomTypes.flatMap((t) => t.images.map(roomImageUrl)),
     ...venues.flatMap((v) => v.images.map(venueImageUrl)),
   ].slice(0, 12);

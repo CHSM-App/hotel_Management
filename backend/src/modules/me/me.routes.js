@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { authenticate, requireLodgeUser, requireRole } = require('../../middleware/authenticate');
 const { otpSendLimiter } = require('../../middleware/rateLimit');
 const { logoUpload } = require('../../middleware/logoUpload');
+const { heroImageUpload } = require('../../middleware/heroImageUpload');
 const {
   getMeHandler,
   sendPasswordOtpHandler,
@@ -9,6 +10,8 @@ const {
   updateMyLodgeHandler,
   updateMyLodgeLogoHandler,
   removeMyLodgeLogoHandler,
+  updateMyLodgeHeroImageHandler,
+  removeMyLodgeHeroImageHandler,
 } = require('./me.controller');
 
 const router = Router();
@@ -36,5 +39,11 @@ router.patch('/lodge', authenticate, requireRole('OWNER'), updateMyLodgeHandler)
 // above, matching the room/venue image upload pattern.
 router.put('/lodge/logo', authenticate, requireRole('OWNER'), logoUpload, updateMyLodgeLogoHandler);
 router.delete('/lodge/logo', authenticate, requireRole('OWNER'), removeMyLodgeLogoHandler);
+
+// The public page's hero background — same shape as the logo endpoints
+// above, just a different image and a different fallback (the first
+// room/venue photo rather than a monogram).
+router.put('/lodge/hero-image', authenticate, requireRole('OWNER'), heroImageUpload, updateMyLodgeHeroImageHandler);
+router.delete('/lodge/hero-image', authenticate, requireRole('OWNER'), removeMyLodgeHeroImageHandler);
 
 module.exports = router;

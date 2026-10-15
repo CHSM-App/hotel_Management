@@ -7,6 +7,7 @@ const {
   updateServiceHandler,
   listUsagesHandler,
   startUsageHandler,
+  updateUsageHandler,
   completeUsageHandler,
   cancelUsageHandler,
 } = require('./services.controller');
@@ -26,6 +27,7 @@ router.post('/', authenticate, enabled, setup, serviceImageUpload, createService
 // Declared before /:id so "usages" isn't read as a service id.
 router.get('/usages', authenticate, enabled, desk, listUsagesHandler);
 router.post('/usages', authenticate, enabled, desk, startUsageHandler);
+router.patch('/usages/:id', authenticate, enabled, desk, updateUsageHandler);
 router.post('/usages/:id/complete', authenticate, enabled, desk, completeUsageHandler);
 router.post('/usages/:id/cancel', authenticate, enabled, desk, cancelUsageHandler);
 

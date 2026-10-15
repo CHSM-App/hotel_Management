@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { serviceSchema, updateServiceSchema, startUsageSchema } = require('./services.schema');
+const { serviceSchema, updateServiceSchema, startUsageSchema, updateUsageSchema } = require('./services.schema');
 const servicesService = require('./services.service');
 const { ApiError } = require('../../middleware/errorHandler');
 
@@ -61,6 +61,9 @@ module.exports = {
   ),
   startUsageHandler: handle(async (req, res) =>
     res.status(201).json({ usage: await servicesService.startUsage(lodgeOf(req), req.user.sub, parse(startUsageSchema, req.body)) })
+  ),
+  updateUsageHandler: handle(async (req, res) =>
+    res.json({ usage: await servicesService.updateUsage(lodgeOf(req), idOf(req), parse(updateUsageSchema, req.body)) })
   ),
   completeUsageHandler: handle(async (req, res) =>
     res.json({ usage: await servicesService.completeUsage(lodgeOf(req), idOf(req)) })

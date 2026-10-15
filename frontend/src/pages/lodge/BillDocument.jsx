@@ -1242,6 +1242,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
                         {item.name}
                         <span className="memo__qty">
                           {item.quantity} × {amt(item.unitPrice)}
+                          {item.headcount > 1 ? ` × ${item.headcount} people` : ''}
                           {isGst && item.gstRatePercent > 0 ? ` · GST ${item.gstRatePercent}%` : ''}
                         </span>
                       </span>
