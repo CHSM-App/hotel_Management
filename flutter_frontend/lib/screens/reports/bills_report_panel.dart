@@ -8,11 +8,11 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'report_widgets.dart';
 
-const List<(String, String)> _kBillTypeFilters = [
-  ('ALL', 'All bills'),
-  ('room', 'Room'),
-  ('restaurant', 'Restaurant'),
-  ('event', 'Events'),
+const List<(String, String, IconData)> _kBillTypeFilters = [
+  ('ALL', 'All bills', Icons.apps_rounded),
+  ('room', 'Room', Icons.hotel_rounded),
+  ('restaurant', 'Restaurant', Icons.restaurant_rounded),
+  ('event', 'Events', Icons.celebration_rounded),
 ];
 
 /// Every issued bill in a period, as a spreadsheet — the register itself;
@@ -32,6 +32,31 @@ class BillsReportPanel extends ConsumerStatefulWidget {
 class _BillsReportPanelState extends ConsumerState<BillsReportPanel> {
   String _type = 'ALL';
   String _search = '';
+  final _searchController = TextEditingController();
+
+  bool _filterOpen = false;
+  final LayerLink _filterLink = LayerLink();
+  final OverlayPortalController _filterPortalController = OverlayPortalController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _toggleFilterOpen() {
+    setState(() => _filterOpen = !_filterOpen);
+    if (_filterOpen) {
+      _filterPortalController.show();
+    } else {
+      _filterPortalController.hide();
+    }
+  }
+
+  void _selectType(String type) {
+    setState(() => _type = type);
+    _toggleFilterOpen();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,31 +67,100 @@ class _BillsReportPanelState extends ConsumerState<BillsReportPanel> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(AppTheme.s16, 0, AppTheme.s16, AppTheme.s8),
-          child: Column(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              TextField(
-                decoration: const InputDecoration(
-                  isDense: true,
-                  prefixIcon: Icon(Icons.search_rounded, size: 18),
-                  hintText: 'Bill number, guest, room or table',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (v) => setState(() => _search = v),
-              ),
-              const SizedBox(height: AppTheme.s8),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final (key, label) in _kBillTypeFilters) ...[
-                      ChoiceChip(
-                        label: Text(label),
-                        selected: _type == key,
-                        onSelected: (_) => setState(() => _type = key),
+              Expanded(
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.card,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: AppTheme.shadowDark, width: 1.3),
+                    boxShadow: AppTheme.subtle,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withValues(alpha: 0.10),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
                       ),
                       const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+                          decoration: const InputDecoration(
+                            hintText: 'Bill number, guest, room or table',
+                            hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(vertical: 13),
+                          ),
+                          onChanged: (v) => setState(() => _search = v),
+                        ),
+                      ),
+                      if (_search.isNotEmpty)
+                        GestureDetector(
+                          onTap: () {
+                            _searchController.clear();
+                            setState(() => _search = '');
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            margin: const EdgeInsets.only(right: 2),
+                            alignment: Alignment.center,
+                            decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
+                            child: const Icon(Icons.close_rounded, size: 15, color: AppTheme.muted),
+                          ),
+                        ),
                     ],
-                  ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              CompositedTransformTarget(
+                link: _filterLink,
+                child: OverlayPortal(
+                  controller: _filterPortalController,
+                  overlayChildBuilder: (context) => Stack(
+                    children: [
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: _toggleFilterOpen,
+                        ),
+                      ),
+                      CompositedTransformFollower(
+                        link: _filterLink,
+                        showWhenUnlinked: false,
+                        targetAnchor: Alignment.bottomRight,
+                        followerAnchor: Alignment.topRight,
+                        offset: const Offset(0, AppTheme.s8),
+                        child: Align(
+                          alignment: Alignment.topRight,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: _BillTypeChips(selected: _type, onSelect: _selectType),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  child: _BillTypeFilterButton(
+                    selected: _type,
+                    open: _filterOpen,
+                    onTap: _toggleFilterOpen,
+                  ),
                 ),
               ),
             ],
@@ -205,4 +299,138 @@ class _Loaded extends StatelessWidget {
     inv.status == 'VOID' ? 'Void' : 'Issued',
     formatPrice(inv.totalAmount),
   ];
+}
+
+/// The search bar's side filter — same round, badge-carrying button the
+/// events list's own filter icon is drawn as, opening [_BillTypeChips]
+/// folded underneath it rather than a menu.
+class _BillTypeFilterButton extends StatelessWidget {
+  final String selected;
+  final bool open;
+  final VoidCallback onTap;
+
+  const _BillTypeFilterButton({required this.selected, required this.open, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final on = selected != 'ALL' || open;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: on
+              ? const LinearGradient(colors: [AppTheme.accent, AppTheme.sidebarBrand])
+              : null,
+          color: on ? null : AppTheme.card,
+          shape: BoxShape.circle,
+          border: on ? null : Border.all(color: AppTheme.shadowDark, width: 1.3),
+          boxShadow: on
+              ? [BoxShadow(color: AppTheme.accent.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))]
+              : AppTheme.subtle,
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Icon(Icons.filter_alt_rounded, size: 19, color: on ? Colors.white : AppTheme.accent),
+            if (selected != 'ALL')
+              Positioned(
+                top: -4,
+                right: -6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.accent, width: 1.2),
+                  ),
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  child: const Text(
+                    '1',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppTheme.accent, fontSize: 9, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The folded-open bill-type panel — All bills, Room, Restaurant and Events
+/// as one pick, mirroring [_EventStatusChips]'s left-rule chip list.
+class _BillTypeChips extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onSelect;
+
+  const _BillTypeChips({required this.selected, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 190,
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        boxShadow: AppTheme.subtle,
+      ),
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (key, label, icon) in _kBillTypeFilters)
+            _BillTypeChip(
+              label: label,
+              icon: icon,
+              on: selected == key,
+              onTap: () => onSelect(key),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BillTypeChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool on;
+  final VoidCallback onTap;
+
+  const _BillTypeChip({required this.label, required this.icon, required this.on, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+        decoration: BoxDecoration(
+          color: on ? AppTheme.accent.withValues(alpha: 0.10) : Colors.transparent,
+          border: Border(left: BorderSide(color: on ? AppTheme.accent : Colors.transparent, width: 3)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: on ? AppTheme.accent : AppTheme.muted),
+            const SizedBox(width: AppTheme.s8),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: on ? AppTheme.accent : AppTheme.text,
+                  fontSize: 13,
+                  fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

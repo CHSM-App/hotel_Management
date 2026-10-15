@@ -126,6 +126,10 @@ class _GuestLaundryFormScreenState
     });
   }
 
+  // Tapping a garment adds a row with the price left empty, to be typed for
+  // this order. It used to be filled in with whatever that garment cost last
+  // time, and a stale price carried onto a new order went unnoticed. Tapping
+  // the same one again adds a piece instead of a second row.
   void _addLine(String name) {
     if (name.isNotEmpty) {
       final existing = _lines.where(
@@ -136,17 +140,7 @@ class _GuestLaundryFormScreenState
         return;
       }
     }
-    final state = ref.read(laundryViewModelProvider);
-    final price = name.isEmpty
-        ? ''
-        : state.recentGarments
-                  .where((g) => g.name.toLowerCase() == name.toLowerCase())
-                  .map((g) => g.price.toString())
-                  .firstOrNull ??
-              '';
-    setState(
-      () => _lines.add(_Line(key: _nextKey++, name: name, price: price)),
-    );
+    setState(() => _lines.add(_Line(key: _nextKey++, name: name)));
   }
 
   num get _total =>

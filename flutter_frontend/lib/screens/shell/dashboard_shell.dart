@@ -522,19 +522,20 @@ class _OfflineBanner extends ConsumerWidget {
                 color: AppTheme.danger.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(AppTheme.rMedium),
                 border: Border.all(color: AppTheme.danger.withValues(alpha: 0.25)),
+                boxShadow: AppTheme.subtle,
               ),
               child: Row(
                 children: [
                   Container(
-                    width: 24,
-                    height: 24,
+                    width: 26,
+                    height: 26,
                     decoration: BoxDecoration(
                       color: AppTheme.danger.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Icons.wifi_off_rounded,
-                      size: 13,
+                      size: 14,
                       color: AppTheme.danger,
                     ),
                   ),
@@ -594,12 +595,12 @@ class _TopBar extends StatelessWidget {
         AppTheme.s16,
         0,
       ),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppTheme.card,
-        border: Border(bottom: BorderSide(color: AppTheme.border)),
+        boxShadow: AppTheme.subtle,
       ),
       child: SizedBox(
-        height: 52,
+        height: 56,
         child: Row(
           children: [
             if (onMenuTap != null)
@@ -607,10 +608,15 @@ class _TopBar extends StatelessWidget {
                 tooltip: 'Sections',
                 icon: const Icon(Icons.menu_rounded, color: AppTheme.text, size: 22),
                 visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  backgroundColor: AppTheme.bg,
+                  shape: const CircleBorder(),
+                ),
                 onPressed: onMenuTap,
               )
             else
               const SizedBox(width: AppTheme.s8),
+            const SizedBox(width: AppTheme.s8),
             Expanded(
               child: Text(
                 title ?? '',
@@ -618,8 +624,9 @@ class _TopBar extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: AppTheme.heading,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
                 ),
               ),
             ),
