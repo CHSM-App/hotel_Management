@@ -134,6 +134,25 @@ class AppTheme {
     BoxShadow(color: Color(0x06101828), offset: Offset(0, 1), blurRadius: 2),
   ];
 
+  /// A tinted, floating shadow for the one or two accent-colored elements
+  /// per screen that should visibly sit above everything else (a primary
+  /// FAB, say) — colored by the element itself rather than plain black, the
+  /// way a modern SaaS dashboard lifts its single most important control.
+  static List<BoxShadow> floating(Color tint) => [
+    BoxShadow(color: tint.withValues(alpha: 0.35), offset: const Offset(0, 6), blurRadius: 16),
+    BoxShadow(color: tint.withValues(alpha: 0.18), offset: const Offset(0, 2), blurRadius: 4),
+  ];
+
+  /// The accent's own two-stop gradient — used sparingly for the single
+  /// highlighted surface on a screen (today's date chip, the primary FAB)
+  /// so the flat palette gets one deliberate moment of richness rather than
+  /// a flat fill everywhere.
+  static const Gradient accentGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [accent, sidebarBrandInk],
+  );
+
   static ThemeData get light {
     const scheme = ColorScheme.light(
       primary: accent,

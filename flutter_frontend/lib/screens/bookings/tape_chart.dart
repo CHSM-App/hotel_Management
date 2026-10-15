@@ -152,36 +152,60 @@ class _TapeChartState extends ConsumerState<TapeChart>
   /// old chip once the animation settled with nothing left to correct it.
   bool _jumpingToChip = false;
 
+  /// Set once a chip jump lands clamped short of its target (the tapped
+  /// category can't be scrolled far enough to reach the header — a short
+  /// trailing band, say). [_jumpToKey]'s own `whenComplete` already skips
+  /// re-deriving the active chip from scroll position for that one settle,
+  /// but `_vScroll`'s plain listener fires again on its own right after —
+  /// scroll physics applying a final correction once the animation hands
+  /// off — and that call isn't guarded by the one-shot `clamped` check, so
+  /// it was re-running the geometry read and silently overwriting the
+  /// tapped chip's highlight with whatever the clamped position actually
+  /// shows underneath the header. Keeping detection suppressed until the
+  /// desk drags the chart by hand again (cleared below, in the vertical
+  /// `ScrollStartNotification` case) keeps the tapped chip in charge for as
+  /// long as nothing has genuinely moved the chart since.
+  bool _suppressAutoDetect = false;
+
   void _updateActiveCategoryFromScroll() {
-    if (_jumpingToChip) return;
+    if (_jumpingToChip || _suppressAutoDetect) {
+      debugPrint('[chip-debug] _updateActiveCategoryFromScroll: skipped, '
+          'jumpingToChip=$_jumpingToChip suppressAutoDetect=$_suppressAutoDetect');
+      return;
+    }
     if (!mounted || !_vScroll.hasClients) return;
     final sections = ref.read(bookingViewModelProvider).chartSections;
     if (sections.isEmpty) return;
     final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
     if (viewportBox is! RenderBox || !viewportBox.attached) return;
     final headerHeight = _DateHeaderDelegate.heightFor(sections.length > 1);
+    // The active section is whichever band's own span still straddles the
+    // header line — not just the last one whose *top* has crossed it. A
+    // section that's been entirely scrolled past has its bottom edge above
+    // the header too, so skip it and keep looking; the first one whose
+    // bottom still reaches (or exceeds) the header line is the one actually
+    // sitting underneath it right now. This also covers a short trailing
+    // band (a one-room Dormitory, say) without a special bottom-of-scroll
+    // case: if an earlier, taller band still pokes past the header — e.g.
+    // because the scroll got clamped short while jumping to it, with no
+    // scrollable room left past it — that earlier band is correctly still
+    // the one found, rather than forcing the last section just because the
+    // scroll happens to be pinned at its max extent.
     String? found;
     for (final section in sections) {
       final box = _sectionKeys[section.categoryName]?.currentContext
           ?.findRenderObject();
       if (box is! RenderBox || !box.attached) continue;
       final top = box.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
-      if (top <= headerHeight + 1) {
+      final bottom = top + box.size.height;
+      if (bottom > headerHeight + 1) {
         found = section.categoryName;
-      } else {
         break;
       }
     }
-    found ??= sections.first.categoryName;
-    // Scrolled as far down as it goes — e.g. a short section at the very
-    // bottom (a one-room Dormitory band, say) can never drag its own top up
-    // to the header line, so the loop above would never pick it and a tap on
-    // its chip would scroll there and then immediately lose the highlight.
-    // At the bottom of the list there's nothing left to scroll past, so the
-    // last section is the one on screen regardless of where its top sits.
-    if (_vScroll.position.pixels >= _vScroll.position.maxScrollExtent - 1) {
-      found = sections.last.categoryName;
-    }
+    found ??= sections.last.categoryName;
+    debugPrint('[chip-debug] _updateActiveCategoryFromScroll: found=$found '
+        'current=$_activeCategory offset=${_vScroll.offset}');
     if (found != _activeCategory) setState(() => _activeCategory = found);
   }
 
@@ -213,16 +237,31 @@ class _TapeChartState extends ConsumerState<TapeChart>
   // ([_hkTimer]) causing a stray rebuild, which is why the highlight used to
   // lag a tap by up to a minute instead of switching the instant it's tapped.
   void _jumpTo(String category) {
+    debugPrint('[chip-debug] _jumpTo($category) current=$_activeCategory '
+        'hasKey=${_sectionKeys.containsKey(category)}');
     if (category != _activeCategory) setState(() => _activeCategory = category);
-    _jumpToKey(_sectionKeys[category], isChipTap: true);
+    _jumpToKey(_sectionKeys[category], isChipTap: true, debugLabel: category);
   }
 
-  void _jumpToKey(GlobalKey? key, {bool isChipTap = false}) {
-    if (!_vScroll.hasClients) return;
+  void _jumpToKey(
+    GlobalKey? key, {
+    bool isChipTap = false,
+    String? debugLabel,
+  }) {
+    if (!_vScroll.hasClients) {
+      debugPrint('[chip-debug] $debugLabel: no vScroll clients, bailing');
+      return;
+    }
     final targetBox = key?.currentContext?.findRenderObject();
     final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
-    if (targetBox is! RenderBox || !targetBox.attached) return;
-    if (viewportBox is! RenderBox || !viewportBox.attached) return;
+    if (targetBox is! RenderBox || !targetBox.attached) {
+      debugPrint('[chip-debug] $debugLabel: no targetBox, bailing');
+      return;
+    }
+    if (viewportBox is! RenderBox || !viewportBox.attached) {
+      debugPrint('[chip-debug] $debugLabel: no viewportBox, bailing');
+      return;
+    }
     // The section's current distance from the top of the scroll view as
     // actually painted right now.
     final sectionTop = targetBox
@@ -235,10 +274,23 @@ class _TapeChartState extends ConsumerState<TapeChart>
     final headerHeight = _DateHeaderDelegate.heightFor(
       ref.read(bookingViewModelProvider).chartSections.length > 1,
     );
-    final target = (_vScroll.offset + sectionTop - headerHeight).clamp(
+    final rawTarget = _vScroll.offset + sectionTop - headerHeight;
+    final target = rawTarget.clamp(
       _vScroll.position.minScrollExtent,
       _vScroll.position.maxScrollExtent,
     );
+    // A short trailing band (a one-room Dormitory, say) can't be scrolled
+    // far enough to tuck its own top under the header — there just isn't
+    // enough content below it left to scroll past, so the clamp above cuts
+    // the jump short and an earlier, taller band is still what's sitting
+    // under the header when the animation settles. Re-deriving the active
+    // chip from scroll position in that case would overrule the very tap
+    // that triggered the jump, so skip that recompute whenever the target
+    // got clamped and just trust the tapped category [_jumpTo] already set.
+    final clamped = target != rawTarget;
+    debugPrint('[chip-debug] $debugLabel: rawTarget=$rawTarget target=$target '
+        'clamped=$clamped offset=${_vScroll.offset} '
+        'max=${_vScroll.position.maxScrollExtent}');
     if (isChipTap) _jumpingToChip = true;
     _vScroll
         .animateTo(
@@ -247,12 +299,19 @@ class _TapeChartState extends ConsumerState<TapeChart>
           curve: Curves.easeOut,
         )
         .whenComplete(() {
+          debugPrint('[chip-debug] $debugLabel: animateTo complete, '
+              'isChipTap=$isChipTap clamped=$clamped '
+              'activeCategory=$_activeCategory');
           if (!isChipTap) return;
           _jumpingToChip = false;
+          if (clamped) {
+            _suppressAutoDetect = true;
+            return;
+          }
+          _suppressAutoDetect = false;
           // One settled read once the boxes have actually laid out at the
-          // landed offset, so a target that got clamped short of the tapped
-          // section (the last, short band, say) still ends up matching
-          // whatever chip the chart actually lands on.
+          // landed offset, so dragging away afterward still tracks whatever
+          // chip the chart is really showing.
           if (mounted) _updateActiveCategoryFromScroll();
         });
   }
@@ -514,6 +573,14 @@ class _TapeChartState extends ConsumerState<TapeChart>
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           final metrics = notification.metrics;
+          if (metrics.axis == Axis.vertical &&
+              notification is ScrollStartNotification &&
+              notification.dragDetails != null) {
+            // A real finger drag on the room list — the chart has moved for
+            // a reason other than a chip jump, so resume trusting scroll
+            // position to drive the active chip again.
+            _suppressAutoDetect = false;
+          }
           if (metrics.axis != Axis.horizontal || metrics.maxScrollExtent <= 0) {
             return false;
           }
@@ -567,9 +634,9 @@ class _TapeChartState extends ConsumerState<TapeChart>
                         key: _keyFor(section.categoryName),
                         decoration: BoxDecoration(
                           color: AppTheme.card,
-                          borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                          border: Border.all(color: AppTheme.border),
-                          boxShadow: AppTheme.extruded,
+                          borderRadius: BorderRadius.circular(AppTheme.rLarge),
+                          border: Border.all(color: AppTheme.border2),
+                          boxShadow: AppTheme.elevated,
                         ),
                         clipBehavior: Clip.antiAlias,
                         child: _CategoryBand(
@@ -1244,22 +1311,23 @@ class _CategoryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: active ? AppTheme.accent.withValues(alpha: 0.12) : AppTheme.card,
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(
             horizontal: AppTheme.s12,
-            vertical: 6,
+            vertical: 7,
           ),
           decoration: BoxDecoration(
+            gradient: active ? AppTheme.accentGradient : null,
+            color: active ? null : AppTheme.card,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: active ? AppTheme.accent : AppTheme.border,
-              width: active ? 1.5 : 1,
-            ),
+            border: active ? null : Border.all(color: AppTheme.border2),
+            boxShadow: active ? AppTheme.floating(AppTheme.accent) : AppTheme.subtle,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1267,23 +1335,33 @@ class _CategoryChip extends StatelessWidget {
               Text(
                 label,
                 style: TextStyle(
-                  color: active ? AppTheme.accent : AppTheme.heading,
+                  color: active ? Colors.white : AppTheme.heading,
                   fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(width: 6),
               Text(
                 '$count',
-                style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                style: TextStyle(
+                  color: active ? Colors.white.withValues(alpha: 0.75) : AppTheme.muted,
+                  fontSize: 11,
+                ),
               ),
               const SizedBox(width: 6),
-              Text(
-                '$percent%',
-                style: const TextStyle(
-                  color: AppTheme.accent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: active ? Colors.white.withValues(alpha: 0.2) : AppTheme.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$percent%',
+                  style: TextStyle(
+                    color: active ? Colors.white : AppTheme.accent,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -1529,7 +1607,7 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
               decoration: BoxDecoration(
                 color: AppTheme.card,
                 borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                border: Border.all(color: AppTheme.border),
+                border: Border.all(color: AppTheme.border2),
                 boxShadow: AppTheme.extruded,
               ),
               clipBehavior: Clip.antiAlias,
@@ -1865,9 +1943,10 @@ class _DateHeaderState extends State<_DateHeader> {
                                       width: 22,
                                       height: 22,
                                       alignment: Alignment.center,
-                                      decoration: const BoxDecoration(
-                                        color: AppTheme.accent,
+                                      decoration: BoxDecoration(
+                                        gradient: AppTheme.accentGradient,
                                         shape: BoxShape.circle,
+                                        boxShadow: AppTheme.floating(AppTheme.accent),
                                       ),
                                       child: Text(
                                         '${d.day}',
@@ -1961,18 +2040,28 @@ class _CategoryBand extends StatelessWidget {
             horizontal: AppTheme.s16,
             vertical: AppTheme.s12,
           ),
-          decoration: const BoxDecoration(
-            color: AppTheme.bg,
-            border: Border(bottom: BorderSide(color: AppTheme.border)),
+          decoration: BoxDecoration(
+            color: AppTheme.accent.withValues(alpha: 0.04),
+            border: const Border(bottom: BorderSide(color: AppTheme.border)),
           ),
           child: Row(
             children: [
+              Container(
+                width: 6,
+                height: 6,
+                margin: const EdgeInsets.only(right: AppTheme.s8),
+                decoration: const BoxDecoration(
+                  color: AppTheme.accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
               Text(
                 section.categoryName,
                 style: const TextStyle(
                   color: AppTheme.heading,
-                  fontSize: 14,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.w700,
+                  letterSpacing: -0.1,
                 ),
               ),
               const SizedBox(width: AppTheme.s8),
@@ -2606,6 +2695,14 @@ class _TileState extends State<_Tile> {
                         spreadRadius: 1,
                       ),
                     ]
+                  : (!isPartial && s != null)
+                  ? [
+                      BoxShadow(
+                        color: _fill.withValues(alpha: 0.35),
+                        offset: const Offset(0, 1.5),
+                        blurRadius: 3,
+                      ),
+                    ]
                   : null,
               gradient: isPartial && !widget.isFlash
                   ? LinearGradient(
@@ -2624,8 +2721,8 @@ class _TileState extends State<_Tile> {
                     )
                   : null,
               borderRadius: BorderRadius.horizontal(
-                left: roundLeft ? const Radius.circular(6) : Radius.zero,
-                right: roundRight ? const Radius.circular(6) : Radius.zero,
+                left: roundLeft ? const Radius.circular(8) : Radius.zero,
+                right: roundRight ? const Radius.circular(8) : Radius.zero,
               ),
               // A search hit rings violet — a colour nothing else on the chart
               // uses, the same way the web tape chart marks it — brighter and
