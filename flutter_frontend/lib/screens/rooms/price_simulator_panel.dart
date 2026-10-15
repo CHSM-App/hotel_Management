@@ -26,6 +26,21 @@ int _nightsBetween(DateTime from, DateTime to) =>
 String _formatDay(DateTime d) =>
     '${d.day} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.month - 1]}';
 
+/// An Indian mobile number as the desk would key or paste it — "+91 98765
+/// 43210", "098765 43210" — brought down to its ten digits. Anything that is
+/// not a digit never reaches the box.
+String _toMobileDigits(String value) {
+  var digits = value.replaceAll(RegExp(r'\D'), '');
+  if (digits.length > 10 && digits.startsWith('91')) {
+    digits = digits.substring(2);
+  } else if (digits.length > 10 && digits.startsWith('0')) {
+    digits = digits.substring(1);
+  }
+  return digits.length > 10 ? digits.substring(0, 10) : digits;
+}
+
+bool _isIndianMobile(String digits) => RegExp(r'^[6-9]\d{9}$').hasMatch(digits);
+
 /// An extra switched on in the simulator, with however many of it is
 /// counted — mirrors { id, quantity } in chargeSelections.js (agreedAmount
 /// doesn't apply here: the simulator previews the lodge's own rate, it
@@ -81,20 +96,31 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
 
   final _guestNameController = TextEditingController();
   final _guestPhoneController = TextEditingController();
+  final _guestPhoneFocus = FocusNode();
   bool _preparingPdf = false;
   String? _pdfError;
+  // The phone's message waits until the box has been left or Download
+  // pressed: "not a valid number" under every keystroke of a number being
+  // typed is noise.
+  bool _phoneChecked = false;
+
+  bool get _phoneInvalid => _guestPhoneController.text.isNotEmpty && !_isIndianMobile(_guestPhoneController.text);
 
   @override
   void initState() {
     super.initState();
     final today = DateUtils.dateOnly(DateTime.now());
     _sims = [_SimRoom(key: ++_simKey, fromDate: today, toDate: _addDays(today, 1))];
+    _guestPhoneFocus.addListener(() {
+      if (!_guestPhoneFocus.hasFocus) setState(() => _phoneChecked = true);
+    });
   }
 
   @override
   void dispose() {
     _guestNameController.dispose();
     _guestPhoneController.dispose();
+    _guestPhoneFocus.dispose();
     super.dispose();
   }
 
@@ -202,18 +228,26 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
   }
 
   Future<void> _downloadQuotation(List<QuotedRoom> rooms, num total) async {
+    // Optional, but a number on the quotation has to be one the guest can
+    // be rung on.
+    if (_phoneInvalid) {
+      setState(() => _phoneChecked = true);
+      _guestPhoneFocus.requestFocus();
+      return;
+    }
     setState(() {
       _pdfError = null;
       _preparingPdf = true;
     });
     try {
       final me = ref.read(authViewModelProvider).me;
+      final phone = _guestPhoneController.text;
       await QuotationPdf.download(
         rooms,
         total: total,
         lodge: me?.lodge,
         guestName: _guestNameController.text,
-        guestPhone: _guestPhoneController.text,
+        guestPhone: phone.isEmpty ? phone : '+91 ${phone.substring(0, 5)} ${phone.substring(5)}',
         preparedBy: me?.user.name,
       );
       if (!mounted) return;
@@ -610,10 +644,22 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
           const SizedBox(height: AppTheme.s12),
           NeuField(
             controller: _guestPhoneController,
+            focusNode: _guestPhoneFocus,
             label: 'Phone number',
-            keyboardType: TextInputType.phone,
-            maxLength: 20,
-            onChanged: (_) => setState(() {}),
+            hint: '10-digit mobile',
+            keyboardType: TextInputType.number,
+            maxLength: 10,
+            errorText: _phoneChecked && _phoneInvalid ? 'Enter a valid 10-digit mobile number.' : null,
+            onChanged: (value) {
+              final digits = _toMobileDigits(value);
+              if (digits != value) {
+                _guestPhoneController.value = TextEditingValue(
+                  text: digits,
+                  selection: TextSelection.collapsed(offset: digits.length),
+                );
+              }
+              setState(() {});
+            },
           ),
           const SizedBox(height: AppTheme.s12),
           Row(
