@@ -104,7 +104,7 @@ class _Loaded extends StatelessWidget {
 
   List<String> _usageRow(ServiceUsageRow u) => [
     formatDateTime(u.startedAt),
-    '${u.serviceName} × ${u.quantity}',
+    '${u.serviceName} × ${u.quantity}${u.headcount > 1 ? ' × ${u.headcount}' : ''}',
     u.guestName == null
         ? '—'
         : u.roomNumber == null

@@ -17,6 +17,8 @@ class LodgeServicesUsecase {
 
   Future<ServiceUsage> startUsage(Map<String, dynamic> body) => repository.startUsage(body);
 
+  Future<ServiceUsage> updateUsage(int id, Map<String, dynamic> body) => repository.updateUsage(id, body);
+
   Future<ServiceUsage> completeUsage(int id) => repository.completeUsage(id);
 
   Future<ServiceUsage> cancelUsage(int id) => repository.cancelUsage(id);

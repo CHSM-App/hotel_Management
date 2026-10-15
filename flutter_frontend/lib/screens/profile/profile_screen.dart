@@ -192,6 +192,8 @@ class ProfileScreen extends ConsumerWidget {
                       if (me.user.role == 'OWNER') ...[
                         const SizedBox(height: AppTheme.s16),
                         _LogoSection(lodge: me.lodge),
+                        const SizedBox(height: AppTheme.s12),
+                        _HeroImageSection(lodge: me.lodge),
                       ],
                       if (_hasText(me.lodge.slug)) ...[
                         const SizedBox(height: AppTheme.s16),
@@ -1653,6 +1655,108 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
           child: const Text('Change details / resend code'),
         ),
       ],
+    );
+  }
+}
+
+/// The public page's hero background. Left unset, the page falls back to the
+/// first room/venue photo. Owner-only, mirrors HotelProfileModal's hero
+/// image controls on the web.
+class _HeroImageSection extends ConsumerStatefulWidget {
+  final Lodge lodge;
+
+  const _HeroImageSection({required this.lodge});
+
+  @override
+  ConsumerState<_HeroImageSection> createState() => _HeroImageSectionState();
+}
+
+class _HeroImageSectionState extends ConsumerState<_HeroImageSection> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _run(Future<void> Function() action) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pickAndUpload() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked == null) return;
+    await _run(() async {
+      final form = dio.FormData.fromMap({
+        'heroImage': await dio.MultipartFile.fromFile(picked.path, filename: picked.name),
+      });
+      await ref.read(authViewModelProvider.notifier).updateMyLodgeHeroImage(form);
+    });
+  }
+
+  Future<void> _remove() => _run(() => ref.read(authViewModelProvider.notifier).removeMyLodgeHeroImage());
+
+  @override
+  Widget build(BuildContext context) {
+    final url = widget.lodge.heroImageUrl;
+    final hasHero = ProfileScreen._hasText(url);
+    return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Public page hero image', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontSize: 13.5)),
+          const SizedBox(height: 2),
+          Text(
+            hasHero
+                ? 'Shown as the background of your public page.'
+                : 'Not set — the first room or venue photo is used instead.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11.5),
+          ),
+          if (hasHero) ...[
+            const SizedBox(height: AppTheme.s12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              child: AspectRatio(
+                aspectRatio: 16 / 6,
+                child: Image.network(
+                  '$baseUrl$url',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.bg),
+                ),
+              ),
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: AppTheme.s8),
+            Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
+          ],
+          const SizedBox(height: AppTheme.s12),
+          Wrap(
+            spacing: AppTheme.s12,
+            runSpacing: AppTheme.s8,
+            children: [
+              _LinkButton(
+                icon: Icons.upload_rounded,
+                label: _busy ? 'Uploading…' : (hasHero ? 'Replace image' : 'Upload image'),
+                onTap: _busy ? null : _pickAndUpload,
+              ),
+              if (hasHero)
+                _LinkButton(
+                  icon: Icons.delete_outline_rounded,
+                  label: 'Remove',
+                  onTap: _busy ? null : _remove,
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

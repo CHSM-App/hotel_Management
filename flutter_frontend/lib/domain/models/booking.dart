@@ -559,6 +559,7 @@ class BookingServiceUsage {
   final int id;
   final String name;
   final num quantity;
+  final int headcount;
   final String unitLabel;
   final num? unitPrice;
   final num amount;
@@ -581,6 +582,7 @@ class BookingServiceUsage {
     required this.id,
     this.name = '',
     this.quantity = 1,
+    this.headcount = 1,
     this.unitLabel = '',
     this.unitPrice,
     this.amount = 0,
@@ -595,6 +597,7 @@ class BookingServiceUsage {
     id: asInt(json['id']),
     name: json['name']?.toString() ?? '',
     quantity: asNum(json['quantity'], fallback: 1),
+    headcount: asInt(json['headcount'], fallback: 1),
     unitLabel: json['unitLabel']?.toString() ?? '',
     unitPrice: asNumOrNull(json['unitPrice']),
     amount: asNumOrNull(json['amount']) ?? 0,

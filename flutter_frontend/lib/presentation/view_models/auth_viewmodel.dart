@@ -144,6 +144,22 @@ class AuthViewModel extends StateNotifier<AuthState> {
     }
   }
 
+  Future<void> updateMyLodgeHeroImage(FormData form) async {
+    try {
+      state = state.copyWith(me: await usecase.updateMyLodgeHeroImage(form));
+    } catch (e) {
+      throw _message(e);
+    }
+  }
+
+  Future<void> removeMyLodgeHeroImage() async {
+    try {
+      state = state.copyWith(me: await usecase.removeMyLodgeHeroImage());
+    } catch (e) {
+      throw _message(e);
+    }
+  }
+
   /// The server's own words where it sent any, because it says the useful
   /// thing — "That account is locked for 15 minutes" is worth far more to the
   /// desk than "Request failed with status code 429".

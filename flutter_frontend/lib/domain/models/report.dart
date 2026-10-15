@@ -1387,6 +1387,7 @@ class ServiceUsageRow {
   final String? unitLabel;
   final num unitPrice;
   final num quantity;
+  final int headcount;
   final num lineTotal;
   final num gstRatePercent;
   final String? guestName;
@@ -1405,6 +1406,7 @@ class ServiceUsageRow {
     this.unitLabel,
     this.unitPrice = 0,
     this.quantity = 0,
+    this.headcount = 1,
     this.lineTotal = 0,
     this.gstRatePercent = 0,
     this.guestName,
@@ -1424,6 +1426,7 @@ class ServiceUsageRow {
     unitLabel: asStringOrNull(json['unitLabel']),
     unitPrice: asNum(json['unitPrice']),
     quantity: asNum(json['quantity']),
+    headcount: asInt(json['headcount'], fallback: 1),
     lineTotal: asNum(json['lineTotal']),
     gstRatePercent: asNum(json['gstRatePercent']),
     guestName: asStringOrNull(json['guestName']),

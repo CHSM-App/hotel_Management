@@ -1059,7 +1059,7 @@ class _ServiceUsageRow extends StatelessWidget {
     final detail = [
       itemCount != null
           ? '$itemCount item${itemCount == 1 ? '' : 's'}'
-          : '${usage.quantity} × ${formatPrice(usage.unitPrice)}',
+          : '${usage.quantity}${usage.headcount > 1 ? ' × ${usage.headcount}' : ''} × ${formatPrice(usage.unitPrice)}',
       if (usage.roomNumber != null) 'Room ${usage.roomNumber}',
       if (usage.guestName != null && usage.guestName!.isNotEmpty)
         usage.guestName!,
@@ -1239,7 +1239,7 @@ class _ServiceTableRow extends StatelessWidget {
     final detail = [
       itemCount != null
           ? '$itemCount item${itemCount == 1 ? '' : 's'}'
-          : '${usage.quantity} × ${formatPrice(usage.unitPrice)}',
+          : '${usage.quantity}${usage.headcount > 1 ? ' × ${usage.headcount}' : ''} × ${formatPrice(usage.unitPrice)}',
       if (usage.roomNumber != null) 'Room ${usage.roomNumber}',
       if (usage.guestName != null && usage.guestName!.isNotEmpty)
         usage.guestName!,

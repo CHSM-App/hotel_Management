@@ -53,4 +53,8 @@ class AuthUsecase {
 
   /// Owner-only: drop the property's logo, and turn off printing it.
   Future<Me> removeMyLodgeLogo() => repository.removeMyLodgeLogo();
+
+  Future<Me> updateMyLodgeHeroImage(FormData form) => repository.updateMyLodgeHeroImage(form);
+
+  Future<Me> removeMyLodgeHeroImage() => repository.removeMyLodgeHeroImage();
 }

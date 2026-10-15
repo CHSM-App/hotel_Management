@@ -6,7 +6,7 @@ import 'json.dart';
 
 /// What a service is usually charged per. Anything else is typed under
 /// "Other" — mirrors UNIT_SUGGESTIONS in ServicesPanel.jsx.
-const kServiceUnitSuggestions = ['use', 'hour', 'day', 'person', 'session', 'game', 'trip', 'km'];
+const kServiceUnitSuggestions = ['use', 'hour', 'day', 'session', 'game', 'trip', 'km'];
 
 class LodgeService {
   final int id;
@@ -53,6 +53,7 @@ class ServiceUsage {
   final num unitPrice;
   final num gstRatePercent;
   final num quantity;
+  final int headcount;
   final num lineTotal;
   final int? roomId;
   final String? roomNumber;
@@ -77,6 +78,7 @@ class ServiceUsage {
     this.unitPrice = 0,
     this.gstRatePercent = 0,
     this.quantity = 1,
+    this.headcount = 1,
     this.lineTotal = 0,
     this.roomId,
     this.roomNumber,
@@ -100,6 +102,7 @@ class ServiceUsage {
     unitPrice: asNum(json['unitPrice']),
     gstRatePercent: asNum(json['gstRatePercent']),
     quantity: asNum(json['quantity'], fallback: 1),
+    headcount: asInt(json['headcount'], fallback: 1),
     lineTotal: asNum(json['lineTotal']),
     roomId: asIntOrNull(json['roomId']),
     roomNumber: asStringOrNull(json['roomNumber']),
@@ -125,6 +128,7 @@ class ServiceUsage {
     unitPrice: unitPrice,
     gstRatePercent: gstRatePercent,
     quantity: quantity,
+    headcount: headcount,
     lineTotal: lineTotal,
     roomId: roomId,
     roomNumber: roomNumber,
@@ -151,6 +155,7 @@ class ServiceUsage {
     unitPrice: unitPrice,
     gstRatePercent: gstRatePercent,
     quantity: quantity + other.quantity,
+    headcount: headcount,
     lineTotal: lineTotal + other.lineTotal,
     roomId: roomId,
     roomNumber: roomNumber,

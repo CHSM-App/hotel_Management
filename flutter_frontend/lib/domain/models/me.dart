@@ -92,6 +92,10 @@ class Lodge {
   /// committing to it on every printed document.
   final bool showLogoOnReceipt;
 
+  /// Owner/staff-set hero background of the public page — `/lodge-hero-images/<file>`.
+  /// Null falls back to the first room/venue photo.
+  final String? heroImageUrl;
+
   // ── What this property is ────────────────────────────────────────────────
   final bool hasRooms;
   final bool servesFood;
@@ -123,6 +127,7 @@ class Lodge {
     this.isSpecifiedPremises = false,
     this.logoUrl,
     this.showLogoOnReceipt = false,
+    this.heroImageUrl,
     this.hasRooms = false,
     this.servesFood = false,
     this.foodRoomService = false,
@@ -154,6 +159,7 @@ class Lodge {
     isSpecifiedPremises: asBool(json['isSpecifiedPremises']),
     logoUrl: asStringOrNull(json['logoUrl']),
     showLogoOnReceipt: asBool(json['showLogoOnReceipt']),
+    heroImageUrl: asStringOrNull(json['heroImageUrl']),
     hasRooms: asBool(json['hasRooms']),
     servesFood: asBool(json['servesFood']),
     foodRoomService: asBool(json['foodRoomService']),

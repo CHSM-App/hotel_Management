@@ -49,4 +49,10 @@ class AuthImpl implements AuthRepository {
 
   @override
   Future<Me> removeMyLodgeLogo() => api.removeMyLodgeLogo();
+
+  @override
+  Future<Me> updateMyLodgeHeroImage(FormData form) => api.updateMyLodgeHeroImage(form);
+
+  @override
+  Future<Me> removeMyLodgeHeroImage() => api.removeMyLodgeHeroImage();
 }
