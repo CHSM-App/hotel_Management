@@ -322,15 +322,16 @@ export default function Customers() {
 
               {feedback.responses.length === 0 ? (
                 <p className="inv-panel__hint">
-                  No feedback has been submitted yet. It's asked automatically a few hours after a guest checks out.
+                  No feedback has been submitted yet. It's asked automatically a few hours after a guest checks out, or
+                  after a function is marked completed.
                 </p>
               ) : (
                 <div className="asset-table-wrap">
                   <table className="asset-table">
                     <thead>
                       <tr>
-                        <th>Guest</th>
-                        <th>Checked out</th>
+                        <th>Guest / Organiser</th>
+                        <th>Stay / Event date</th>
                         <th>Rating</th>
                         <th>Comment</th>
                         <th>Submitted</th>

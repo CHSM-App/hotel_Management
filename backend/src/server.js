@@ -30,6 +30,8 @@ const cron = require('node-cron');
 const { sendDueStayReminders } = require('./modules/bookings/stayReminders.service');
 const { sendDueFeedbackRequests } = require('./modules/bookings/feedbackRequests.service');
 const { sendDueBirthdayWishes } = require('./modules/customers/birthdayWishes.service');
+const { sendDueEventReminders } = require('./modules/events/eventReminders.service');
+const { sendDueEventFeedbackRequests } = require('./modules/events/eventFeedbackRequests.service');
 
 const port = process.env.PORT || 5000;
 
@@ -122,6 +124,17 @@ cron.schedule(
   { timezone: 'Asia/Kolkata' }
 );
 
+// The event side of the same ask, off a function's completed_at instead of a
+// stay's actual_check_out_at. Same 2-hour cadence as the stay sweep, its own
+// cron.schedule call so a failure in either never stops the other.
+cron.schedule(
+  '0 */2 * * *',
+  () => {
+    sendDueEventFeedbackRequests().catch((err) => logger.error({ err }, 'Event feedback request sweep failed'));
+  },
+  { timezone: 'Asia/Kolkata' }
+);
+
 // Once a day, same 9 AM IST moment as the stay reminder above — a calendar
 // check (is today someone's birthday) has no reason to run more often than
 // once a day, same reasoning as the reminder sweep's own schedule. Its own
@@ -131,6 +144,17 @@ cron.schedule(
   '0 9 * * *',
   () => {
     sendDueBirthdayWishes().catch((err) => logger.error({ err }, 'Birthday wishes sweep failed'));
+  },
+  { timezone: 'Asia/Kolkata' }
+);
+
+// Same 9 AM IST moment as the stay reminder — one calendar check (is a
+// function tomorrow), no reason to run more often. Its own cron.schedule
+// call so a failure here never stops the stay-reminder or birthday sweeps.
+cron.schedule(
+  '0 9 * * *',
+  () => {
+    sendDueEventReminders().catch((err) => logger.error({ err }, 'Event reminder sweep failed'));
   },
   { timezone: 'Asia/Kolkata' }
 );

@@ -3,6 +3,14 @@ const jwt = require('jsonwebtoken');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const loginLockout = require('./loginLockout');
+const whatsapp = require('../../config/whatsapp');
+const { issueOtp, verifyAndConsumeOtp } = require('../me/otp.service');
+const { logger } = require('../../config/logger');
+
+// Its own purpose, separate from the logged-in password-change flow's
+// 'password_change' — a code issued for one must never verify the other,
+// even though both land in the same table. See migrations/142.
+const FORGOT_PASSWORD = 'forgot_password';
 
 // A real bcrypt hash of a value nobody can supply, compared against when the
 // identifier matched no account. Its only job is to make the failing path cost
@@ -16,7 +24,7 @@ async function findUserByIdentifier(identifier) {
     .request()
     .input('identifier', sql.NVarChar, identifier)
     .query(`
-      SELECT id, lodge_id, name, email, phone, password_hash, role, is_active, must_reset_password
+      SELECT id, lodge_id, name, email, phone, password_hash, role, is_active
       FROM dbo.users
       WHERE email = @identifier OR phone = @identifier
     `);
@@ -30,7 +38,7 @@ async function findUserById(id) {
     .request()
     .input('id', sql.BigInt, id)
     .query(`
-      SELECT id, lodge_id, name, role, is_active, must_reset_password
+      SELECT id, lodge_id, name, role, is_active
       FROM dbo.users
       WHERE id = @id
     `);
@@ -67,7 +75,6 @@ function issueToken(user) {
     role: user.role,
     name: user.name,
     lodgeId: user.lodge_id ?? null,
-    mustResetPassword: !!user.must_reset_password,
   };
 }
 
@@ -124,24 +131,78 @@ function login(credentials) {
 
 // Forgot-password, reached from the same login page by someone who cannot
 // sign in at all — so unlike me.service.js's changePassword, nothing proves
-// this is the account owner beyond knowing the phone or email on file. Takes
-// the same identifier shape as login() (phone or email), scoped to the same
-// lodge-only roles, so this can never touch a SUPERADMIN account.
+// this is the account owner beyond knowing the phone or email on file.
+// Previously that was *all* it took: identifier plus a new password, no
+// proof of possession. This now requires the same WhatsApp code the
+// logged-in change-password flow does, sent to the account's own phone
+// regardless of whether the identifier typed in was that phone or the
+// account's email — so knowing an address is never enough on its own.
 //
 // Same "don't say which part failed" shape as loginWithRoles: whether the
 // identifier matched no account or an inactive/wrong-role one, the caller
 // sees one generic error either way.
-async function resetPasswordByIdentifier(identifier, newPassword) {
+
+// Step 1: look the account up and send it a code. Takes the same identifier
+// shape as login() (phone or email). `isAllowedRole` and `door` are what let
+// this same core serve two separate doors below — a lodge-staff one and a
+// SUPERADMIN one — without either being reachable through the other's door
+// name or lockout budget.
+async function sendForgotPasswordOtpFor(identifier, isAllowedRole, door) {
   // Same durable per-identifier lockout the login doors use, on its own
   // "door" name — this is the only check standing between knowing a phone
   // or email and taking over that account, so it gets the same defence a
   // wrong password would.
-  await loginLockout.assertNotLockedOut(identifier, 'FORGOT');
+  await loginLockout.assertNotLockedOut(identifier, door);
 
   const user = await findUserByIdentifier(identifier);
-  if (!user || !user.is_active || !isLodgeRole(user.role)) {
-    await loginLockout.recordFailure(identifier, 'FORGOT');
+  if (!user || !user.is_active || !isAllowedRole(user.role)) {
+    await loginLockout.recordFailure(identifier, door);
     throw new ApiError('No account found for that phone or email.', 404);
+  }
+
+  const phone = whatsapp.normalisePhone(user.phone);
+  if (!phone) {
+    throw new ApiError('No usable phone number is on file for this account. Ask the owner to update it.', 422);
+  }
+  // Checked before the code is generated: a code written to the database and
+  // never delivered would leave the user waiting for a message that is not
+  // coming, with no way to tell that from a slow one.
+  if (!whatsapp.isConfigured()) {
+    throw new ApiError('WhatsApp is not configured on this server, so codes cannot be sent.', 503);
+  }
+
+  const { otp, expiresAt } = await issueOtp({ userId: user.id, phone, purpose: FORGOT_PASSWORD });
+
+  try {
+    await whatsapp.sendOtp(phone, otp);
+  } catch (err) {
+    // The provider's reason goes to the log, not to the response, same as
+    // me.service.js's sendPasswordChangeOtp — it can name the destination
+    // number and the template, and the caller can do nothing with it either
+    // way. The stored code is left behind for the next sweep.
+    logger.error({ err, userId: user.id }, 'WhatsApp forgot-password OTP send failed');
+    throw new ApiError('Could not send the code right now. Please try again in a moment.', 502);
+  }
+
+  return { phone: whatsapp.maskPhone(phone), expiresAt };
+}
+
+// Step 2: spend the code and write the new password. A wrong or missing code
+// counts against the identifier's lockout budget exactly like a wrong
+// password would, since it is the thing standing in for one here.
+async function resetPasswordByIdentifierFor(identifier, otp, newPassword, isAllowedRole, door) {
+  await loginLockout.assertNotLockedOut(identifier, door);
+
+  const user = await findUserByIdentifier(identifier);
+  if (!user || !user.is_active || !isAllowedRole(user.role)) {
+    await loginLockout.recordFailure(identifier, door);
+    throw new ApiError('No account found for that phone or email.', 404);
+  }
+
+  const { valid, reason } = await verifyAndConsumeOtp({ userId: user.id, otp, purpose: FORGOT_PASSWORD });
+  if (!valid) {
+    await loginLockout.recordFailure(identifier, door);
+    throw new ApiError(reason, 400);
   }
 
   const pool = await getPool();
@@ -150,9 +211,29 @@ async function resetPasswordByIdentifier(identifier, newPassword) {
     .request()
     .input('userId', sql.BigInt, user.id)
     .input('passwordHash', sql.NVarChar, passwordHash)
-    .query('UPDATE dbo.users SET password_hash = @passwordHash, must_reset_password = 0 WHERE id = @userId');
+    .query('UPDATE dbo.users SET password_hash = @passwordHash WHERE id = @userId');
 
-  await loginLockout.clearFailures(identifier, 'FORGOT');
+  await loginLockout.clearFailures(identifier, door);
+}
+
+// Lodge staff only — reached from the public /login page.
+function sendForgotPasswordOtp(identifier) {
+  return sendForgotPasswordOtpFor(identifier, isLodgeRole, 'FORGOT');
+}
+
+function resetPasswordByIdentifier(identifier, otp, newPassword) {
+  return resetPasswordByIdentifierFor(identifier, otp, newPassword, isLodgeRole, 'FORGOT');
+}
+
+// SUPERADMIN only — reached from the hidden /vt-internal login. Its own door
+// name keeps its lockout budget separate from the lodge-staff one above, the
+// same way adminLogin's 'ADMIN' door is separate from login's 'STAFF'.
+function sendAdminForgotPasswordOtp(identifier) {
+  return sendForgotPasswordOtpFor(identifier, (role) => role === 'SUPERADMIN', 'ADMIN_FORGOT');
+}
+
+function resetAdminPasswordByIdentifier(identifier, otp, newPassword) {
+  return resetPasswordByIdentifierFor(identifier, otp, newPassword, (role) => role === 'SUPERADMIN', 'ADMIN_FORGOT');
 }
 
 // Vengurla Tech only — the hidden /vtadmin page. Counted separately from the
@@ -177,4 +258,13 @@ async function refresh(userClaims) {
   return issueToken(user);
 }
 
-module.exports = { login, adminLogin, resetPasswordByIdentifier, refresh, touchLastSeen };
+module.exports = {
+  login,
+  adminLogin,
+  sendForgotPasswordOtp,
+  resetPasswordByIdentifier,
+  sendAdminForgotPasswordOtp,
+  resetAdminPasswordByIdentifier,
+  refresh,
+  touchLastSeen,
+};

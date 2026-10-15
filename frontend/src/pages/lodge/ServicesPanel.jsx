@@ -572,7 +572,13 @@ export default function ServicesPanel({ lodge }) {
               {filteredServices.map((s) => (
                 <li className={`svc-card${s.isActive ? '' : ' svc-card--inactive'}`} key={s.id}>
                   {s.image ? (
-                    <img className="svc-card__photo" src={`${API_BASE}/service-images/${s.image}`} alt="" loading="lazy" />
+                    <img
+                      className="svc-card__photo"
+                      src={`${API_BASE}/service-images/${s.image}`}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
                   ) : (
                     <div className="svc-card__photo svc-card__photo--empty" aria-hidden="true">
                       No photo

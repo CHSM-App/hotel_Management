@@ -2372,9 +2372,14 @@ async function getFeedbackReport(lodgeId, fromDate, toDate) {
     .input('toDate', sql.Date, toDate)
     .query(`
       SELECT fr.id, fr.rating, fr.comment, fr.requested_at, fr.submitted_at,
-             b.guest_name, b.check_out_date
+             COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
+             -- A stay has a booked checkout date; a function has no such
+             -- column, so the day it was marked complete stands in for it —
+             -- same fallback shape billShare.service.js's stayDates uses.
+             COALESCE(b.check_out_date, CAST(eb.completed_at AS DATE)) AS check_out_date
       FROM dbo.feedback_requests fr
-      JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.event_bookings eb ON eb.id = fr.event_booking_id
       WHERE fr.lodge_id = @lodgeId AND fr.submitted_at IS NOT NULL
         AND CAST(fr.submitted_at AS DATE) BETWEEN @fromDate AND @toDate
       ORDER BY fr.submitted_at DESC

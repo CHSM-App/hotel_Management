@@ -529,9 +529,6 @@ export default function StaffAndRoles() {
                           <span className={`badge ${u.isActive ? 'badge--on' : 'badge--off'}`}>
                             {u.isActive ? 'Active' : 'Disabled'}
                           </span>
-                          {u.mustResetPassword && (
-                            <div className="staff-roles__sub">Temporary password</div>
-                          )}
                         </td>
                         <td>
                           <div className="staff-roles__row-actions">

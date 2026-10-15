@@ -404,9 +404,15 @@ async function listFeedback(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT fr.id, fr.rating, fr.comment, fr.submitted_at, b.guest_name, b.check_out_date
+      SELECT fr.id, fr.rating, fr.comment, fr.submitted_at,
+             COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
+             -- A function has no booked checkout date of its own; the day it
+             -- was marked complete stands in for it, same fallback
+             -- reports.service.js's getFeedbackReport uses.
+             COALESCE(b.check_out_date, CAST(eb.completed_at AS DATE)) AS check_out_date
       FROM dbo.feedback_requests fr
-      JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.event_bookings eb ON eb.id = fr.event_booking_id
       WHERE fr.lodge_id = @lodgeId AND fr.submitted_at IS NOT NULL
       ORDER BY fr.submitted_at DESC
     `);

@@ -1,178 +1,244 @@
 /* Read-only view of one property, reached from the View button on the internal
-   lodge list. Shares .dash-shell / .dash-topbar / .badge / .dash-table with
-   LodgesDashboard.css — only what's specific to this page lives here. */
+   lodge list. Shares .dash-shell / .dash-topbar / .badge / .dash-table / .btn-*
+   with LodgesDashboard.css — only what's specific to this page lives here.
+
+   Layout: a hero strip naming the property, then a slim sticky side nav next
+   to a single scrolling document. Every section (Overview, Contact, Billing,
+   Check-in, Sections, Staff, Tools) lives in that one document, separated by
+   a heading and a rule rather than its own boxed card — nine competing tiles
+   collapse into one record with a table of contents. Nothing is hidden
+   behind a tab or an accordion: scrolling reaches everything the nav does. */
 
 .detail-main {
-  max-width: 1180px;
+  width: 100%;
 }
 
 .detail-back {
   display: inline-block;
   color: var(--text-muted);
   text-decoration: none;
-  font-size: 14px;
-  margin-bottom: 16px;
+  font-size: 13px;
+  margin-bottom: 10px;
 }
 
 .detail-back:hover {
   color: var(--brand);
 }
 
-.detail-header {
+/* Hero --------------------------------------------------------------- */
+
+.detail-hero {
+  position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 24px;
-}
-
-.detail-header h1 {
-  font-size: 28px;
-}
-
-.detail-header__slug {
-  color: var(--text-muted);
-  font-size: 14px;
-  margin-top: 4px;
-}
-
-.detail-header__brand {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-.detail-header__logo {
-  flex-shrink: 0;
-  width: 56px;
-  height: 56px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 12px;
+  padding: 18px 22px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+/* The same light-source gradient the topbar is lit by, as a thin cap rather
+   than a full band — enough to tie this card to the chrome above it without
+   turning the page's most-read heading into reversed white-on-violet text. */
+.detail-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand-band), var(--brand-band-deep));
+}
+
+.detail-hero__brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.detail-hero__logo {
+  flex-shrink: 0;
+  width: 50px;
+  height: 50px;
+  border-radius: 10px;
   object-fit: contain;
   background: var(--surface, #fff);
   border: 1px solid var(--border, #e2e8f0);
-  padding: 6px;
+  padding: 5px;
 }
 
-.detail-header__logo--empty {
-  border-style: dashed;
-}
-
-.detail-header__logo-actions {
+/* Initials in the brand violet rather than a blank dashed box — a property
+   with no logo yet should still look like it belongs to this product, not
+   like an image failed to load. */
+.detail-hero__logo--empty {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  border-style: solid;
+  background: var(--brand-wash);
+  border-color: var(--brand-wash-edge);
+  color: var(--brand);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.detail-hero__id {
+  min-width: 0;
+}
+
+.detail-hero h1 {
+  font-size: 21px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-hero__slug {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+.detail-hero__badges {
+  display: flex;
+  gap: 6px;
   flex-wrap: wrap;
   margin-top: 8px;
 }
 
-.detail-header__logo-error {
-  font-size: 12px;
-  color: var(--danger, #dc2626);
-}
-
-.detail-header__badges {
+.detail-hero__actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-/* auto-fit rather than a fixed count: a restaurant has no rooms tile and a
-   lodge with no kitchen has no food tiles, so the number of tiles varies. */
-.detail-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.detail-stat {
-  background: var(--surface);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
-  border-radius: 12px;
-  padding: 16px 18px;
-}
-
-.detail-stat__value {
-  font-family: var(--serif);
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--ink);
-  line-height: 1.2;
-}
-
-.detail-stat__label {
+.detail-hero__logo-error {
+  flex-basis: 100%;
   font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  margin-top: 6px;
+  color: var(--danger, #dc2626);
 }
 
-/* A tile that holds a button instead of a number — the menu import action,
-   sitting beside the menu stats it affects. */
-.detail-stat--action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* Side nav + document --------------------------------------------------- */
 
-.detail-stat__note {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
-.detail-grid {
+.detail-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 16px;
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: 24px;
   align-items: start;
 }
 
-.detail-card {
+/* Pinned below the topbar so the table of contents stays in reach as the
+   document scrolls past it. A plain list of links, not its own card — the
+   nav is furniture, not a section of the record. */
+.detail-nav {
+  position: sticky;
+  top: calc(var(--dash-topbar-h) + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-nav__link {
+  padding: 7px 10px;
+  border-radius: 7px;
+  border-left: 2px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 130ms ease, background-color 130ms ease, border-color 130ms ease;
+}
+
+.detail-nav__link:hover {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.detail-nav__link--active {
+  color: var(--brand);
+  background: var(--brand-wash);
+  border-left-color: var(--brand);
+  font-weight: 600;
+}
+
+/* The one card for the whole record — replaces what used to be nine. */
+.detail-document {
   background: var(--surface);
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
   border-radius: 12px;
-  padding: 20px 22px;
+  padding: 24px 28px;
+  min-width: 0;
 }
 
-/* Tables and the activity strip read badly in a half-width column. */
-.detail-card--wide {
-  grid-column: 1 / -1;
-  padding: 20px 0 0;
+.detail-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 26px 0;
 }
 
-.detail-card--wide h2,
-.detail-card--wide .detail-card__hint,
-.detail-card--wide .detail-dl--inline {
-  padding-left: 22px;
-  padding-right: 22px;
+/* Clears the sticky topbar when a nav click (or any anchor jump) lands a
+   section at the top of the viewport — without this the heading would land
+   directly under the topbar's own height, half-hidden behind it. */
+.detail-section {
+  scroll-margin-top: calc(var(--dash-topbar-h) + 16px);
 }
 
-.detail-card h2 {
+.detail-section h2 {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
   margin-bottom: 14px;
 }
 
+.detail-section__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.detail-section__head h2 {
+  margin-bottom: 0;
+}
+
+.detail-staff-card__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--brand-wash);
+  color: var(--brand);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
 .detail-card__hint {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-muted);
   margin: -8px 0 14px;
 }
+
+/* Rows (dl/dt/dd pairs) --------------------------------------------------- */
 
 .detail-row {
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  padding: 9px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--border);
-  font-size: 14px;
+  font-size: 13.5px;
 }
 
 .detail-row:last-child {
@@ -195,30 +261,209 @@
   color: var(--brand);
 }
 
-/* The activity card is three short facts, so they sit side by side instead of
-   stacking into a tall near-empty panel. */
-.detail-dl--inline {
+/* Overview stat strip ----------------------------------------------------- */
+
+/* auto-fit rather than a fixed count: a restaurant has no rooms tile and a
+   lodge with no kitchen has no food tiles, so the number of tiles varies. */
+.detail-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 0 28px;
-  padding-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
 }
 
-.detail-features {
-  margin-bottom: 14px;
+.detail-stat {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--paper);
+  border-radius: 10px;
+  padding: 11px 13px;
 }
 
-.detail-features:last-child {
-  margin-bottom: 0;
+.detail-stat__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
 }
 
-.detail-features__group {
-  font-size: 12px;
+/* Three tones reused everywhere a card or tile needs one, rather than every
+   icon wearing the brand violet regardless of what it represents: violet for
+   identity/setup, green for money and activity, gold for time and food. */
+.detail-stat__icon--violet {
+  background: var(--brand-wash);
+  color: var(--brand);
+}
+
+.detail-stat__icon--green {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.detail-stat__icon--gold {
+  background: #fbf1e0;
+  color: var(--accent-ink);
+}
+
+.detail-stat__body {
+  min-width: 0;
+}
+
+.detail-stat__value {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.detail-stat__label {
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-top: 2px;
+}
+
+.detail-stat__note {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Overview: last activity + quick links side by side -------------------- */
+
+.detail-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+.detail-overview-block__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.detail-activity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-activity__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.detail-activity__label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.detail-activity__at {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.detail-quicklinks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* One link plus its copy button, side by side — the link takes the
+   remaining width, the button is a fixed square beside it. */
+.detail-quicklink-row {
+  display: flex;
+  gap: 6px;
+}
+
+.detail-quicklink {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--paper);
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.detail-quicklink span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-quicklink svg {
+  flex-shrink: 0;
+  color: var(--brand);
+}
+
+.detail-quicklink:hover {
+  border-color: var(--brand-wash-edge);
+  background: var(--brand-wash);
+}
+
+.detail-quicklink--btn {
+  flex: 0 0 34px;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* Sections this account gets --------------------------------------------- */
+
+/* Each capability group as its own small panel, tiled in a grid rather than
+   stacked one under another — the list of sections an owner gets can run to
+   eight or nine groups, and stacked they would make this one section far
+   taller than the others around it. Tiled, the same content settles into
+   two or three short rows instead of one long column. */
+.detail-features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.detail-features {
+  background: var(--paper);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.detail-features__group {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 7px;
 }
 
 /* The margin and padding a browser gives a <ul> are reset here rather than
@@ -233,38 +478,82 @@
   gap: 6px;
 }
 
+/* Surface, not paper — the panel around these chips is paper-coloured, so a
+   paper chip on a paper panel would vanish. */
 .detail-features li {
-  font-size: 13px;
-  background: var(--paper);
+  font-size: 12.5px;
+  background: var(--surface);
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
   border-radius: 999px;
-  padding: 4px 12px;
+  padding: 4px 10px;
   color: var(--ink);
 }
 
-.detail-badge-gap {
-  margin-left: 6px;
+@media (max-width: 980px) {
+  .detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A horizontal strip of links instead of a sticky column — there's no
+     room for a side rail once the document is full width, and the nav is
+     still worth having as a quick jump-to-section bar. */
+  .detail-nav {
+    position: sticky;
+    top: var(--dash-topbar-h);
+    z-index: 4;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+    background: var(--paper);
+    padding: 8px 0;
+    margin: 0 -16px 8px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .detail-nav__link {
+    border-left: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 7px 7px 0 0;
+  }
+
+  .detail-nav__link--active {
+    border-left-color: transparent;
+    border-bottom-color: var(--brand);
+  }
+
+  /* Taller now: the horizontal nav bar sits below the topbar and is sticky
+     too, so a jumped-to section needs to clear both. */
+  .detail-section {
+    scroll-margin-top: calc(var(--dash-topbar-h) + 56px);
+  }
 }
 
 @media (max-width: 640px) {
-  .detail-header h1 {
-    font-size: 22px;
+  .detail-hero {
+    padding: 14px;
   }
 
-  .detail-card {
+  .detail-hero h1 {
+    font-size: 18px;
+  }
+
+  .detail-hero__actions {
+    width: 100%;
+  }
+
+  .detail-hero__actions .btn-accent {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .detail-document {
     padding: 16px;
   }
 
-  .detail-card--wide {
-    padding: 16px 0 0;
-  }
-
-  .detail-card--wide h2,
-  .detail-card--wide .detail-card__hint,
-  .detail-card--wide .detail-dl--inline {
-    padding-left: 16px;
-    padding-right: 16px;
+  .detail-divider {
+    margin: 20px 0;
   }
 
   /* Label above value once the row is too narrow to hold both on one line. */

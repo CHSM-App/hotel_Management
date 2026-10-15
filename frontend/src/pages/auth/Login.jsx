@@ -40,7 +40,7 @@ function EyeToggle({ shown, onClick }) {
   );
 }
 
-const initialForgotForm = { identifier: '', newPassword: '', confirmPassword: '' };
+const initialForgotForm = { identifier: '', newPassword: '', confirmPassword: '', otp: '' };
 
 export default function Login() {
   const navigate = useNavigate();
@@ -72,16 +72,28 @@ export default function Login() {
       forgotErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
   };
+  // Which half of the reset is on screen. "details" collects who's resetting
+  // and the new password, "code" collects the one-time code that proves it's
+  // actually them — same split as ProfileMenu's own password-change form,
+  // and for the same reason: nothing here proves account ownership besides
+  // knowing the phone or email, so a code to that phone is what does.
+  const [forgotStep, setForgotStep] = useState('details');
+  // Masked destination the server reports, e.g. "+91 ******3210".
+  const [forgotCodeSentTo, setForgotCodeSentTo] = useState('');
 
   const closeForgot = () => {
     setShowForgot(false);
     setForgotForm(initialForgotForm);
     setForgotError('');
     setForgotDone(false);
+    setForgotStep('details');
+    setForgotCodeSentTo('');
   };
 
-  const handleForgotSubmit = async (e) => {
-    e.preventDefault();
+  // Both passwords are validated here, before any code is sent — sending one
+  // and then rejecting the form would spend a real WhatsApp message on a
+  // mistake the browser could see on its own.
+  const requestForgotCode = async () => {
     setForgotError('');
 
     if (!forgotForm.identifier.trim()) {
@@ -99,9 +111,39 @@ export default function Login() {
 
     setForgotSubmitting(true);
     try {
+      const res = await apiPost('/auth/forgot-password/send-otp', {
+        identifier: forgotForm.identifier.trim(),
+      });
+      setForgotCodeSentTo(res?.phone || '');
+      setForgotStep('code');
+      setForgotForm((f) => ({ ...f, otp: '' }));
+    } catch (err) {
+      reportForgotError(err instanceof ApiError ? err.message : 'Could not send the code.');
+    } finally {
+      setForgotSubmitting(false);
+    }
+  };
+
+  const handleForgotSendCode = async (e) => {
+    e.preventDefault();
+    await requestForgotCode();
+  };
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    setForgotError('');
+
+    if (!/^\d{6}$/.test(forgotForm.otp.trim())) {
+      reportForgotError('Enter the 6-digit code sent to your phone.');
+      return;
+    }
+
+    setForgotSubmitting(true);
+    try {
       await apiPost('/auth/forgot-password', {
         identifier: forgotForm.identifier.trim(),
         newPassword: forgotForm.newPassword,
+        otp: forgotForm.otp.trim(),
       });
       setForgotDone(true);
     } catch (err) {
@@ -236,11 +278,21 @@ export default function Login() {
             </button>
           </form>
         ) : (
-          <form className="auth-card" onSubmit={handleForgotSubmit} noValidate>
+          <form
+            className="auth-card"
+            onSubmit={forgotStep === 'details' ? handleForgotSendCode : handleForgotSubmit}
+            noValidate
+          >
             <h2>Reset password</h2>
-            <p className="auth-card__hint">
-              Enter the phone or email your lodge registered with, and choose a new password.
-            </p>
+            {!forgotDone && (
+              <p className="auth-card__hint">
+                {forgotStep === 'details'
+                  ? 'Enter the phone or email your lodge registered with, and choose a new password.'
+                  : forgotCodeSentTo
+                    ? `Enter the 6-digit code sent to ${forgotCodeSentTo}.`
+                    : 'Enter the 6-digit code sent to your phone.'}
+              </p>
+            )}
 
             {forgotError && (
               <div ref={forgotErrorRef} className="form-banner form-banner--error form-banner--flash">
@@ -254,7 +306,7 @@ export default function Login() {
               </div>
             )}
 
-            {!forgotDone && (
+            {!forgotDone && forgotStep === 'details' && (
               <>
                 <div className="field">
                   <label htmlFor="forgotIdentifier">
@@ -313,13 +365,62 @@ export default function Login() {
               </>
             )}
 
+            {!forgotDone && forgotStep === 'code' && (
+              <>
+                <div className="field">
+                  <label htmlFor="forgotOtp">
+                    Verification code
+                    <Req />
+                  </label>
+                  <input
+                    id="forgotOtp"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={forgotForm.otp}
+                    onChange={(e) => setForgotForm((f) => ({ ...f, otp: e.target.value.replace(/\D/g, '') }))}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="field__aux-link"
+                  onClick={requestForgotCode}
+                  disabled={forgotSubmitting}
+                >
+                  Resend code
+                </button>
+              </>
+            )}
+
             <div className="auth-card__actions">
-              <button type="button" className="btn-secondary" onClick={closeForgot} disabled={forgotSubmitting}>
-                {forgotDone ? 'Back to sign in' : 'Cancel'}
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  if (!forgotDone && forgotStep === 'code') {
+                    // Back to the passwords rather than out of the flow: the
+                    // code stays valid, so a mistyped new password does not
+                    // cost another message.
+                    setForgotStep('details');
+                    setForgotError('');
+                    return;
+                  }
+                  closeForgot();
+                }}
+                disabled={forgotSubmitting}
+              >
+                {forgotDone ? 'Back to sign in' : forgotStep === 'code' ? 'Back' : 'Cancel'}
               </button>
               {!forgotDone && (
                 <button className="btn-primary" type="submit" disabled={forgotSubmitting}>
-                  {forgotSubmitting ? 'Saving…' : 'Reset password'}
+                  {forgotSubmitting
+                    ? forgotStep === 'details'
+                      ? 'Sending…'
+                      : 'Saving…'
+                    : forgotStep === 'details'
+                      ? 'Send code'
+                      : 'Verify & reset'}
                 </button>
               )}
             </div>

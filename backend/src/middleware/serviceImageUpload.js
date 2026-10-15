@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
 const { uploadDir } = require('../config/uploadRoot');
+const { compressUploadedImages } = require('./imageCompression');
 
 // A photo of a lodge service — private pool, gaming area, spa — shown on its
 // card in Services & prices. Not sensitive, so it is served from a static
@@ -38,7 +39,7 @@ const upload = multer({
 // One photo per service, under the field name "image" — optional, so a save
 // with no file picked passes straight through.
 function serviceImageUpload(req, res, next) {
-  upload.single('image')(req, res, (err) => {
+  upload.single('image')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(new ApiError('The service photo must be 5MB or smaller.', 400));
@@ -49,6 +50,7 @@ function serviceImageUpload(req, res, next) {
       return next(new ApiError('Could not upload the photo.', 400));
     }
     if (err) return next(err);
+    await compressUploadedImages(req, { maxDimension: 1600, quality: 78 });
     next();
   });
 }

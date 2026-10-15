@@ -833,6 +833,8 @@ export default function RoomsPanel() {
                       src={`${API_BASE}/room-images/${room.images[0].filename}`}
                       alt={`Room ${room.roomNumber}`}
                       className="room-card__cover-img"
+                      loading="lazy"
+                      decoding="async"
                       onError={() =>
                         setBrokenPhotos((prev) => new Set(prev).add(room.images[0].filename))
                       }

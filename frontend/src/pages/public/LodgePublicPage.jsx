@@ -105,7 +105,13 @@ function VenueCard({ lodge, venue, onOpenPhotos, onEnquireEvent }) {
             onClick={() => onOpenPhotos(venue.images.map(venueImageUrl), 0)}
             aria-label={`View photos of ${venue.name}`}
           >
-            <img src={venueImageUrl(venue.images[0])} alt={`${venue.name} at ${lodge.name}`} className="lodge-public__room-img" />
+            <img
+              src={venueImageUrl(venue.images[0])}
+              alt={`${venue.name} at ${lodge.name}`}
+              className="lodge-public__room-img"
+              loading="lazy"
+              decoding="async"
+            />
           </button>
         ) : (
           <div className="lodge-public__room-placeholder">{venue.name}</div>
@@ -166,7 +172,13 @@ function ServiceCard({ lodge, service, onOpenPhotos }) {
             onClick={() => onOpenPhotos([serviceImageUrl(service.image)], 0)}
             aria-label={`View photo of ${service.name}`}
           >
-            <img src={serviceImageUrl(service.image)} alt={`${service.name} at ${lodge.name}`} className="lodge-public__room-img" />
+            <img
+              src={serviceImageUrl(service.image)}
+              alt={`${service.name} at ${lodge.name}`}
+              className="lodge-public__room-img"
+              loading="lazy"
+              decoding="async"
+            />
           </button>
         ) : (
           <div className="lodge-public__room-placeholder">{service.name}</div>
@@ -401,6 +413,8 @@ function RoomTypeCard({ lodge, type, onOpenPhotos, onEnquireRoom }) {
               src={roomImageUrl(type.images[0])}
               alt={`${type.name} room at ${lodge.name}`}
               className="lodge-public__room-img"
+              loading="lazy"
+              decoding="async"
             />
           </button>
         ) : (

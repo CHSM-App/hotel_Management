@@ -1,16 +1,23 @@
 const { logger } = require('../../config/logger');
 const whatsapp = require('../../config/whatsapp');
 
-// The WhatsApp ask for feedback a guest gets a few hours after checkout.
+// The WhatsApp ask for feedback a guest gets a few hours after checkout (or
+// an organiser gets after their function is marked complete — see
+// eventFeedbackRequests.service.js).
 //
-// The template's three variables, in order:
+// The template's two variables, in order:
 //
-//   {{1}} name  {{2}} hotel_name  {{3}} feedback_link
+//   {{1}} name  {{2}} greet_message
 //
-// "Hi {{1}}, {{2}}. Thank you so much for staying with us. We hope you had a
-//  comfortable and memorable time. Your feedback means a lot to us — it
-//  helps us take even better care of you and every guest after you. Share
-//  your experience here: {{3}}. With gratitude and warm wishes."
+// "Hello *{{1}}*, {{2}} We look forward to serving you again."
+//
+// greet_message is the whole of the rest of the body — hotel name, the ask,
+// and the feedback_link — composed server-side by buildGreetMessage below,
+// not three separate placeholders. An earlier three-variable version of this
+// template ({{1}} name {{2}} hotel_name {{3}} feedback_link) was rejected by
+// WhatsApp's reviewers; collapsing the last two into one variable leaves
+// exactly one placeholder per line of static text, which is the shape that
+// passed approval.
 //
 // feedback_link opens a page this app hosts itself (see
 // feedbackRequests.service.js and public.service.js's getFeedbackContext) —
@@ -36,14 +43,25 @@ function clean(value) {
   return text || '-';
 }
 
-// The three template values, in template order. Pure, so it can be checked
+// The composed {{2}}. Not run through clean() as a whole — the line breaks
+// are meaningful, and clean() would flatten them to spaces — only the hotel
+// name is cleaned before it goes in, since that's the one piece of this
+// block that is ever user-typed data and so the one piece that could carry
+// a comma. The static wording and the link carry none, so the finished
+// block is guaranteed comma-free without needing to scrub it afterwards.
+function buildGreetMessage(lodge, link) {
+  const hotelName = clean(lodge.name);
+  return `Thank you for choosing ${hotelName}. We would appreciate it if you could take a moment to share your feedback with us.\n\nPlease use the link below to leave your feedback:\n${link}`;
+}
+
+// The two template values, in template order. Pure, so it can be checked
 // without a database; booking is bookings.service.js's mapped getBooking()
 // shape (camelCase), lodge the row feedbackRequests.service.js's own
 // loadLodge hands over, link the full URL already built by the caller
 // (feedbackRequests.service.js owns the token and publicBaseUrl() call —
 // this module only ever sees the finished string).
 function buildFeedbackSample(booking, lodge, link) {
-  return [clean(booking.guestName), clean(lodge.name), clean(link)];
+  return [clean(booking.guestName), buildGreetMessage(lodge, link)];
 }
 
 // Fires the feedback request and reports how it went, never throwing — the
@@ -72,5 +90,6 @@ async function notifyFeedbackRequest(lodgeId, booking, lodge, link) {
 module.exports = {
   notifyFeedbackRequest,
   buildFeedbackSample,
+  buildGreetMessage,
   clean,
 };

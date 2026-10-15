@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
 const { uploadDir } = require('../config/uploadRoot');
+const { compressUploadedImages } = require('./imageCompression');
 
 // A property's own logo — shown before its name in the dashboard brand mark,
 // and on the bill masthead when the owner opts in. Not sensitive, so it is
@@ -32,7 +33,7 @@ const upload = multer({
 });
 
 function logoUpload(req, res, next) {
-  upload.single('logo')(req, res, (err) => {
+  upload.single('logo')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(new ApiError('The logo must be 2MB or smaller.', 400));
@@ -41,6 +42,7 @@ function logoUpload(req, res, next) {
     }
     if (err) return next(err);
     if (!req.file) return next(new ApiError('Choose an image to upload.', 400));
+    await compressUploadedImages(req, { maxDimension: 800, quality: 85 });
     next();
   });
 }

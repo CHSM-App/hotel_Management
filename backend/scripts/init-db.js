@@ -50,8 +50,8 @@ async function run() {
     .input('phone', sql.NVarChar, phone)
     .input('passwordHash', sql.NVarChar, passwordHash)
     .query(`
-      INSERT INTO dbo.users (lodge_id, name, email, phone, password_hash, role, must_reset_password)
-      VALUES (NULL, @name, @email, @phone, @passwordHash, 'SUPERADMIN', 0)
+      INSERT INTO dbo.users (lodge_id, name, email, phone, password_hash, role)
+      VALUES (NULL, @name, @email, @phone, @passwordHash, 'SUPERADMIN')
     `);
 
   console.log(`Superadmin created: ${email}`);

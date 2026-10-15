@@ -3,19 +3,16 @@ const { logger } = require('../../config/logger');
 const whatsapp = require('../../config/whatsapp');
 const { toClockTime } = require('../rooms/checkoutPolicy.service');
 
-// The WhatsApp confirmation a guest gets when their booking is written down.
-//
-// One approved template serves both a stay and a function — for a stay,
-// {{3}} carries the room number(s); for a function, the same slot carries
-// the venue name, since neither booking kind shows a guest its booking ID
-// anywhere else in the system (same reasoning as cancellationNotice.js's
-// room_no and stayReminder.js's days_away: the template says something
-// different depending on the caller, not something generic). The template's
-// ten variables, in order:
+// The WhatsApp confirmation a guest gets when their stay booking is written
+// down. Function bookings get their own template/module now — see
+// notifications/eventConfirmation.js — once a function's own wording (venue,
+// a single date, a start-end time range) stopped fitting this one's shape
+// (room number, separate check-in/check-out instants). The template's ten
+// variables, in order:
 //
 //   {{1}} customer         {{6}} advance_paid
 //   {{2}} property_name    {{7}} total_amount
-//   {{3}} room_no/venue    {{8}} balance_due
+//   {{3}} room_no          {{8}} balance_due
 //   {{4}} checkin_time     {{9}} directions
 //   {{5}} checkout_time    {{10}} phone
 //
@@ -67,15 +64,6 @@ function formatClock(hhmm) {
   const suffix = h >= 12 ? 'PM' : 'AM';
   const hour12 = h % 12 === 0 ? 12 : h % 12;
   return `${hour12}:${String(min).padStart(2, '0')} ${suffix}`;
-}
-
-// An instant, said in IST — every property on this system is in India, and a
-// function booked for "6 PM" must read 6 PM regardless of the server's clock.
-function formatInstantIST(value) {
-  const shifted = new Date(new Date(value).getTime() + IST_OFFSET_MS);
-  const date = formatDate({ y: shifted.getUTCFullYear(), m: shifted.getUTCMonth() + 1, d: shifted.getUTCDate() });
-  const clock = `${String(shifted.getUTCHours()).padStart(2, '0')}:${String(shifted.getUTCMinutes()).padStart(2, '0')}`;
-  return `${date} ${formatClock(clock)}`;
 }
 
 // Where to send the guest. The pin wins when the property has one — a Maps
@@ -144,27 +132,6 @@ function buildStaySample(booking, lodge) {
     money(advance),
     money(total),
     money(total - advance),
-    directionsFor(lodge),
-    lodgeContact(lodge),
-  ].map(clean);
-}
-
-// The same ten for a function. `event` is the API shape getEventBooking
-// returns (camelCase, ISO instants, and already-computed advanceAmount/
-// totalAmount/balanceDue — see events.service.js), which is what the events
-// service holds at the moment it fires this. venueName takes the room-number
-// slot; the property name alone (not "name (venue)") now that the venue has
-// its own slot to be named in.
-function buildEventSample(event, lodge) {
-  return [
-    event.organiserName,
-    lodge.name,
-    event.venueName || '-',
-    formatInstantIST(event.startAt),
-    formatInstantIST(event.endAt),
-    money(event.advanceAmount),
-    money(event.totalAmount),
-    money(event.balanceDue ?? Number(event.totalAmount || 0) - Number(event.advanceAmount || 0)),
     directionsFor(lodge),
     lodgeContact(lodge),
   ].map(clean);
@@ -256,33 +223,9 @@ async function notifyStayBooked(lodgeId, bookingId) {
   }
 }
 
-// A function that has just taken its venue — created as, or moved to,
-// CONFIRMED. The events service passes the booking it already
-// holds, so only the lodge is read here.
-async function notifyEventBooked(lodgeId, event) {
-  if (!whatsapp.isBookingTemplateConfigured()) return skipped('not configured');
-  try {
-    const lodge = await loadLodge(lodgeId);
-    if (!lodge) return skipped('lodge not found');
-    return await deliver({
-      kind: 'event',
-      id: event.id,
-      lodgeId,
-      phone: event.organiserPhone,
-      sample: buildEventSample(event, lodge),
-    });
-  } catch (err) {
-    logger.warn({ kind: 'event', id: event?.id, lodgeId, err }, 'Booking confirmation could not be prepared');
-    return { status: 'failed', error: err.message };
-  }
-}
-
 module.exports = {
   notifyStayBooked,
-  notifyEventBooked,
   buildStaySample,
-  buildEventSample,
-  formatInstantIST,
   directionsFor,
   clean,
 };

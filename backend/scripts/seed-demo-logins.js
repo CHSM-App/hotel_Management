@@ -58,8 +58,8 @@ async function ensureUser(pool, lodgeId, user) {
     .input('passwordHash', sql.NVarChar, passwordHash)
     .input('role', sql.NVarChar, user.role)
     .query(`
-      INSERT INTO dbo.users (lodge_id, name, email, phone, password_hash, role, must_reset_password)
-      VALUES (@lodgeId, @name, @email, @phone, @passwordHash, @role, 0)
+      INSERT INTO dbo.users (lodge_id, name, email, phone, password_hash, role)
+      VALUES (@lodgeId, @name, @email, @phone, @passwordHash, @role)
     `);
   return true;
 }

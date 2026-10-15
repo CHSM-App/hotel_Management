@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
 const { uploadDir } = require('../config/uploadRoot');
+const { compressUploadedImages } = require('./imageCompression');
 
 // Photos of a hall or lawn, shown beside the venue on the events setup card
 // the same way room photos sit on a room card. Not sensitive, so they are
@@ -43,7 +44,7 @@ const upload = multer({
 // activate/deactivate toggle) passes straight through — multer only reads
 // multipart bodies.
 function venueImageUpload(req, res, next) {
-  upload.array('images', MAX_IMAGES)(req, res, (err) => {
+  upload.array('images', MAX_IMAGES)(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(new ApiError('Each photo must be 5MB or smaller.', 400));
@@ -54,6 +55,7 @@ function venueImageUpload(req, res, next) {
       return next(new ApiError('Could not upload the photos.', 400));
     }
     if (err) return next(err);
+    await compressUploadedImages(req, { maxDimension: 1920, quality: 78 });
     next();
   });
 }
