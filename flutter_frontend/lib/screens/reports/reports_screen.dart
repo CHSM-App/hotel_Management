@@ -10,6 +10,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/reports_viewmodel.dart';
 import '../../widgets/neu.dart';
 import '../bookings/receipt_download.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'asset_report_excel.dart';
 import 'asset_report_pdf.dart';
@@ -531,38 +532,29 @@ class _SubTabs extends StatelessWidget {
 
   const _SubTabs({required this.tabs, required this.selected, required this.onSelect});
 
+  static const _icons = {
+    'overview': Icons.dashboard_rounded,
+    'bookings': Icons.bed_rounded,
+    'events': Icons.celebration_rounded,
+    'food': Icons.restaurant_rounded,
+    'services': Icons.room_service_rounded,
+    'laundry': Icons.local_laundry_service_rounded,
+    'bills': Icons.receipt_long_rounded,
+    'gst': Icons.account_balance_rounded,
+    'profitLoss': Icons.trending_up_rounded,
+    'expenses': Icons.payments_rounded,
+    'income': Icons.savings_rounded,
+    'assets': Icons.inventory_2_rounded,
+  };
+
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final tab in tabs) ...[
-            GestureDetector(
-              onTap: () => onSelect(tab.key),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s12),
-                decoration: BoxDecoration(
-                  color: tab.key == selected ? AppTheme.accent : AppTheme.card,
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                  border: tab.key == selected ? null : Border.all(color: AppTheme.border),
-                  boxShadow: tab.key == selected ? AppTheme.subtle : null,
-                ),
-                child: Text(
-                  tab.label,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: tab.key == selected ? Colors.white : AppTheme.text,
-                    fontWeight: tab.key == selected ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            if (tab != tabs.last) const SizedBox(width: AppTheme.s8),
-          ],
-        ],
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: [
+        for (final t in tabs) PillTab(t.key, t.label, _icons[t.key] ?? Icons.bar_chart_rounded),
+      ],
     );
   }
 }

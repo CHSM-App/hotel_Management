@@ -12,6 +12,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/photo_source_sheet.dart';
+import '../../widgets/pill_tabs.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 
@@ -194,91 +195,21 @@ class _EventsSetupPanelState extends ConsumerState<EventsSetupPanel> {
   }
 }
 
-/// Same sliding-pill segmented control Rooms & Rates / Income / Expenses use
-/// — one connected control with a moving highlight, mirroring the web
-/// Setup tab's own Venues/Add-ons subtabs switch.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
   const _SubTabs({required this.selected, required this.onSelect});
 
-  static const _tabs = {
-    'venues': 'Venues',
-    'addons': 'Add-ons',
-  };
-
-  static const double _height = 44;
-
   @override
   Widget build(BuildContext context) {
-    final keys = _tabs.keys.toList();
-    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
-
-    Widget segment(String key, String label) {
-      final isSelected = key == selected;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => onSelect(key),
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: _height,
-            child: Center(
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : AppTheme.heading,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                  fontSize: 13,
-                ),
-                child: Text(label, overflow: TextOverflow.ellipsis),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(-1 + (2 / (keys.length - 1)) * selectedIndex, 0),
-            child: FractionallySizedBox(
-              widthFactor: 1 / keys.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
-                  ),
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: [
-                    BoxShadow(color: AppTheme.accent.withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 3)),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              for (final entry in _tabs.entries) segment(entry.key, entry.value),
-            ],
-          ),
-        ],
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: const [
+        PillTab('venues', 'Venues', Icons.villa_rounded),
+        PillTab('addons', 'Add-ons', Icons.extension_rounded),
+      ],
     );
   }
 }

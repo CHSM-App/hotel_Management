@@ -5,6 +5,7 @@ import '../../domain/models/staff.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/staff_viewmodel.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'role_form_screen.dart';
 import 'staff_form_screen.dart';
@@ -76,76 +77,21 @@ class _Body extends ConsumerWidget {
   }
 }
 
-/// Same sliding-pill segmented control Expenses/Assets/Billing/Rooms &
-/// Rates each carry their own copy of.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
   const _SubTabs({required this.selected, required this.onSelect});
 
-  static const _tabs = {'staff': 'Staff', 'roles': 'Roles & access'};
-
-  static const double _height = 44;
-
   @override
   Widget build(BuildContext context) {
-    final keys = _tabs.keys.toList();
-    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
-
-    Widget segment(String key, String label) {
-      final isSelected = key == selected;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => onSelect(key),
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: _height,
-            child: Center(
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : AppTheme.heading,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 13,
-                ),
-                child: Text(label, overflow: TextOverflow.ellipsis),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(-1 + (2 / (keys.length - 1)) * selectedIndex, 0),
-            child: FractionallySizedBox(
-              widthFactor: 1 / keys.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  color: AppTheme.accent,
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                ),
-              ),
-            ),
-          ),
-          Row(children: [for (final e in _tabs.entries) segment(e.key, e.value)]),
-        ],
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: const [
+        PillTab('staff', 'Staff', Icons.badge_rounded),
+        PillTab('roles', 'Roles & access', Icons.admin_panel_settings_rounded),
+      ],
     );
   }
 }

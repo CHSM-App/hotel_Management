@@ -10,6 +10,7 @@ import '../../presentation/view_models/billing_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../housekeeping/housekeeping_parts.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'advance_receipt_screen.dart';
 import 'invoice_preview_screen.dart';
@@ -731,7 +732,7 @@ class BillingRowCard extends StatelessWidget {
 
 // ── Which list ──────────────────────────────────────────────────────────────
 
-class _Toggle extends StatefulWidget {
+class _Toggle extends StatelessWidget {
   final _BillingTab tab;
 
   /// False on "Restaurant billing" — the room queue never shows there, the
@@ -765,259 +766,20 @@ class _Toggle extends StatefulWidget {
   });
 
   @override
-  State<_Toggle> createState() => _ToggleState();
-}
-
-class _ToggleState extends State<_Toggle> {
-  static const double _height = 40;
-
-  final _scroll = ScrollController();
-
-  // One key per tab, kept across rebuilds (not recreated per build) so
-  // [Scrollable.ensureVisible] below can still find a segment's context by
-  // the time a post-frame callback runs.
-  final Map<_BillingTab, GlobalKey> _segmentKeys = {};
-
-  GlobalKey _keyFor(_BillingTab tab) =>
-      _segmentKeys.putIfAbsent(tab, () => GlobalKey());
-
-  // Whether there is more strip hidden past each edge right now — the two
-  // fades below only show while true, so a row that already fits entirely
-  // on screen (most phones, most of the time) renders with no scroll
-  // affordance at all.
-  bool _moreLeft = false;
-  bool _moreRight = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(_updateEdges);
-    // The strip isn't laid out yet on the first frame, so whether it
-    // overflows — and whether the starting tab needs scrolling into view —
-    // is only checked once a frame has actually happened.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateEdges();
-      _scrollToSelected(animate: false);
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _Toggle old) {
-    super.didUpdateWidget(old);
-    // A count landing (e.g. the queue finishes loading) can change a label's
-    // width enough to start or stop overflowing.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _updateEdges());
-    // Picking a tab that was sitting off-screen (past the fade) selects it
-    // straight away, but leaves the desk unable to see which one they're
-    // now on — so the strip scrolls it into view the moment the selection
-    // actually changes, rather than waiting for a manual swipe.
-    if (old.tab != widget.tab) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _scrollToSelected(),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _scroll.removeListener(_updateEdges);
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  void _updateEdges() {
-    if (!_scroll.hasClients) return;
-    final pos = _scroll.position;
-    final moreLeft = pos.pixels > 2;
-    final moreRight = pos.pixels < pos.maxScrollExtent - 2;
-    if (moreLeft != _moreLeft || moreRight != _moreRight) {
-      setState(() {
-        _moreLeft = moreLeft;
-        _moreRight = moreRight;
-      });
-    }
-  }
-
-  void _scrollToSelected({bool animate = true}) {
-    final context = _segmentKeys[widget.tab]?.currentContext;
-    if (context == null) return;
-    Scrollable.ensureVisible(
-      context,
-      duration: animate ? const Duration(milliseconds: 220) : Duration.zero,
-      curve: Curves.easeOut,
-      // Centred rather than pinned to an edge: a tab picked near either end
-      // of the strip still leaves its neighbour on both sides in view —
-      // the one just scrolled past as well as the one still ahead — not
-      // just whichever direction the scroll happened to move.
-      alignment: 0.5,
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final segments = [
-      if (widget.showRoom)
-        (
-          tab: _BillingTab.toBill,
-          label: widget.toBillCount == null
-              ? 'Ready to bill'
-              : 'Ready to bill (${widget.toBillCount})',
-        ),
-      if (widget.showServices)
-        (
-          tab: _BillingTab.services,
-          label: widget.serviceCount == null
-              ? 'Services to bill'
-              : 'Services to bill (${widget.serviceCount})',
-        ),
-      if (widget.showFood)
-        (
-          tab: _BillingTab.food,
-          label: widget.foodCount == null
-              ? 'Food to bill'
-              : 'Food to bill (${widget.foodCount})',
-        ),
-      (tab: _BillingTab.issued, label: 'Bills'),
-      if (widget.showNumbering)
-        (tab: _BillingTab.numbering, label: 'Numbering'),
-    ];
-    // Each segment carries its own pill rather than a single bar sliding
-    // across equal-width slots — with up to five of these (room, services,
-    // food, bills, numbering) an equal split truncated the longer labels
-    // ("Services t…") on a narrow phone. Sized to its own label instead, and
-    // the strip scrolls sideways when they don't all fit, the same way a
-    // chip row would rather than clipping text nobody can then read.
-    Widget segment(
-      _BillingTab segTab,
-      String label,
-      bool selected,
-      VoidCallback onTap,
-    ) => GestureDetector(
-          key: _keyFor(segTab),
-          onTap: onTap,
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            height: _height - 8,
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: selected
-                  ? const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [AppTheme.accent, AppTheme.sidebarBrand],
-                    )
-                  : null,
-              borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-              boxShadow: selected
-                  ? [
-                      BoxShadow(
-                        color: AppTheme.accent.withValues(alpha: 0.35),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOut,
-              style: TextStyle(
-                color: selected ? Colors.white : AppTheme.heading,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                fontSize: 13,
-              ),
-              child: Text(label, maxLines: 1, softWrap: false),
-            ),
-          ),
-        );
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-        child: Stack(
-          children: [
-            NotificationListener<ScrollMetricsNotification>(
-              onNotification: (_) {
-                // A resize (rotation, a count changing a label's width) can
-                // move the edges without the scroll offset itself changing,
-                // which the position listener alone would miss.
-                WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => _updateEdges(),
-                );
-                return false;
-              },
-              child: SingleChildScrollView(
-                controller: _scroll,
-                scrollDirection: Axis.horizontal,
-                physics: const ClampingScrollPhysics(),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final s in segments) ...[
-                      segment(
-                        s.tab,
-                        s.label,
-                        s.tab == widget.tab,
-                        () => widget.onChanged(s.tab),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            // The scroll affordance itself — a fade into the strip's own
-            // background, only on whichever side still has more tabs past
-            // the edge. Without this the strip reads as "that's all of
-            // them", and a tab sitting just off screen (Numbering, most
-            // often) is never found.
-            if (_moreLeft) const _EdgeFade(alignment: Alignment.centerLeft),
-            if (_moreRight) const _EdgeFade(alignment: Alignment.centerRight),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A faded strip at one edge of the tab row — the visual cue that there is
-/// more to scroll to past that edge. `IgnorePointer`ed so it never steals
-/// the tap meant for the segment under it.
-class _EdgeFade extends StatelessWidget {
-  final Alignment alignment;
-
-  const _EdgeFade({required this.alignment});
-
-  @override
-  Widget build(BuildContext context) {
-    final fromLeft = alignment == Alignment.centerLeft;
-    return Positioned(
-      left: fromLeft ? 0 : null,
-      right: fromLeft ? null : 0,
-      top: 0,
-      bottom: 0,
-      child: IgnorePointer(
-        child: Container(
-          width: 18,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: fromLeft ? Alignment.centerLeft : Alignment.centerRight,
-              end: fromLeft ? Alignment.centerRight : Alignment.centerLeft,
-              colors: [AppTheme.bg, AppTheme.bg.withValues(alpha: 0)],
-            ),
-          ),
-        ),
-      ),
+    return PillTabs(
+      selected: tab.name,
+      onSelect: (k) => onChanged(_BillingTab.values.byName(k)),
+      tabs: [
+        if (showRoom)
+          PillTab('toBill', 'Ready to bill', Icons.king_bed_rounded, count: toBillCount),
+        if (showServices)
+          PillTab('services', 'Services to bill', Icons.room_service_rounded, count: serviceCount),
+        if (showFood)
+          PillTab('food', 'Food to bill', Icons.restaurant_rounded, count: foodCount),
+        const PillTab('issued', 'Bills', Icons.receipt_long_rounded),
+        if (showNumbering) const PillTab('numbering', 'Numbering', Icons.pin_rounded),
+      ],
     );
   }
 }
