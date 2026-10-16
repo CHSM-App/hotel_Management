@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/models/lodge_service.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
@@ -14,12 +15,15 @@ import '../theme.dart';
 /// header icon, numbered sections with icon badges on one card, field-level
 /// errors that only appear once Start has been tried, and a rate summary
 /// pinned above Cancel/Start at the foot.
-Future<void> showStartUsageScreen(BuildContext context) {
-  return Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StartUsageScreen()));
+Future<void> showStartUsageScreen(BuildContext context, {ServiceUsage? editing}) {
+  return Navigator.of(context).push(MaterialPageRoute(builder: (_) => StartUsageScreen(editing: editing)));
 }
 
 class StartUsageScreen extends ConsumerStatefulWidget {
-  const StartUsageScreen({super.key});
+  /// A still-open, unbilled use being corrected in place (PATCH) rather than started.
+  final ServiceUsage? editing;
+
+  const StartUsageScreen({super.key, this.editing});
 
   @override
   ConsumerState<StartUsageScreen> createState() => _StartUsageScreenState();
@@ -34,9 +38,11 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
   final _serviceKey = GlobalKey();
   final _quantityKey = GlobalKey();
   final _guestKey = GlobalKey();
+  final _headcountKey = GlobalKey();
 
   int? _serviceId;
   final _quantity = TextEditingController(text: '1');
+  final _headcount = TextEditingController(text: '1');
   int? _bookingId;
   final _guestName = TextEditingController();
   final _guestPhone = TextEditingController();
@@ -59,6 +65,28 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
     return (qty == null || qty <= 0) ? 'Quantity must be more than 0.' : null;
   }
 
+  String? get _headcountError {
+    if (!_submitAttempted) return null;
+    final n = int.tryParse(_headcount.text.trim());
+    return (n == null || n < 1) ? 'Head count must be at least 1.' : null;
+  }
+
+  bool get _isEditing => widget.editing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final u = widget.editing;
+    if (u != null) {
+      _serviceId = u.serviceId;
+      _quantity.text = '${u.quantity}';
+      _headcount.text = '${u.headcount}';
+      _bookingId = u.bookingId;
+      _guestName.text = u.guestName ?? '';
+      _guestPhone.text = u.guestPhone ?? '';
+    }
+  }
+
   String? get _guestError {
     if (!_submitAttempted || _bookingId != null) return null;
     return _guestName.text.trim().isEmpty ? "Enter the walk-in's name, or pick a staying guest." : null;
@@ -68,6 +96,7 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
   void dispose() {
     _scrollController.dispose();
     _quantity.dispose();
+    _headcount.dispose();
     _guestName.dispose();
     _guestPhone.dispose();
     super.dispose();
@@ -102,19 +131,28 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
       _scrollToError(_quantityKey);
       return;
     }
+    if (_headcountError != null) {
+      _scrollToError(_headcountKey);
+      return;
+    }
     if (_guestError != null) {
       _scrollToError(_guestKey);
       return;
     }
 
     final qty = num.parse(_quantity.text.trim());
-    final ok = await ref.read(lodgeServicesViewModelProvider.notifier).startUsage({
-      'serviceId': _serviceId,
+    final notifier = ref.read(lodgeServicesViewModelProvider.notifier);
+    final body = {
+      if (!_isEditing) 'serviceId': _serviceId,
       'quantity': qty,
+      'headcount': int.parse(_headcount.text.trim()),
       'bookingId': _bookingId,
       'guestName': _bookingId == null ? _guestName.text.trim() : '',
       'guestPhone': _bookingId == null ? _guestPhone.text.trim() : '',
-    });
+    };
+    final ok = _isEditing
+        ? await notifier.updateUsage(widget.editing!.id, body)
+        : await notifier.startUsage(body);
     if (!mounted) return;
     if (ok) {
       Navigator.pop(context);
@@ -128,7 +166,11 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
     final state = ref.watch(lodgeServicesViewModelProvider);
     final active = state.activeServices;
     final picked = active.where((s) => s.id == _serviceId).firstOrNull;
-    final amount = picked == null ? null : picked.price * (num.tryParse(_quantity.text.trim()) ?? 0);
+    final unitLabel = _isEditing ? widget.editing!.unitLabel : picked?.unitLabel;
+    final unitPrice = _isEditing ? widget.editing!.unitPrice : picked?.price;
+    final amount = unitPrice == null
+        ? null
+        : unitPrice * (num.tryParse(_quantity.text.trim()) ?? 0) * (int.tryParse(_headcount.text.trim()) ?? 0);
 
     return Scaffold(
       appBar: AppBar(
@@ -156,8 +198,8 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
               child: const Icon(Icons.room_service_rounded, color: Colors.white, size: 18),
             ),
             const SizedBox(width: AppTheme.s12),
-            const Expanded(
-              child: Text('Start a service', overflow: TextOverflow.ellipsis, maxLines: 1),
+            Expanded(
+              child: Text(_isEditing ? 'Edit service use' : 'Start a service', overflow: TextOverflow.ellipsis, maxLines: 1),
             ),
           ],
         ),
@@ -214,7 +256,9 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
                           labels: {for (final s in active) '${s.id}': '${s.name} — ${formatPrice(s.price)} per ${s.unitLabel}'},
                           selected: _serviceId?.toString(),
                           hasError: _serviceError != null,
-                          onSelect: (v) => setState(() => _serviceId = int.parse(v)),
+                          onSelect: (v) {
+                            if (!_isEditing) setState(() => _serviceId = int.parse(v));
+                          },
                           hint: 'Choose…',
                         ),
                       ),
@@ -226,13 +270,14 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
                       NeuField(
                         key: _quantityKey,
                         controller: _quantity,
-                        label: picked != null ? 'Quantity (${picked.unitLabel})' : 'Quantity',
+                        label: unitLabel != null ? 'Quantity ($unitLabel)' : 'Quantity',
                         required: true,
                         errorText: _quantityError,
                         keyboardType: TextInputType.number,
                         onChanged: (_) => setState(() {}),
                         dense: true,
                       ),
+const SizedBox(height: AppTheme.s12),                      NeuField(                        key: _headcountKey,                        controller: _headcount,                        label: 'Head count',                        required: true,                        errorText: _headcountError,                        keyboardType: TextInputType.number,                        onChanged: (_) => setState(() {}),                        dense: true,                      ),
 
                       const SectionDivider(),
                       const SectionLabel('Guest', number: 2, icon: Icons.person_rounded),
@@ -285,6 +330,7 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
                 const SizedBox(height: AppTheme.s16),
                 _Footer(
                   amount: amount,
+                  isEditing: _isEditing,
                   submitting: state.submitting,
                   onCancel: () => Navigator.of(context).pop(),
                   onSubmit: _submit,
@@ -305,12 +351,14 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
 /// screen's own rate summary gets.
 class _Footer extends StatelessWidget {
   final num? amount;
+  final bool isEditing;
   final bool submitting;
   final VoidCallback onCancel;
   final VoidCallback onSubmit;
 
   const _Footer({
     required this.amount,
+    this.isEditing = false,
     required this.submitting,
     required this.onCancel,
     required this.onSubmit,
@@ -342,7 +390,7 @@ class _Footer extends StatelessWidget {
                   child: const Icon(Icons.payments_rounded, color: AppTheme.accent, size: 14),
                 ),
                 const SizedBox(width: AppTheme.s8),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Amount',
                     style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w500),
@@ -383,14 +431,14 @@ class _Footer extends StatelessWidget {
                         width: 16,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                    : const FittedBox(
+                    : FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
-                            SizedBox(width: 4),
-                            Text('Start'),
+                            const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+                            const SizedBox(width: 4),
+                            Text(isEditing ? 'Save' : 'Start'),
                           ],
                         ),
                       ),

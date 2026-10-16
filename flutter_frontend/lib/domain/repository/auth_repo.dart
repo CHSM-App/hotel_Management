@@ -19,4 +19,6 @@ abstract class AuthRepository {
   Future<Me> updateMyLodge(Map<String, dynamic> body);
   Future<Me> updateMyLodgeLogo(FormData form);
   Future<Me> removeMyLodgeLogo();
+  Future<Me> updateMyLodgeHeroImage(FormData form);
+  Future<Me> removeMyLodgeHeroImage();
 }

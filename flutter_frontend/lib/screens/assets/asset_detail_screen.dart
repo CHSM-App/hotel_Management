@@ -277,21 +277,22 @@ class _HeaderCard extends ConsumerWidget {
               if (ok) onChanged();
             },
             offset: const Offset(0, 44),
-            elevation: 6,
+            elevation: 12,
             color: AppTheme.card,
             surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
+            shadowColor: const Color(0x40101828),
+            shape: neuMenuShape,
             itemBuilder: (context) => [
               for (final s in kAssetStatuses)
                 PopupMenuItem(
                   value: s,
                   height: 40,
-                  child: Row(
-                    children: [
-                      Icon(_assetStatusIcon(s), size: 16, color: _assetStatusColor(s)),
-                      const SizedBox(width: AppTheme.s8),
-                      Text(kAssetStatusLabel[s]!, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                    ],
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                  child: NeuOptionRow(
+                    icon: _assetStatusIcon(s),
+                    label: kAssetStatusLabel[s]!,
+                    selected: s == asset.status,
+                    color: _assetStatusColor(s),
                   ),
                 ),
             ],

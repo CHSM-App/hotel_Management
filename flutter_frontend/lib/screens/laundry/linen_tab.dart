@@ -549,44 +549,19 @@ class _SpreadsheetRow extends StatelessWidget {
           cell(item.clean.toString(), _LinenSpreadsheet._statW, style: zeroStyle(item.clean).copyWith(fontSize: 13)),
           SizedBox(
             width: _LinenSpreadsheet._actionsW,
-            child: PopupMenuButton<String>(
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+            child: NeuActionMenu<String>(
+              iconSize: 18,
+              actions: [
+                if (!managedInAssets) const NeuMenuAction('edit', Icons.edit_outlined, 'Edit name or count'),
+                const NeuMenuAction('loss', Icons.report_problem_outlined, 'Lost or damaged'),
+                if (!managedInAssets) const NeuMenuAction('hide', Icons.visibility_off_outlined, 'Hide from list', danger: true),
+              ],
               onSelected: (v) => switch (v) {
                 'edit' => onEdit(),
                 'loss' => onLoss(),
                 'hide' => onHide(),
                 _ => null,
               },
-              elevation: 10,
-              color: AppTheme.card,
-              shadowColor: AppTheme.heading.withValues(alpha: 0.25),
-              offset: const Offset(0, 6),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-              itemBuilder: (context) => [
-                if (!managedInAssets)
-                  const PopupMenuItem(
-                    value: 'edit',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: LinenMenuRow(icon: Icons.edit_outlined, label: 'Edit name or count'),
-                  ),
-                const PopupMenuItem(
-                  value: 'loss',
-                  height: 40,
-                  padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: LinenMenuRow(icon: Icons.report_problem_outlined, label: 'Lost or damaged'),
-                ),
-                if (!managedInAssets) ...[
-                  const PopupMenuDivider(height: 8),
-                  const PopupMenuItem(
-                    value: 'hide',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: LinenMenuRow(icon: Icons.visibility_off_outlined, label: 'Hide from list', danger: true),
-                  ),
-                ],
-              ],
             ),
           ),
         ],
@@ -720,44 +695,19 @@ class _LinenCard extends StatelessWidget {
               SizedBox(
                 width: 28,
                 height: 28,
-                child: PopupMenuButton<String>(
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.more_vert_rounded, size: 17, color: AppTheme.muted),
+                child: NeuActionMenu<String>(
+                  iconSize: 18,
+                  actions: [
+                    if (!managedInAssets) const NeuMenuAction('edit', Icons.edit_outlined, 'Edit name or count'),
+                    const NeuMenuAction('loss', Icons.report_problem_outlined, 'Lost or damaged'),
+                    if (!managedInAssets) const NeuMenuAction('hide', Icons.visibility_off_outlined, 'Hide from list', danger: true),
+                  ],
                   onSelected: (v) => switch (v) {
                     'edit' => onEdit(),
                     'loss' => onLoss(),
                     'hide' => onHide(),
                     _ => null,
                   },
-                  elevation: 10,
-                  color: AppTheme.card,
-                  shadowColor: AppTheme.heading.withValues(alpha: 0.25),
-                  offset: const Offset(0, 6),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-                  itemBuilder: (context) => [
-                    if (!managedInAssets)
-                      const PopupMenuItem(
-                        value: 'edit',
-                        height: 40,
-                        padding: EdgeInsets.symmetric(horizontal: 6),
-                        child: LinenMenuRow(icon: Icons.edit_outlined, label: 'Edit name or count'),
-                      ),
-                    const PopupMenuItem(
-                      value: 'loss',
-                      height: 40,
-                      padding: EdgeInsets.symmetric(horizontal: 6),
-                      child: LinenMenuRow(icon: Icons.report_problem_outlined, label: 'Lost or damaged'),
-                    ),
-                    if (!managedInAssets) ...[
-                      const PopupMenuDivider(height: 8),
-                      const PopupMenuItem(
-                        value: 'hide',
-                        height: 40,
-                        padding: EdgeInsets.symmetric(horizontal: 6),
-                        child: LinenMenuRow(icon: Icons.visibility_off_outlined, label: 'Hide from list', danger: true),
-                      ),
-                    ],
-                  ],
                 ),
               ),
             ],

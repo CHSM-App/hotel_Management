@@ -253,7 +253,7 @@ class _UsageDetailDialog extends StatelessWidget {
                     const SizedBox(height: AppTheme.s12),
                     Row(
                       children: [
-                        _StatCell(label: 'UNITS', value: '${usage.quantity} ${usage.unitLabel}'),
+                        _StatCell(label: 'UNITS', value: '${usage.quantity} ${usage.unitLabel}${usage.headcount > 1 ? ' × ${usage.headcount} people' : ''}'),
                         _StatCell(label: 'RATE', value: '${formatPrice(usage.unitPrice)} / ${usage.unitLabel}'),
                         _StatCell(label: 'GST', value: '${usage.gstRatePercent}%'),
                       ],
@@ -286,6 +286,22 @@ class _UsageDetailDialog extends StatelessWidget {
                 rowColors: {'Status': usage.status == 'COMPLETED' ? billingTone : null},
                 last: true,
               ),
+              // Editing lives here, not on the list card — mirrors the web's detail
+              // modal. Nothing is left to correct once billed or cancelled.
+              if (usage.status != 'CANCELLED' && !usage.billed && usage.laundryOrderId == null) ...[
+                const SizedBox(height: AppTheme.s16),
+                CompactActionButton(
+                  label: 'Edit',
+                  color: AppTheme.accent,
+                  primary: true,
+                  expand: true,
+                  onTap: () {
+                    final nav = Navigator.of(context);
+                    nav.pop();
+                    nav.push(MaterialPageRoute(builder: (_) => StartUsageScreen(editing: usage)));
+                  },
+                ),
+              ],
             ],
           ),
         ),
@@ -397,22 +413,26 @@ class _UsageCard extends StatelessWidget {
         boxShadow: AppTheme.extruded,
       ),
       clipBehavior: Clip.antiAlias,
-      child: Padding(
+      child: InkWell(
+        onTap: onView,
+        child: Padding(
         padding: const EdgeInsets.all(AppTheme.s8),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${usage.serviceName} × ${usage.quantity}', style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text('${usage.serviceName} × ${usage.quantity}${usage.headcount > 1 ? ' × ${usage.headcount}' : ''}', style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 5),
                   Row(
                     children: [
                       StatusPill(label: kServiceUsageStatusLabel[usage.status] ?? usage.status, color: tone),
                       if (meta.isNotEmpty) ...[
-                        const SizedBox(width: 6),
                         Expanded(child: Text(meta, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5), maxLines: 1, overflow: TextOverflow.ellipsis)),
                       ],
                     ],
@@ -421,31 +441,20 @@ class _UsageCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppTheme.s8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(formatPrice(usage.lineTotal), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 14)),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CompactActionButton(label: 'View', color: AppTheme.edit, onTap: onView),
-                    if (showActions) ...[
-                      if (usage.status == 'IN_USE') ...[
-                        const SizedBox(width: 6),
-                        CompactActionButton(label: 'Complete', color: AppTheme.accent, primary: true, onTap: onComplete),
-                      ],
-                      if (!usage.billed && usage.status != 'CANCELLED') ...[
-                        const SizedBox(width: 6),
-                        CompactActionButton(label: 'Cancel', color: AppTheme.danger, onTap: onCancel),
-                      ],
-                    ],
-                  ],
-                ),
-              ],
-            ),
+            Text(formatPrice(usage.lineTotal), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 14)),
           ],
         ),
+            const SizedBox(height: 8),
+                ..._actionRows([
+                  CompactActionButton(label: 'View', color: AppTheme.edit, expand: true, onTap: onView),
+                  if (usage.status == 'IN_USE')
+                    CompactActionButton(label: 'Complete', color: AppTheme.accent, primary: true, expand: true, onTap: onComplete),
+                  if (showActions && !usage.billed && usage.status != 'CANCELLED')
+                    CompactActionButton(label: 'Cancel', color: AppTheme.danger, expand: true, onTap: onCancel),
+                ]),
+          ],
+        ),
+      ),
       ),
     );
   }
@@ -572,59 +581,18 @@ class _UsageFilterChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 190,
-      decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(AppTheme.rMedium), boxShadow: AppTheme.subtle),
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final key in _order)
-            _UsageFilterChip(
-              label: _labels[key]!,
-              count: counts[key] ?? 0,
-              on: selected == key,
-              color: key == 'IN_USE' ? AppTheme.edit : (key == 'CANCELLED' ? AppTheme.danger : (key == 'COMPLETED' ? AppTheme.checkedIn : AppTheme.accent)),
-              icon: _icons[key]!,
-              onTap: () => onSelect(key),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _UsageFilterChip extends StatelessWidget {
-  final String label;
-  final int count;
-  final bool on;
-  final Color color;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _UsageFilterChip({required this.label, required this.count, required this.on, required this.color, required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
-        decoration: BoxDecoration(
-          color: on ? color.withValues(alpha: 0.10) : Colors.transparent,
-          border: Border(left: BorderSide(color: on ? color : Colors.transparent, width: 3)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: on ? color : AppTheme.muted),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(label, style: TextStyle(color: on ? color : AppTheme.text, fontSize: 13, fontWeight: on ? FontWeight.w600 : FontWeight.w400)),
-            ),
-            Text('$count', style: TextStyle(color: on ? color : AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ),
+    return NeuFilterPanel(
+      children: [
+        for (final key in _order)
+          NeuFilterRow(
+            label: _labels[key]!,
+            count: counts[key] ?? 0,
+            on: selected == key,
+            color: key == 'IN_USE' ? AppTheme.edit : (key == 'CANCELLED' ? AppTheme.danger : (key == 'COMPLETED' ? AppTheme.checkedIn : AppTheme.accent)),
+            icon: _icons[key]!,
+            onTap: () => onSelect(key),
+          ),
+      ],
     );
   }
 }
@@ -647,4 +615,24 @@ class _ErrorBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Up to three buttons share one row; four split two and two, so a card
+/// never overflows and no row is left with a lone full-width button.
+List<Widget> _actionRows(List<Widget> buttons) {
+  final perRow = buttons.length == 4 ? 2 : 3;
+  final rows = <Widget>[];
+  for (var i = 0; i < buttons.length; i += perRow) {
+    final chunk = buttons.sublist(i, i + perRow > buttons.length ? buttons.length : i + perRow);
+    if (rows.isNotEmpty) rows.add(const SizedBox(height: 6));
+    rows.add(Row(
+      children: [
+        for (var j = 0; j < chunk.length; j++) ...[
+          if (j > 0) const SizedBox(width: 6),
+          Expanded(child: chunk[j]),
+        ],
+      ],
+    ));
+  }
+  return rows;
 }

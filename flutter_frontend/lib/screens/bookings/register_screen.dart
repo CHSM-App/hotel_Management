@@ -711,43 +711,33 @@ class _StatusChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 190,
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        boxShadow: AppTheme.subtle,
-      ),
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Chip(
-            label: 'All',
-            count: allCount,
-            on: selected.isEmpty,
-            icon: Icons.apps_rounded,
-            onTap: onClearAll,
+    return NeuFilterPanel(
+      children: [
+        NeuFilterRow(
+          label: 'All',
+          count: allCount,
+          on: selected.isEmpty,
+          icon: Icons.apps_rounded,
+          onTap: onClearAll,
+        ),
+        for (final key in _kStatusOrder)
+          NeuFilterRow(
+            label: kRegisterStatusLabel[key]!,
+            count: counts[key] ?? 0,
+            on: selected.contains(key),
+            color: BookingActions.statusColor(key),
+            icon: _kStatusIcon[key]!,
+            onTap: () => onToggle(key),
           ),
-          for (final key in _kStatusOrder)
-            _Chip(
-              label: kRegisterStatusLabel[key]!,
-              count: counts[key] ?? 0,
-              on: selected.contains(key),
-              color: BookingActions.statusColor(key),
-              icon: _kStatusIcon[key]!,
-              onTap: () => onToggle(key),
-            ),
-          _Chip(
-            label: 'Draft',
-            count: counts['DRAFT'] ?? 0,
-            on: selected.contains('DRAFT'),
-            color: AppTheme.draft,
-            icon: Icons.edit_note_rounded,
-            onTap: () => onToggle('DRAFT'),
-          ),
-        ],
-      ),
+        NeuFilterRow(
+          label: 'Draft',
+          count: counts['DRAFT'] ?? 0,
+          on: selected.contains('DRAFT'),
+          color: AppTheme.draft,
+          icon: Icons.edit_note_rounded,
+          onTap: () => onToggle('DRAFT'),
+        ),
+      ],
     );
   }
 }
@@ -798,68 +788,6 @@ class _DraftRegisterCard extends StatelessWidget {
               ),
             ),
             const Icon(Icons.chevron_right_rounded, color: AppTheme.muted),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final String label;
-  final int count;
-  final bool on;
-  final Color? color;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _Chip({
-    required this.label,
-    required this.count,
-    required this.on,
-    required this.icon,
-    required this.onTap,
-    this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tint = color ?? AppTheme.accent;
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
-        decoration: BoxDecoration(
-          color: on ? tint.withValues(alpha: 0.10) : Colors.transparent,
-          border: Border(
-            left: BorderSide(
-              color: on ? tint : Colors.transparent,
-              width: 3,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: on ? tint : AppTheme.muted),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: on ? tint : AppTheme.text,
-                  fontSize: 13,
-                  fontWeight: on ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ),
-            Text(
-              '$count',
-              style: TextStyle(
-                color: on ? tint : AppTheme.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
           ],
         ),
       ),

@@ -42,39 +42,13 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
   }
 
   Future<void> _close(HousekeepingIssue issue) async {
-    final note = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final note = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: Text('${issue.spaceLabel} · ${(kIssueKindCloseLabel[issue.kind] ?? '').toLowerCase()}?', style: const TextStyle(color: AppTheme.heading)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(issue.text, style: const TextStyle(color: AppTheme.text, fontSize: 12.5)),
-            const SizedBox(height: AppTheme.s12),
-            TextField(
-              controller: note,
-              autofocus: true,
-              decoration: InputDecoration(labelText: kIssueKindQuestion[issue.kind], hintText: issueCloseHint(issue), border: const OutlineInputBorder()),
-            ),
-            if (issue.roomBlocked) ...[
-              const SizedBox(height: AppTheme.s8),
-              Text('${issue.spaceLabel} is held under repair for this. Marking it fixed sends it to the cleaning list.', style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Not yet')),
-          TextButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(kIssueKindCloseLabel[issue.kind] ?? 'Close')),
-        ],
-      ),
+      builder: (_) => _CloseIssueDialog(issue: issue),
     );
-    if (confirmed == true) {
-      ref.read(housekeepingViewModelProvider.notifier).closeIssue(issue.logId, {'kind': issue.kind, 'note': note.text.trim()});
+    if (note != null) {
+      ref.read(housekeepingViewModelProvider.notifier).closeIssue(issue.logId, {'kind': issue.kind, 'note': note});
     }
-    note.dispose();
   }
 
   @override
@@ -346,6 +320,56 @@ class _IssueTableRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Owns the note controller so it is disposed with the dialog's own state,
+/// not while the route's exit animation is still building the TextField.
+class _CloseIssueDialog extends StatefulWidget {
+  const _CloseIssueDialog({required this.issue});
+  final HousekeepingIssue issue;
+
+  @override
+  State<_CloseIssueDialog> createState() => _CloseIssueDialogState();
+}
+
+class _CloseIssueDialogState extends State<_CloseIssueDialog> {
+  final _note = TextEditingController();
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final issue = widget.issue;
+    return AlertDialog(
+      backgroundColor: AppTheme.bg,
+      title: Text('${issue.spaceLabel} · ${(kIssueKindCloseLabel[issue.kind] ?? '').toLowerCase()}?', style: const TextStyle(color: AppTheme.heading)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(issue.text, style: const TextStyle(color: AppTheme.text, fontSize: 12.5)),
+          const SizedBox(height: AppTheme.s12),
+          TextField(
+            controller: _note,
+            autofocus: true,
+            decoration: InputDecoration(labelText: kIssueKindQuestion[issue.kind], hintText: issueCloseHint(issue), border: const OutlineInputBorder()),
+          ),
+          if (issue.roomBlocked) ...[
+            const SizedBox(height: AppTheme.s8),
+            Text('${issue.spaceLabel} is held under repair for this. Marking it fixed sends it to the cleaning list.', style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Not yet')),
+        TextButton(onPressed: () => Navigator.pop(context, _note.text.trim()), child: Text(kIssueKindCloseLabel[issue.kind] ?? 'Close')),
+      ],
     );
   }
 }

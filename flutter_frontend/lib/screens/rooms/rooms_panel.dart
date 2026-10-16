@@ -493,48 +493,80 @@ class _RoomCardState extends ConsumerState<_RoomCard> {
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
-    final choice = await showModalBottomSheet<String>(
+    final choice = await showDialog<String>(
       context: context,
-      backgroundColor: AppTheme.bg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.rLarge)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: AppTheme.s16),
-            Text(
-              'Delete room ${room.roomNumber}',
-              style: const TextStyle(
-                color: AppTheme.heading,
-                fontWeight: FontWeight.w500,
-                fontSize: 16,
+      builder: (context) => Dialog(
+        backgroundColor: AppTheme.card,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 24, 22, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppTheme.danger.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.delete_outline_rounded, size: 28, color: AppTheme.danger),
               ),
-            ),
-            const SizedBox(height: AppTheme.s16),
-            ListTile(
-              title: Text(room.isActive ? 'Deactivate' : 'Activate'),
-              subtitle: Text(
+              const SizedBox(height: 16),
+              Text(
+                'Delete room ${room.roomNumber}?',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
                 room.isActive
-                    ? 'Hide it from new bookings, but keep its history.'
-                    : 'Make it available for new bookings again.',
+                    ? 'Deactivate to hide it from new bookings but keep its history, or delete it permanently. '
+                        "Permanent delete can't be undone and only works if it has no bookings."
+                    : 'Activate to make it available for bookings again, or delete it permanently. '
+                        "Permanent delete can't be undone and only works if it has no bookings.",
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.muted, fontSize: 13.5, height: 1.4),
               ),
-              onTap: () => Navigator.pop(context, 'deactivate'),
-            ),
-            ListTile(
-              title: const Text(
-                'Permanently delete',
-                style: TextStyle(color: AppTheme.danger),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.danger,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => Navigator.pop(context, 'delete'),
+                  child: const Text('Permanently delete'),
+                ),
               ),
-              subtitle: const Text(
-                "Remove it completely. This can't be undone, and only works "
-                'if it has no bookings.',
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.heading,
+                    side: const BorderSide(color: AppTheme.border),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => Navigator.pop(context, 'deactivate'),
+                  child: Text(room.isActive ? 'Deactivate' : 'Activate'),
+                ),
               ),
-              onTap: () => Navigator.pop(context, 'delete'),
-            ),
-            const SizedBox(height: AppTheme.s8),
-          ],
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel', style: TextStyle(color: AppTheme.muted)),
+              ),
+            ],
+          ),
         ),
       ),
     );

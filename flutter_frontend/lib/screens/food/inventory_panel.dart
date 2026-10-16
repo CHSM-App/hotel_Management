@@ -718,50 +718,17 @@ class _MaterialCard extends ConsumerWidget {
   /// elsewhere, so this reads as one more of the app's own menus rather
   /// than a bare Material popup.
   Widget _materialActionsMenu(BuildContext context, WidgetRef ref) {
-    Widget item(IconData icon, String label, Color color) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 15, color: color),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      );
-    }
-
-    return PopupMenuButton<String>(
-      padding: EdgeInsets.zero,
-      splashRadius: 18,
-      icon: const Icon(
-        Icons.more_vert_rounded,
-        size: 18,
-        color: AppTheme.muted,
-      ),
-      elevation: 6,
-      color: AppTheme.card,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: const Color(0x33101828),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        side: const BorderSide(color: AppTheme.border),
-      ),
-      constraints: const BoxConstraints(minWidth: 170),
+    return NeuActionMenu<String>(
+      actions: [
+        const NeuMenuAction('history', Icons.history_rounded, 'History'),
+        const NeuMenuAction('edit', Icons.edit_outlined, 'Edit material'),
+        NeuMenuAction(
+          'retire',
+          material.isActive ? Icons.archive_outlined : Icons.unarchive_outlined,
+          material.isActive ? 'Retire' : 'Restore',
+        ),
+        const NeuMenuAction('delete', Icons.delete_outline_rounded, 'Delete material', danger: true),
+      ],
       onSelected: (v) {
         switch (v) {
           case 'history':
@@ -780,43 +747,6 @@ class _MaterialCard extends ConsumerWidget {
             break;
         }
       },
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'history',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(Icons.history_rounded, 'History', AppTheme.heading),
-        ),
-        PopupMenuItem(
-          value: 'edit',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(Icons.edit_outlined, 'Edit material', AppTheme.heading),
-        ),
-        PopupMenuItem(
-          value: 'retire',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(
-            material.isActive
-                ? Icons.archive_outlined
-                : Icons.unarchive_outlined,
-            material.isActive ? 'Retire' : 'Restore',
-            AppTheme.heading,
-          ),
-        ),
-        const PopupMenuDivider(height: 1),
-        PopupMenuItem(
-          value: 'delete',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(
-            Icons.delete_outline_rounded,
-            'Delete material',
-            AppTheme.danger,
-          ),
-        ),
-      ],
     );
   }
 
@@ -934,164 +864,176 @@ class _MaterialFormPageState extends ConsumerState<_MaterialFormPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_editing ? 'Edit material' : 'New raw material'),
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x335A67D8),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _editing ? Icons.edit_rounded : Icons.inventory_2_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _editing ? 'Edit material' : 'New raw material',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.accent, Color(0x005A67D8)],
+              ),
+            ),
+          ),
+        ),
       ),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) => Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: AppTheme.maxContentWidth,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppTheme.maxContentWidth,
+            ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s12,
+                AppTheme.s12,
+                AppTheme.s12,
+                AppTheme.s16,
               ),
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s16,
-                  AppTheme.s12,
-                  AppTheme.s16,
-                  AppTheme.s16,
-                ),
-                children: [
-                  Row(
+              children: [
+                if (_error != null) ...[
+                  _ErrorBanner(_error!),
+                  const SizedBox(height: AppTheme.s12),
+                ],
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s16),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 38,
-                        height: 38,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppTheme.accent.withValues(alpha: 0.10),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          _editing
-                              ? Icons.edit_outlined
-                              : Icons.add_box_outlined,
-                          size: 18,
-                          color: AppTheme.accent,
-                        ),
+                      const SectionLabel(
+                        'Material',
+                        number: 1,
+                        icon: Icons.category_rounded,
                       ),
-                      const SizedBox(width: AppTheme.s12),
-                      Expanded(
-                        child: Text(
-                          _editing
-                              ? 'Update this material\'s name, group, or low-stock warning.'
-                              : 'Add something you buy — rice, oil, paneer — to the store cupboard.',
-                          style: const TextStyle(
-                            color: AppTheme.muted,
-                            fontSize: 12.5,
-                            height: 1.35,
-                          ),
-                        ),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        controller: _name,
+                        label: 'Material name',
+                        hint: 'Basmati rice',
+                        required: true,
+                        errorText: _nameError,
+                        onChanged: (_) => setState(() {}),
+                        forceCapitalizeWords: true,
+                        dense: true,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: AppTheme.s16),
-                  if (_error != null) ...[
-                    _ErrorBanner(_error!),
-                    const SizedBox(height: AppTheme.s12),
-                  ],
-                  NeuCard(
-                    padding: const EdgeInsets.all(AppTheme.s16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SectionLabel('Material', number: 1),
-                        const SizedBox(height: AppTheme.s12),
-                        NeuField(
-                          controller: _name,
-                          label: 'Material name',
-                          hint: 'Basmati rice',
-                          required: true,
-                          errorText: _nameError,
-                          onChanged: (_) => setState(() {}),
-                          forceCapitalizeWords: true,
+                      const SizedBox(height: AppTheme.s12),
+                      Text(
+                        'Group',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      OptionDropdown(
+                        values: _kCategories,
+                        labels: _kCategoryLabel,
+                        selected: _category,
+                        onSelect: (v) => setState(() => _category = v),
+                      ),
+                      const SectionDivider(),
+                      const SectionLabel(
+                        'Stock & unit',
+                        number: 2,
+                        icon: Icons.scale_rounded,
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                      if (_editing)
+                        Text(
+                          'Counted in ${_kUnitLabel[widget.material!.unit]}. The unit can\'t be changed '
+                          'once stock has been recorded — retire this and add a new material instead.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        )
+                      else ...[
+                        Text(
+                          'Counted in',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
-                        const SizedBox(height: AppTheme.s12),
-                        const Text(
-                          'Group',
-                          style: TextStyle(color: AppTheme.muted, fontSize: 13),
-                        ),
-                        const SizedBox(height: 6),
-                        OptionDropdown(
-                          values: _kCategories,
-                          labels: _kCategoryLabel,
-                          selected: _category,
-                          onSelect: (v) => setState(() => _category = v),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuCard(
-                    padding: const EdgeInsets.all(AppTheme.s16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SectionLabel('Stock & unit', number: 2),
-                        const SizedBox(height: AppTheme.s12),
-                        if (_editing)
-                          Text(
-                            'Counted in ${_kUnitLabel[widget.material!.unit]}. The unit can\'t be changed '
-                            'once stock has been recorded — retire this and add a new material instead.',
-                            style: const TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 12,
-                            ),
-                          )
-                        else ...[
-                          const Text(
-                            'Counted in',
-                            style: TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          OptionDropdown(
-                            values: _kUnits,
-                            labels: _kUnitLabel,
-                            selected: _unit,
-                            onSelect: (v) => setState(() => _unit = v),
-                          ),
-                          const SizedBox(height: AppTheme.s8),
-                          NeuField(
-                            controller: _quantity,
-                            label: 'Stock on hand (optional)',
-                            hint: '0',
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                          ),
-                        ],
                         const SizedBox(height: AppTheme.s8),
+                        OptionDropdown(
+                          values: _kUnits,
+                          labels: _kUnitLabel,
+                          selected: _unit,
+                          onSelect: (v) => setState(() => _unit = v),
+                        ),
+                        const SizedBox(height: AppTheme.s12),
                         NeuField(
-                          controller: _threshold,
-                          label: 'Warn me below (optional)',
+                          controller: _quantity,
+                          label: 'Stock on hand (optional)',
                           hint: '0',
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
+                          dense: true,
                         ),
                       ],
-                    ),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        controller: _threshold,
+                        label: 'Warn me below (optional)',
+                        hint: '0',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        dense: true,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: AppTheme.s16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: NeuButton(
-                          expand: true,
+                ),
+                const SizedBox(height: AppTheme.s16),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        NeuButton(
                           onPressed: submitting
                               ? null
                               : () => Navigator.of(context).pop(),
                           child: const Text('Cancel'),
                         ),
-                      ),
-                      const SizedBox(width: AppTheme.s12),
-                      Expanded(
-                        child: NeuButton(
+                        const SizedBox(width: AppTheme.s12),
+                        NeuButton(
                           primary: true,
-                          expand: true,
                           onPressed: submitting ? null : _submit,
                           child: submitting
                               ? const SizedBox(
@@ -1102,25 +1044,13 @@ class _MaterialFormPageState extends ConsumerState<_MaterialFormPage> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: const [
-                                    Icon(
-                                      Icons.check_rounded,
-                                      size: 17,
-                                      color: Colors.white,
-                                    ),
-                                    SizedBox(width: 6),
-                                    Text('Save'),
-                                  ],
-                                ),
+                              : Text(_editing ? 'Save changes' : 'Add material'),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

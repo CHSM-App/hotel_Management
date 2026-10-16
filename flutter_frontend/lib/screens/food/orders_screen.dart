@@ -11,6 +11,7 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../billing/invoice_preview_screen.dart';
 import '../billing/issue_food_bill_screen.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'counter_order_screen.dart';
 
@@ -689,10 +690,6 @@ class _ResponsiveCards extends StatelessWidget {
 
 // ── Queue / history switch ──────────────────────────────────────────────────
 
-/// Same sliding-pill segmented control the billing screen's To-bill/Issued
-/// switch and the rooms screen's Rooms/Price-chart switch use — one connected
-/// control with a moving highlight, rather than two separate boxes that don't
-/// read as a single tab bar.
 class _TabRow extends StatelessWidget {
   final OrdersState state;
   final bool canWorkQueue;
@@ -704,98 +701,18 @@ class _TabRow extends StatelessWidget {
     required this.onSelect,
   });
 
-  static const double _height = 38;
-
   @override
   Widget build(BuildContext context) {
-    // Same two tabs for everyone, same as OrdersPanel.jsx: a captain (no
-    // orders.manage) gets them too — the first still reads "Kitchen queue"
-    // there, it just holds their own still-open orders instead of the real
-    // cooking pipeline; the second is what has been settled.
-    //
-    // The count rides on the tab because a cook (or a captain) looking at
-    // the day's history still needs to know something new has come in.
+    // The new-order count rides on the Kitchen tab so a cook (or captain)
+    // looking at History still sees something has come in.
     final waiting = state.needsAccepting;
-    final kitchenLabel = waiting > 0 ? 'Kitchen ($waiting new)' : 'Kitchen';
-    final selectedIndex = state.tab == OrdersTab.queue ? 0 : 1;
-
-    Widget segment(String label, bool isSelected, VoidCallback onTap) =>
-        Expanded(
-          child: GestureDetector(
-            onTap: onTap,
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              height: _height,
-              child: Center(
-                child: AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : AppTheme.heading,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                  child: Text(label, overflow: TextOverflow.ellipsis),
-                ),
-              ),
-            ),
-          ),
-        );
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: selectedIndex == 0
-                ? Alignment.centerLeft
-                : Alignment.centerRight,
-            child: FractionallySizedBox(
-              widthFactor: 0.5,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
-                  ),
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.accent.withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              segment(
-                kitchenLabel,
-                selectedIndex == 0,
-                () => onSelect(OrdersTab.queue),
-              ),
-              segment(
-                'History',
-                selectedIndex == 1,
-                () => onSelect(OrdersTab.history),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return PillTabs(
+      selected: state.tab == OrdersTab.queue ? 'queue' : 'history',
+      onSelect: (k) => onSelect(k == 'queue' ? OrdersTab.queue : OrdersTab.history),
+      tabs: [
+        PillTab('queue', 'Kitchen', Icons.soup_kitchen_rounded, count: waiting > 0 ? waiting : null),
+        const PillTab('history', 'History', Icons.history_rounded),
+      ],
     );
   }
 }

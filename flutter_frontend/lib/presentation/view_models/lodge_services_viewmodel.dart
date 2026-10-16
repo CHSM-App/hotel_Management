@@ -124,6 +124,19 @@ class LodgeServicesViewModel extends StateNotifier<LodgeServicesState> {
     }
   }
 
+  Future<bool> updateUsage(int id, Map<String, dynamic> body) async {
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      await usecase.updateUsage(id, body);
+      state = state.copyWith(submitting: false);
+      await loadUsages();
+      return true;
+    } catch (e) {
+      state = state.copyWith(submitting: false, error: apiErrorMessage(e));
+      return false;
+    }
+  }
+
   Future<bool> completeUsage(int id) async {
     try {
       await usecase.completeUsage(id);

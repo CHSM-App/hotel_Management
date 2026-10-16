@@ -460,9 +460,14 @@ class _AssetTableRow extends StatelessWidget {
               ),
             SizedBox(
               width: 36,
-              child: PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+              child: NeuActionMenu<String>(
+                iconSize: 18,
+                actions: const [
+                  NeuMenuAction('view', Icons.visibility_outlined, 'View details'),
+                  NeuMenuAction('edit', Icons.edit_outlined, 'Edit asset'),
+                  NeuMenuAction('report', Icons.report_problem_outlined, 'Report an issue'),
+                  NeuMenuAction('delete', Icons.delete_outline_rounded, 'Delete', danger: true),
+                ],
                 onSelected: (v) => switch (v) {
                   'view' => parent.onTap(asset),
                   'edit' => parent.onEdit(asset),
@@ -470,38 +475,6 @@ class _AssetTableRow extends StatelessWidget {
                   'delete' => parent.onDelete(asset),
                   _ => null,
                 },
-                elevation: 10,
-                color: AppTheme.card,
-                shadowColor: AppTheme.heading.withValues(alpha: 0.25),
-                offset: const Offset(0, 6),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'view',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: _AssetMenuRow(icon: Icons.visibility_outlined, label: 'View details'),
-                  ),
-                  PopupMenuItem(
-                    value: 'edit',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: _AssetMenuRow(icon: Icons.edit_outlined, label: 'Edit asset'),
-                  ),
-                  PopupMenuItem(
-                    value: 'report',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: _AssetMenuRow(icon: Icons.report_problem_outlined, label: 'Report an issue'),
-                  ),
-                  PopupMenuDivider(height: 8),
-                  PopupMenuItem(
-                    value: 'delete',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: _AssetMenuRow(icon: Icons.delete_outline_rounded, label: 'Delete', danger: true),
-                  ),
-                ],
               ),
             ),
           ],
@@ -804,66 +777,16 @@ class _AssetRowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<VoidCallback>(
-      tooltip: 'More actions',
-      padding: EdgeInsets.zero,
-      icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
+    return NeuActionMenu<VoidCallback>(
+      iconSize: 20,
+      actions: [
+        NeuMenuAction(onViewDetails, Icons.visibility_outlined, 'View details'),
+        NeuMenuAction(onEdit, Icons.edit_outlined, 'Edit asset'),
+        NeuMenuAction(onReportIssue, Icons.report_problem_outlined, 'Report issue'),
+        NeuMenuAction(onDelete, Icons.delete_outline_rounded, 'Delete asset', danger: true),
+      ],
       onSelected: (action) => action(),
-      elevation: 10,
-      color: AppTheme.card,
-      shadowColor: AppTheme.heading.withValues(alpha: 0.25),
-      offset: const Offset(0, 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          value: onViewDetails,
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: const _AssetMenuRow(icon: Icons.visibility_outlined, label: 'View details'),
-        ),
-        PopupMenuItem(
-          value: onEdit,
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: const _AssetMenuRow(icon: Icons.edit_outlined, label: 'Edit asset'),
-        ),
-        PopupMenuItem(
-          value: onReportIssue,
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: const _AssetMenuRow(icon: Icons.report_problem_outlined, label: 'Report issue'),
-        ),
-        const PopupMenuDivider(height: 8),
-        PopupMenuItem(
-          value: onDelete,
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: const _AssetMenuRow(icon: Icons.delete_outline_rounded, label: 'Delete asset', danger: true),
-        ),
-      ],
     );
   }
 }
 
-/// One row of an asset's ⋮ menu — an icon, the label, and danger tinting for
-/// the destructive action, same accent-led look as _DateRangeMenuItem in
-/// billing_screen.dart rather than PopupMenuItem's default plain text.
-class _AssetMenuRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool danger;
-
-  const _AssetMenuRow({required this.icon, required this.label, this.danger = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = danger ? AppTheme.danger : AppTheme.heading;
-    return Row(
-      children: [
-        Icon(icon, size: 17, color: danger ? AppTheme.danger : AppTheme.muted),
-        const SizedBox(width: AppTheme.s8),
-        Text(label, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-}

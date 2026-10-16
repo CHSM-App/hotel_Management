@@ -369,14 +369,61 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
     final submitting = ref.watch(tablesViewModelProvider).submitting;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_editing ? 'Edit table' : 'Add tables')),
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x335A67D8), offset: Offset(0, 3), blurRadius: 8),
+                ],
+              ),
+              child: Icon(
+                _editing ? Icons.edit_rounded : Icons.table_restaurant_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _editing ? 'Edit table' : 'Add tables',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x005A67D8)]),
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s12),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+          padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
           children: [
             if (_error != null) ...[
               Container(
-                padding: const EdgeInsets.all(AppTheme.s8),
+                padding: const EdgeInsets.all(AppTheme.s12),
                 decoration: BoxDecoration(
                   color: AppTheme.danger.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -385,19 +432,25 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
                   children: [
                     const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
                     const SizedBox(width: AppTheme.s8),
-                    Expanded(child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13))),
+                    Expanded(child: Text(_error!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger))),
                   ],
                 ),
               ),
-              const SizedBox(height: AppTheme.s8),
+              const SizedBox(height: AppTheme.s12),
             ],
             NeuCard(
-              padding: const EdgeInsets.all(AppTheme.s8),
+              radius: AppTheme.rLarge,
+              shadow: AppTheme.elevated,
+              padding: const EdgeInsets.all(AppTheme.s16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SectionLabel(_bulk && !_editing ? 'Table range' : 'Table', number: 1),
-                  const SizedBox(height: AppTheme.s8),
+                  SectionLabel(
+                    _bulk && !_editing ? 'Table range' : 'Table',
+                    number: 1,
+                    icon: Icons.table_restaurant_rounded,
+                  ),
+                  const SizedBox(height: AppTheme.s12),
                   if (!_editing) ...[
                     Align(
                       alignment: Alignment.centerLeft,
@@ -407,7 +460,7 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
                         onSelect: (v) => setState(() => _bulk = v == 'bulk'),
                       ),
                     ),
-                    const SizedBox(height: AppTheme.s8),
+                    const SizedBox(height: AppTheme.s12),
                   ],
                   if (_editing || !_bulk)
                     NeuField(
@@ -418,10 +471,11 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
                       errorText: _labelError,
                       onChanged: (_) => setState(() {}),
                       forceCapitalizeWords: true,
+                      dense: true,
                     )
                   else ...[
-                    NeuField(controller: _prefix, label: 'Name starts with', hint: 'T'),
-                    const SizedBox(height: AppTheme.s8),
+                    NeuField(controller: _prefix, label: 'Name starts with', hint: 'T', dense: true),
+                    const SizedBox(height: AppTheme.s12),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -434,6 +488,7 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
                             required: true,
                             errorText: _rangeStartError,
                             onChanged: (_) => setState(() {}),
+                            dense: true,
                           ),
                         ),
                         const SizedBox(width: AppTheme.s12),
@@ -446,32 +501,26 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
                             required: true,
                             errorText: _rangeEndError,
                             onChanged: (_) => setState(() {}),
+                            dense: true,
                           ),
                         ),
                       ],
                     ),
                   ],
-                ],
-              ),
-            ),
-            const SizedBox(height: AppTheme.s8),
-            NeuCard(
-              padding: const EdgeInsets.all(AppTheme.s8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionLabel('Seats', number: 2),
-                  const SizedBox(height: AppTheme.s8),
+                  const SectionDivider(),
+                  const SectionLabel('Seats', number: 2, icon: Icons.event_seat_rounded),
+                  const SizedBox(height: AppTheme.s12),
                   NeuField(
                     controller: _seats,
                     label: 'Seats (optional)',
                     hint: '4',
                     keyboardType: TextInputType.number,
+                    dense: true,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: AppTheme.s8),
+            const SizedBox(height: AppTheme.s16),
             Align(
               alignment: Alignment.centerRight,
               child: FittedBox(
@@ -494,13 +543,15 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
                               width: 18,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
-                          : const Text('Save'),
+                          : Text(_editing ? 'Save changes' : 'Add tables'),
                     ),
                   ],
                 ),
               ),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );

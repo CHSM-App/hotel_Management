@@ -479,80 +479,23 @@ class _EventStatusChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 190,
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        boxShadow: AppTheme.subtle,
-      ),
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _EventStatusChip(
-            label: 'All',
-            on: selected.isEmpty,
-            icon: Icons.apps_rounded,
-            onTap: () => onSelect(''),
+    return NeuFilterPanel(
+      children: [
+        NeuFilterRow(
+          label: 'All',
+          on: selected.isEmpty,
+          icon: Icons.apps_rounded,
+          onTap: () => onSelect(''),
+        ),
+        for (final key in kEventStatusLabel.keys)
+          NeuFilterRow(
+            label: kEventStatusLabel[key]!,
+            on: selected == key,
+            color: _kEventStatusColor[key],
+            icon: _kEventStatusIcon[key]!,
+            onTap: () => onSelect(key),
           ),
-          for (final key in kEventStatusLabel.keys)
-            _EventStatusChip(
-              label: kEventStatusLabel[key]!,
-              on: selected == key,
-              color: _kEventStatusColor[key],
-              icon: _kEventStatusIcon[key]!,
-              onTap: () => onSelect(key),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EventStatusChip extends StatelessWidget {
-  final String label;
-  final bool on;
-  final Color? color;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _EventStatusChip({
-    required this.label,
-    required this.on,
-    required this.icon,
-    required this.onTap,
-    this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tint = color ?? AppTheme.accent;
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
-        decoration: BoxDecoration(
-          color: on ? tint.withValues(alpha: 0.10) : Colors.transparent,
-          border: Border(left: BorderSide(color: on ? tint : Colors.transparent, width: 3)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: on ? tint : AppTheme.muted),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: on ? tint : AppTheme.text,
-                  fontSize: 13,
-                  fontWeight: on ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 }

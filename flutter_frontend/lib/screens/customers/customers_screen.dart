@@ -6,6 +6,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/customers_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'customer_detail_screen.dart';
 import 'customer_feedback_panel.dart';
@@ -30,7 +31,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   /// 'table' is the landing view — scanning every customer's stays/spend at
   /// once, same default ExpensesListPanel lands on. 'cards' is one customer
   /// at a time, easier to read on a phone, a toggle away.
-  String _view = 'table';
+  String? _view;
 
   /// Which of the two tabs is showing — mirrors Customers.jsx's own
   /// `activeTab` state ('customers' | 'feedback').
@@ -92,6 +93,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     }
 
     final filtered = state.filtered;
+    // Phones get cards by default — the table needs sideways scrolling there.
+    final view = _view ?? (MediaQuery.of(context).size.width < 600 ? 'cards' : 'table');
 
     return Stack(
       fit: StackFit.expand,
@@ -168,7 +171,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
-                  _ViewToggleButton(view: _view, onSelect: (v) => setState(() => _view = v)),
+                  _ViewToggleButton(view: view, onSelect: (v) => setState(() => _view = v)),
                 ],
               ),
               const SizedBox(height: AppTheme.s8),
@@ -189,7 +192,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
               else ...[
                 _SummaryStrip(count: filtered.length),
                 const SizedBox(height: AppTheme.s12),
-                if (_view == 'table')
+                if (view == 'table')
                   _CustomerTable(customers: filtered)
                 else
                   _CustomerCardsGrid(customers: filtered),
@@ -214,10 +217,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   }
 }
 
-/// Same sliding-pill segmented control the Expenses / Assets / Rooms & Rates
-/// screens use — one connected control with a moving highlight, rather than
-/// a content-hugging pill row. Mirrors Customers.jsx's `SectionTabs`, with
-/// the feedback tab's response count shown the same way the web badges it.
+/// Customers / Feedback switcher — shared [PillTabs], with the feedback tab's
+/// response count badged the same way the web does.
 class _CustomerSubTabs extends StatelessWidget {
   final String selected;
   final int? feedbackCount;
@@ -225,74 +226,15 @@ class _CustomerSubTabs extends StatelessWidget {
 
   const _CustomerSubTabs({required this.selected, required this.onSelect, this.feedbackCount});
 
-  static const double _height = 44;
-
   @override
   Widget build(BuildContext context) {
-    final tabs = {
-      'customers': 'Customers',
-      'feedback': feedbackCount == null ? 'Customer Feedback' : 'Customer Feedback ($feedbackCount)',
-    };
-    final keys = tabs.keys.toList();
-    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
-
-    Widget segment(String key, String label) {
-      final isSelected = key == selected;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => onSelect(key),
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: _height,
-            child: Center(
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : AppTheme.text,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 13,
-                ),
-                child: Text(label, overflow: TextOverflow.ellipsis),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(-1 + (2 / (keys.length - 1)) * selectedIndex, 0),
-            child: FractionallySizedBox(
-              widthFactor: 1 / keys.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  color: AppTheme.accent,
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              for (final entry in tabs.entries) segment(entry.key, entry.value),
-            ],
-          ),
-        ],
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: [
+        const PillTab('customers', 'Customers', Icons.groups_rounded),
+        PillTab('feedback', 'Feedback', Icons.star_rounded, count: feedbackCount),
+      ],
     );
   }
 }
@@ -312,7 +254,7 @@ class _StatsRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: _StatTile(icon: Icons.groups_rounded, color: AppTheme.accent, value: '${stats.total}', label: 'Total customers'),
+          child: _StatTile(icon: Icons.groups_rounded, color: AppTheme.accent, value: '${stats.total}', label: 'Total'),
         ),
         const SizedBox(width: AppTheme.s8),
         Expanded(
@@ -338,37 +280,43 @@ class _StatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.s12),
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
       decoration: BoxDecoration(
         color: AppTheme.card,
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         border: Border.all(color: AppTheme.border),
         boxShadow: AppTheme.subtle,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
           Container(
-            width: 26,
-            height: 26,
+            width: 30,
+            height: 30,
             alignment: Alignment.center,
             decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
-            child: Icon(icon, size: 14, color: color),
+            child: Icon(icon, size: 15, color: color),
           ),
-          const SizedBox(height: AppTheme.s8),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppTheme.heading, fontSize: 20, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w500),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -640,34 +588,14 @@ class _CustomerTableRow extends StatelessWidget {
               ),
             SizedBox(
               width: 36,
-              child: PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+              child: NeuActionMenu<String>(
+                iconSize: 18,
+                actions: const [
+                  NeuMenuAction('view', Icons.person_outline_rounded, 'View profile'),
+                ],
                 onSelected: (v) {
                   if (v == 'view') showCustomerDetailScreen(context, customer.id);
                 },
-                elevation: 10,
-                color: AppTheme.card,
-                shadowColor: AppTheme.heading.withValues(alpha: 0.25),
-                offset: const Offset(0, 6),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                  side: const BorderSide(color: AppTheme.border),
-                ),
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'view',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: Row(
-                      children: [
-                        Icon(Icons.person_outline_rounded, size: 17, color: AppTheme.muted),
-                        SizedBox(width: AppTheme.s8),
-                        Text('View profile', style: TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
           ],

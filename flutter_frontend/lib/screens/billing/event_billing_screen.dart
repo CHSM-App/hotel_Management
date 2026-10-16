@@ -7,6 +7,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/billing_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'billing_screen.dart'
     show
@@ -266,9 +267,6 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
 
 // ── Which list ──────────────────────────────────────────────────────────────
 
-/// Same sliding-pill segmented control [BillingScreen]'s own toggle uses —
-/// the three segments this stream has: Ready to bill, Bills, and Numbering,
-/// the same trio stream="event" renders on the web.
 class _Toggle extends StatelessWidget {
   final _EventBillingTab tab;
   final int? readyCount;
@@ -280,88 +278,16 @@ class _Toggle extends StatelessWidget {
     required this.onChanged,
   });
 
-  static const double _height = 40;
-
   @override
   Widget build(BuildContext context) {
-    final segments = [
-      (
-        tab: _EventBillingTab.ready,
-        label: readyCount == null ? 'Ready to bill' : 'Ready to bill ($readyCount)',
-      ),
-      (tab: _EventBillingTab.issued, label: 'Bills'),
-      (tab: _EventBillingTab.numbering, label: 'Numbering'),
-    ];
-    final index = segments.indexWhere((s) => s.tab == tab);
-    final slot = index < 0 ? 0 : index;
-
-    Widget segment(String label, bool selected, VoidCallback onTap) =>
-        Expanded(
-          child: GestureDetector(
-            onTap: onTap,
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              height: _height,
-              child: Center(
-                child: AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
-                  style: TextStyle(
-                    color: selected ? Colors.white : AppTheme.heading,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                  child: Text(label, overflow: TextOverflow.ellipsis),
-                ),
-              ),
-            ),
-          ),
-        );
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(-1 + (2 * slot) / (segments.length - 1), 0),
-            child: FractionallySizedBox(
-              widthFactor: 1 / segments.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, AppTheme.sidebarBrand],
-                  ),
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.accent.withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              for (final s in segments)
-                segment(s.label, s.tab == tab, () => onChanged(s.tab)),
-            ],
-          ),
-        ],
-      ),
+    return PillTabs(
+      selected: tab.name,
+      onSelect: (k) => onChanged(_EventBillingTab.values.byName(k)),
+      tabs: [
+        PillTab('ready', 'Ready to bill', Icons.pending_actions_rounded, count: readyCount),
+        const PillTab('issued', 'Bills', Icons.receipt_long_rounded),
+        const PillTab('numbering', 'Numbering', Icons.pin_rounded),
+      ],
     );
   }
 }

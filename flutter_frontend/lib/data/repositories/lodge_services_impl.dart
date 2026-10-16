@@ -24,6 +24,9 @@ class LodgeServicesImpl implements LodgeServicesRepository {
   Future<ServiceUsage> startUsage(Map<String, dynamic> body) => api.startServiceUsage(body);
 
   @override
+  Future<ServiceUsage> updateUsage(int id, Map<String, dynamic> body) => api.updateServiceUsage(id, body);
+
+  @override
   Future<ServiceUsage> completeUsage(int id) => api.completeServiceUsage(id);
 
   @override

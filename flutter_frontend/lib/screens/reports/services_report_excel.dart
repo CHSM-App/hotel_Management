@@ -127,7 +127,7 @@ class ServicesReportExcel {
 
   static void _usagesSheet(xl.Excel excel, ServicesReport report) {
     final sheet = excel['Every use'];
-    const headers = ['Started', 'Service', 'Quantity', 'Guest', 'Room', 'Status', 'Billed on', 'Amount'];
+    const headers = ['Started', 'Service', 'Quantity', 'Head count', 'Guest', 'Room', 'Status', 'Billed on', 'Amount'];
     sheet.appendRow([for (final h in headers) xl.TextCellValue(h)]);
     final headerRow = sheet.maxRows - 1;
     for (var c = 0; c < headers.length; c++) {
@@ -143,6 +143,7 @@ class ServicesReportExcel {
         xl.TextCellValue(ReportPdfStyle.dateTime(DateTime.tryParse(u.startedAt) ?? DateTime.now())),
         xl.TextCellValue(u.serviceName),
         xl.DoubleCellValue(u.quantity.toDouble()),
+        xl.IntCellValue(u.headcount),
         xl.TextCellValue(u.guestName ?? ''),
         xl.TextCellValue(u.roomNumber ?? ''),
         xl.TextCellValue(_statusLabel(u)),

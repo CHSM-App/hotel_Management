@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'assets_list_panel.dart';
 import 'dead_stock_panel.dart';
@@ -54,71 +55,24 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
   }
 }
 
-/// A horizontally scrolling pill row — five labels (Asset Register …
-/// Depreciation) don't fit as equal-width segments on a phone the way the
-/// three-tab sliding control on Rooms & Rates / Billing does, so each pill
-/// sizes to its own label instead and the row scrolls.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
   const _SubTabs({required this.selected, required this.onSelect});
 
-  static const _tabs = {
-    'assets': 'Asset Register',
-    'workOrders': 'Work Orders',
-    'vendors': 'Vendors',
-    'deadStock': 'Dead Stock',
-    'depreciation': 'Depreciation',
-  };
-
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final entry in _tabs.entries) ...[
-            _Pill(label: entry.value, selected: entry.key == selected, onTap: () => onSelect(entry.key)),
-            const SizedBox(width: AppTheme.s8),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _Pill extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _Pill({required this.label, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.accent : AppTheme.bg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? Colors.white : AppTheme.text,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            fontSize: 13,
-          ),
-        ),
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: const [
+        PillTab('assets', 'Asset Register', Icons.inventory_2_rounded),
+        PillTab('workOrders', 'Work Orders', Icons.build_rounded),
+        PillTab('vendors', 'Vendors', Icons.storefront_rounded),
+        PillTab('deadStock', 'Dead Stock', Icons.delete_sweep_rounded),
+        PillTab('depreciation', 'Depreciation', Icons.trending_down_rounded),
+      ],
     );
   }
 }

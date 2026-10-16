@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'food_settings_panel.dart';
 import 'inventory_panel.dart';
@@ -80,9 +81,6 @@ class _Tab {
   const _Tab(this.key, this.label);
 }
 
-/// A horizontally scrolling pill strip — six labels don't fit the fixed
-/// segmented control Rooms & rates uses for its two, so this scrolls instead
-/// of squeezing "Inventory" and "Settings" down to nothing.
 class _SubTabs extends StatelessWidget {
   final List<_Tab> tabs;
   final String selected;
@@ -90,40 +88,23 @@ class _SubTabs extends StatelessWidget {
 
   const _SubTabs({required this.tabs, required this.selected, required this.onSelect});
 
+  static const _icons = {
+    'menu': Icons.restaurant_menu_rounded,
+    'recipes': Icons.menu_book_rounded,
+    'inventory': Icons.inventory_2_rounded,
+    'tables': Icons.table_restaurant_rounded,
+    'qr': Icons.qr_code_2_rounded,
+    'settings': Icons.settings_rounded,
+  };
+
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: tabs.length,
-        separatorBuilder: (_, __) => const SizedBox(width: AppTheme.s8),
-        itemBuilder: (context, i) {
-          final t = tabs[i];
-          final isSelected = t.key == selected;
-          return GestureDetector(
-            onTap: () => onSelect(t.key),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: isSelected ? AppTheme.accent : AppTheme.card,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: isSelected ? AppTheme.accent : AppTheme.border),
-              ),
-              child: Text(
-                t.label,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : AppTheme.text,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: [
+        for (final t in tabs) PillTab(t.key, t.label, _icons[t.key] ?? Icons.circle),
+      ],
     );
   }
 }

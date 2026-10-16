@@ -1027,28 +1027,39 @@ class _DishTable extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Scrollbar(
-        thumbVisibility: true,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.only(bottom: 6),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              minWidth: _rowWidth + AppTheme.s12 * 2,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _DishTableHeader(),
-                for (var i = 0; i < items.length; i++)
-                  _DishTableRow(
-                    item: items[i],
-                    sections: sections,
-                    striped: i.isOdd,
-                    isLast: i == items.length - 1,
-                  ),
-              ],
+      child: ScrollbarTheme(
+        data: ScrollbarThemeData(
+          thumbColor: WidgetStateProperty.all(
+            AppTheme.muted.withValues(alpha: 0.35),
+          ),
+          trackColor: WidgetStateProperty.all(Colors.transparent),
+          trackBorderColor: WidgetStateProperty.all(Colors.transparent),
+          radius: const Radius.circular(AppTheme.rMedium),
+          thickness: WidgetStateProperty.all(4),
+        ),
+        child: Scrollbar(
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 6),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minWidth: _rowWidth + AppTheme.s12 * 2,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _DishTableHeader(),
+                  for (var i = 0; i < items.length; i++)
+                    _DishTableRow(
+                      item: items[i],
+                      sections: sections,
+                      striped: i.isOdd,
+                      isLast: i == items.length - 1,
+                    ),
+                ],
+              ),
             ),
           ),
         ),

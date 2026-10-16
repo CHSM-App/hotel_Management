@@ -5,6 +5,7 @@ import '../../domain/models/staff.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/staff_viewmodel.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'role_form_screen.dart';
 import 'staff_form_screen.dart';
@@ -76,76 +77,21 @@ class _Body extends ConsumerWidget {
   }
 }
 
-/// Same sliding-pill segmented control Expenses/Assets/Billing/Rooms &
-/// Rates each carry their own copy of.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
   const _SubTabs({required this.selected, required this.onSelect});
 
-  static const _tabs = {'staff': 'Staff', 'roles': 'Roles & access'};
-
-  static const double _height = 44;
-
   @override
   Widget build(BuildContext context) {
-    final keys = _tabs.keys.toList();
-    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
-
-    Widget segment(String key, String label) {
-      final isSelected = key == selected;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => onSelect(key),
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: _height,
-            child: Center(
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : AppTheme.heading,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 13,
-                ),
-                child: Text(label, overflow: TextOverflow.ellipsis),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(-1 + (2 / (keys.length - 1)) * selectedIndex, 0),
-            child: FractionallySizedBox(
-              widthFactor: 1 / keys.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  color: AppTheme.accent,
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                ),
-              ),
-            ),
-          ),
-          Row(children: [for (final e in _tabs.entries) segment(e.key, e.value)]),
-        ],
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: const [
+        PillTab('staff', 'Staff', Icons.badge_rounded),
+        PillTab('roles', 'Roles & access', Icons.admin_panel_settings_rounded),
+      ],
     );
   }
 }
@@ -331,63 +277,24 @@ class _StaffRowMenu extends StatelessWidget {
     required this.onToggleActive,
   });
 
-  Widget _item(IconData icon, String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 28,
-          height: 28,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.10), shape: BoxShape.circle),
-          child: Icon(icon, size: 15, color: color),
-        ),
-        const SizedBox(width: 10),
-        Text(label, style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      padding: EdgeInsets.zero,
-      splashRadius: 18,
-      icon: const Icon(Icons.more_vert_rounded, size: 19, color: AppTheme.muted),
-      elevation: 6,
-      color: AppTheme.card,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: const Color(0x33101828),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        side: const BorderSide(color: AppTheme.border),
-      ),
-      constraints: const BoxConstraints(minWidth: 180),
-      onSelected: (v) => v == 'reset' ? onResetPassword() : onToggleActive(),
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'reset',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: _item(Icons.lock_reset_rounded, 'Reset password', AppTheme.heading),
-        ),
-        // The backend refuses the last active owner anyway; hiding the
-        // control here means the only owner never sees a button that can
-        // only ever answer with an error.
-        if (showEnable) ...[
-          const PopupMenuDivider(height: 1),
-          PopupMenuItem(
-            value: 'toggle',
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-            child: _item(
-              isActive ? Icons.block_rounded : Icons.check_circle_outline_rounded,
-              isActive ? 'Disable' : 'Enable',
-              isActive ? AppTheme.danger : AppTheme.vacant,
-            ),
+    // The backend refuses the last active owner anyway; hiding the control
+    // here means the only owner never sees a button that can only ever
+    // answer with an error.
+    return NeuActionMenu<String>(
+      iconSize: 19,
+      actions: [
+        const NeuMenuAction('reset', Icons.lock_reset_rounded, 'Reset password'),
+        if (showEnable)
+          NeuMenuAction(
+            'toggle',
+            isActive ? Icons.block_rounded : Icons.check_circle_outline_rounded,
+            isActive ? 'Disable' : 'Enable',
+            danger: isActive,
           ),
-        ],
       ],
+      onSelected: (v) => v == 'reset' ? onResetPassword() : onToggleActive(),
     );
   }
 }

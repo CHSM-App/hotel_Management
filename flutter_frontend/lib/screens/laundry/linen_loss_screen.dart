@@ -64,58 +64,141 @@ class _LinenLossScreenState extends ConsumerState<LinenLossScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(laundryViewModelProvider);
     final items = state.activeItems;
+    // A loss is always taken from the store, so it can't exceed what is clean
+    // and in the store right now — the server enforces the same ceiling.
+    final selected = items.where((i) => i.id == _itemId).firstOrNull;
+    final maxQty = selected?.clean;
+    if (maxQty != null && maxQty >= 1 && _quantity > maxQty) _quantity = maxQty;
+
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Lost or damaged linen')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
           children: [
-            NeuCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_error != null) ...[
-                    ErrorBanner(_error!),
-                    const SizedBox(height: AppTheme.s16),
-                  ],
-                  const RequiredLabel('Item'),
-                  const SizedBox(height: AppTheme.s8),
-                  OptionDropdown(
-                    values: items.map((i) => '${i.id}').toList(),
-                    labels: {for (final i in items) '${i.id}': i.name},
-                    selected: _itemId?.toString(),
-                    onSelect: (v) => setState(() => _itemId = int.parse(v)),
-                  ),
-                  const SizedBox(height: AppTheme.s16),
-                  ToggleGroup(
-                    options: const {'LOST': 'Lost', 'DAMAGED': 'Damaged'},
-                    selected: _kind,
-                    onSelect: (v) => setState(() => _kind = v),
-                  ),
-                  const SizedBox(height: AppTheme.s16),
-                  Row(
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [BoxShadow(color: Color(0x335A67D8), offset: Offset(0, 3), blurRadius: 8)],
+              ),
+              child: const Icon(Icons.report_problem_rounded, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            const Expanded(child: Text('Lost or damaged linen', overflow: TextOverflow.ellipsis, maxLines: 1)),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x005A67D8)]),
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
+              children: [
+                if (_error != null) ...[
+                  ErrorBanner(_error!),
+                  const SizedBox(height: AppTheme.s12),
+                ],
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('How many', style: TextStyle(color: AppTheme.text, fontSize: 13.5)),
-                      const Spacer(),
-                      CountStepper(value: _quantity, onChange: (n) => setState(() => _quantity = n < 1 ? 1 : n)),
+                      const SectionLabel('Linen item', number: 1, icon: Icons.bed_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      const RequiredLabel('Item'),
+                      const SizedBox(height: AppTheme.s8),
+                      OptionDropdown(
+                        values: items.map((i) => '${i.id}').toList(),
+                        labels: {for (final i in items) '${i.id}': '${i.name} (${i.clean} clean)'},
+                        selected: _itemId?.toString(),
+                        hint: 'Choose…',
+                        onSelect: (v) => setState(() {
+                          _itemId = int.parse(v);
+                          final clean = items.where((i) => i.id == _itemId).firstOrNull?.clean;
+                          if (clean != null && clean >= 1 && _quantity > clean) _quantity = clean;
+                        }),
+                      ),
+                      if (selected != null) ...[
+                        const SizedBox(height: AppTheme.s8),
+                        Text(
+                          '${selected.clean} clean and in the store — a loss can only be taken from these.',
+                          style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                        ),
+                      ],
+                      const SectionDivider(),
+                      const SectionLabel('What happened', number: 2, icon: Icons.help_outline_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      ToggleGroup(
+                        options: const {'LOST': 'Lost', 'DAMAGED': 'Damaged'},
+                        selected: _kind,
+                        onSelect: (v) => setState(() => _kind = v),
+                      ),
+                      const SizedBox(height: AppTheme.s16),
+                      Row(
+                        children: [
+                          const Text('How many', style: TextStyle(color: AppTheme.text, fontSize: 13.5)),
+                          const Spacer(),
+                          CountStepper(
+                            value: _quantity,
+                            max: maxQty != null && maxQty >= 1 ? maxQty : 999999,
+                            onChange: (n) => setState(() => _quantity = n < 1 ? 1 : n),
+                          ),
+                        ],
+                      ),
+                      const SectionDivider(),
+                      const SectionLabel('Note', number: 3, icon: Icons.notes_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(controller: _note, label: 'Note (optional)', dense: true),
                     ],
                   ),
-                  const SizedBox(height: AppTheme.s16),
-                  NeuField(controller: _note, label: 'Note (optional)'),
-                ],
-              ),
+                ),
+                const SizedBox(height: AppTheme.s16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: NeuButton(
+                        onPressed: state.submitting ? null : () => Navigator.of(context).pop(),
+                        padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.s12),
+                    Expanded(
+                      flex: 2,
+                      child: NeuButton(
+                        primary: true,
+                        onPressed: state.submitting ? null : _submit,
+                        padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                        child: state.submitting
+                            ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Text('Save'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(height: AppTheme.s24),
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: state.submitting ? null : _submit,
-              child: state.submitting
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Save'),
-            ),
-          ],
+          ),
         ),
       ),
     );

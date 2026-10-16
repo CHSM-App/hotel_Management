@@ -1270,7 +1270,7 @@ class _ChargesSection extends StatelessWidget {
                 _MoneyLine(
                   label: u.name,
                   note:
-                      '${formatPrice(u.unitPrice ?? u.amount / u.quantity)} per ${u.unitLabel} × ${u.quantity}'
+                      '${formatPrice(u.unitPrice ?? u.amount / u.quantity)} per ${u.unitLabel} × ${u.quantity}${u.headcount > 1 ? ' × ${u.headcount} people' : ''}'
                       '${u.gstRatePercent > 0 ? ' · incl. ${u.gstRatePercent}% GST' : ''}',
                   value: formatPrice(u.amount),
                 ),
@@ -1690,7 +1690,7 @@ class _ServiceUsageTile extends StatelessWidget {
             ),
           ),
           Text(
-            '${usage.quantity} ${usage.unitLabel}'
+            '${usage.quantity} ${usage.unitLabel}${usage.headcount > 1 ? ' × ${usage.headcount} people' : ''}'
             '${started != null ? ' · ${_formatDateTime(started)}' : ''}',
             style: Theme.of(context).textTheme.bodySmall,
           ),

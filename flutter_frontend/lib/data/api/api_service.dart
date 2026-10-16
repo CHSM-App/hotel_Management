@@ -120,6 +120,17 @@ class ApiService {
     return Me.fromJson(_map(res.data));
   }
 
+  /// Upload or replace the public page's hero image — field name 'heroImage'.
+  Future<Me> updateMyLodgeHeroImage(FormData form) async {
+    final res = await _dio.put('/me/lodge/hero-image', data: form);
+    return Me.fromJson(_map(res.data));
+  }
+
+  Future<Me> removeMyLodgeHeroImage() async {
+    final res = await _dio.delete('/me/lodge/hero-image');
+    return Me.fromJson(_map(res.data));
+  }
+
   Future<Me> removeMyLodgeLogo() async {
     final res = await _dio.delete('/me/lodge/logo');
     return Me.fromJson(_map(res.data));
@@ -2372,6 +2383,11 @@ class ApiService {
 
   Future<ServiceUsage> startServiceUsage(Map<String, dynamic> body) async {
     final res = await _dio.post('/lodge-services/usages', data: body);
+    return ServiceUsage.fromJson(_map(res.data)['usage'] as Map<String, dynamic>);
+  }
+
+  Future<ServiceUsage> updateServiceUsage(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/lodge-services/usages/$id', data: body);
     return ServiceUsage.fromJson(_map(res.data)['usage'] as Map<String, dynamic>);
   }
 

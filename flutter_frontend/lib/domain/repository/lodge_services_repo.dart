@@ -13,6 +13,8 @@ abstract class LodgeServicesRepository {
 
   Future<ServiceUsage> startUsage(Map<String, dynamic> body);
 
+  Future<ServiceUsage> updateUsage(int id, Map<String, dynamic> body);
+
   Future<ServiceUsage> completeUsage(int id);
 
   Future<ServiceUsage> cancelUsage(int id);
