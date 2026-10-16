@@ -54,14 +54,15 @@ function formatDate(value) {
 // and Onboarded are supporting detail, not the first thing this page is
 // opened to check, so they render muted.
 const COLUMNS = [
-  { key: 'name', label: 'Lodge', get: (l) => l.name || '' },
+  { key: 'name', label: 'Lodge / Hotel', get: (l) => l.name || '' },
   { key: 'owner_name', label: 'Owner', get: (l) => l.owner_name || '' },
+  { key: 'owner_phone', label: 'Phone', get: (l) => l.owner_phone || '' },
   { key: 'is_active', label: 'Status', get: (l) => (l.is_active ? 1 : 0) },
   { key: 'city', label: 'Location', get: (l) => [l.city, l.state].filter(Boolean).join(', ') },
   { key: 'type', label: 'Type', get: (l) => describeType(l) },
   { key: 'checkin_mode', label: 'Check-in', get: (l) => (l.has_rooms ? CHECKIN_LABEL[l.checkin_mode] || l.checkin_mode : '') },
   { key: 'is_gst_registered', label: 'GST', get: (l) => (l.is_gst_registered ? 1 : 0) },
-  { key: 'created_at', label: 'Onboarded', get: (l) => l.created_at },
+  { key: 'created_at', label: 'Onboarded on', get: (l) => l.created_at },
 ];
 
 const TYPE_FILTERS = ['Lodge', 'Lodge with meals', 'Restaurant'];
@@ -178,7 +179,7 @@ export default function LodgesDashboard() {
   }, [lodges]);
 
   return (
-    <div className="dash-shell">
+    <div className="dash-shell vt-admin-shell">
       {confirmSignOut && (
         <ConfirmDialog
           title="Sign out?"
@@ -235,31 +236,59 @@ export default function LodgesDashboard() {
           <div className="dash-stats">
             <button
               type="button"
-              className={`dash-stat ${!statusFilter && !typeFilter && !gstFilter ? 'dash-stat--on' : ''}`}
+              className={`dash-stat dash-stat--total ${!statusFilter && !typeFilter && !gstFilter ? 'dash-stat--on' : ''}`}
               onClick={clearFilters}
             >
-              <span className="dash-stat__value">{stats.total}</span>
-              <span className="dash-stat__label">Total lodges</span>
+              <span className="dash-stat__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M3 10.5 12 4l9 6.5M5 9.5V20h14V9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="dash-stat__body">
+                <span className="dash-stat__value">{stats.total}</span>
+                <span className="dash-stat__label">Total lodges</span>
+              </span>
             </button>
             <button
               type="button"
               className={`dash-stat dash-stat--active ${statusFilter === 'active' ? 'dash-stat--on' : ''}`}
               onClick={() => setStatusFilter((f) => (f === 'active' ? null : 'active'))}
             >
-              <span className="dash-stat__value">{stats.active}</span>
-              <span className="dash-stat__label">Active</span>
+              <span className="dash-stat__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="m5 13 4 4 10-10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="dash-stat__body">
+                <span className="dash-stat__value">{stats.active}</span>
+                <span className="dash-stat__label">Active</span>
+              </span>
             </button>
             <button
               type="button"
               className={`dash-stat dash-stat--inactive ${statusFilter === 'inactive' ? 'dash-stat--on' : ''}`}
               onClick={() => setStatusFilter((f) => (f === 'inactive' ? null : 'inactive'))}
             >
-              <span className="dash-stat__value">{stats.inactive}</span>
-              <span className="dash-stat__label">Inactive</span>
+              <span className="dash-stat__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M12 9v4m0 4h.01M10.3 3.9 1.9 18.3a1.6 1.6 0 0 0 1.4 2.4h17.4a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="dash-stat__body">
+                <span className="dash-stat__value">{stats.inactive}</span>
+                <span className="dash-stat__label">Inactive</span>
+              </span>
             </button>
-            <div className="dash-stat dash-stat--static">
-              <span className="dash-stat__value">{stats.newThisMonth}</span>
-              <span className="dash-stat__label">Onboarded this month</span>
+            <div className="dash-stat dash-stat--static dash-stat--new">
+              <span className="dash-stat__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="dash-stat__body">
+                <span className="dash-stat__value">{stats.newThisMonth}</span>
+                <span className="dash-stat__label">Onboarded this month</span>
+              </span>
             </div>
           </div>
         )}
@@ -342,12 +371,20 @@ export default function LodgesDashboard() {
                         onClick={() => toggleSort(col.key)}
                       >
                         <span>{col.label}</span>
-                        <span className="dash-sort-arrow" aria-hidden="true">
-                          {sort.key === col.key ? (sort.dir === 'asc' ? '▲' : '▼') : ''}
+                        <span className={`dash-sort-arrow ${sort.key === col.key ? 'dash-sort-arrow--on' : ''}`} aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none" focusable="false">
+                            <path
+                              d={sort.key === col.key && sort.dir === 'asc' ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'}
+                              stroke="currentColor"
+                              strokeWidth="2.2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
                         </span>
                       </th>
                     ))}
-                    <th aria-label="Actions" />
+                    <th className="dash-th--actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -359,11 +396,12 @@ export default function LodgesDashboard() {
                       </td>
                       <td className="dash-col-primary">
                         {lodge.owner_name || '—'}
-                        {lodge.owner_phone && <div className="dash-owner-phone">{lodge.owner_phone}</div>}
                         {lodge.owner_email && <div className="dash-owner-email">{lodge.owner_email}</div>}
                       </td>
+                      <td className="dash-col-secondary">{lodge.owner_phone || '—'}</td>
                       <td className="dash-col-primary">
-                        <span className={`badge ${lodge.is_active ? 'badge--on' : 'badge--inactive'}`}>
+                        <span className={`badge badge--dot ${lodge.is_active ? 'badge--on' : 'badge--inactive'}`}>
+                          <span className="badge__dot" aria-hidden="true" />
                           {lodge.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>

@@ -450,6 +450,154 @@ async function removeLodgeHeroImage(id) {
   return getLodgeDetail(id);
 }
 
+function toIsoDate(d) {
+  if (typeof d === 'string') return d.slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
+
+// Inclusive of both ends, same as reports.service.js's datesInRange.
+function datesInRange(fromDate, toDate) {
+  const dates = [];
+  const cur = new Date(`${fromDate}T00:00:00Z`);
+  const end = new Date(`${toDate}T00:00:00Z`);
+  while (cur <= end) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+// The four widgets the Overview dashboard needs beyond what getLodgeDetail
+// already carries — kept as a second call so a lodge with no rooms/no food
+// doesn't pay for queries it has nothing to show, and so the Food Orders
+// period toggle only re-fetches this, not the whole page.
+async function getLodgeDashboard(id, { foodPeriod = 'today' } = {}) {
+  const pool = await getPool();
+
+  const today = toIsoDate(new Date());
+  const weekAgo = toIsoDate(new Date(Date.now() - 6 * 86400000));
+  const foodFrom = foodPeriod === '7d' ? weekAgo : today;
+
+  const roomDistributionResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, id)
+    .query(`
+      SELECT c.name, COUNT(r.id) AS room_count
+      FROM dbo.room_categories c
+      LEFT JOIN dbo.rooms r ON r.category_id = c.id AND r.is_active = 1
+      WHERE c.lodge_id = @lodgeId
+      GROUP BY c.name
+      ORDER BY room_count DESC
+    `);
+  const roomDistribution = roomDistributionResult.recordset.map((row) => ({
+    name: row.name,
+    count: row.room_count,
+  }));
+
+  // Same overlap pattern as reports.service.js's getOccupancyReport, split
+  // into two buckets instead of one: every non-cancelled booking counts as
+  // "sold" for a day it covers, and the ones actually checked in also count
+  // as "in house".
+  const bookingRoomsResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, id)
+    .input('fromDate', sql.Date, weekAgo)
+    .input('toDate', sql.Date, today)
+    .query(`
+      SELECT br.room_id, br.check_in_date, br.check_out_date, br.status
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      WHERE b.lodge_id = @lodgeId AND br.status <> 'CANCELLED'
+        AND br.check_in_date < DATEADD(day, 1, @toDate) AND br.check_out_date > @fromDate
+    `);
+  const trendDates = datesInRange(weekAgo, today);
+  const soldByDate = new Map(trendDates.map((d) => [d, new Set()]));
+  const inHouseByDate = new Map(trendDates.map((d) => [d, new Set()]));
+  for (const row of bookingRoomsResult.recordset) {
+    const stayStart = toIsoDate(row.check_in_date);
+    const stayEnd = toIsoDate(row.check_out_date);
+    for (const date of trendDates) {
+      if (date >= stayStart && date < stayEnd) {
+        soldByDate.get(date).add(row.room_id);
+        if (row.status === 'CHECKED_IN') inHouseByDate.get(date).add(row.room_id);
+      }
+    }
+  }
+  const bookingTrend = trendDates.map((date) => ({
+    date,
+    sold: soldByDate.get(date).size,
+    inHouse: inHouseByDate.get(date).size,
+  }));
+
+  const foodBySourceResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, id)
+    .input('fromDate', sql.Date, foodFrom)
+    .input('toDate', sql.Date, today)
+    .query(`
+      SELECT source, COUNT(*) AS n
+      FROM dbo.food_orders
+      WHERE lodge_id = @lodgeId AND status <> 'CANCELLED' AND order_date BETWEEN @fromDate AND @toDate
+      GROUP BY source
+    `);
+  const foodBySource = foodBySourceResult.recordset.map((row) => ({ source: row.source, count: row.n }));
+
+  // Recent activity across the property, newest first. No money anywhere —
+  // an invoice or a payment is shown as the event it is, not as a figure
+  // platform staff have no reason to be reading off someone else's bill.
+  const activityResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, id)
+    .query(`
+      SELECT TOP 50 kind, detail, occurred_at FROM (
+        SELECT 'INVOICE' AS kind, CASE WHEN r.room_number IS NOT NULL THEN 'Room ' + r.room_number ELSE 'Food bill' END AS detail,
+               i.created_at AS occurred_at
+        FROM dbo.invoices i
+        LEFT JOIN dbo.bookings b ON b.id = i.booking_id
+        LEFT JOIN dbo.rooms r ON r.id = b.room_id
+        WHERE i.lodge_id = @lodgeId AND i.status = 'ISSUED'
+
+        UNION ALL
+        SELECT 'BOOKING', 'Room ' + r.room_number, b.created_at
+        FROM dbo.bookings b
+        JOIN dbo.rooms r ON r.id = b.room_id
+        WHERE b.lodge_id = @lodgeId
+
+        UNION ALL
+        SELECT 'FOOD_ORDER',
+               CASE fo.source
+                 WHEN 'TABLE' THEN 'Table ' + t.label
+                 WHEN 'ROOM' THEN 'Room ' + r.room_number
+                 ELSE 'Counter'
+               END,
+               fo.placed_at
+        FROM dbo.food_orders fo
+        LEFT JOIN dbo.dining_tables t ON t.id = fo.table_id
+        LEFT JOIN dbo.rooms r ON r.id = fo.room_id
+        WHERE fo.lodge_id = @lodgeId
+
+        UNION ALL
+        SELECT 'CHECK_IN', 'Room ' + r.room_number, b.actual_check_in_at
+        FROM dbo.bookings b
+        JOIN dbo.rooms r ON r.id = b.room_id
+        WHERE b.lodge_id = @lodgeId AND b.actual_check_in_at IS NOT NULL
+
+        UNION ALL
+        SELECT 'PAYMENT', pl.method, pl.created_at
+        FROM dbo.payment_lines pl
+        WHERE pl.lodge_id = @lodgeId
+      ) activity
+      ORDER BY occurred_at DESC
+    `);
+  const activity = activityResult.recordset.map((row) => ({
+    type: row.kind,
+    detail: row.detail,
+    occurredAt: row.occurred_at,
+  }));
+
+  return { roomDistribution, bookingTrend, foodBySource, activity };
+}
+
 module.exports = {
   createLodgeWithOwner,
   listLodges,
@@ -459,4 +607,5 @@ module.exports = {
   removeLodgeLogo,
   updateLodgeHeroImage,
   removeLodgeHeroImage,
+  getLodgeDashboard,
 };

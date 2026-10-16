@@ -528,15 +528,33 @@
      sidebar subtracts this token rather than a literal, so raising it here is
      the whole change. */
   --dash-topbar-h: 64px;
+
+  /* Dark navy rather than the brighter royal blue this started at (went
+     #1246A0 → #1E5BC6 → here). --brand-ink (the hover/darker shade) is a
+     step past it rather than close beside it, same as the earlier passes.
+     Applied via this page's own existing unique hook rather than a new
+     wrapper class; every other owner-side page keeps the original tokens
+     from index.css. */
+  --brand: #0B2E5C;
+  --brand-ink: #071E3D;
+  --brand-lift: #0B2E5C;
+  --brand-band: #0B2E5C;
+  --brand-band-deep: #071E3D;
+  --brand-wash: #EAF1FB;
+  --brand-wash-edge: #BBD2EC;
+  --success: #087A50;
+  --success-bg: #E3F6EE;
+  --danger: #C62828;
+  --danger-bg: #FBEAEA;
 }
 
 .dash-topbar--light {
-  background: var(--surface);
-  color: var(--ink);
-  /* The bar has a foot now rather than a coloured underline: a hairline in the
-     border tone, and a soft throw so it sits above the page as the sticky
-     layer it is. */
-  box-shadow: 0 1px 0 var(--border), 0 4px 14px -8px rgba(22, 33, 46, 0.18);
+  /* Solid brand blue rather than the white it was drawn with — the same
+     flat fill the superadmin topbar uses, so the two consoles read as one
+     family. */
+  background: var(--brand);
+  color: #ffffff;
+  box-shadow: 0 2px 10px -2px rgba(8, 43, 89, 0.35);
   /* The brand block owns the left inset (it matches the rail's own padding),
      so the bar itself only pads the right. */
   padding: 0 28px 0 0;
@@ -561,22 +579,20 @@
   flex-shrink: 0;
   width: 44px;
   height: 44px;
-  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The one saturated element in the bar. It is the mark, so it gets the
-     gradient the CTA buttons use rather than a flat fill. */
-  background: linear-gradient(135deg, var(--color-cta-from), var(--color-cta-to));
-  color: #ffffff;
   overflow: hidden;
 }
 
-/* An uploaded logo replaces the gradient mark — its own image, not a tinted
-   icon, so the gradient background would only show through a transparent
-   corner. object-fit keeps a non-square logo from stretching to the badge. */
+/* An uploaded logo gets its own white tile — a photo needs a plain backdrop
+   to sit on, and most logos aren't drawn to survive sitting directly on a
+   saturated colour the way the plain mark icon is. */
 .dash-brand__badge--logo {
+  border-radius: 12px;
   background: #ffffff;
+  border: none;
+  box-shadow: 0 2px 6px -1px rgba(8, 43, 89, 0.4);
   padding: 4px;
 }
 
@@ -584,6 +600,26 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+  border: none;
+  /* A logo path that 404s is caught in JS (onError swaps to the mark icon),
+     but this still strips the default broken-image glyph some browsers draw
+     for the one frame before that fires. */
+  display: block;
+}
+
+/* No tile at all for the fallback mark — just the icon, directly on the bar,
+   with none of the white card/border the logo variant above needs for a
+   photo to sit on. */
+/* White squircle tile with a blue icon — the same treatment the uploaded-logo
+   variant gets, so the fallback mark and a real logo read as one consistent
+   badge language instead of two different looks depending on whether a
+   logo happens to be set. */
+.dash-brand__badge--mark {
+  border-radius: 12px;
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 2px 6px -1px rgba(8, 43, 89, 0.4);
+  color: var(--brand);
 }
 
 .dash-brand__text {
@@ -593,39 +629,58 @@
 }
 
 /* The property's name is the whole brand label now, on a single line — the
-   block sizes to it rather than the other way around. */
+   block sizes to it rather than the other way around. White on the blue bar
+   rather than the brand-ink it read as on white. */
 .dash-brand__name {
   font-size: 16px;
   font-weight: 800;
-  color: var(--brand-ink);
+  color: #ffffff;
   line-height: 1.25;
   white-space: nowrap;
 }
 
+/* Second line under the property name — what the product is, not just whose
+   it is. Quieter than the name so the hotel's own identity still reads
+   first. */
+.dash-brand__tagline {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* The rail's own toggle, visible at every width now rather than only on a
+   phone — an outlined square so it reads as a control in its own right
+   rather than a bare icon floating in the bar. */
+/* Bare icon rather than a button chip — no fill, no border, just the three
+   lines in white with a little room before them so it doesn't sit flush
+   against the bar's own edge. */
 .dash-topbar__menu {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
+  margin-left: 6px;
   margin-right: 14px;
+  padding-left: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  border: none;
   background: transparent;
-  color: var(--text);
+  color: #ffffff;
   cursor: pointer;
-  transition: var(--neu-transition);
+  transition: opacity 150ms ease;
 }
 
 .dash-topbar__menu:hover {
-  background: var(--surface);
-  box-shadow: var(--shadow-raised);
-  color: var(--ink);
+  opacity: 0.8;
+  box-shadow: none;
+  color: #ffffff;
 }
 
 .dash-topbar__menu:active {
-  box-shadow: var(--shadow-pressed);
+  opacity: 0.65;
 }
 
 /* A well, not a raised control — it takes input rather than offering a press,
@@ -712,32 +767,33 @@
 }
 
 
-/* The profile chip was drawn for a saturated band — translucent white on
-   violet. On the light bar it reads as a smudge, so it is redrawn as a quiet
-   surface with the app's own text colours. */
+/* Back to the translucent-white-on-saturated-band treatment the bar was
+   originally drawn for, now that the bar is solid blue again rather than
+   white — the chip itself is visible at rest, not only once hovered. */
 .dash-topbar--light .profile-menu__trigger {
-  background: transparent;
-  border-color: transparent;
-  color: var(--ink);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
   padding-left: 4px;
 }
 
 .dash-topbar--light .profile-menu__trigger:hover {
-  background: var(--neu-sunken);
+  background: rgba(255, 255, 255, 0.24);
 }
 
 .dash-topbar--light .profile-menu__trigger-avatar {
-  background: linear-gradient(135deg, var(--accent), var(--accent-ink));
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   color: #ffffff;
 }
 
 .dash-topbar--light .profile-menu__trigger-role {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.78);
   opacity: 1;
 }
 
 .dash-topbar--light .profile-menu__trigger-chevron {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.78);
   opacity: 1;
 }
 
@@ -756,49 +812,130 @@
 }
 
 /* Puts the public booking link one click away from every section, instead of
-   three deep in profile → hotel profile. */
+   three deep in profile → hotel profile. Outlined rather than filled — white
+   border and text on the blue bar, matching the other chips that live there,
+   instead of a solid white pill competing with them. */
 .dash-topbar__link-copy {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 7px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
+  background: transparent;
+  color: #ffffff;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: var(--shadow-raised);
+  box-shadow: none;
   white-space: nowrap;
 }
 
 .dash-topbar__link-copy:hover {
-  background: var(--primary-bg, var(--surface-muted, #f3f3f3));
-  border-color: var(--primary, var(--border));
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.7);
 }
 
 /* The rail is 240px to match the brand block above it — already true, and now
    load-bearing, so the two are pinned to the same token. */
 .dash-topbar--light + .dash-body .dash-sidebar {
   width: var(--dash-brand-w, 240px);
+  transition: width 220ms ease, padding 220ms ease, background-color 220ms ease;
 }
 
-/* Collapsed by the hamburger. Only below the breakpoint, where the rail is a
+/* Collapsed by the toggle. Only below the breakpoint, where the rail is a
    horizontal strip that costs a phone real vertical space — on a desk monitor
    the rail is the navigation and hiding it would strand the user on whatever
-   section they happen to be on. */
+   section they happen to be on (there it narrows to icons instead, see
+   .dash-sidebar--icon-only). */
 @media (max-width: 800px) {
   .dash-sidebar--collapsed {
     display: none;
   }
 }
 
-/* Above the breakpoint the hamburger has nothing to collapse, so it is not
-   shown — a control that does nothing is worse than one that is not there. */
+/* Desktop's collapsed state: icons only, no off-canvas — the rail narrows in
+   place rather than disappearing, since it's the only navigation on a desk
+   monitor. Scoped above the phone breakpoint so it never fights the drawer's
+   own narrower-screen behaviour. */
 @media (min-width: 801px) {
-  .dash-topbar__menu {
+  /* .dash-topbar--light + .dash-body .dash-sidebar above pins the rail to
+     240px at (0,0,3,0) specificity — a plain .dash-sidebar--icon-only rule
+     (0,0,1,0) can set every other property here but loses that one
+     outright, which is why the rail used to stay full width with icons
+     just centred inside the leftover space. Matching the same selector
+     shape (and landing later in the file) is what finally wins the width
+     back. */
+  .dash-topbar--light + .dash-body .dash-sidebar--icon-only {
+    width: 60px;
+  }
+
+  .dash-sidebar--icon-only {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  /* Group headers ("Front desk", "Finance & management"…) have nowhere to
+     put their label at 68px, so the whole header goes rather than leaving a
+     truncated sliver of text. Their items keep showing — see the collapse
+     override below — so nothing in the rail actually becomes unreachable. */
+  .dash-sidebar--icon-only .dash-sidebar__label--toggle {
     display: none;
+  }
+
+  /* Every group reads as "open" here regardless of its own toggle state —
+     at icon width there is no header left to click to reopen a closed one,
+     so collapsing a group would strand its sections with no way back. */
+  .dash-sidebar--icon-only .dash-sidebar__collapse {
+    grid-template-rows: 1fr !important;
+    opacity: 1 !important;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__collapse > .dash-sidebar__list {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__item,
+  .dash-sidebar--icon-only .dash-sidebar__signout {
+    justify-content: center;
+    padding: 10px 6px;
+  }
+
+  /* The label text itself (not just its container) is what disappears — the
+     icon stays centred, and the full name is still reachable as a native
+     title= tooltip on hover. */
+  .dash-sidebar--icon-only .dash-sidebar__item-label,
+  .dash-sidebar--icon-only .dash-sidebar__soon,
+  .dash-sidebar--icon-only .dash-sidebar__count {
+    display: none;
+  }
+
+  /* A plain dot stands in for the open-issues count at this width — enough
+     to say "something here needs attention" without the number needing room
+     it doesn't have. */
+  .dash-sidebar--icon-only .dash-sidebar__item {
+    position: relative;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__item:has(.dash-sidebar__count)::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--danger);
+    /* Matches the rail's own fill (brand-ink, not the white it used to ring
+       against) so the dot still reads as a separate notch cut into the icon
+       rather than a mismatched halo. */
+    box-shadow: 0 0 0 2px var(--brand-ink);
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__item[aria-current='page']::before {
+    left: -4px;
   }
 }
 
@@ -865,7 +1002,7 @@
      tiles, and matching that family is what makes it read as this app's mark
      rather than a favicon dropped in. */
   border-radius: 12px;
-  box-shadow: 0 2px 6px -1px rgba(91, 63, 217, 0.45);
+  box-shadow: 0 2px 6px -1px rgba(8, 43, 89, 0.4);
 }
 
 .dash-brand__text {
@@ -1038,6 +1175,154 @@
   }
 }
 
+/* The rail still scrolls when its section list runs past the viewport — this
+   only hides the scrollbar's own track/thumb, across engines, so scrolling
+   stays available without a visible bar sitting beside the icons. */
+.dash-sidebar__scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.dash-sidebar__scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* --- Open sidebar: light again -----------------------------------------------
+   No colour override here any more — the open rail falls back to its
+   original light surface (var(--surface)) and the base light-theme rules
+   for text, hover and the active row's brand-wash highlight, same as before
+   any of the blue passes. Only the collapsed, icons-only state below stays
+   dark navy. */
+
+/* Bolder than the shared Icon component's default 1.75 stroke, for every
+   sidebar icon regardless of state — this is a weight choice, not a colour
+   one, so it isn't scoped to icon-only below. CSS beats the <svg>'s own
+   strokeWidth attribute regardless of specificity, since presentation
+   attributes are the lowest-priority origin in the cascade. */
+.dash-sidebar__item svg,
+.dash-sidebar__signout svg {
+  stroke-width: 2.3;
+}
+
+/* --- Icon-only collapsed rail: dark navy -------------------------------------
+   The one state that keeps the solid colour fill — var(--brand-ink), a
+   shade past the topbar's own var(--brand) — now that the open rail above
+   is light again. Toggling the rail still animates a colour change (light
+   to navy) alongside the width change. */
+@media (min-width: 801px) {
+  .dash-sidebar--icon-only {
+    background: var(--brand-ink);
+  }
+
+  /* The open rail has no per-section divider (removed on request) — this is
+     the collapsed state's own, since eight groups of bare icons with no
+     labels run together even more easily than they did with text. */
+  .dash-sidebar--icon-only .dash-sidebar__group {
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__group:last-child {
+    padding-bottom: 0;
+    margin-bottom: 0;
+    border-bottom: none;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__guide {
+    border-top-color: rgba(255, 255, 255, 0.14);
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__label,
+  .dash-sidebar--icon-only .dash-sidebar__label--toggle {
+    color: rgba(255, 255, 255, 0.75);
+    opacity: 1;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__label--toggle:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* An earlier rule dims this row's icon to opacity: 0.85 for the white
+     rail, where it was competing with 500-weight text. On a solid colour
+     fill that same dimming stacks on top of an already-translucent colour
+     and the icon all but disappears — opacity: 1 cancels it so only this
+     rule's own (much higher) colour alpha is doing the work. */
+  .dash-sidebar--icon-only .dash-sidebar__item {
+    color: rgba(255, 255, 255, 0.92);
+    opacity: 1;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__item svg {
+    color: rgba(255, 255, 255, 0.88);
+    opacity: 1;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__item:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    box-shadow: none;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__item:hover svg {
+    color: #ffffff;
+    opacity: 1;
+  }
+
+  /* A translucent white pill rather than a second colour — the rail is
+     already solid blue here, so the active row can't borrow a contrasting
+     fill the way it does on the white open state. The leading accent bar
+     (::before) is switched off: it was tuned to sit beside a light
+     brand-wash tint, and reads as a stray line now that the row itself
+     carries the highlight. */
+  .dash-sidebar--icon-only .dash-sidebar__item[aria-current='page'],
+  .dash-sidebar--icon-only .dash-sidebar__item[aria-current='page']:hover {
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__item[aria-current='page'] svg {
+    color: #ffffff;
+    opacity: 1;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__item[aria-current='page']::before {
+    display: none;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__collapse > .dash-sidebar__list {
+    border-left-color: rgba(255, 255, 255, 0.18);
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__footer {
+    border-top-color: rgba(255, 255, 255, 0.18);
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__soon {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: transparent;
+    color: rgba(255, 255, 255, 0.7);
+    box-shadow: none;
+  }
+
+  /* Sign out keeps its own red, lifted a shade for contrast against the
+     saturated blue fill rather than the deep blood-red tuned for the white
+     row. */
+  .dash-sidebar--icon-only .dash-sidebar__signout {
+    color: #ffb4a8;
+  }
+
+  .dash-sidebar--icon-only .dash-sidebar__signout:hover {
+    background: rgba(255, 180, 168, 0.16);
+    box-shadow: none;
+  }
+}
+
 /* The page area is the loading overlay's frame (see GlobalLoader). */
 .dash-main {
   position: relative;
@@ -1111,4 +1396,52 @@
     z-index: 35;
     background: rgba(22, 33, 46, 0.45);
   }
+}
+
+/* --- Professional pass -------------------------------------------------------
+   A few finishing touches rather than a redesign: the rail's bones were
+   already sound (clear hierarchy, a working active state), this just tidies
+   the rough edges — a harsh focus outline, uneven row heights, a flat
+   divider under the active bar's own accent colour. */
+
+/* The default focus-visible was a flat 2px solid outline sitting right on
+   top of the active row's own wash and accent bar, reading as an accidental
+   box rather than a deliberate ring. A soft two-layer glow (an inner line
+   plus an outer wash) sits with the rest of the rail's style instead of
+   fighting it, while still being clearly visible for keyboard navigation. */
+.dash-sidebar__label--toggle:focus-visible,
+.dash-sidebar__item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1.5px var(--brand), 0 0 0 4px var(--brand-wash);
+}
+
+/* A touch more room in every row — 8px top/bottom read slightly cramped
+   next to the 14px font, especially against the icon beside it. */
+.dash-sidebar__item {
+  padding: 9px 10px;
+}
+
+/* The active row's accent bar gets the same radius family as the row it
+   marks, rather than a hard-edged rectangle next to rounded corners. */
+.dash-sidebar__item[aria-current='page']::before {
+  border-radius: 2px;
+}
+
+/* Sign out and User guide are sidebar items in function, not just in shape —
+   same row height and icon alignment as the nav above them, so the rail
+   reads as one consistent list from top to bottom instead of the nav
+   getting more care than what bookends it. */
+.dash-sidebar__signout,
+.dash-sidebar__guide .dash-sidebar__item {
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+
+.dash-sidebar__guide .dash-sidebar__item {
+  font-size: 13.5px;
+}
+
+.dash-sidebar__guide {
+  margin-top: 14px;
+  padding-top: 14px;
 }

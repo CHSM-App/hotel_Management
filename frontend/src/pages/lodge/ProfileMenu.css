@@ -373,3 +373,83 @@
 .profile-menu__trigger-chevron {
   margin-left: 2px;
 }
+
+/* --- Open/close animation + icon polish -------------------------------------
+   The dropdown used to mount only while open, which meant it could animate
+   in but never out — React tore it out of the DOM the instant `open` went
+   false, before any transition had a chance to run. It's always mounted now
+   (see ProfileMenu.jsx), with this modifier class doing the showing/hiding
+   instead. visibility gets its own delayed transition so the closed panel
+   is both unclickable and untabbable (paired with the `inert` attribute)
+   without `display: none` blocking the fade/scale from animating. */
+.profile-menu__dropdown {
+  transform-origin: top right;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease, visibility 0s linear 160ms;
+}
+
+.profile-menu__dropdown--open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 160ms ease, transform 160ms ease, visibility 0s linear 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-menu__dropdown,
+  .profile-menu__dropdown--open {
+    transition: opacity 120ms ease, visibility 0s linear 0s;
+    transform: none;
+  }
+}
+
+/* Contact rows get a small icon each instead of reading as two bare lines
+   of digits and an email address. */
+.profile-menu__contact-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-menu__contact-row + .profile-menu__contact-row {
+  margin-top: 4px;
+}
+
+.profile-menu__contact-row svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+/* Action rows: an icon, a label that takes the remaining width, and — for
+   rows that go somewhere else (not Sign out) — a trailing chevron. Icon and
+   chevron both pick up the row's own colour via currentColor, so Sign out's
+   red icon needs no separate rule. */
+.profile-menu__action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-menu__action-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-menu__action svg:first-child {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.profile-menu__action--danger svg:first-child {
+  color: var(--danger);
+}
+
+.profile-menu__action svg:last-child:not(:first-child) {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.6;
+}

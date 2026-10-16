@@ -1145,24 +1145,6 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // backing and shadow once something is actually scrolling underneath it —
   // painted always, it would read as a band across the panel for no reason.
   //
-  // A zero-height sentinel above the strip is what is watched, because the
-  // strip itself is sticky and so never stops intersecting the viewport. The
-  // sentinel scrolls away normally, and its leaving is exactly the moment the
-  // strip starts to stick.
-  const stickySentinel = useRef(null);
-  const [searchStuck, setSearchStuck] = useState(false);
-
-  useEffect(() => {
-    const el = stickySentinel.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
-    const observer = new IntersectionObserver(
-      ([entry]) => setSearchStuck(!entry.isIntersecting),
-      { threshold: 0 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
   const clearSearch = () => {
     setSearch('');
     setHitIndex(0);
@@ -1185,6 +1167,20 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     }
     return stats;
   }, [categorySections, occupancy, dates.length]);
+
+  // The same figure as categoryStats, rolled up across every category — the
+  // single "X% sold" the legend row shows for the whole window, rather than
+  // one the desk has to add up itself from the category chips.
+  const overallStats = useMemo(() => {
+    if (categoryStats.size === 0) return null;
+    let sold = 0;
+    let capacity = 0;
+    for (const stats of categoryStats.values()) {
+      sold += stats.sold;
+      capacity += stats.capacity;
+    }
+    return { sold, capacity, percent: capacity ? Math.round((sold / capacity) * 100) : 0 };
+  }, [categoryStats]);
 
   // Each category card, by name, so the chips above can reach the one they
   // stand for. A map rather than an array because the sections come and go as
@@ -3654,26 +3650,16 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     <div className="bookings-panel">
       {!modalOnly && (
       <>
-      {/* One sticky strip carrying everything above the chart.
+      {/* The stepper, search and legend — not sticky any more. Only the
+          category row below (.tape-cats--sticky) stays pinned under the
+          navbar now; this block scrolls away with the rest of the page.
 
-          It was three stacked rows — a toolbar, a search bar, a legend — each
-          sparse across its own line, which cost about a hundred and seventy
-          pixels of chrome before the first room and pushed the chart itself off
-          the bottom of the screen. They are folded into two: the month stepper,
-          the search field and the actions share the top line, and the legend
-          shares the second with whatever the search has found. Nothing was
-          dropped to do it; the empty middle of each row is what paid for it.
-
-          Sticky because of what stepping through results does — it scrolls the
-          page to a room that may be forty rows down, and a stepper that
-          travelled with the page would be off screen the instant it did its
-          job. Sticking the whole strip rather than the search alone also keeps
-          the legend and the month readable against a chart scrolled far from
-          its header. */}
-      <div ref={stickySentinel} aria-hidden="true" />
-      <div
-        className={`tape-controls${searchStuck ? ' tape-controls--stuck' : ''}`}
-      >
+          It was three stacked rows each sparse across its own line, which
+          cost about a hundred and seventy pixels of chrome before the first
+          room. They stay folded into two here regardless: the month
+          stepper, the search field and the actions share the top line, and
+          the legend shares the second with whatever the search has found. */}
+      <div className="tape-controls">
       <div className="bookings-panel__toolbar">
         <div className="tape-nav">
           {/* One control, not three loose buttons: arrows flank the month they
@@ -3702,80 +3688,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
           </div>
         </div>
 
-        {/* The status chips share the top row with the month stepper: the
-            colour legend for the chart belongs beside the control that moves
-            through it. Wrapped in one container so they wrap and space as a
-            group rather than each chip being its own child of the toolbar. */}
-        <div className="bookings-panel__toolbar-chips">
-          <span className="tape-legend__item">
-            <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
-          </span>
-          {/* Only where Housekeeping is on, and so has something to say. */}
-          {notReady && (
-            <span className="tape-legend__item" title="Needs cleaning, being cleaned or under repair today">
-              <i className="tape-legend__swatch tape-legend__swatch--notready" />Not ready
-            </span>
-          )}
-          {LEGEND_LINKS.map((item) => (
-            <button
-              key={item.status}
-              type="button"
-              className="tape-legend__item tape-legend__item--link"
-              onClick={() => onShowRegister?.(item.status)}
-              title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
-            >
-              <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
-              {item.label}
-            </button>
-          ))}
-          {/* Draft lands in the register beside the other three rather than in
-              the toolbar's modal. The register carries a Draft cut of its own,
-              so following the yellow gets the desk the same kind of page the red
-              and the blue do — a filtered list it can search and sort. The modal
-              stays where it is, on the toolbar button, for a quick look without
-              leaving the chart. */}
-          <button
-            type="button"
-            className="tape-legend__item tape-legend__item--link"
-            onClick={() => onShowRegister?.('DRAFT')}
-            title="Show drafts in Booking Details"
-          >
-            <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
-          </button>
-        </div>
-
-        <div className="bookings-panel__toolbar-actions">
-          {/* Drafts that name a room and dates are on the chart already; this
-              is how the rest are reached, and how a desk sees at a glance that
-              anything is pending at all.
-
-              Always here, even at zero. It used to appear only once something
-              was parked, which made it a control nobody could learn: it was
-              absent exactly when a desk had no reason to have met it yet, and
-              then arrived unannounced in a toolbar it had never been part of.
-              Standing in one place makes it somewhere to go and look. */}
-          <button
-            type="button"
-            className={`bookings-panel__draft-chip${
-              drafts.length === 0 ? ' bookings-panel__draft-chip--empty' : ''
-            }`}
-            onClick={() => setShowDrafts(true)}
-          >
-            <DraftIcon />
-            {drafts.length === 0
-              ? 'No Drafts'
-              : `${drafts.length} Draft${drafts.length === 1 ? '' : 's'}`}
-          </button>
-          <button type="button" className="btn-accent" onClick={() => openNewBooking()}>
-            + New booking
-          </button>
-        </div>
-      </div>
-
-      {/* Search and the category jumps share the second row: both are ways of
-          finding a place on the chart to land, rather than a way of reading
-          the colours already on it. */}
-      <div className="tape-legend">
+        {/* Search shares the top row with the stepper and the actions now —
+            date, find, and act are all ways of getting somewhere on the
+            chart, so they read as one row rather than search sitting apart
+            on its own line. */}
         <div className={`tape-search${searchHits.length > 0 ? ' tape-search--found' : ''}`}>
           <div className="tape-search__box">
           <svg
@@ -3900,43 +3816,116 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         )}
         </div>
 
-        {/* One chip per grade of room, in the same shape as the legend's, so the
-            strip reads as one row of ways into the chart: the status chips cut it
-            by colour, these jump it by category.
+        <div className="bookings-panel__toolbar-actions">
+          {/* Drafts that name a room and dates are on the chart already; this
+              is how the rest are reached, and how a desk sees at a glance that
+              anything is pending at all.
 
-            Only worth showing when there is somewhere to jump to — with a single
-            category the chip would scroll to the card already filling the screen.
-            The sold figure rides along because it is the number the desk opens
-            this screen for, and it saves them the trip to read it. */}
-        {!tapeError && categorySections.length > 1 && (
-          <div className="tape-cats" role="tablist" aria-label="Jump to a room category">
-            {categorySections.map((section) => {
-              const stats = categoryStats.get(section.categoryName);
-              const active = activeCategory === section.categoryName;
-              return (
-                <button
-                  key={section.categoryName}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
-                  onClick={() => jumpToCategory(section.categoryName)}
-                  title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
-                    section.rooms.length === 1 ? '' : 's'
-                  }`}
-                >
-                  {section.categoryName}
-                  <span className="tape-cats__count">{section.rooms.length}</span>
-                  {stats && <span className="tape-cats__sold">{stats.percent}%</span>}
-                </button>
-              );
-            })}
-          </div>
+              Always here, even at zero. It used to appear only once something
+              was parked, which made it a control nobody could learn: it was
+              absent exactly when a desk had no reason to have met it yet, and
+              then arrived unannounced in a toolbar it had never been part of.
+              Standing in one place makes it somewhere to go and look. */}
+          <button
+            type="button"
+            className={`bookings-panel__draft-chip${
+              drafts.length === 0 ? ' bookings-panel__draft-chip--empty' : ''
+            }`}
+            onClick={() => setShowDrafts(true)}
+          >
+            <DraftIcon />
+            {drafts.length === 0
+              ? 'No Drafts'
+              : `${drafts.length} Draft${drafts.length === 1 ? '' : 's'}`}
+          </button>
+          <button type="button" className="btn-accent" onClick={() => openNewBooking()}>
+            + New booking
+          </button>
+        </div>
+      </div>
+
+      {/* The colour key, on its own row now rather than sharing the toolbar
+          with the stepper — the window's overall sold figure rides along on
+          the far end, since it's the number the desk opens this screen for. */}
+      <div className="tape-legend">
+        <div className="bookings-panel__toolbar-chips">
+          <span className="tape-legend__item">
+            <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
+          </span>
+          {/* Only where Housekeeping is on, and so has something to say. */}
+          {notReady && (
+            <span className="tape-legend__item" title="Needs cleaning, being cleaned or under repair today">
+              <i className="tape-legend__swatch tape-legend__swatch--notready" />Not ready
+            </span>
+          )}
+          {LEGEND_LINKS.map((item) => (
+            <button
+              key={item.status}
+              type="button"
+              className="tape-legend__item tape-legend__item--link"
+              onClick={() => onShowRegister?.(item.status)}
+              title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
+            >
+              <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
+              {item.label}
+            </button>
+          ))}
+          {/* Draft lands in the register beside the other three rather than in
+              the toolbar's modal. The register carries a Draft cut of its own,
+              so following the yellow gets the desk the same kind of page the red
+              and the blue do — a filtered list it can search and sort. The modal
+              stays where it is, on the toolbar button, for a quick look without
+              leaving the chart. */}
+          <button
+            type="button"
+            className="tape-legend__item tape-legend__item--link"
+            onClick={() => onShowRegister?.('DRAFT')}
+            title="Show drafts in Booking Details"
+          >
+            <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
+          </button>
+        </div>
+
+        {overallStats && (
+          <span className="tape-legend__sold">{overallStats.percent}% sold</span>
         )}
+      </div>
 
-        <span className="tape-legend__hint">Hover any tile to see the guest · click to open</span>
       </div>
-      </div>
+
+      {/* The category jump row — out of .tape-controls and sticky on its own
+          now, so only this row (not the stepper/search/legend above it)
+          stays pinned under the navbar while the rest scrolls normally.
+          One chip per grade of room; the status chips above cut the chart
+          by colour, these jump it by category.
+
+          Only worth showing when there is somewhere to jump to — with a
+          single category the chip would scroll to the card already filling
+          the screen. */}
+      {!tapeError && categorySections.length > 1 && (
+        <div className="tape-cats tape-cats--sticky" role="tablist" aria-label="Jump to a room category">
+          {categorySections.map((section) => {
+            const stats = categoryStats.get(section.categoryName);
+            const active = activeCategory === section.categoryName;
+            return (
+              <button
+                key={section.categoryName}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
+                onClick={() => jumpToCategory(section.categoryName)}
+                title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
+                  section.rooms.length === 1 ? '' : 's'
+                }`}
+              >
+                {section.categoryName}
+                <span className="tape-cats__count">{section.rooms.length}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {tapeError && (
         <div className="dash-card">

@@ -1,3 +1,24 @@
+/* Zoomed out 10% — the same effect as the browser's own Ctrl/Cmd-minus,
+   scoped to just this page. The tape chart is the widest, busiest screen in
+   the app (a room per row, a date per column, months of tiles), and this
+   buys it real breathing room before a wide date range needs its own
+   horizontal scroll. .bookings-panel__modal/__backdrop (position: fixed)
+   live inside this same zoomed box, so they scale down with it too rather
+   than rendering at native size against zoomed-out content — worth a check
+   if a booking dialog ever looks mis-sized after this. */
+.bookings-panel {
+  zoom: 0.9;
+  /* The navbar's own dark navy (#0B2E5C, see OwnerDashboard.css) — same hue
+     and saturation, lightness raised further this time (~20% to ~38%), so
+     this page's "+ New booking" button, its active category chip, and its
+     focus rings read as a clearly lighter version of the navbar's colour.
+     Scoped to just this page rather than changed globally: everything here
+     that reads var(--brand) inherits whatever this subtree redefines it
+     to, without touching the navbar/sidebar themselves. */
+  --brand: #1457AD;
+  --brand-ink: #0B2E5C;
+}
+
 .bookings-panel__toolbar {
   display: flex;
   align-items: center;

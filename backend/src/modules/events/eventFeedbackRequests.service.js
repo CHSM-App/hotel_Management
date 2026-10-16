@@ -101,7 +101,7 @@ async function sendDueEventFeedbackRequests() {
     // to serve an organiser instead of a guest.
     const booking = { id: row.id, guestName: row.organiser_name, guestPhone: row.organiser_phone };
     const lodge = { name: row.lodge_name, phone: row.lodge_phone, whatsappNumber: row.lodge_whatsapp_number };
-    const link = `${publicBaseUrl()}/public/feedback/${token}`;
+    const link = `${publicBaseUrl()}/feedback/${token}`;
 
     const outcome = await feedbackRequest.notifyFeedbackRequest(row.lodge_id, booking, lodge, link, 'event');
     if (outcome.status === 'sent') sent += 1;

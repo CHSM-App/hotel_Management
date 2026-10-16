@@ -313,6 +313,10 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
                     {lodge.heroImageUrl
                       ? 'Shown at the top of your public page.'
                       : 'Not set — the public page uses your first room photo instead.'}
+                    {' '}
+                    Best as a wide landscape photo, around 1920×1080px (16:9) — it fills the
+                    full width and height of the opening screen, so a narrow or portrait photo
+                    will be cropped more.
                   </span>
                 </div>
                 {lodge.heroImageUrl && (
