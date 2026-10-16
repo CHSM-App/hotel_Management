@@ -461,17 +461,35 @@ class ChartRoom {
   TapeChartBooking? stayOn(DateTime day) {
     final today = _today();
     TapeChartBooking? found;
-    for (final b in stays) {
-      final inDate = DateTime.tryParse(b.checkInDate ?? '');
-      var outDate = DateTime.tryParse(b.checkOutDate ?? '');
-      if (inDate == null || outDate == null) continue;
-      if (b.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
+    for (final s in _spans) {
+      var outDate = s.out;
+      if (s.booking.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
         outDate = today;
       }
-      if (!day.isBefore(inDate) && day.isBefore(outDate)) found = b;
+      if (!day.isBefore(s.inn) && day.isBefore(outDate)) found = s.booking;
     }
     return found;
   }
+
+  /// The stays' dates parsed once per [ChartRoom] instead of on every call —
+  /// each tile asks [stayOn] several times a build, so re-parsing the ISO
+  /// strings each time was most of the cost of drawing a row.
+  static final _spanCache = Expando<List<_Span>>();
+  static final _draftSpanCache = Expando<List<_DraftSpan>>();
+
+  List<_Span> get _spans => _spanCache[this] ??= [
+    for (final b in stays)
+      if (DateTime.tryParse(b.checkInDate ?? '') case final inn?)
+        if (DateTime.tryParse(b.checkOutDate ?? '') case final out?)
+          _Span(b, inn, out),
+  ];
+
+  List<_DraftSpan> get _draftSpans => _draftSpanCache[this] ??= [
+    for (final d in drafts)
+      if (DateTime.tryParse(d.checkInDate ?? '') case final inn?)
+        if (DateTime.tryParse(d.checkOutDate ?? '') case final out?)
+          _DraftSpan(d, inn, out),
+  ];
 
   /// Every stay holding a bed on [day] — unlike [stayOn] (which picks one
   /// "winner" the way an ordinary room's single occupant does), a dormitory
@@ -480,12 +498,12 @@ class ChartRoom {
   List<TapeChartBooking> bedStaysOn(DateTime day) {
     final today = _today();
     final result = <TapeChartBooking>[];
-    for (final b in stays) {
-      final inDate = DateTime.tryParse(b.checkInDate ?? '');
-      var outDate = DateTime.tryParse(b.checkOutDate ?? '');
-      if (inDate == null || outDate == null) continue;
-      if (b.status == 'CHECKED_OUT' && outDate.isAfter(today)) outDate = today;
-      if (!day.isBefore(inDate) && day.isBefore(outDate)) result.add(b);
+    for (final s in _spans) {
+      var outDate = s.out;
+      if (s.booking.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
+        outDate = today;
+      }
+      if (!day.isBefore(s.inn) && day.isBefore(outDate)) result.add(s.booking);
     }
     return result;
   }
@@ -523,11 +541,8 @@ class ChartRoom {
   /// reads as that booking, never as the draft underneath it.
   TapeChartDraft? draftOn(DateTime day) {
     if (stayOn(day) != null) return null;
-    for (final d in drafts) {
-      final inDate = DateTime.tryParse(d.checkInDate ?? '');
-      final outDate = DateTime.tryParse(d.checkOutDate ?? '');
-      if (inDate == null || outDate == null) continue;
-      if (!day.isBefore(inDate) && day.isBefore(outDate)) return d;
+    for (final s in _draftSpans) {
+      if (!day.isBefore(s.inn) && day.isBefore(s.out)) return s.draft;
     }
     return null;
   }
@@ -536,6 +551,20 @@ class ChartRoom {
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day);
   }
+}
+
+class _Span {
+  final TapeChartBooking booking;
+  final DateTime inn;
+  final DateTime out;
+  const _Span(this.booking, this.inn, this.out);
+}
+
+class _DraftSpan {
+  final TapeChartDraft draft;
+  final DateTime inn;
+  final DateTime out;
+  const _DraftSpan(this.draft, this.inn, this.out);
 }
 
 /// How full a dormitory room is on one night — [occupied] beds out of
@@ -1157,18 +1186,20 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// already continuing one — reopening a draft and saving it again should
   /// not lay down a second copy of the same half-finished booking.
   Future<bool> saveDraft(DraftForm form) async {
+    // Deliberately not `submitting`: that flag drives the main "Add and check
+    // in" button's spinner, which made saving a draft look like a check-in
+    // in progress. The screen tracks its own in-flight flag for this.
     if (state.submitting) return false;
-    state = state.copyWith(submitting: true, clearError: true);
+    state = state.copyWith(clearError: true);
     try {
       final saved = state.draftId == null
           ? await usecase.createDraft(form.toJson())
           : await usecase.updateDraft(state.draftId!, form.toJson());
-      state = state.copyWith(submitting: false, draftId: saved.id);
+      state = state.copyWith(draftId: saved.id);
       await loadChart();
       return true;
     } catch (e) {
       state = state.copyWith(
-        submitting: false,
         error: messageFor(e),
         errorField: fieldFor(e),
       );

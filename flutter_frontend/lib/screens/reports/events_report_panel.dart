@@ -20,7 +20,7 @@ class EventsReportPanel extends ConsumerWidget {
     final analytics = ref.watch(reportsViewModelProvider).analyticsOverview?.valueOrNull;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
+      padding: const EdgeInsets.fromLTRB(AppTheme.s12, 0, AppTheme.s12, AppTheme.s16),
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         switch (async) {
@@ -57,7 +57,7 @@ class _Loaded extends StatelessWidget {
             color: AppTheme.checkout,
             formatValue: (v) => '${v.round()} booking${v.round() == 1 ? '' : 's'}',
           ),
-          const SizedBox(height: AppTheme.s16),
+          const SizedBox(height: AppTheme.s8),
         ],
         StatGrid(
           items: [
@@ -69,7 +69,7 @@ class _Loaded extends StatelessWidget {
             StatItem(label: 'Advance held', value: formatPrice(s.totals.advanceAmount)),
           ],
         ),
-        const SizedBox(height: AppTheme.s16),
+        const SizedBox(height: AppTheme.s8),
         CollapsibleRegister(
           title: 'Functions & events',
           child: report.events.isEmpty

@@ -691,9 +691,11 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   ///
   /// Re-saving a draft that was opened from the tape chart's own yellow tile
   /// updates that same row rather than parking a second copy of it.
+  bool _savingDraft = false;
+
   Future<void> _saveDraft() async {
     final state = ref.read(bookingViewModelProvider);
-    if (state.submitting) return;
+    if (state.submitting || _savingDraft) return;
     final form = _draftForm();
     final hasContent =
         _name.text.trim().isNotEmpty ||
@@ -706,10 +708,12 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       _say('There is nothing to save yet — fill in a detail or two first.');
       return;
     }
+    setState(() => _savingDraft = true);
     final ok = await ref
         .read(bookingViewModelProvider.notifier)
         .saveDraft(form);
     if (!mounted) return;
+    setState(() => _savingDraft = false);
     if (!ok) {
       _say(
         ref.read(bookingViewModelProvider).error ??
@@ -1480,7 +1484,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                         horizontal: AppTheme.s8,
                         vertical: AppTheme.s4,
                       ),
-                      onPressed: state.submitting ? null : _saveDraft,
+                      onPressed: (state.submitting || _savingDraft)
+                          ? null
+                          : _saveDraft,
                       outlineColor: AppTheme.accent,
                       child: Text(
                         state.draftId != null ? 'Update draft' : 'Save draft',
@@ -1496,7 +1502,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
               // there is a room to save against. The server holds a
               // lock that stops two devices booking one room; nothing
               // stops one device asking twice.
-              onPressed: (state.submitting || state.room == null)
+              onPressed: (state.submitting || _savingDraft || state.room == null)
                   ? null
                   : _submit,
               loading: state.submitting,

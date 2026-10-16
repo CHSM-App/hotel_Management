@@ -45,13 +45,18 @@ class StatItem {
 class StatGrid extends StatelessWidget {
   final List<StatItem> items;
 
-  const StatGrid({super.key, required this.items});
+  final int columns;
+  final bool compact;
+
+  const StatGrid({super.key, required this.items, this.columns = 2, this.compact = false});
 
   Widget _buildCard(BuildContext context, StatItem item) {
     return NeuCard(
       radius: AppTheme.rMedium,
       shadow: AppTheme.subtle,
-      padding: const EdgeInsets.all(AppTheme.s12),
+      padding: compact
+          ? const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 6)
+          : const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -61,10 +66,10 @@ class StatGrid extends StatelessWidget {
             style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: compact ? 2 : 4),
           Text(
             item.value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            style: (compact ? Theme.of(context).textTheme.titleMedium : Theme.of(context).textTheme.titleLarge)?.copyWith(
               color: item.accent ? AppTheme.accent : AppTheme.heading,
             ),
             overflow: TextOverflow.ellipsis,
@@ -86,23 +91,23 @@ class StatGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rows = <Widget>[];
-    for (var i = 0; i < items.length; i += 2) {
-      final hasSecond = i + 1 < items.length;
+    for (var i = 0; i < items.length; i += columns) {
       rows.add(
         IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(child: _buildCard(context, items[i])),
-              if (hasSecond) ...[
-                const SizedBox(width: AppTheme.s8),
-                Expanded(child: _buildCard(context, items[i + 1])),
+              for (var c = 0; c < columns; c++) ...[
+                if (c > 0) const SizedBox(width: AppTheme.s8),
+                Expanded(
+                  child: i + c < items.length ? _buildCard(context, items[i + c]) : const SizedBox.shrink(),
+                ),
               ],
             ],
           ),
         ),
       );
-      if (i + 2 < items.length) rows.add(const SizedBox(height: AppTheme.s8));
+      if (i + columns < items.length) rows.add(const SizedBox(height: AppTheme.s8));
     }
     return Column(children: rows);
   }

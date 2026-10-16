@@ -712,6 +712,9 @@ class NeuField extends StatefulWidget {
 }
 
 class _NeuFieldState extends State<NeuField> {
+  // Phone fields are always digits-only and capped at 10 unless a maxLength is given.
+  bool get _isPhone => widget.keyboardType == TextInputType.phone;
+
   FocusNode? _ownNode;
   bool _focused = false;
 
@@ -809,8 +812,10 @@ class _NeuFieldState extends State<NeuField> {
                       ? const [_UppercaseFormatter()]
                       : widget.forceCapitalizeWords
                           ? const [_CapitalizeWordsFormatter()]
-                          : null,
-                  maxLength: widget.maxLength,
+                          : _isPhone
+                              ? [FilteringTextInputFormatter.digitsOnly]
+                              : null,
+                  maxLength: widget.maxLength ?? (_isPhone ? 10 : null),
                   readOnly: widget.readOnly,
                   onTap: widget.onTap,
                   onChanged: widget.onChanged,

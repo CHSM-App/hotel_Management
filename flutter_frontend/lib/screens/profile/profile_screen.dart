@@ -298,10 +298,8 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   static Future<void> _openChangePassword(BuildContext context, WidgetRef ref) {
-    return showModalBottomSheet(
+    return showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (_) => const _ChangePasswordSheet(),
     );
   }
@@ -323,10 +321,52 @@ class _Sheet extends StatelessWidget {
   final String title;
   final Widget child;
 
-  const _Sheet({required this.title, required this.child});
+  /// Shows as a centred popup dialog instead of a bottom-anchored sheet.
+  final bool dialog;
+
+  const _Sheet({required this.title, required this.child, this.dialog = false});
 
   @override
   Widget build(BuildContext context) {
+    if (dialog) {
+      return Dialog(
+        backgroundColor: AppTheme.bg,
+        insetPadding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rLarge)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppTheme.s24, AppTheme.s16, AppTheme.s8, 0),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.s24,
+                    AppTheme.s16,
+                    AppTheme.s24,
+                    AppTheme.s24,
+                  ),
+                  child: child,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final maxHeight = MediaQuery.of(context).size.height * 0.9;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -1552,6 +1592,7 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
   Widget build(BuildContext context) {
     return _Sheet(
       title: 'Change password',
+      dialog: true,
       child: _codeSent ? _codeStep() : _detailsStep(),
     );
   }
