@@ -260,7 +260,20 @@ class _IssuesTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < issues.length; i++) _IssueTableRow(issue: issues[i], shaded: i.isOdd, anyClosed: anyClosed, busy: busyIssueKey == issues[i].key, onClose: () => onClose(issues[i])),
+                // Only the rows scroll vertically, so the header above stays
+                // pinned however long the list gets.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+                  ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (var i = 0; i < issues.length; i++) _IssueTableRow(issue: issues[i], shaded: i.isOdd, anyClosed: anyClosed, busy: busyIssueKey == issues[i].key, onClose: () => onClose(issues[i])),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

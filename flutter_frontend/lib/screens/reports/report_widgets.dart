@@ -1238,21 +1238,34 @@ class ReportDataTable extends StatelessWidget {
                   columns.map((c) => c.align).toList(),
                   header: true,
                 ),
-                for (var i = 0; i < rows.length; i++)
-                  _row(
-                    context,
-                    rows[i],
-                    columns.map((c) => c.align).toList(),
-                    shaded: i.isOdd,
+                // Only the rows scroll vertically, so the header above stays
+                // pinned however long the list gets.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
                   ),
-                if (totals != null)
-                  _row(
-                    context,
-                    totals!,
-                    columns.map((c) => c.align).toList(),
-                    bold: true,
-                    border: true,
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (var i = 0; i < rows.length; i++)
+                        _row(
+                          context,
+                          rows[i],
+                          columns.map((c) => c.align).toList(),
+                          shaded: i.isOdd,
+                        ),
+                      if (totals != null)
+                        _row(
+                          context,
+                          totals!,
+                          columns.map((c) => c.align).toList(),
+                          bold: true,
+                          border: true,
+                        ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),

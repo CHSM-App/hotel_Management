@@ -380,13 +380,24 @@ class EventReadyToBillTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < events.length; i++)
-                  _EventReadyToBillRow(
-                    event: events[i],
-                    shaded: i.isOdd,
-                    onBill: () => onBill(events[i]),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
                   ),
-                _EventReadyToBillFooter(events: events),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (var i = 0; i < events.length; i++)
+                        _EventReadyToBillRow(
+                          event: events[i],
+                          shaded: i.isOdd,
+                          onBill: () => onBill(events[i]),
+                        ),
+                      _EventReadyToBillFooter(events: events),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

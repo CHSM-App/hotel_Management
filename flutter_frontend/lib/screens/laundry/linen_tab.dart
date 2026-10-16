@@ -455,15 +455,28 @@ class _LinenSpreadsheet extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < items.length; i++)
-                  _SpreadsheetRow(
-                    item: items[i],
-                    shaded: i.isOdd,
-                    managedInAssets: managedInAssets,
-                    onEdit: () => onEdit(items[i]),
-                    onLoss: () => onLoss(items[i]),
-                    onHide: () => onHide(items[i]),
+                // Only the rows scroll vertically, so the header above stays
+                // pinned however long the list gets.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
                   ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (var i = 0; i < items.length; i++)
+                        _SpreadsheetRow(
+                          item: items[i],
+                          shaded: i.isOdd,
+                          managedInAssets: managedInAssets,
+                          onEdit: () => onEdit(items[i]),
+                          onLoss: () => onLoss(items[i]),
+                          onHide: () => onHide(items[i]),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -976,8 +989,21 @@ class _HistoryTableState extends State<_HistoryTable> {
                   ],
                 ),
               ),
-              for (var i = 0; i < movements.length; i++)
-                _HistoryRow(movement: movements[i], shaded: i.isOdd),
+              // Only the rows scroll vertically, so the header above stays
+              // pinned however long the list gets.
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: [
+                    for (var i = 0; i < movements.length; i++)
+                      _HistoryRow(movement: movements[i], shaded: i.isOdd),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

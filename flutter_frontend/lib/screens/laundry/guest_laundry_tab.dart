@@ -433,15 +433,28 @@ class _OrderTableState extends State<_OrderTable> {
                     ],
                   ),
                 ),
-                for (var i = 0; i < orders.length; i++)
-                  _OrderTableRow(
-                    order: orders[i],
-                    shaded: i.isOdd,
-                    busy: widget.busy,
-                    onReceive: () => widget.onReceive(orders[i]),
-                    onDeliver: () => widget.onDeliver(orders[i]),
-                    onCancel: () => widget.onCancel(orders[i]),
+                // Only the rows scroll vertically, so the header above stays
+                // pinned however long the list gets.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
                   ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (var i = 0; i < orders.length; i++)
+                        _OrderTableRow(
+                          order: orders[i],
+                          shaded: i.isOdd,
+                          busy: widget.busy,
+                          onReceive: () => widget.onReceive(orders[i]),
+                          onDeliver: () => widget.onDeliver(orders[i]),
+                          onCancel: () => widget.onCancel(orders[i]),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

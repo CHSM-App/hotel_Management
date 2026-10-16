@@ -467,17 +467,30 @@ class _RoomsTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < rooms.length; i++)
-                  _RoomTableRow(
-                    room: rooms[i],
-                    now: now,
-                    shaded: i.isOdd,
-                    busy: busyRoomId == rooms[i].id,
-                    onStart: () => onStart(rooms[i]),
-                    onFinish: () => onFinish(rooms[i]),
-                    onBackInService: () => onBackInService(rooms[i]),
-                    menu: _menuOf(rooms[i], onRelease: () => onRelease(rooms[i]), onMarkDirty: () => onMarkDirty(rooms[i]), onStart: () => onStart(rooms[i]), onCloseForRepair: () => onCloseForRepair(rooms[i])),
+                // Only the rows scroll vertically, so the header above stays
+                // pinned however long the list gets.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
                   ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (var i = 0; i < rooms.length; i++)
+                        _RoomTableRow(
+                          room: rooms[i],
+                          now: now,
+                          shaded: i.isOdd,
+                          busy: busyRoomId == rooms[i].id,
+                          onStart: () => onStart(rooms[i]),
+                          onFinish: () => onFinish(rooms[i]),
+                          onBackInService: () => onBackInService(rooms[i]),
+                          menu: _menuOf(rooms[i], onRelease: () => onRelease(rooms[i]), onMarkDirty: () => onMarkDirty(rooms[i]), onStart: () => onStart(rooms[i]), onCloseForRepair: () => onCloseForRepair(rooms[i])),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

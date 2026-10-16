@@ -2144,16 +2144,31 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _sheetRow(header: true, cells: headerCells),
-                for (var i = 0; i < widget.orders.length; i++) ...[
-                  _sheetRow(
-                    shaded: i.isOdd,
-                    accent: _OrderCard._statusColour(widget.orders[i].status),
-                    cells: _rowCells(context, widget.orders[i]),
+                // Only the rows scroll vertically, so the header above stays
+                // pinned however long the list gets.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
                   ),
-                  if (_open.contains(widget.orders[i].id))
-                    _dishesExpanded(widget.orders[i], shaded: i.isOdd),
-                ],
-                _sheetFooter(),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (var i = 0; i < widget.orders.length; i++) ...[
+                        _sheetRow(
+                          shaded: i.isOdd,
+                          accent: _OrderCard._statusColour(
+                            widget.orders[i].status,
+                          ),
+                          cells: _rowCells(context, widget.orders[i]),
+                        ),
+                        if (_open.contains(widget.orders[i].id))
+                          _dishesExpanded(widget.orders[i], shaded: i.isOdd),
+                      ],
+                      _sheetFooter(),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

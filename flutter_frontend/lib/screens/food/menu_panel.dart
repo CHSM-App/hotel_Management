@@ -1051,13 +1051,29 @@ class _DishTable extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const _DishTableHeader(),
-                  for (var i = 0; i < items.length; i++)
-                    _DishTableRow(
-                      item: items[i],
-                      sections: sections,
-                      striped: i.isOdd,
-                      isLast: i == items.length - 1,
+                  // Only the rows scroll vertically, so the header above stays
+                  // pinned however long the list gets.
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(context).height * 0.6,
                     ),
+                    child: SizedBox(
+                      width: _rowWidth + AppTheme.s12 * 2,
+                      child: ListView(
+                        shrinkWrap: true,
+                        padding: EdgeInsets.zero,
+                        children: [
+                          for (var i = 0; i < items.length; i++)
+                            _DishTableRow(
+                              item: items[i],
+                              sections: sections,
+                              striped: i.isOdd,
+                              isLast: i == items.length - 1,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

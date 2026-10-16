@@ -624,7 +624,20 @@ class _IncomeTableState extends State<_IncomeTable> {
                     ],
                   ),
                 ),
-                for (var i = 0; i < rows.length; i++) _IncomeTableRow(income: rows[i], shaded: i.isOdd, parent: widget),
+                // Only the rows scroll vertically, so the header above stays
+                // pinned however long the list gets.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+                  ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (var i = 0; i < rows.length; i++) _IncomeTableRow(income: rows[i], shaded: i.isOdd, parent: widget),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
