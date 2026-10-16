@@ -213,6 +213,13 @@ String _leavesOf(HousekeepingRoom room) => room.isVenue
 String _arrivingLabelOf(HousekeepingRoom room) =>
     room.isVenue ? 'Function today${room.nextEventAt != null ? ' ${timeLabel(room.nextEventAt)}' : ''}' : 'Guest arriving today';
 
+IconData _menuIcon(String label) => switch (label) {
+  'Stop without finishing' => Icons.stop_circle_outlined,
+  'Needs cleaning' => Icons.cleaning_services_outlined,
+  'Close for repair' => Icons.build_circle_outlined,
+  _ => Icons.room_service_outlined,
+};
+
 List<(String, VoidCallback)> _menuOf(
   HousekeepingRoom room, {
   required VoidCallback onRelease,
@@ -376,17 +383,13 @@ class _RoomCard extends StatelessWidget {
                   else
                     const Spacer(),
                   if (menu.isNotEmpty)
-                    PopupMenuButton<int>(
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
-                      onSelected: (i) => menu[i].$2(),
-                      elevation: 10,
-                      color: AppTheme.card,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-                      itemBuilder: (context) => [
-                        for (var i = 0; i < menu.length; i++) PopupMenuItem(value: i, child: Text(menu[i].$1, style: const TextStyle(fontSize: 13))),
-                      ],
-                    ),
+                        NeuActionMenu<int>(
+                          actions: [
+                            for (var i = 0; i < menu.length; i++)
+                              NeuMenuAction(i, _menuIcon(menu[i].$1), menu[i].$1, danger: menu[i].$1 == 'Close for repair'),
+                          ],
+                          onSelected: (i) => menu[i].$2(),
+                        ),
                 ],
               ),
             ),
@@ -555,17 +558,13 @@ class _RoomTableRow extends StatelessWidget {
                     else if (room.status == 'OUT_OF_ORDER')
                       CompactActionButton(label: 'Back in service', color: tone, onTap: onBackInService),
                     if (menu.isNotEmpty)
-                      PopupMenuButton<int>(
-                        padding: EdgeInsets.zero,
+                      NeuActionMenu<int>(
                         enabled: !busy,
-                        icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
-                        onSelected: (i) => menu[i].$2(),
-                        elevation: 10,
-                        color: AppTheme.card,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-                        itemBuilder: (context) => [
-                          for (var i = 0; i < menu.length; i++) PopupMenuItem(value: i, child: Text(menu[i].$1, style: const TextStyle(fontSize: 13))),
+                        actions: [
+                          for (var i = 0; i < menu.length; i++)
+                            NeuMenuAction(i, _menuIcon(menu[i].$1), menu[i].$1, danger: menu[i].$1 == 'Close for repair'),
                         ],
+                        onSelected: (i) => menu[i].$2(),
                       ),
                   ],
                 ),

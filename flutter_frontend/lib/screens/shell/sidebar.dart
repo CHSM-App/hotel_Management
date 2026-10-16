@@ -226,74 +226,83 @@ class _SidebarNavState extends State<_SidebarNav> {
         if (features.any((f) => f.group == g)) g,
     ];
 
-    return ListView(
+    // A SingleChildScrollView + Column rather than a lazy ListView: every row
+    // must exist for [_scrollToActive] to find its context, and a group far
+    // down (Reports & Analytics) is never built by a ListView until scrolled to.
+    return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
         vertical: AppTheme.s16 + 2,
         horizontal: collapsed ? AppTheme.s8 : AppTheme.s12 + 2,
       ),
-      children: [
-        if (ungrouped.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s16 + 6),
-            child: Column(
-              children: [for (final f in ungrouped) _item(f)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (ungrouped.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppTheme.s16 + 6),
+              child: Column(children: [for (final f in ungrouped) _item(f)]),
             ),
-          ),
-        for (int i = 0; i < groups.length; i++)
-          Padding(
-            padding: EdgeInsets.only(
-              bottom: i == groups.length - 1 ? 0 : AppTheme.s16 + 6,
-            ),
-            child: Column(
-              children: [
-                // Collapsed mode has no room for a group label, so rows sit
-                // flat with a hairline divider between clusters instead —
-                // the grouping still reads, just without the text that
-                // would otherwise wrap or clip at 72px.
-                if (collapsed) ...[
-                  if (i > 0)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
-                      child: Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: AppTheme.sidebarBorder,
+          for (int i = 0; i < groups.length; i++)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: i == groups.length - 1 ? 0 : AppTheme.s16 + 6,
+              ),
+              child: Column(
+                children: [
+                  // Collapsed mode has no room for a group label, so rows sit
+                  // flat with a hairline divider between clusters instead —
+                  // the grouping still reads, just without the text that
+                  // would otherwise wrap or clip at 72px.
+                  if (collapsed) ...[
+                    if (i > 0)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
+                        child: Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: AppTheme.sidebarBorder,
+                        ),
                       ),
-                    ),
-                  for (final f in features.where((f) => f.group == groups[i]))
-                    _item(f),
-                ] else ...[
-                  _GroupHeader(
-                    title: groups[i],
-                    expanded: _groupOpen(groups[i], activeGroup),
-                    onTap: () => widget.onToggleGroup(groups[i]),
-                    // Mirrors the web rail: the group-level badge only shows
-                    // while the group is collapsed — once it's open, the
-                    // Housekeeping row itself carries the count instead.
-                    badgeCount: groups[i] == 'Housekeeping' &&
-                            !_groupOpen(groups[i], activeGroup)
-                        ? widget.issueCount
-                        : 0,
-                  ),
-                  if (_groupOpen(groups[i], activeGroup))
-                    for (final f in features.where(
-                      (f) => f.group == groups[i],
-                    ))
+                    for (final f in features.where((f) => f.group == groups[i]))
                       _item(f),
+                  ] else ...[
+                    _GroupHeader(
+                      title: groups[i],
+                      expanded: _groupOpen(groups[i], activeGroup),
+                      onTap: () => widget.onToggleGroup(groups[i]),
+                      // Mirrors the web rail: the group-level badge only shows
+                      // while the group is collapsed — once it's open, the
+                      // Housekeeping row itself carries the count instead.
+                      badgeCount:
+                          groups[i] == 'Housekeeping' &&
+                              !_groupOpen(groups[i], activeGroup)
+                          ? widget.issueCount
+                          : 0,
+                    ),
+                    if (_groupOpen(groups[i], activeGroup))
+                      for (final f in features.where(
+                        (f) => f.group == groups[i],
+                      ))
+                        _item(f),
+                  ],
                 ],
-              ],
+              ),
+            ),
+          // Below every group, its own row rather than folded into any of
+          // them — Settings isn't gated by a permission the way the groups
+          // above it are, so it never collapses with one and never needs its
+          // own header.
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
+            child: const Divider(
+              height: 1,
+              thickness: 1,
+              color: AppTheme.sidebarBorder,
             ),
           ),
-        // Below every group, its own row rather than folded into any of
-        // them — Settings isn't gated by a permission the way the groups
-        // above it are, so it never collapses with one and never needs its
-        // own header.
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-          child: const Divider(height: 1, thickness: 1, color: AppTheme.sidebarBorder),
-        ),
-        _SettingsNavRow(collapsed: collapsed, onTap: widget.onProfileTap),
-      ],
+          _SettingsNavRow(collapsed: collapsed, onTap: widget.onProfileTap),
+        ],
+      ),
     );
   }
 }
@@ -551,7 +560,9 @@ class _SidebarFooter extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppTheme.rMedium),
           hoverColor: AppTheme.danger.withValues(alpha: 0.08),
           onTap: enabled ? onLogoutTap : null,
-          child: collapsed ? Tooltip(message: 'Sign out', child: content) : content,
+          child: collapsed
+              ? Tooltip(message: 'Sign out', child: content)
+              : content,
         ),
       ),
     );
@@ -631,7 +642,9 @@ class _SidebarItem extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: selected ? AppTheme.sidebarBrandInk : AppTheme.sidebarText,
+                    color: selected
+                        ? AppTheme.sidebarBrandInk
+                        : AppTheme.sidebarText,
                   ),
                 ),
               ),
@@ -647,9 +660,7 @@ class _SidebarItem extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
-        hoverColor: selected
-            ? AppTheme.sidebarBrandWash
-            : AppTheme.bg,
+        hoverColor: selected ? AppTheme.sidebarBrandWash : AppTheme.bg,
         onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
@@ -671,7 +682,9 @@ class _SidebarItem extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
-      child: collapsed ? Tooltip(message: feature.title, child: button) : button,
+      child: collapsed
+          ? Tooltip(message: feature.title, child: button)
+          : button,
     );
   }
 }
@@ -701,7 +714,11 @@ class _SettingsNavRow extends StatelessWidget {
           child: const SizedBox(
             height: 40,
             child: Center(
-              child: Icon(Icons.settings_outlined, size: 20, color: AppTheme.sidebarTextMuted),
+              child: Icon(
+                Icons.settings_outlined,
+                size: 20,
+                color: AppTheme.sidebarTextMuted,
+              ),
             ),
           ),
         ),
@@ -717,7 +734,12 @@ class _SettingsNavRow extends StatelessWidget {
         hoverColor: AppTheme.bg,
         onTap: onTap,
         child: const Padding(
-          padding: EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, AppTheme.s8),
+          padding: EdgeInsets.fromLTRB(
+            AppTheme.s12,
+            AppTheme.s4,
+            AppTheme.s12,
+            AppTheme.s8,
+          ),
           child: Row(
             children: [
               Expanded(

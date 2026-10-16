@@ -706,20 +706,19 @@ class _IncomeTableRow extends StatelessWidget {
               ),
             SizedBox(
               width: 36,
-              child: PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+              child: NeuActionMenu<String>(
+                iconSize: 18,
+                actions: const [
+                  NeuMenuAction('view', Icons.visibility_outlined, 'View details'),
+                  NeuMenuAction('edit', Icons.edit_outlined, 'Edit income'),
+                  NeuMenuAction('delete', Icons.delete_outline_rounded, 'Delete income', danger: true),
+                ],
                 onSelected: (v) => switch (v) {
                   'view' => parent.onView(income),
                   'edit' => parent.onEdit(income),
                   'delete' => parent.onDelete(income),
                   _ => null,
                 },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'view', child: Text('View details')),
-                  PopupMenuItem(value: 'edit', child: Text('Edit income')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete income', style: TextStyle(color: AppTheme.danger))),
-                ],
               ),
             ),
           ],
@@ -857,20 +856,14 @@ class _IncomeRowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<VoidCallback>(
-      tooltip: 'More actions',
-      padding: EdgeInsets.zero,
-      icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
-      onSelected: (action) => action(),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rSmall), side: const BorderSide(color: AppTheme.border)),
-      itemBuilder: (context) => [
-        PopupMenuItem(value: onEdit, child: const Text('Edit income')),
-        if (showViewReceipt) PopupMenuItem(value: onViewReceipt, child: const Text('View receipt')),
-        PopupMenuItem(
-          value: onDelete,
-          child: const Text('Delete income', style: TextStyle(color: AppTheme.danger)),
-        ),
+    return NeuActionMenu<VoidCallback>(
+      iconSize: 20,
+      actions: [
+        NeuMenuAction(onEdit, Icons.edit_outlined, 'Edit income'),
+        if (showViewReceipt) NeuMenuAction(onViewReceipt, Icons.receipt_outlined, 'View receipt'),
+        NeuMenuAction(onDelete, Icons.delete_outline_rounded, 'Delete income', danger: true),
       ],
+      onSelected: (action) => action(),
     );
   }
 }

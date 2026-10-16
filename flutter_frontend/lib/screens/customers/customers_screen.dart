@@ -588,34 +588,14 @@ class _CustomerTableRow extends StatelessWidget {
               ),
             SizedBox(
               width: 36,
-              child: PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+              child: NeuActionMenu<String>(
+                iconSize: 18,
+                actions: const [
+                  NeuMenuAction('view', Icons.person_outline_rounded, 'View profile'),
+                ],
                 onSelected: (v) {
                   if (v == 'view') showCustomerDetailScreen(context, customer.id);
                 },
-                elevation: 10,
-                color: AppTheme.card,
-                shadowColor: AppTheme.heading.withValues(alpha: 0.25),
-                offset: const Offset(0, 6),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                  side: const BorderSide(color: AppTheme.border),
-                ),
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'view',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: Row(
-                      children: [
-                        Icon(Icons.person_outline_rounded, size: 17, color: AppTheme.muted),
-                        SizedBox(width: AppTheme.s8),
-                        Text('View profile', style: TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
           ],

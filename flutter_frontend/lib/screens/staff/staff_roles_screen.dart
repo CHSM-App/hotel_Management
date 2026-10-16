@@ -277,63 +277,24 @@ class _StaffRowMenu extends StatelessWidget {
     required this.onToggleActive,
   });
 
-  Widget _item(IconData icon, String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 28,
-          height: 28,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.10), shape: BoxShape.circle),
-          child: Icon(icon, size: 15, color: color),
-        ),
-        const SizedBox(width: 10),
-        Text(label, style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      padding: EdgeInsets.zero,
-      splashRadius: 18,
-      icon: const Icon(Icons.more_vert_rounded, size: 19, color: AppTheme.muted),
-      elevation: 6,
-      color: AppTheme.card,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: const Color(0x33101828),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        side: const BorderSide(color: AppTheme.border),
-      ),
-      constraints: const BoxConstraints(minWidth: 180),
-      onSelected: (v) => v == 'reset' ? onResetPassword() : onToggleActive(),
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'reset',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: _item(Icons.lock_reset_rounded, 'Reset password', AppTheme.heading),
-        ),
-        // The backend refuses the last active owner anyway; hiding the
-        // control here means the only owner never sees a button that can
-        // only ever answer with an error.
-        if (showEnable) ...[
-          const PopupMenuDivider(height: 1),
-          PopupMenuItem(
-            value: 'toggle',
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-            child: _item(
-              isActive ? Icons.block_rounded : Icons.check_circle_outline_rounded,
-              isActive ? 'Disable' : 'Enable',
-              isActive ? AppTheme.danger : AppTheme.vacant,
-            ),
+    // The backend refuses the last active owner anyway; hiding the control
+    // here means the only owner never sees a button that can only ever
+    // answer with an error.
+    return NeuActionMenu<String>(
+      iconSize: 19,
+      actions: [
+        const NeuMenuAction('reset', Icons.lock_reset_rounded, 'Reset password'),
+        if (showEnable)
+          NeuMenuAction(
+            'toggle',
+            isActive ? Icons.block_rounded : Icons.check_circle_outline_rounded,
+            isActive ? 'Disable' : 'Enable',
+            danger: isActive,
           ),
-        ],
       ],
+      onSelected: (v) => v == 'reset' ? onResetPassword() : onToggleActive(),
     );
   }
 }

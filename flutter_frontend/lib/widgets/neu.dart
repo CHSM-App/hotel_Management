@@ -92,10 +92,316 @@ class NeuCard extends StatelessWidget {
   }
 }
 
-/// A compact overflow menu for a card or row's own edit/delete pair — one
-/// icon-and-label item each, a rounded surface with a soft shadow, and the
-/// destructive item in [AppTheme.danger] — used in place of two bare
-/// [IconButton]s wherever a row needs to save the horizontal space.
+/// Shared surface for the app's choose-one popups (filters, status pickers),
+/// matching [NeuActionMenu]'s floating card.
+final ShapeBorder neuMenuShape = RoundedRectangleBorder(
+  borderRadius: BorderRadius.circular(16),
+  side: BorderSide(color: AppTheme.border.withValues(alpha: 0.7)),
+);
+
+/// One choice in a choose-one popup: a tinted icon tile, the label, an
+/// optional [trailing] (a count, say), and a check when [selected]. The
+/// selected row is washed with [color] (default [AppTheme.accent]).
+class NeuOptionRow extends StatelessWidget {
+  final IconData? icon;
+  final String label;
+  final bool selected;
+  final Color? color;
+  final Widget? trailing;
+
+  const NeuOptionRow({
+    super.key,
+    this.icon,
+    required this.label,
+    required this.selected,
+    this.color,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = color ?? AppTheme.accent;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: selected ? tone.withValues(alpha: 0.10) : tone.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: selected
+                    ? LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [tone.withValues(alpha: 0.95), tone.withValues(alpha: 0.70)],
+                      )
+                    : null,
+                color: selected ? null : tone.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 15, color: selected ? Colors.white : tone),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? tone : AppTheme.heading,
+                fontSize: 13.5,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              ),
+            ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+          SizedBox(
+            width: 20,
+            child: selected ? Icon(Icons.check_circle_rounded, size: 16, color: tone) : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The floating card that folds open under a screen's filter button: a small
+/// caps [title] over a stack of [NeuFilterRow]s.
+class NeuFilterPanel extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+
+  const NeuFilterPanel({super.key, this.title = 'FILTER BY STATUS', required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 214,
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border.withValues(alpha: 0.7)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x40101828), blurRadius: 24, offset: Offset(0, 10)),
+        ],
+      ),
+      padding: const EdgeInsets.only(top: 10, bottom: 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+          ),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+/// One tappable row of a [NeuFilterPanel]; shows a count pill when [count]
+/// is given.
+class NeuFilterRow extends StatelessWidget {
+  final String label;
+  final int? count;
+  final bool on;
+  final Color? color;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const NeuFilterRow({
+    super.key,
+    required this.label,
+    required this.on,
+    required this.icon,
+    required this.onTap,
+    this.count,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = color ?? AppTheme.accent;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: NeuOptionRow(
+          icon: icon,
+          label: label,
+          selected: on,
+          color: tint,
+          trailing: count == null
+              ? null
+              : Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: on ? tint.withValues(alpha: 0.16) : AppTheme.bg,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      color: on ? tint : AppTheme.muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One entry in a [NeuActionMenu]. [danger] paints it red.
+class NeuMenuAction<T> {
+  final T value;
+  final IconData icon;
+  final String label;
+  final bool danger;
+
+  const NeuMenuAction(this.value, this.icon, this.label, {this.danger = false});
+}
+
+/// The app's one popup-menu look: a floating rounded card, an "ACTIONS"
+/// header, and each action as a tinted row with a gradient icon tile. Every
+/// ⋮ menu in the app should be this (or [NeuRowMenu], its edit/delete form)
+/// so they all read as the same control.
+class NeuActionMenu<T> extends StatelessWidget {
+  final List<NeuMenuAction<T>> actions;
+  final ValueChanged<T> onSelected;
+  final double iconSize;
+  final String? header;
+  final bool enabled;
+
+  const NeuActionMenu({
+    super.key,
+    required this.actions,
+    required this.onSelected,
+    this.iconSize = 18,
+    this.header = 'ACTIONS',
+    this.enabled = true,
+  });
+
+  static Widget _row(NeuMenuAction a) {
+    final color = a.danger ? AppTheme.danger : AppTheme.heading;
+    final tone = a.danger ? AppTheme.danger : AppTheme.accent;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: tone.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [tone.withValues(alpha: 0.95), tone.withValues(alpha: 0.70)],
+              ),
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: tone.withValues(alpha: 0.28),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Icon(a.icon, size: 15, color: Colors.white),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              a.label,
+              style: TextStyle(
+                color: color,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const itemPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 1);
+    return PopupMenuButton<T>(
+      padding: EdgeInsets.zero,
+      splashRadius: 18,
+      tooltip: 'More actions',
+      enabled: enabled,
+      offset: const Offset(0, 36),
+      icon: Icon(Icons.more_vert_rounded, size: iconSize, color: AppTheme.muted),
+      elevation: 12,
+      color: AppTheme.card,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: const Color(0x40101828),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppTheme.border.withValues(alpha: 0.7)),
+      ),
+      constraints: const BoxConstraints(minWidth: 140),
+      onSelected: onSelected,
+      itemBuilder: (context) => [
+        if (header != null)
+          PopupMenuItem<T>(
+            enabled: false,
+            height: 22,
+            padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
+            child: Text(
+              header!,
+              style: const TextStyle(
+                color: AppTheme.muted,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+        for (final a in actions)
+          PopupMenuItem<T>(
+            value: a.value,
+            height: 40,
+            padding: itemPadding,
+            child: _row(a),
+          ),
+      ],
+    );
+  }
+}
+
+/// A compact overflow menu for a card or row's own edit/delete pair, used in
+/// place of two bare [IconButton]s wherever a row needs to save the
+/// horizontal space.
 class NeuRowMenu extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -120,42 +426,14 @@ class NeuRowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget item(IconData icon, String label, Color color) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 15, color: color),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w600),
-          ),
-        ],
-      );
-    }
-
-    return PopupMenuButton<String>(
-      padding: EdgeInsets.zero,
-      splashRadius: 18,
-      icon: Icon(Icons.more_vert_rounded, size: iconSize, color: AppTheme.muted),
-      elevation: 6,
-      color: AppTheme.card,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: const Color(0x33101828),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        side: const BorderSide(color: AppTheme.border),
-      ),
-      constraints: const BoxConstraints(minWidth: 148),
+    return NeuActionMenu<String>(
+      iconSize: iconSize,
+      actions: [
+        const NeuMenuAction('edit', Icons.edit_outlined, 'Edit'),
+        if (extraLabel != null && onExtra != null)
+          NeuMenuAction('extra', extraIcon ?? Icons.visibility_off_outlined, extraLabel!),
+        const NeuMenuAction('delete', Icons.delete_outline_rounded, 'Delete', danger: true),
+      ],
       onSelected: (v) {
         if (v == 'edit') {
           onEdit();
@@ -165,34 +443,6 @@ class NeuRowMenu extends StatelessWidget {
           onDelete();
         }
       },
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'edit',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(Icons.edit_outlined, 'Edit', AppTheme.heading),
-        ),
-        if (extraLabel != null && onExtra != null) ...[
-          const PopupMenuDivider(height: 1),
-          PopupMenuItem(
-            value: 'extra',
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-            child: item(
-              extraIcon ?? Icons.visibility_off_outlined,
-              extraLabel!,
-              AppTheme.heading,
-            ),
-          ),
-        ],
-        const PopupMenuDivider(height: 1),
-        PopupMenuItem(
-          value: 'delete',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(Icons.delete_outline_rounded, 'Delete', AppTheme.danger),
-        ),
-      ],
     );
   }
 }

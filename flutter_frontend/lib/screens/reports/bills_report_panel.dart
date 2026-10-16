@@ -372,65 +372,17 @@ class _BillTypeChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 190,
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        boxShadow: AppTheme.subtle,
-      ),
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final (key, label, icon) in _kBillTypeFilters)
-            _BillTypeChip(
-              label: label,
-              icon: icon,
-              on: selected == key,
-              onTap: () => onSelect(key),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BillTypeChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool on;
-  final VoidCallback onTap;
-
-  const _BillTypeChip({required this.label, required this.icon, required this.on, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
-        decoration: BoxDecoration(
-          color: on ? AppTheme.accent.withValues(alpha: 0.10) : Colors.transparent,
-          border: Border(left: BorderSide(color: on ? AppTheme.accent : Colors.transparent, width: 3)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: on ? AppTheme.accent : AppTheme.muted),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: on ? AppTheme.accent : AppTheme.text,
-                  fontSize: 13,
-                  fontWeight: on ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return NeuFilterPanel(
+      title: 'FILTER BY BILL TYPE',
+      children: [
+        for (final (key, label, icon) in _kBillTypeFilters)
+          NeuFilterRow(
+            label: label,
+            icon: icon,
+            on: selected == key,
+            onTap: () => onSelect(key),
+          ),
+      ],
     );
   }
 }

@@ -581,59 +581,18 @@ class _UsageFilterChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 190,
-      decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(AppTheme.rMedium), boxShadow: AppTheme.subtle),
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final key in _order)
-            _UsageFilterChip(
-              label: _labels[key]!,
-              count: counts[key] ?? 0,
-              on: selected == key,
-              color: key == 'IN_USE' ? AppTheme.edit : (key == 'CANCELLED' ? AppTheme.danger : (key == 'COMPLETED' ? AppTheme.checkedIn : AppTheme.accent)),
-              icon: _icons[key]!,
-              onTap: () => onSelect(key),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _UsageFilterChip extends StatelessWidget {
-  final String label;
-  final int count;
-  final bool on;
-  final Color color;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _UsageFilterChip({required this.label, required this.count, required this.on, required this.color, required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
-        decoration: BoxDecoration(
-          color: on ? color.withValues(alpha: 0.10) : Colors.transparent,
-          border: Border(left: BorderSide(color: on ? color : Colors.transparent, width: 3)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: on ? color : AppTheme.muted),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(label, style: TextStyle(color: on ? color : AppTheme.text, fontSize: 13, fontWeight: on ? FontWeight.w600 : FontWeight.w400)),
-            ),
-            Text('$count', style: TextStyle(color: on ? color : AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ),
+    return NeuFilterPanel(
+      children: [
+        for (final key in _order)
+          NeuFilterRow(
+            label: _labels[key]!,
+            count: counts[key] ?? 0,
+            on: selected == key,
+            color: key == 'IN_USE' ? AppTheme.edit : (key == 'CANCELLED' ? AppTheme.danger : (key == 'COMPLETED' ? AppTheme.checkedIn : AppTheme.accent)),
+            icon: _icons[key]!,
+            onTap: () => onSelect(key),
+          ),
+      ],
     );
   }
 }

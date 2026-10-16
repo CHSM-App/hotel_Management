@@ -1,3 +1,4 @@
+import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'package:flutter/material.dart';
 
@@ -101,27 +102,23 @@ class FilterDropdownButton extends StatelessWidget {
           onSelected: onSelect,
           tooltip: 'Filter',
           padding: EdgeInsets.zero,
-          elevation: 10,
+          elevation: 12,
           color: AppTheme.card,
-          shadowColor: AppTheme.heading.withValues(alpha: 0.25),
+          surfaceTintColor: Colors.transparent,
+          shadowColor: const Color(0x40101828),
           offset: const Offset(0, 44),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
+          shape: neuMenuShape,
           constraints: const BoxConstraints(minWidth: 200),
           itemBuilder: (context) => [
             for (final o in options)
               PopupMenuItem(
                 value: o.key,
                 height: 40,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(o.label, style: TextStyle(color: o.key == selected ? AppTheme.accent : AppTheme.heading, fontSize: 13.5, fontWeight: o.key == selected ? FontWeight.w700 : FontWeight.w500)),
-                    ),
-                    const SizedBox(width: AppTheme.s12),
-                    Text('${o.count}', style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
-                    const SizedBox(width: 6),
-                    SizedBox(width: 16, child: o.key == selected ? const Icon(Icons.check_rounded, size: 16, color: AppTheme.accent) : null),
-                  ],
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                child: NeuOptionRow(
+                  label: o.label,
+                  selected: o.key == selected,
+                  trailing: Text('${o.count}', style: const TextStyle(color: AppTheme.muted, fontSize: 12.5, fontWeight: FontWeight.w600)),
                 ),
               ),
           ],

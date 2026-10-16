@@ -617,41 +617,19 @@ class _ExpenseTableRow extends StatelessWidget {
               ),
             SizedBox(
               width: 36,
-              child: PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+              child: NeuActionMenu<String>(
+                iconSize: 18,
+                actions: const [
+                  NeuMenuAction('view', Icons.visibility_outlined, 'View details'),
+                  NeuMenuAction('edit', Icons.edit_outlined, 'Edit expense'),
+                  NeuMenuAction('delete', Icons.delete_outline_rounded, 'Delete expense', danger: true),
+                ],
                 onSelected: (v) => switch (v) {
                   'view' => parent.onView(expense),
                   'edit' => parent.onEdit(expense),
                   'delete' => parent.onDelete(expense),
                   _ => null,
                 },
-                elevation: 10,
-                color: AppTheme.card,
-                shadowColor: AppTheme.heading.withValues(alpha: 0.25),
-                offset: const Offset(0, 6),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'view',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: _ExpenseMenuRow(icon: Icons.visibility_outlined, label: 'View details'),
-                  ),
-                  PopupMenuItem(
-                    value: 'edit',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: _ExpenseMenuRow(icon: Icons.edit_outlined, label: 'Edit expense'),
-                  ),
-                  PopupMenuDivider(height: 8),
-                  PopupMenuItem(
-                    value: 'delete',
-                    height: 40,
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: _ExpenseMenuRow(icon: Icons.delete_outline_rounded, label: 'Delete expense', danger: true),
-                  ),
-                ],
               ),
             ),
           ],
@@ -894,60 +872,15 @@ class _ExpenseRowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<VoidCallback>(
-      tooltip: 'More actions',
-      padding: EdgeInsets.zero,
-      icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
+    return NeuActionMenu<VoidCallback>(
+      iconSize: 20,
+      actions: [
+        NeuMenuAction(onEdit, Icons.edit_outlined, 'Edit expense'),
+        if (showViewReceipt) NeuMenuAction(onViewReceipt, Icons.receipt_outlined, 'View receipt'),
+        NeuMenuAction(onDelete, Icons.delete_outline_rounded, 'Delete expense', danger: true),
+      ],
       onSelected: (action) => action(),
-      elevation: 10,
-      color: AppTheme.card,
-      shadowColor: AppTheme.heading.withValues(alpha: 0.25),
-      offset: const Offset(0, 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium), side: const BorderSide(color: AppTheme.border)),
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          value: onEdit,
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: const _ExpenseMenuRow(icon: Icons.edit_outlined, label: 'Edit expense'),
-        ),
-        if (showViewReceipt)
-          PopupMenuItem(
-            value: onViewReceipt,
-            height: 40,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: const _ExpenseMenuRow(icon: Icons.receipt_outlined, label: 'View receipt'),
-          ),
-        const PopupMenuDivider(height: 8),
-        PopupMenuItem(
-          value: onDelete,
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: const _ExpenseMenuRow(icon: Icons.delete_outline_rounded, label: 'Delete expense', danger: true),
-        ),
-      ],
     );
   }
 }
 
-/// One row of an expense's ⋮ menu — an icon, the label, and danger tinting
-/// for the destructive action. Same construction as [_AssetMenuRow].
-class _ExpenseMenuRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool danger;
-
-  const _ExpenseMenuRow({required this.icon, required this.label, this.danger = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = danger ? AppTheme.danger : AppTheme.heading;
-    return Row(
-      children: [
-        Icon(icon, size: 17, color: danger ? AppTheme.danger : AppTheme.muted),
-        const SizedBox(width: AppTheme.s8),
-        Text(label, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-}

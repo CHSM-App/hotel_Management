@@ -1887,20 +1887,19 @@ class BillingDateFilterRow extends StatelessWidget {
           tooltip: 'Date range',
           onSelected: onPresetSelected,
           padding: EdgeInsets.zero,
-          elevation: 10,
+          elevation: 12,
           color: AppTheme.card,
-          shadowColor: AppTheme.heading.withValues(alpha: 0.25),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.rMedium),
-            side: const BorderSide(color: AppTheme.border),
-          ),
+          surfaceTintColor: Colors.transparent,
+          shadowColor: const Color(0x40101828),
+          offset: const Offset(0, 48),
+          shape: neuMenuShape,
           itemBuilder: (context) => [
             for (final (key, label) in _presets)
               PopupMenuItem(
                 value: key,
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: _DateRangeMenuItem(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                child: NeuOptionRow(
                   icon: _presetIcons[key]!,
                   label: label,
                   selected: filterKey == key,
@@ -2020,56 +2019,6 @@ class _DateField extends StatelessWidget {
   }
 }
 
-/// One row of the date-range dropdown — an icon, the label, and (only on the
-/// active preset) an accent check — replacing the default [CheckedPopupMenuItem]
-/// look with the same accent-tinted "selected" treatment the rest of this
-/// screen's pickers use.
-class _DateRangeMenuItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-
-  const _DateRangeMenuItem({
-    required this.icon,
-    required this.label,
-    required this.selected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 152,
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
-      decoration: BoxDecoration(
-        color: selected ? AppTheme.sidebarBrandWash : Colors.transparent,
-        borderRadius: BorderRadius.circular(AppTheme.rSmall),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 15,
-            color: selected ? AppTheme.accent : AppTheme.muted,
-          ),
-          const SizedBox(width: AppTheme.s8),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: selected ? AppTheme.sidebarBrandInk : AppTheme.heading,
-                fontSize: 12.5,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ),
-          if (selected)
-            const Icon(Icons.check_rounded, size: 15, color: AppTheme.accent),
-        ],
-      ),
-    );
-  }
-}
 
 class _BillingViewToggleButton extends StatelessWidget {
   final String view;

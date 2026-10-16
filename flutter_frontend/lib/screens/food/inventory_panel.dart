@@ -718,50 +718,17 @@ class _MaterialCard extends ConsumerWidget {
   /// elsewhere, so this reads as one more of the app's own menus rather
   /// than a bare Material popup.
   Widget _materialActionsMenu(BuildContext context, WidgetRef ref) {
-    Widget item(IconData icon, String label, Color color) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 15, color: color),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      );
-    }
-
-    return PopupMenuButton<String>(
-      padding: EdgeInsets.zero,
-      splashRadius: 18,
-      icon: const Icon(
-        Icons.more_vert_rounded,
-        size: 18,
-        color: AppTheme.muted,
-      ),
-      elevation: 6,
-      color: AppTheme.card,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: const Color(0x33101828),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        side: const BorderSide(color: AppTheme.border),
-      ),
-      constraints: const BoxConstraints(minWidth: 170),
+    return NeuActionMenu<String>(
+      actions: [
+        const NeuMenuAction('history', Icons.history_rounded, 'History'),
+        const NeuMenuAction('edit', Icons.edit_outlined, 'Edit material'),
+        NeuMenuAction(
+          'retire',
+          material.isActive ? Icons.archive_outlined : Icons.unarchive_outlined,
+          material.isActive ? 'Retire' : 'Restore',
+        ),
+        const NeuMenuAction('delete', Icons.delete_outline_rounded, 'Delete material', danger: true),
+      ],
       onSelected: (v) {
         switch (v) {
           case 'history':
@@ -780,43 +747,6 @@ class _MaterialCard extends ConsumerWidget {
             break;
         }
       },
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'history',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(Icons.history_rounded, 'History', AppTheme.heading),
-        ),
-        PopupMenuItem(
-          value: 'edit',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(Icons.edit_outlined, 'Edit material', AppTheme.heading),
-        ),
-        PopupMenuItem(
-          value: 'retire',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(
-            material.isActive
-                ? Icons.archive_outlined
-                : Icons.unarchive_outlined,
-            material.isActive ? 'Retire' : 'Restore',
-            AppTheme.heading,
-          ),
-        ),
-        const PopupMenuDivider(height: 1),
-        PopupMenuItem(
-          value: 'delete',
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-          child: item(
-            Icons.delete_outline_rounded,
-            'Delete material',
-            AppTheme.danger,
-          ),
-        ),
-      ],
     );
   }
 
