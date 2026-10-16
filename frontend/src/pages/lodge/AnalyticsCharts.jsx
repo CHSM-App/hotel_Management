@@ -152,6 +152,88 @@ export function Donut({ slices, size = 160, strokeWidth = 24, centerLabel, cente
   );
 }
 
+// Two bars per group — e.g. rooms sold vs. in house, per day — on one shared
+// axis. Same width/padding/axis-line conventions as TrendChart, so the two
+// sit comfortably in matching card widths; legend is left to the caller's
+// card header, the same way Donut leaves its legend to callers too.
+export function GroupedBarChart({
+  data,
+  seriesAKey,
+  seriesBKey,
+  colorA = 'var(--brand)',
+  colorB = 'var(--text-muted)',
+  height = 220,
+  formatValue = (n) => String(n),
+}) {
+  const width = 720;
+  const padLeft = 34;
+  const padRight = 12;
+  const padTop = 16;
+  const padBottom = 26;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+
+  const aValues = data.map((d) => Number(d[seriesAKey]) || 0);
+  const bValues = data.map((d) => Number(d[seriesBKey]) || 0);
+  const maxValue = Math.max(1, ...aValues, ...bValues);
+
+  const groupW = data.length > 0 ? plotW / data.length : plotW;
+  const barW = Math.min(16, groupW * 0.28);
+  const gap = Math.max(2, barW * 0.25);
+
+  const y = (v) => padTop + plotH - (v / maxValue) * plotH;
+  const barH = (v) => (v / maxValue) * plotH;
+
+  const gridLines = [0, 0.25, 0.5, 0.75, 1];
+
+  const fmtAxisDate = (iso) => {
+    if (!iso) return '';
+    const d = new Date(`${iso}T00:00:00Z`);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  };
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={`Grouped bar chart comparing ${seriesAKey} and ${seriesBKey} across ${data.length} days`}
+      style={{ width: '100%', height: 'auto', overflow: 'visible' }}
+    >
+      <g className="axis-line" strokeWidth="1">
+        <line x1={padLeft} y1={padTop} x2={padLeft} y2={padTop + plotH} />
+        <line x1={padLeft} y1={padTop + plotH} x2={width - padRight} y2={padTop + plotH} />
+        {gridLines.slice(1, -1).map((g) => (
+          <line
+            key={g}
+            x1={padLeft}
+            y1={padTop + plotH * (1 - g)}
+            x2={width - padRight}
+            y2={padTop + plotH * (1 - g)}
+            strokeDasharray="2 4"
+          />
+        ))}
+      </g>
+      {gridLines.map((g) => (
+        <text key={g} x={padLeft - 6} y={padTop + plotH * (1 - g) + 3} textAnchor="end" fontSize="10">
+          {formatValue(Math.round(maxValue * g))}
+        </text>
+      ))}
+      {data.map((d, i) => {
+        const centerX = padLeft + groupW * (i + 0.5);
+        return (
+          <g key={d.date || i}>
+            <rect x={centerX - gap / 2 - barW} y={y(aValues[i])} width={barW} height={barH(aValues[i])} rx="1.5" fill={colorA} />
+            <rect x={centerX + gap / 2} y={y(bValues[i])} width={barW} height={barH(bValues[i])} rx="1.5" fill={colorB} />
+            <text x={centerX} y={height - 6} textAnchor="middle" fontSize="10">
+              {fmtAxisDate(d.date)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 // A horizontal bar list ranked by value, each row's fill sized relative to
 // the largest value in the set — so the top row is always full width and the
 // rest read as fractions of it.

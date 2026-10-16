@@ -121,7 +121,7 @@ export const FEATURES = [
     // group to borrow, and every other item in Rooms is gated on hasRooms
     // alone.
     capability: ['hasRooms', 'hasEvents'],
-    icon: 'users',
+    icon: 'idcard',
     group: 'Customers',
   },
   {
@@ -150,7 +150,7 @@ export const FEATURES = [
     description: 'Function bills and advance receipts.',
     permission: 'billing.manage',
     capability: 'hasEvents',
-    icon: 'receipt',
+    icon: 'ticket',
     group: 'Events',
   },
   {
@@ -159,7 +159,7 @@ export const FEATURES = [
     description: 'Every function as a list, filtered by status.',
     permission: 'events.manage',
     capability: 'hasEvents',
-    icon: 'users',
+    icon: 'clipboardList',
     group: 'Events',
   },
   {
@@ -168,7 +168,7 @@ export const FEATURES = [
     description: 'Venues and add-ons.',
     permission: 'events.manage',
     capability: 'hasEvents',
-    icon: 'wrench',
+    icon: 'sliders',
     group: 'Events',
   },
   {
@@ -190,7 +190,7 @@ export const FEATURES = [
     // An add-on, switched on per property. (Needs rooms too, which the admin
     // forms and the server both enforce.)
     capability: 'hasHousekeeping',
-    icon: 'bed',
+    icon: 'sparkles',
     // Its own group, not under Rooms: it looks after event venues too, and a
     // restaurant with a party hall has no Rooms group to put it in.
     group: 'Housekeeping',
@@ -204,7 +204,7 @@ export const FEATURES = [
     // Its own add-on, separate from Housekeeping: a property can have either
     // without the other. (Needs rooms too.)
     capability: 'hasLaundry',
-    icon: 'wrench',
+    icon: 'droplet',
     group: 'Housekeeping',
   },
   {
@@ -216,7 +216,7 @@ export const FEATURES = [
     // An add-on, switched on per property like events, assets and expenses.
     // (Needs rooms too, which the admin forms and the server both enforce.)
     capability: 'hasOtherServices',
-    icon: 'wrench',
+    icon: 'grid',
     group: 'Rooms',
   },
   {
@@ -225,7 +225,7 @@ export const FEATURES = [
     description: 'The food menu, dining tables, and the QR codes guests scan to order.',
     permission: 'food.manage',
     capability: 'servesFood',
-    icon: 'coffee',
+    icon: 'qrcode',
     group: 'Restaurant',
   },
   {
@@ -243,7 +243,7 @@ export const FEATURES = [
     permission: 'assets.manage',
     // An add-on, same as Events: off until switched on for the property.
     capability: 'hasAssets',
-    icon: 'wrench',
+    icon: 'archive',
     group: 'Finance & Management',
   },
   {
@@ -265,7 +265,7 @@ export const FEATURES = [
     // second lodge-level switch just for this would be one more thing to
     // remember to turn on.
     capability: 'hasExpenses',
-    icon: 'wallet',
+    icon: 'trendingUp',
     group: 'Finance & Management',
   },
   {
@@ -283,7 +283,7 @@ export const FEATURES = [
     permission: 'reports.view',
     // Any one earns the section; the tabs inside show only what the property has.
     capability: ['hasRooms', 'servesFood', 'hasEvents'],
-    icon: 'barChart',
+    icon: 'pieChart',
     group: 'Reports & Analytics',
   },
   {
@@ -291,7 +291,7 @@ export const FEATURES = [
     title: 'Finance reports',
     description: 'Tax & GST, Profit & Loss, expenses and other income.',
     permission: 'reports.view',
-    icon: 'wallet',
+    icon: 'landmark',
     group: 'Reports & Analytics',
   },
   {
@@ -300,7 +300,7 @@ export const FEATURES = [
     description: 'Equipment owned, its value and upkeep.',
     permission: 'reports.view',
     capability: 'hasAssets',
-    icon: 'wrench',
+    icon: 'layers',
     group: 'Reports & Analytics',
   },
 ];

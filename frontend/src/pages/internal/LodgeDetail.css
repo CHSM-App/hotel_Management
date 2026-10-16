@@ -1,13 +1,15 @@
 /* Read-only view of one property, reached from the View button on the internal
    lodge list. Shares .dash-shell / .dash-topbar / .badge / .dash-table / .btn-*
-   with LodgesDashboard.css — only what's specific to this page lives here.
+   with LodgesDashboard.css, and .analytics-card / .donut-wrap / .mix-row /
+   .analytics-legend with the owner-side AnalyticsCharts.css — only what's
+   specific to this page lives here.
 
-   Layout: a hero strip naming the property, then a slim sticky side nav next
-   to a single scrolling document. Every section (Overview, Contact, Billing,
-   Check-in, Sections, Staff, Tools) lives in that one document, separated by
-   a heading and a rule rather than its own boxed card — nine competing tiles
-   collapse into one record with a table of contents. Nothing is hidden
-   behind a tab or an accordion: scrolling reaches everything the nav does. */
+   Layout: a persistent left sidebar (identity, quick actions, section nav)
+   beside a dashboard of cards — stats, charts, and the property/billing/
+   check-in/sections/staff/tools content, each in its own card. Nav entries
+   are scroll anchors into one continuous document, not separate routes:
+   nothing is hidden behind a tab, an ordinary scroll reaches everything the
+   nav does. */
 
 .detail-main {
   width: 100%;
@@ -18,64 +20,52 @@
   color: var(--text-muted);
   text-decoration: none;
   font-size: 13px;
-  margin-bottom: 10px;
 }
 
 .detail-back:hover {
   color: var(--brand);
 }
 
-/* Hero --------------------------------------------------------------- */
+/* Shell: sidebar + content --------------------------------------------- */
 
-.detail-hero {
-  position: relative;
+.detail-shell {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.detail-side {
+  position: sticky;
+  top: calc(var(--dash-topbar-h) + 16px);
+  max-height: calc(100vh - var(--dash-topbar-h) - 32px);
+  overflow-y: auto;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 2px;
+}
+
+.detail-mini {
   background: var(--surface);
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
   border-radius: 12px;
-  padding: 18px 22px;
-  margin-bottom: 16px;
-  overflow: hidden;
+  padding: 14px;
 }
 
-/* The same light-source gradient the topbar is lit by, as a thin cap rather
-   than a full band — enough to tie this card to the chrome above it without
-   turning the page's most-read heading into reversed white-on-violet text. */
-.detail-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--brand-band), var(--brand-band-deep));
-}
-
-.detail-hero__brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-
-.detail-hero__logo {
-  flex-shrink: 0;
-  width: 50px;
-  height: 50px;
-  border-radius: 10px;
+.detail-mini__logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
   object-fit: contain;
   background: var(--surface, #fff);
   border: 1px solid var(--border, #e2e8f0);
-  padding: 5px;
+  padding: 4px;
+  margin-bottom: 10px;
 }
 
-/* Initials in the brand violet rather than a blank dashed box — a property
-   with no logo yet should still look like it belongs to this product, not
-   like an image failed to load. */
-.detail-hero__logo--empty {
+.detail-mini__logo--empty {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -83,73 +73,62 @@
   background: var(--brand-wash);
   border-color: var(--brand-wash-edge);
   color: var(--brand);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 
-.detail-hero__id {
-  min-width: 0;
+.detail-mini__name {
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  word-break: break-word;
 }
 
-.detail-hero h1 {
-  font-size: 21px;
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.detail-hero__slug {
+.detail-mini__slug {
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: 12px;
   margin-top: 2px;
 }
 
-.detail-hero__badges {
+.detail-mini__badges {
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
-  margin-top: 8px;
+  gap: 6px;
+  margin-top: 10px;
 }
 
-.detail-hero__actions {
+.detail-side-actions {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-side-actions .btn-view,
+.detail-side-actions .btn-accent {
+  width: 100%;
+  justify-content: center;
 }
 
 .detail-hero__logo-error {
-  flex-basis: 100%;
   font-size: 12px;
   color: var(--danger, #dc2626);
 }
 
 .detail-hero__hero-hint {
-  flex-basis: 100%;
+  display: block;
   font-size: 12px;
   color: var(--text-muted);
+  margin-top: -2px;
 }
 
-/* Side nav + document --------------------------------------------------- */
-
-.detail-layout {
-  display: grid;
-  grid-template-columns: 196px minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
-}
-
-/* Pinned below the topbar so the table of contents stays in reach as the
-   document scrolls past it. A plain list of links, not its own card — the
-   nav is furniture, not a section of the record. */
 .detail-nav {
-  position: sticky;
-  top: calc(var(--dash-topbar-h) + 16px);
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .detail-nav__link {
@@ -175,45 +154,164 @@
   font-weight: 600;
 }
 
-/* The one card for the whole record — replaces what used to be nine. */
-.detail-document {
+.detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Header card ------------------------------------------------------------ */
+
+.detail-headercard {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  height: 168px;
+  background: var(--brand-navy);
+}
+
+.detail-headercard__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detail-headercard__img--empty {
+  background: var(--brand-navy);
+}
+
+.detail-headercard__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(10, 16, 32, 0.08) 0%, rgba(10, 16, 32, 0.5) 100%);
+  pointer-events: none;
+}
+
+.detail-headercard__actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+}
+
+.detail-headercard__chip {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: none;
+  background: rgba(15, 12, 35, 0.45);
+  color: #fff;
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+}
+
+.detail-headercard__chip:hover {
+  background: rgba(15, 12, 35, 0.6);
+}
+
+.detail-headercard__copy {
+  position: absolute;
+  left: 20px;
+  bottom: 16px;
+  color: #fff;
+}
+
+.detail-headercard__name {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.detail-headercard__meta {
+  font-size: 12px;
+  opacity: 0.88;
+  margin-top: 3px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+/* Sections / cards --------------------------------------------------------- */
+
+/* Clears the sticky topbar when a nav click (or any anchor jump) lands a
+   section at the top of the viewport. */
+.detail-section {
+  scroll-margin-top: calc(var(--dash-topbar-h) + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.detail-card {
   background: var(--surface);
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
   border-radius: 12px;
-  padding: 24px 28px;
+  padding: 18px 20px;
   min-width: 0;
-}
-
-.detail-divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 26px 0;
-}
-
-/* Clears the sticky topbar when a nav click (or any anchor jump) lands a
-   section at the top of the viewport — without this the heading would land
-   directly under the topbar's own height, half-hidden behind it. */
-.detail-section {
   scroll-margin-top: calc(var(--dash-topbar-h) + 16px);
 }
 
-.detail-section h2 {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--ink);
-  margin-bottom: 14px;
-}
-
-.detail-section__head {
+.detail-card__head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 6px;
 }
 
-.detail-section__head h2 {
-  margin-bottom: 0;
+.detail-card__head h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+.detail-card__meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* The small tinted square before a card's title — used both by Card's own
+   head and, for the four chart cards that build their head markup by hand,
+   paired with .detail-card-title-group below. One consistent tone (the
+   brand wash) across every card header: colour is spent on the stat row and
+   the donut legends, not repeated here. */
+.detail-card__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--brand-wash);
+  color: var(--brand);
+}
+
+.detail-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-card__hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+/* Two-or-three-up responsive row, used both for the Property/Billing/
+   Check-in cards and for the Overview chart pairs — auto-fit rather than a
+   fixed count, since Check-in only exists for a property with rooms. */
+.detail-card-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  align-items: start;
 }
 
 .detail-staff-card__count {
@@ -228,12 +326,6 @@
   color: var(--brand);
   font-size: 11.5px;
   font-weight: 700;
-}
-
-.detail-card__hint {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  margin: -8px 0 14px;
 }
 
 /* Rows (dl/dt/dd pairs) --------------------------------------------------- */
@@ -275,16 +367,18 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
-  margin-bottom: 20px;
 }
 
 .detail-stat {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 11px;
-  background: var(--paper);
+  background: var(--surface);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-raised);
   border-radius: 10px;
-  padding: 11px 13px;
+  padding: 12px 30px 12px 13px;
 }
 
 .detail-stat__icon {
@@ -292,36 +386,39 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: #fff;
 }
 
-/* Three tones reused everywhere a card or tile needs one, rather than every
-   icon wearing the brand violet regardless of what it represents: violet for
-   identity/setup, green for money and activity, gold for time and food. */
-.detail-stat__icon--violet {
-  background: var(--brand-wash);
-  color: var(--brand);
-}
-
-.detail-stat__icon--green {
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.detail-stat__icon--gold {
-  background: #fbf1e0;
-  color: var(--accent-ink);
-}
+/* Six tiles, six colours — each stat is its own glance-able chip rather than
+   three tones repeated twice across the row. */
+.detail-stat__icon--blue { background: #3b82f6; }
+.detail-stat__icon--green { background: #10b981; }
+.detail-stat__icon--orange { background: #f59e0b; }
+.detail-stat__icon--pink { background: #ef4444; }
+.detail-stat__icon--purple { background: #8b5cf6; }
+.detail-stat__icon--teal { background: #14b8a6; }
 
 .detail-stat__body {
   min-width: 0;
 }
 
+/* Decorative — a stat tile isn't a link today, but reads as one at a glance
+   in the reference design, so the row scans the same way. */
+.detail-stat > svg {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  opacity: 0.45;
+}
+
 .detail-stat__value {
   font-family: var(--serif);
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 600;
   color: var(--ink);
   line-height: 1.2;
@@ -345,52 +442,74 @@
   white-space: nowrap;
 }
 
-/* Overview: last activity + quick links side by side -------------------- */
-
-.detail-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
+/* Charts — axis/grid colouring the owner-side analytics-section normally
+   supplies; scoped here since this page doesn't wrap its cards in that
+   class. */
+.detail-content svg text {
+  fill: var(--text-muted);
 }
 
-.detail-overview-block__label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  margin-bottom: 8px;
+.detail-content svg .axis-line {
+  stroke: var(--border);
 }
 
-.detail-activity {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.detail-activity__icon {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.detail-activity__label {
-  font-size: 13.5px;
-  font-weight: 600;
+.detail-period-select {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--paper);
   color: var(--ink);
 }
 
-.detail-activity__at {
+.detail-mix-count {
   font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 1px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  padding-left: 10px;
 }
+
+/* Last-activity feed -------------------------------------------------------- */
+
+.detail-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.detail-feed-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+}
+
+.detail-feed-row__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+  flex-shrink: 0;
+}
+
+.detail-feed-row__what {
+  color: var(--ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.detail-feed-row__where {
+  color: var(--text-muted);
+  margin-left: auto;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Overview: quick links --------------------------------------------------- */
 
 .detail-quicklinks {
   display: flex;
@@ -444,78 +563,65 @@
   cursor: pointer;
 }
 
-/* Sections this account gets --------------------------------------------- */
+/* Sections this account gets ----------------------------------------------- */
 
-/* Each capability group as its own small panel, tiled in a grid rather than
-   stacked one under another — the list of sections an owner gets can run to
-   eight or nine groups, and stacked they would make this one section far
-   taller than the others around it. Tiled, the same content settles into
-   two or three short rows instead of one long column. */
-.detail-features-grid {
+/* One icon tile per capability group, tiled in a grid — a glance at which
+   sections an owner's sidebar has, not a list of every feature's name. */
+.detail-icon-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
 }
 
-.detail-features {
+.detail-icon-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
   background: var(--paper);
-  border-radius: 10px;
-  padding: 10px 12px;
 }
 
-.detail-features__group {
+.detail-icon-tile__ic {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--brand-wash);
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detail-icon-tile span {
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--text-muted);
-  margin-bottom: 7px;
-}
-
-/* The margin and padding a browser gives a <ul> are reset here rather than
-   left to the list-style removal — the default 40px of padding-inline-start
-   was indenting the whole chip row, which costs a chip a line on a phone. */
-.detail-features ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-/* Surface, not paper — the panel around these chips is paper-coloured, so a
-   paper chip on a paper panel would vanish. */
-.detail-features li {
-  font-size: 12.5px;
-  background: var(--surface);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
-  border-radius: 999px;
-  padding: 4px 10px;
-  color: var(--ink);
+  text-align: center;
 }
 
 @media (max-width: 980px) {
-  .detail-layout {
+  .detail-shell {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  /* A horizontal strip of links instead of a sticky column — there's no
-     room for a side rail once the document is full width, and the nav is
-     still worth having as a quick jump-to-section bar. */
+  /* A horizontal strip instead of a sticky column — there's no room for a
+     side rail once the content is full width, and the mini-card + nav are
+     still worth having, just not pinned while scrolling. */
+  .detail-side {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+
   .detail-nav {
-    position: sticky;
-    top: var(--dash-topbar-h);
-    z-index: 4;
     flex-direction: row;
     flex-wrap: wrap;
     gap: 4px;
-    background: var(--paper);
-    padding: 8px 0;
-    margin: 0 -16px 8px;
-    padding-left: 16px;
-    padding-right: 16px;
+    border-top: none;
+    padding-top: 0;
   }
 
   .detail-nav__link {
@@ -528,38 +634,19 @@
     border-left-color: transparent;
     border-bottom-color: var(--brand);
   }
-
-  /* Taller now: the horizontal nav bar sits below the topbar and is sticky
-     too, so a jumped-to section needs to clear both. */
-  .detail-section {
-    scroll-margin-top: calc(var(--dash-topbar-h) + 56px);
-  }
 }
 
 @media (max-width: 640px) {
-  .detail-hero {
+  .detail-headercard {
+    height: 128px;
+  }
+
+  .detail-headercard__name {
+    font-size: 17px;
+  }
+
+  .detail-card {
     padding: 14px;
-  }
-
-  .detail-hero h1 {
-    font-size: 18px;
-  }
-
-  .detail-hero__actions {
-    width: 100%;
-  }
-
-  .detail-hero__actions .btn-accent {
-    flex: 1 1 auto;
-    justify-content: center;
-  }
-
-  .detail-document {
-    padding: 16px;
-  }
-
-  .detail-divider {
-    margin: 20px 0;
   }
 
   /* Label above value once the row is too narrow to hold both on one line. */

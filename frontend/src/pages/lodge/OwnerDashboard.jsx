@@ -114,6 +114,13 @@ const ICON_PATHS = {
       <path d="M3 6h18M3 12h18M3 18h18" />
     </>
   ),
+  dots: (
+    <>
+      <circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none" />
+    </>
+  ),
   search: (
     <>
       <circle cx="11" cy="11" r="7" />
@@ -145,9 +152,97 @@ const ICON_PATHS = {
       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </>
   ),
+  // Added so every sidebar section gets its own icon — several features used
+  // to share one glyph (three "wrench" rows, three "users" rows, and so on),
+  // which left the rail looking repetitive rather than naming each section.
+  idcard: (
+    <>
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <circle cx="9" cy="12" r="2.2" />
+      <path d="M6.3 16.3c.5-1.4 1.5-2.1 2.7-2.1s2.2.7 2.7 2.1" />
+      <path d="M15 10h5M15 13h5M15 16h3" />
+    </>
+  ),
+  ticket: (
+    <>
+      <path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4Z" />
+      <path d="M10 8v1.2M10 11.4v1.2M10 14.6v1.2M10 17.8v-1.2" />
+    </>
+  ),
+  clipboardList: (
+    <>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <rect x="9" y="2" width="6" height="4" rx="1" />
+      <path d="M8 11h8M8 14h8M8 17h5" />
+    </>
+  ),
+  sliders: (
+    <>
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <circle cx="15" cy="6" r="2" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <circle cx="9" cy="12" r="2" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+      <circle cx="16" cy="18" r="2" />
+    </>
+  ),
+  sparkles: (
+    <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.9 5.9l2.5 2.5M15.6 15.6l2.5 2.5M18.1 5.9l-2.5 2.5M8.4 15.6l-2.5 2.5" />
+  ),
+  droplet: <path d="M12 2.5s7 7.1 7 12a7 7 0 1 1-14 0c0-4.9 7-12 7-12Z" />,
+  grid: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </>
+  ),
+  qrcode: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <path d="M14 14h3v3h-3zM19 17h2v4h-4v-2" />
+    </>
+  ),
+  archive: (
+    <>
+      <rect x="3" y="4" width="18" height="5" rx="1.5" />
+      <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" />
+      <path d="M10 13h4" />
+    </>
+  ),
+  trendingUp: (
+    <>
+      <path d="M3 17l6-6 4 4 7-8" />
+      <path d="M15 7h5v5" />
+    </>
+  ),
+  pieChart: (
+    <>
+      <path d="M12 2a10 10 0 1 0 10 10H12Z" />
+      <path d="M12 2a10 10 0 0 1 10 10" />
+    </>
+  ),
+  landmark: (
+    <>
+      <path d="M3 10 12 4l9 6" />
+      <path d="M4 10h16v2H4z" />
+      <path d="M5 12v7M9 12v7M15 12v7M19 12v7" />
+      <path d="M3 21h18" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+      <path d="m3 12 9 5 9-5" />
+      <path d="m3 17 9 5 9-5" />
+    </>
+  ),
 };
 
-function Icon({ name, size = 18 }) {
+export function Icon({ name, size = 18 }) {
   return (
     <svg
       width={size}
@@ -198,6 +293,15 @@ export default function OwnerDashboard() {
   useEffect(() => {
     if (me?.lodge) setBrandLogo(logoUrl ? `${API_BASE}${logoUrl}` : null);
   }, [me?.lodge, logoUrl]);
+  // A logoUrl that 404s (stale path, file removed outside the app) used to
+  // render the browser's own broken-image glyph in the topbar badge — this
+  // falls back to the mark icon instead, the same as a lodge with no logo at
+  // all. Reset whenever the URL itself changes, so a fixed upload gets a
+  // fresh attempt rather than staying stuck on the last failure.
+  const [logoFailed, setLogoFailed] = useState(false);
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [logoUrl]);
   const endSplash = () => {
     setSplash(false);
     try {
@@ -361,10 +465,19 @@ export default function OwnerDashboard() {
   const [confirmSignOut, setConfirmSignOut] = useState(false);
 
   // Topbar state. The rail is open by default because on a desk monitor it is
-  // always visible; the hamburger only has an effect below the breakpoint,
-  // where the CSS hides a closed rail.
+  // always visible; on a phone the same flag instead decides whether the
+  // off-canvas drawer is showing at all.
   const isPhone = () => window.matchMedia('(max-width: 800px)').matches;
   const [navOpen, setNavOpen] = useState(() => !isPhone());
+  // Desktop's own toggle: the rail never fully hides above the phone
+  // breakpoint, it just narrows to icons-only. Separate from navOpen because
+  // the two mean different things — navOpen is "is the drawer on screen at
+  // all" (phone), railExpanded is "full labels, or just icons" (desktop).
+  const [railExpanded, setRailExpanded] = useState(true);
+  const toggleRail = () => {
+    if (isPhone()) setNavOpen((open) => !open);
+    else setRailExpanded((expanded) => !expanded);
+  };
 
   const handleSignOut = () => {
     clearSession();
@@ -475,31 +588,56 @@ export default function OwnerDashboard() {
         {/* The brand block sits over the rail rather than in the bar's flow:
             it is the sidebar's header, and lining it up with the rail below is
             what stops the bar reading as one undivided strip. */}
-        {/* Collapses the rail on narrow windows, where 240px of permanent nav
-            costs more than it gives. Above the breakpoint the rail never
-            hides, so the control has nothing to say and stays out of the bar
-            (display: none in OwnerDashboard.css) — this only renders visibly
-            on a phone, where it comes before the brand block (not after) so
-            the hamburger reads as "open the menu this logo belongs to" rather
-            than a stray control after the identity mark. */}
+        {/* One toggle, both breakpoints: on a phone it shows/hides the
+            off-canvas drawer, on a desk monitor it narrows the rail to
+            icons-only instead of hiding it (the rail is always-on real
+            estate there). Visible at every width now, rather than only
+            appearing below the phone breakpoint — a desk monitor with eight
+            sections' worth of permanent nav still benefits from being able
+            to reclaim that width. */}
         <button
           type="button"
           className="dash-topbar__menu"
-          aria-label={navOpen ? 'Hide sections' : 'Show sections'}
-          aria-expanded={navOpen}
-          onClick={() => setNavOpen((open) => !open)}
+          title={navOpen && railExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-label={navOpen && railExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-expanded={isPhone() ? navOpen : railExpanded}
+          onClick={toggleRail}
         >
           <Icon name="menu" size={20} />
         </button>
 
         <div className="dash-brand">
-          {me?.lodge.logoUrl ? (
+          {me?.lodge.logoUrl && !logoFailed ? (
             <span className="dash-brand__badge dash-brand__badge--logo" aria-hidden="true">
-              <img src={`${API_BASE}${me.lodge.logoUrl}`} alt="" />
+              <img
+                src={`${API_BASE}${me.lodge.logoUrl}`}
+                alt=""
+                onError={() => setLogoFailed(true)}
+              />
             </span>
           ) : (
-            <span className="dash-brand__badge" aria-hidden="true">
-              <Icon name="building" size={20} />
+            <span className="dash-brand__badge dash-brand__badge--mark" aria-hidden="true">
+              {/* A hotel mark, not a generic office building — a crown over a
+                  small block with windows and a door reads as "hospitality"
+                  at a glance the way the outline building icon didn't.
+                  Filled rather than stroked, so it needed its own markup
+                  instead of the shared Icon component (which is stroke-only).
+                  Blue on the white tile (currentColor, so it follows
+                  .dash-brand__badge--mark's own colour), with the windows
+                  and door as white cut-outs matching the tile itself. */}
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+                <path
+                  d="M4.3 9.6 7.4 12.5 9.2 8.3 12 10.6 14.8 8.3 16.6 12.5 19.7 9.6 18.6 16.2H5.4Z"
+                  fill="currentColor"
+                />
+                <circle cx="4.3" cy="8.2" r="1.15" fill="currentColor" />
+                <circle cx="12" cy="7.1" r="1.15" fill="currentColor" />
+                <circle cx="19.7" cy="8.2" r="1.15" fill="currentColor" />
+                <rect x="5.4" y="15.4" width="13.2" height="7.6" rx="1.2" fill="currentColor" />
+                <rect x="7.3" y="17.2" width="2.1" height="2.1" rx="0.4" fill="#ffffff" />
+                <rect x="14.6" y="17.2" width="2.1" height="2.1" rx="0.4" fill="#ffffff" />
+                <rect x="10.7" y="19" width="2.6" height="3" rx="0.5" fill="#ffffff" />
+              </svg>
             </span>
           )}
           <span className="dash-brand__text">
@@ -510,6 +648,7 @@ export default function OwnerDashboard() {
             <span className="dash-brand__name" title={me?.lodge.name || undefined}>
               {me?.lodge.name || 'Hotel Management'}
             </span>
+            <span className="dash-brand__tagline">Lodge Management System</span>
           </span>
         </div>
 
@@ -563,7 +702,7 @@ export default function OwnerDashboard() {
       <div className="dash-body">
         {navOpen && <div className="dash-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />}
         <nav
-          className={`dash-sidebar${navOpen ? '' : ' dash-sidebar--collapsed'}`}
+          className={`dash-sidebar${navOpen ? '' : ' dash-sidebar--collapsed'}${railExpanded ? '' : ' dash-sidebar--icon-only'}`}
           aria-label="Dashboard sections"
         >
           {/* Only this region scrolls when the section list runs past the
@@ -605,7 +744,12 @@ export default function OwnerDashboard() {
                 <div
                   className="dash-sidebar__collapse"
                   data-open={groupOpen(group)}
-                  inert={groupOpen(group) ? undefined : ''}
+                  // Icon-only mode forces every group open in CSS regardless
+                  // of groupOpen's own JS state (see .dash-sidebar--icon-only
+                  // in OwnerDashboard.css) — inert has to agree, or a group
+                  // the user never explicitly opened would render its icons
+                  // visible but unclickable and unfocusable underneath them.
+                  inert={!isPhone() && !railExpanded ? undefined : groupOpen(group) ? undefined : ''}
                 >
                 <ul className="dash-sidebar__list">
                   {features.map((feature) => (
@@ -613,6 +757,7 @@ export default function OwnerDashboard() {
                       <button
                         type="button"
                         className="dash-sidebar__item"
+                        title={feature.title}
                         aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
                         onClick={() => {
                           if (isPhone()) setNavOpen(false);
@@ -638,7 +783,7 @@ export default function OwnerDashboard() {
                         }}
                       >
                         <Icon name={feature.icon} />
-                        {feature.title}
+                        <span className="dash-sidebar__item-label">{feature.title}</span>
                         {feature.soon && <span className="dash-sidebar__soon">Soon</span>}
                         {feature.key === 'housekeeping' && issueCount > 0 && (
                           <span className="dash-sidebar__count" aria-label={`${issueCount} open ${issueCount === 1 ? 'issue' : 'issues'}`}>
@@ -663,10 +808,11 @@ export default function OwnerDashboard() {
                   <button
                     type="button"
                     className="dash-sidebar__item"
+                    title="User guide"
                     onClick={() => navigate('/guide')}
                   >
                     <Icon name="help" />
-                    User guide
+                    <span className="dash-sidebar__item-label">User guide</span>
                   </button>
                 </li>
               </ul>
@@ -681,10 +827,11 @@ export default function OwnerDashboard() {
             <button
               type="button"
               className="dash-sidebar__signout"
+              title="Sign out"
               onClick={() => setConfirmSignOut(true)}
             >
               <Icon name="signout" />
-              Sign out
+              <span className="dash-sidebar__item-label">Sign out</span>
             </button>
           </div>
         </nav>

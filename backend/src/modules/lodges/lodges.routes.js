@@ -11,6 +11,7 @@ const {
   removeLodgeLogoHandler,
   updateLodgeHeroImageHandler,
   removeLodgeHeroImageHandler,
+  getLodgeDashboardHandler,
   importLodgeMenuHandler,
 } = require('./lodges.controller');
 
@@ -25,6 +26,7 @@ router.put('/:id/logo', authenticate, requireRole('SUPERADMIN'), logoUpload, upd
 router.delete('/:id/logo', authenticate, requireRole('SUPERADMIN'), removeLodgeLogoHandler);
 router.put('/:id/hero-image', authenticate, requireRole('SUPERADMIN'), heroImageUpload, updateLodgeHeroImageHandler);
 router.delete('/:id/hero-image', authenticate, requireRole('SUPERADMIN'), removeLodgeHeroImageHandler);
+router.get('/:id/dashboard', authenticate, requireRole('SUPERADMIN'), getLodgeDashboardHandler);
 
 // Same spreadsheet import a lodge owner has on their own menu screen, run here
 // against whichever lodge id is in the URL — see importLodgeMenuHandler.

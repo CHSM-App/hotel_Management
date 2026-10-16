@@ -112,6 +112,20 @@ async function removeLodgeHeroImageHandler(req, res, next) {
   }
 }
 
+async function getLodgeDashboardHandler(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new ApiError('Lodge not found.', 404);
+    }
+    const foodPeriod = req.query.foodPeriod === '7d' ? '7d' : 'today';
+    const dashboard = await lodgesService.getLodgeDashboard(id, { foodPeriod });
+    res.json(dashboard);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Same bulk import as a lodge owner's own menu.routes.js POST /import, just
 // reached with the lodge named in the URL instead of taken from the token —
 // SUPERADMIN carries no lodgeId (see requirePermission), so it can't use that
@@ -139,5 +153,6 @@ module.exports = {
   removeLodgeLogoHandler,
   updateLodgeHeroImageHandler,
   removeLodgeHeroImageHandler,
+  getLodgeDashboardHandler,
   importLodgeMenuHandler,
 };

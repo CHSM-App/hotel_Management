@@ -7,9 +7,30 @@
    here. */
 .reg-shell {
   min-height: 100svh;
-  background:
-    radial-gradient(ellipse 70% 40% at 50% 0%, rgba(30, 58, 95, 0.07), transparent 70%),
-    var(--paper);
+  background: var(--paper);
+
+  /* Same superadmin-panel theme LodgesDashboard.css defines for .dash-shell,
+     repeated here since this form renders under its own top-level wrapper
+     rather than inside that one. Keeps the owner-facing app on its own
+     violet brand. */
+  --brand: #1246A0;
+  --brand-ink: #0D3882;
+  --brand-lift: #1246A0;
+  --brand-band: #1246A0;
+  --brand-band-deep: #0D3882;
+  --brand-navy: #082B59;
+  --brand-wash: #EAF1FB;
+  --brand-wash-edge: #BBD2EC;
+  --brand-focus: rgba(18, 70, 160, 0.16);
+  --paper: #F4F7FB;
+  --surface: #FFFFFF;
+  --border: #D5DEEA;
+  --ink: #142B4A;
+  --text-muted: #64748B;
+  --success: #087A50;
+  --success-bg: #E3F6EE;
+  --danger: #C62828;
+  --danger-bg: #FBEAEA;
 }
 
 /* Topbar ------------------------------------------------------------------ */
@@ -21,7 +42,7 @@
   gap: 16px;
   flex-wrap: wrap;
   padding: 18px 40px;
-  background: linear-gradient(135deg, var(--brand-ink), var(--brand) 62%, #24486f);
+  background: var(--brand);
   color: #ffffff;
   position: relative;
 }
@@ -144,7 +165,7 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+  background: var(--brand);
   color: #ffffff;
   font-size: 13px;
   font-weight: 700;
@@ -201,7 +222,7 @@
 .reg-shell .field select:focus {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.13);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 .reg-shell .field:last-child,
@@ -268,7 +289,7 @@
 
 .reg-type:focus-within {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.18);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 .reg-type__check {
@@ -512,7 +533,7 @@
 }
 
 .reg-switch input:focus-visible + .reg-switch__track {
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.25);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 /* Temporary password ------------------------------------------------------ */
@@ -564,10 +585,12 @@
 }
 
 /* Dark, because it is the promise being made rather than another question —
-   and because it has to stay legible while the eye is down in the form. */
+   and because it has to stay legible while the eye is down in the form. Solid
+   deep navy, not a gradient, to match the flat panel the rest of this theme
+   uses. */
 .reg-summary {
   border-radius: var(--radius-card);
-  background: linear-gradient(160deg, var(--brand-ink), #1b3352 55%, #21405f);
+  background: var(--brand-navy);
   color: #dce7f1;
   padding: 22px;
   box-shadow: var(--shadow-elevated);

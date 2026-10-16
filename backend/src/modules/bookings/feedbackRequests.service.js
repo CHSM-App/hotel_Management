@@ -106,7 +106,7 @@ async function sendDueFeedbackRequests() {
 
     const booking = { id: row.id, guestName: row.guest_name, guestPhone: row.guest_phone };
     const lodge = { name: row.lodge_name, phone: row.lodge_phone, whatsappNumber: row.lodge_whatsapp_number };
-    const link = `${publicBaseUrl()}/public/feedback/${token}`;
+    const link = `${publicBaseUrl()}/feedback/${token}`;
 
     const outcome = await feedbackRequest.notifyFeedbackRequest(row.lodge_id, booking, lodge, link, 'stay');
     if (outcome.status === 'sent') sent += 1;
