@@ -132,15 +132,15 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
           ],
           Row(
             children: [
-              FilterDropdownButton(options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v)),
-              const Spacer(),
+              Flexible(child: FilterDropdownButton(options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v))),
+              if (bothKinds) ...[
+                const SizedBox(width: AppTheme.s8),
+                Flexible(child: FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces')),
+              ],
+              const SizedBox(width: AppTheme.s8),
               HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
             ],
           ),
-          if (bothKinds) ...[
-            const SizedBox(height: AppTheme.s8),
-            FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces'),
-          ],
           const SizedBox(height: AppTheme.s12),
           if (pool.isNotEmpty && shown.isEmpty)
             NeuNotice(

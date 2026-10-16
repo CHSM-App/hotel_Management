@@ -903,7 +903,7 @@ class _ServiceQueueTable extends StatelessWidget {
     required this.onBill,
   });
 
-  static const _actionsWidth = 176.0;
+  static const _actionsWidth = 190.0;
   static const _columns = [
     _QueueTableColumn('service', 'Service', width: 160),
     _QueueTableColumn('detail', 'Detail', width: 220),

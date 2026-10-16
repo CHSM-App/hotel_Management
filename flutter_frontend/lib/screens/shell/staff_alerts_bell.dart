@@ -114,14 +114,14 @@ class _StaffAlertsBellState extends State<StaffAlertsBell> with SingleTickerProv
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppTheme.accent.withValues(alpha: count > 0 ? 0.12 : 0.07),
+                  color: Colors.white.withValues(alpha: count > 0 ? 0.24 : 0.16),
                 ),
                 child: Transform.rotate(
                   angle: _ring.value,
                   alignment: Alignment.topCenter,
                   child: Icon(
                     count > 0 ? Icons.notifications_rounded : Icons.notifications_none_rounded,
-                    color: count > 0 ? AppTheme.accent : AppTheme.text,
+                    color: Colors.white,
                     size: 21,
                   ),
                 ),
@@ -372,7 +372,7 @@ class _CountBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.danger,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.card, width: 1.5),
+        border: Border.all(color: AppTheme.navbar, width: 1.5),
       ),
       child: Text(
         count > 99 ? '99+' : '$count',

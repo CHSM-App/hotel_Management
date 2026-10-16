@@ -434,12 +434,12 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
                 borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x335A67D8),
+                    color: Color(0x331457AD),
                     offset: Offset(0, 3),
                     blurRadius: 8,
                   ),
@@ -469,7 +469,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
             height: 3,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x005A67D8)],
+                colors: [AppTheme.accent, Color(0x001457AD)],
               ),
             ),
           ),
@@ -1279,7 +1279,7 @@ class _TargetField extends StatelessWidget {
                 gradient: _isCounter
                     ? null
                     : const LinearGradient(
-                        colors: [AppTheme.accent, Color(0xFF434FC1)],
+                        colors: [AppTheme.accent, Color(0xFF10499A)],
                       ),
                 color: _isCounter ? AppTheme.card : null,
                 border: _isCounter ? Border.all(color: AppTheme.border) : null,
@@ -1571,7 +1571,7 @@ class _DietTab extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: selected
               ? const LinearGradient(
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 )
               : null,
           color: selected ? null : AppTheme.card,
@@ -1582,7 +1582,7 @@ class _DietTab extends StatelessWidget {
           boxShadow: selected
               ? const [
                   BoxShadow(
-                    color: Color(0x335A67D8),
+                    color: Color(0x331457AD),
                     offset: Offset(0, 3),
                     blurRadius: 8,
                   ),
@@ -1701,7 +1701,7 @@ class _SectionTabs extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: selected
                     ? const LinearGradient(
-                        colors: [AppTheme.accent, Color(0xFF434FC1)],
+                        colors: [AppTheme.accent, Color(0xFF10499A)],
                       )
                     : null,
                 color: selected ? null : AppTheme.card,
@@ -1712,7 +1712,7 @@ class _SectionTabs extends StatelessWidget {
                 boxShadow: selected
                     ? const [
                         BoxShadow(
-                          color: Color(0x335A67D8),
+                          color: Color(0x331457AD),
                           offset: Offset(0, 3),
                           blurRadius: 8,
                         ),

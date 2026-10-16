@@ -245,7 +245,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           if (pending > 0)
             Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.s8),
@@ -257,7 +257,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s12),
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
             child: _SectionHeader(
               label: 'Live orders',
               count: filtered.length,
@@ -667,14 +667,14 @@ class _ResponsiveCards extends StatelessWidget {
             children: [
               for (final card in cards)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s12),
+                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
                   child: card,
                 ),
             ],
           );
         }
 
-        const spacing = AppTheme.s12;
+        const spacing = AppTheme.s8;
         final itemWidth = (width - spacing * (columns - 1)) / columns;
         return Wrap(
           spacing: spacing,
@@ -887,7 +887,8 @@ class OrdersViewToggle extends StatelessWidget {
           onTap: () => onChanged(value),
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
           child: Container(
-            padding: const EdgeInsets.all(AppTheme.s8),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
             decoration: BoxDecoration(
               color: on ? AppTheme.accent.withValues(alpha: 0.1) : null,
               borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -904,16 +905,21 @@ class OrdersViewToggle extends StatelessWidget {
 
     return Align(
       alignment: Alignment.centerRight,
-      child: NeuCard(
-        radius: AppTheme.rSmall,
-        shadow: AppTheme.subtle,
-        padding: const EdgeInsets.all(2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            button('sheet', Icons.table_rows_rounded, 'Spreadsheet view'),
-            button('cards', Icons.view_agenda_rounded, 'Card view'),
-          ],
+      // Same 50px height as _SearchField so the two sit level in a row.
+      child: SizedBox(
+        height: 50,
+        child: NeuCard(
+          radius: AppTheme.rSmall,
+          shadow: AppTheme.subtle,
+          padding: const EdgeInsets.all(2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              button('sheet', Icons.table_rows_rounded, 'Spreadsheet view'),
+              button('cards', Icons.view_agenda_rounded, 'Card view'),
+            ],
+          ),
         ),
       ),
     );
@@ -1202,10 +1208,10 @@ class _OrderCard extends ConsumerWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppTheme.s12,
+                AppTheme.s8 + 2,
+                AppTheme.s4 + 2,
+                AppTheme.s8 + 2,
                 AppTheme.s8,
-                AppTheme.s12,
-                AppTheme.s12,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2255,7 +2261,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                 child: Padding(
                   padding: EdgeInsets.symmetric(
                     horizontal: AppTheme.s8,
-                    vertical: header ? AppTheme.s12 : AppTheme.s8 + 2,
+                    vertical: header ? AppTheme.s8 : AppTheme.s4 + 1,
                   ),
                   child: cells[i],
                 ),

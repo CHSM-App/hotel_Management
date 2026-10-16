@@ -473,7 +473,7 @@ class _Header extends ConsumerWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, Color(0xFF434190)],
+                    colors: [AppTheme.accent, Color(0xFF10499A)],
                   ),
                 ),
                 child: Stack(

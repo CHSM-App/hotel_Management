@@ -224,12 +224,12 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
                 borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x335A67D8),
+                    color: Color(0x331457AD),
                     offset: Offset(0, 3),
                     blurRadius: 8,
                   ),
@@ -249,7 +249,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
             height: 3,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x005A67D8)],
+                colors: [AppTheme.accent, Color(0x001457AD)],
               ),
             ),
           ),
@@ -401,11 +401,11 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             spacing: AppTheme.s8,
                             runSpacing: AppTheme.s8,
                             children: [
-                              _RateChip(
+                              RateChip(
                                 '${formatPrice(_selectedCategory!.basePrice)} /night',
                                 accent: true,
                               ),
-                              _RateChip(_selectedCategory!.name),
+                              RateChip(_selectedCategory!.name),
                             ],
                           ),
                         ],
@@ -747,7 +747,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                     ),
                   ),
                   const SizedBox(height: AppTheme.s16),
-                  _Footer(
+                  RoomFormFooter(
                     roomCountLabel: _roomCountLabel,
                     category: _selectedCategory,
                     submitting: submitting,
@@ -917,14 +917,21 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
 /// The rate this room (or range) will carry, pinned above Cancel/Add room —
 /// the same "rate stays visible while the form is filled in" the booking
 /// screen's own quote total does.
-class _Footer extends StatelessWidget {
+class RoomFormFooter extends StatelessWidget {
+  final String submitLabel;
+  final IconData submitIcon;
+  final String cancelLabel;
   final String roomCountLabel;
   final RoomCategory? category;
   final bool submitting;
   final VoidCallback onCancel;
   final VoidCallback onSubmit;
 
-  const _Footer({
+  const RoomFormFooter({
+    super.key,
+    this.submitLabel = 'Add room',
+    this.submitIcon = Icons.add_rounded,
+    this.cancelLabel = 'Cancel',
     required this.roomCountLabel,
     required this.category,
     required this.submitting,
@@ -1005,7 +1012,7 @@ class _Footer extends StatelessWidget {
                   child: NeuButton(
                     onPressed: submitting ? null : onCancel,
                     padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-                    child: const Text('Cancel'),
+                    child: Text(cancelLabel),
                   ),
                 ),
                 const SizedBox(width: AppTheme.s12),
@@ -1021,14 +1028,14 @@ class _Footer extends StatelessWidget {
                             width: 16,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : const FittedBox(
+                        : FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                                SizedBox(width: 4),
-                                Text('Add room'),
+                                Icon(submitIcon, color: Colors.white, size: 18),
+                                const SizedBox(width: 4),
+                                Text(submitLabel),
                               ],
                             ),
                           ),
@@ -1043,11 +1050,11 @@ class _Footer extends StatelessWidget {
   }
 }
 
-class _RateChip extends StatelessWidget {
+class RateChip extends StatelessWidget {
   final String label;
   final bool accent;
 
-  const _RateChip(this.label, {this.accent = false});
+  const RateChip(this.label, {super.key, this.accent = false});
 
   @override
   Widget build(BuildContext context) {

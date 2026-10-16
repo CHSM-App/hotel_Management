@@ -92,12 +92,12 @@ class _Section extends StatelessWidget {
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, Color(0xFF434FC1)],
+                    colors: [AppTheme.accent, Color(0xFF10499A)],
                   ),
                   borderRadius: BorderRadius.circular(AppTheme.rSmall),
                   boxShadow: const [
                     BoxShadow(
-                      color: Color(0x2A5A67D8),
+                      color: Color(0x2A1457AD),
                       offset: Offset(0, 2),
                       blurRadius: 5,
                     ),

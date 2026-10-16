@@ -119,12 +119,12 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
                 borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x335A67D8),
+                    color: Color(0x331457AD),
                     offset: Offset(0, 3),
                     blurRadius: 8,
                   ),
@@ -151,7 +151,7 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
           child: Container(
             height: 3,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x005A67D8)]),
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
             ),
           ),
         ),

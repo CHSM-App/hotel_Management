@@ -11,9 +11,9 @@ import 'package:flutter/material.dart';
 /// resolve to the right flat colours without per-screen edits.
 class AppTheme {
   // ── Surface ───────────────────────────────────────────────────────────────
-  static const Color bg = Color(0xFFF9FAFB);
+  static const Color bg = Color(0xFFF4F6FA);
   static const Color card = Color(0xFFFFFFFF);
-  static const Color border = Color(0xFFF0F1F3);
+  static const Color border = Color(0xFFE3E8F0);
 
   /// A noticeably darker hairline than [border] — too-light to read as an
   /// edge against a plain white card. Used where a box must visibly
@@ -25,25 +25,30 @@ class AppTheme {
 
   /// Aliases for the old neumorphic tokens — still referenced by shadow
   /// lists and a handful of screens' `Border.all(color: ...)` calls.
-  static const Color shadowDark = Color(0xFFE4E6EA);
+  static const Color shadowDark = Color(0xFFDCE1EC);
   static const Color shadowLight = Color(0xFFFFFFFF);
 
   // ── Text ──────────────────────────────────────────────────────────────────
-  static const Color text = Color(0xFF4A5568);
-  static const Color heading = Color(0xFF1A1D23);
-  static const Color muted = Color(0xFF8B8F99);
+  static const Color text = Color(0xFF48566A);
+  static const Color heading = Color(0xFF16212E);
+  static const Color muted = Color(0xFF78859A);
 
   // ── Accent ────────────────────────────────────────────────────────────────
-  static const Color accent = Color(0xFF5A67D8);
+  static const Color accent = Color(0xFF1457AD);
+
+  /// The web navbar's own dark navy (OwnerDashboard.css --brand) — the top bar only.
+  static const Color navbar = Color(0xFF0B2E5C);
+  static const Color brandLift = Color(0xFF1457AD);
+  static const Color gold = Color(0xFFC79A3A);
 
   /// The sidebar's own brand tokens — lifted straight from the web
   /// dashboard's OwnerDashboard.css / index.css (--brand, --brand-ink,
   /// --brand-wash, --brand-wash-edge) so the rail reads as the same surface
   /// on both clients rather than a phone-flavoured guess at it.
-  static const Color sidebarBrand = Color(0xFF5B3FD9);
-  static const Color sidebarBrandInk = Color(0xFF4527B8);
-  static const Color sidebarBrandWash = Color(0xFFEFEBFD);
-  static const Color sidebarBrandWashEdge = Color(0xFFDCD4FA);
+  static const Color sidebarBrand = Color(0xFF1457AD);
+  static const Color sidebarBrandInk = Color(0xFF10499A);
+  static const Color sidebarBrandWash = Color(0xFFEAF1FB);
+  static const Color sidebarBrandWashEdge = Color(0xFFBBD2EC);
   static const Color sidebarText = Color(0xFF48566A);
   static const Color sidebarTextMuted = Color(0xFF78859A);
   static const Color sidebarBorder = Color(0xFFE3E8F0);
@@ -57,12 +62,12 @@ class AppTheme {
   // ── Status ────────────────────────────────────────────────────────────────
   // The tape chart's own vocabulary, carried over so a room reads the same on
   // the phone as it does on the wall screen at the desk.
-  static const Color vacant = Color(0xFF6FA57C);
+  static const Color vacant = Color(0xFF087A50);
   static const Color reserved = Color(0xFFE0453C);
   static const Color checkedIn = Color(0xFF2F7FE4);
   static const Color stayed = Color(0xFF8695A3);
   static const Color draft = Color(0xFFF2C31D);
-  static const Color danger = Color(0xFFB42318);
+  static const Color danger = Color(0xFFC62828);
 
   /// A problem worth flagging but not stopping the desk over — over
   /// capacity being the first use, where Save still has to work. Mirrors

@@ -67,12 +67,12 @@ class SectionLabel extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [AppTheme.accent, Color(0xFF434FC1)],
+                colors: [AppTheme.accent, Color(0xFF10499A)],
               ),
               shape: BoxShape.circle,
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x2A5A67D8),
+                  color: Color(0x2A1457AD),
                   offset: Offset(0, 2),
                   blurRadius: 5,
                 ),
@@ -429,7 +429,7 @@ class _ToggleSegment extends StatelessWidget {
               ? const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 )
               : null,
           color: selected ? null : AppTheme.bg,
@@ -438,7 +438,7 @@ class _ToggleSegment extends StatelessWidget {
           boxShadow: selected
               ? const [
                   BoxShadow(
-                    color: Color(0x335A67D8),
+                    color: Color(0x331457AD),
                     offset: Offset(0, 3),
                     blurRadius: 8,
                   ),

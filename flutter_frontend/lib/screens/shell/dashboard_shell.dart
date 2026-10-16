@@ -160,9 +160,9 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
-        statusBarColor: AppTheme.card,
-        statusBarIconBrightness: Brightness.dark,
-        statusBarBrightness: Brightness.light,
+        statusBarColor: AppTheme.navbar,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
       ),
       child: PopScope(
         canPop: false,
@@ -596,8 +596,8 @@ class _TopBar extends StatelessWidget {
         0,
       ),
       decoration: BoxDecoration(
-        color: AppTheme.card,
-        boxShadow: AppTheme.subtle,
+        color: AppTheme.navbar,
+        boxShadow: AppTheme.elevated,
       ),
       child: SizedBox(
         height: 56,
@@ -606,10 +606,10 @@ class _TopBar extends StatelessWidget {
             if (onMenuTap != null)
               IconButton(
                 tooltip: 'Sections',
-                icon: const Icon(Icons.menu_rounded, color: AppTheme.text, size: 22),
+                icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 22),
                 visualDensity: VisualDensity.compact,
                 style: IconButton.styleFrom(
-                  backgroundColor: AppTheme.bg,
+                  backgroundColor: Colors.white.withValues(alpha: 0.16),
                   shape: const CircleBorder(),
                 ),
                 onPressed: onMenuTap,
@@ -623,7 +623,7 @@ class _TopBar extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: AppTheme.heading,
+                  color: Colors.white,
                   fontSize: 19,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.2,

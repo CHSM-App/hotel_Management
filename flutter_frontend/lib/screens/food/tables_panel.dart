@@ -118,7 +118,7 @@ class _TableCard extends ConsumerWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: table.isActive
-                    ? const [AppTheme.accent, Color(0xFF434190)]
+                    ? const [AppTheme.accent, Color(0xFF10499A)]
                     : [AppTheme.muted, AppTheme.muted.withValues(alpha: 0.75)],
               ),
             ),
@@ -380,11 +380,11 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
                 borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
                 boxShadow: const [
-                  BoxShadow(color: Color(0x335A67D8), offset: Offset(0, 3), blurRadius: 8),
+                  BoxShadow(color: Color(0x331457AD), offset: Offset(0, 3), blurRadius: 8),
                 ],
               ),
               child: Icon(
@@ -408,7 +408,7 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
           child: Container(
             height: 3,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x005A67D8)]),
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
             ),
           ),
         ),
