@@ -168,7 +168,7 @@ async function downloadUsagesExcel(rows, lodge, scopeLabel) {
 const USAGE_PDF_WIDTHS = [94, 30, 40, 40, 60, 40, 88, 70, 54, 68, 54];
 const PDF_INK = '#16212E';
 const PDF_MUTED = '#78859A';
-const PDF_BRAND = '#5B3FD9';
+const PDF_BRAND = '#0A3A6B';
 const PDF_HEAD_FILL = '#F1EEFC';
 const PDF_ZEBRA_FILL = '#FAFAFC';
 

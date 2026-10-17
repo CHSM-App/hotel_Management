@@ -44,14 +44,16 @@
   color: var(--text);
 }
 
+/* Matches the subtabs strip everywhere else in the app (see RoomsAndRates.css
+   .subtabs__item[aria-current='page']) — brand navy, not sky blue. */
 .billing-panel__subtabs-item[aria-current='page'] {
   color: var(--brand-ink);
   border-bottom-color: var(--brand);
 }
 
 .billing-panel__subtabs-count {
-  background: var(--brand);
-  color: #2a1c05;
+  background: var(--accent);
+  color: var(--accent-ink);
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
@@ -1279,7 +1281,7 @@
 
 .billing-panel__early-input:focus-within {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.15);
+  box-shadow: 0 0 0 3px rgba(10, 58, 107, 0.15);
 }
 
 .billing-panel__early-input > span {
@@ -1554,6 +1556,181 @@
   min-width: 760px;
 }
 
+/* Lower floor than the 760px above — .billing-sheet__page-scroll gave up its
+   horizontal scrollbar (see the note below) to keep the sticky header
+   correct, so the less this table insists on, the less often a laptop-width
+   window has to spill rather than scroll. */
+.history-sheet.billing-sheet__page-scroll .history-table {
+  min-width: 0;
+}
+
+/* The plain Bills report carries its own .billing-sheet__bills modifier (on
+   the <section>, alongside .history-sheet.billing-sheet) rather than being
+   singled out with :not(.billing-sheet__ready):not(.billing-sheet__services)
+   the way the rules below it used to — a direct class is one the cascade
+   can't misjudge, where a relative :has() chain depends on getting the
+   exact DOM shape right on both ends.
+
+   table-layout: fixed with a percentage on every column, rather than
+   shrink-to-fit nowrap columns adding up to whatever they add up to — the
+   .billing-sheet__page-scroll section this table sits in gave up its own
+   horizontal scrollbar (overflow: visible is what the sticky header needs,
+   see further down), so an auto-layout table had nowhere to put its own
+   overflow but past the card's right edge, where .dash-shell's page-wide
+   overflow-x: clip quietly hid it. Fixed percentages instead guarantee the
+   table is never wider than its card to begin with — the thing that was
+   missing isn't a scrollbar, it's a table that doesn't need one. Guest /
+   Table and Room are left wrapping (not nowrap): they're the two columns
+   whose content length actually varies — a long name, a multi-room list —
+   so letting them run to a second line is better than either column
+   demanding more of the fixed row than its 20%/10% share. */
+.history-sheet.billing-sheet__bills .history-table {
+  table-layout: fixed;
+}
+
+.history-sheet.billing-sheet__bills .history-table th:nth-child(1),
+.history-sheet.billing-sheet__bills .history-table td:nth-child(1) {
+  width: 8%;
+}
+
+.history-sheet.billing-sheet__bills .history-table th:nth-child(2),
+.history-sheet.billing-sheet__bills .history-table td:nth-child(2) {
+  width: 9%;
+}
+
+/* Widened from 11%: "Dormitory" reads longer than "Room" did, and a pill
+   like "Dormitory + food" needs more room than the old "Room + food" to
+   stay fully on screen instead of clipping mid-word. Taken from Date and
+   Room, the two columns either side with the least to say. */
+.history-sheet.billing-sheet__bills .history-table th:nth-child(3),
+.history-sheet.billing-sheet__bills .history-table td:nth-child(3) {
+  width: 15%;
+}
+
+.history-sheet.billing-sheet__bills .history-table th:nth-child(4),
+.history-sheet.billing-sheet__bills .history-table td:nth-child(4) {
+  width: 20%;
+}
+
+.history-sheet.billing-sheet__bills .history-table th:nth-child(5),
+.history-sheet.billing-sheet__bills .history-table td:nth-child(5) {
+  width: 8%;
+}
+
+.history-sheet.billing-sheet__bills .history-table th:nth-child(6),
+.history-sheet.billing-sheet__bills .history-table td:nth-child(6) {
+  width: 13%;
+}
+
+.history-sheet.billing-sheet__bills .history-table th:nth-child(7),
+.history-sheet.billing-sheet__bills .history-table td:nth-child(7) {
+  width: 15%;
+}
+
+.history-sheet.billing-sheet__bills .history-table th:nth-child(8),
+.history-sheet.billing-sheet__bills .history-table td:nth-child(8) {
+  width: 12%;
+}
+
+.history-sheet.billing-sheet__bills .history-table td:nth-child(4),
+.history-sheet.billing-sheet__bills .history-table td:nth-child(5) {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* overflow/text-overflow guard every other fixed-width nowrap cell the way
+   clipping normally does elsewhere: without it, content wider than its
+   column renders past the cell's edge and sits on top of the column next to
+   it instead of being cut off. Billed for (3) is carved out below instead —
+   an ellipsis there silently drops half a tag's meaning ("Dormitory + f…"),
+   where wrapping the tag onto two lines keeps the whole word readable. */
+.history-sheet.billing-sheet__bills .history-table td:not(.billing-sheet__guest-cell):not(:nth-child(3)):not(:nth-child(4)):not(:nth-child(5)) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Billed for: wraps rather than clips. The pill is the one tag in this sheet
+   whose own text can run long enough to lose meaning if it's elided (a
+   dormitory stay's "Dormitory + food"), so its column — and the tag inside
+   it — are let to wrap onto a second line instead of being cut off like the
+   shorter tags in every other column. */
+.history-sheet.billing-sheet__bills .history-table td:nth-child(3) {
+  white-space: normal;
+}
+
+.history-sheet.billing-sheet__bills .history-table td:nth-child(3) .bill-tag {
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.history-sheet.billing-sheet__bills .history-table th,
+.history-sheet.billing-sheet__bills .history-table td {
+  padding: 10px 14px;
+}
+
+/* .history-table th is already position: sticky; top: 0 (OrdersPanel.css) —
+   but .history-table-wrap caps itself at a 65vh scrollbox (OrdersPanel.css),
+   so that sticky only ever held the header to the top of that small inner
+   box, not to the page. The register's table went through the same fix:
+   let these cards scroll with the rest of the page instead, and pin their
+   header under the real navbar so it's the thing that stays in view across
+   a long list.
+
+   overflow: hidden is what gives the card its rounded corners — sticky
+   can't escape an ancestor with any overflow other than visible, so that
+   has to go too, with the corners restored by hand on the table's own
+   extreme cells below. .billing-sheet__page-scroll is the shared modifier
+   for this treatment — Bills (both the embedded tab and the standalone
+   report) and Services all carry it; Ready to bill keeps its own short,
+   internally-scrolling queue. Every rule here carries the redundant
+   .history-sheet alongside it purely to out-specificity the
+   OrdersPanel.css rules it's overriding — several of those match at the
+   same two-class weight this would otherwise tie with, which would leave
+   the winner decided by file load order rather than intent. */
+.history-sheet.billing-sheet__page-scroll {
+  overflow: visible;
+}
+
+/* overflow-x: auto looked like the fix for the earlier horizontal spill, but
+   it was wrong: the moment any axis on this box stops being visible, CSS
+   forces the OTHER axis to compute as auto too (a real spec quirk, not a
+   bug) — and that alone is enough to make this box a scroll container.
+   top: var(--dash-topbar-h) on the header then sticks it to THIS box's own
+   top edge, not the viewport's, which is a different thing the instant this
+   box isn't sitting flush at the very top of the page — exactly what put
+   the header stuck mid-table, overlapping rows, in both the Bills and
+   Services screenshots. overflow: visible is the only setting here that
+   keeps this box out of the sticky containing-block chain entirely, so the
+   header's offset is measured from the real page/navbar again. The
+   trade-off: horizontal overflow on a narrow window is no longer caught in
+   a scrollbar — min-width below is kept modest so that stays rare. */
+.history-sheet.billing-sheet__page-scroll .history-table-wrap {
+  overflow: visible;
+  max-height: none;
+}
+
+.history-sheet.billing-sheet__page-scroll .history-table th {
+  top: var(--dash-topbar-h, 0);
+  z-index: 2;
+}
+
+.history-sheet.billing-sheet__page-scroll .history-table thead th:first-child {
+  border-top-left-radius: var(--radius-tile);
+}
+
+.history-sheet.billing-sheet__page-scroll .history-table thead th:last-child {
+  border-top-right-radius: var(--radius-tile);
+}
+
+.history-sheet.billing-sheet__page-scroll .history-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-tile);
+}
+
+.history-sheet.billing-sheet__page-scroll .history-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-tile);
+}
+
 .billing-sheet__row {
   cursor: pointer;
 }
@@ -1610,10 +1787,13 @@
   color: var(--text-muted);
 }
 
+/* Amber, not brand — "to collect" is money still owed, the thing on this
+   row that most wants a desk's attention, and amber is the palette's own
+   colour for exactly that: a highlight that needs to be findable. */
 .billing-sheet__due-cell {
   font-weight: 800;
-  color: var(--brand);
-  background: var(--accent-soft, #eeeafc);
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
 }
 
 .billing-sheet__note {
@@ -1698,6 +1878,118 @@
 .history-sheet .history-table.billing-sheet__ready tfoot td {
   font-weight: 700;
   background: var(--paper);
+}
+
+/* --- Ready to bill: premium polish --------------------------------------- */
+
+/* Scoped to .billing-sheet rather than the bare .history-sheet__title/__sub
+   OrdersPanel.css defines them on — those are shared with Orders' own
+   history sheets, which this card has nothing to do with. */
+.billing-sheet .history-sheet__title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.billing-sheet .history-sheet__sub {
+  font-size: 12.5px;
+}
+
+/* A touch more room than the 8px/6px laptop-fit padding above, and a
+   heading that reads as set type rather than a cramped label — the
+   letter-spacing and weight bump make a short all-caps word like "ROOM"
+   look chosen rather than left at the browser default. Kept modest on
+   purpose: this sheet is nine columns wide, and the 11px/16px version of
+   this rule pushed the row past the card's own width and forced the
+   horizontal scrollbar the tight padding above existed specifically to
+   avoid. */
+.history-sheet .history-table.billing-sheet__ready th,
+.history-sheet .history-table.billing-sheet__ready td {
+  padding: 9px 9px;
+}
+
+.billing-sheet__ready th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+@media (min-width: 1300px) {
+  .history-sheet .history-table.billing-sheet__ready th,
+  .history-sheet .history-table.billing-sheet__ready td {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+/* The room pill was flat paper-on-border, the same neutral chip every other
+   outline badge in the app uses — here it's the second thing a desk reads
+   after the guest's name, so it earns the brand's own wash instead of
+   disappearing into the row. */
+.billing-sheet__ready .history-table__where {
+  background: var(--brand-wash, #eef1fb);
+  border-color: var(--brand-wash-edge, transparent);
+  color: var(--brand-ink);
+  padding: 2px 10px;
+}
+
+/* A quiet lift on hover — the row itself isn't clickable (Bill is its own
+   button), but the tint confirms which line the cursor is actually over
+   across nine columns. */
+.billing-sheet__ready .history-table__row:hover > td {
+  background: var(--neu-sunken, #f7f8fc);
+}
+
+.billing-sheet__ready .history-table__row:hover > td.billing-sheet__due-cell {
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface));
+}
+
+/* The "to collect" wash reads as a cell fill rather than a deliberate
+   column when it runs edge-to-edge with no texture of its own — amber's
+   own hairline running down just that column gives it a seam, so it still
+   reads as "this card" even once the sheet has eight other columns banding
+   past it. */
+.billing-sheet__ready td.billing-sheet__due-cell {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--accent) 45%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* The totals row closes the sheet, not just another band of it — set off
+   with the brand's own rule rather than the hairline every other row gets,
+   and the figures a size up so the close reads as a sum, not one more
+   line. */
+.history-sheet .history-table.billing-sheet__ready tfoot td {
+  border-top: 2px solid var(--brand);
+  font-size: 13.5px;
+}
+
+.history-sheet .history-table.billing-sheet__ready tfoot td:first-child {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.history-sheet .history-table.billing-sheet__ready tfoot .billing-sheet__due-cell {
+  color: var(--accent-ink);
+  font-weight: 800;
+}
+
+/* --- Ready to bill: card view ---------------------------------------------
+   Reuses the kitchen queue's own card (order-card, OrdersPanel.css) rather
+   than a new component — a desk already reads that card's shape as "a job
+   with line items and a number to act on", which is exactly what a stay
+   waiting to be billed is. These overrides are the only things that differ:
+   the guest's name in place of an order number, and the amber "to collect"
+   figure in place of the kitchen's plain total. */
+.billing-card__guest {
+  font-size: 17px;
+}
+
+.billing-card__due {
+  color: var(--accent-ink);
+}
+
+.billing-card__advance {
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 /* Services to bill: same shrink-to-content treatment as Ready to bill, minus

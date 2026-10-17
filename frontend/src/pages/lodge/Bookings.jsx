@@ -1168,19 +1168,24 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     return stats;
   }, [categorySections, occupancy, dates.length]);
 
-  // The same figure as categoryStats, rolled up across every category — the
-  // single "X% sold" the legend row shows for the whole window, rather than
-  // one the desk has to add up itself from the category chips.
-  const overallStats = useMemo(() => {
-    if (categoryStats.size === 0) return null;
+  // The whole-property figure the legend row shows, rolled up across every
+  // room rather than the window categoryStats covers. A percentage of the
+  // next thirty days read as near-zero no matter how full the house is
+  // tonight — one occupied night out of thirty looks the same on that scale
+  // as the property standing empty. Today is the one night the desk is
+  // actually asking about when it glances at this row.
+  const todayStats = useMemo(() => {
+    if (categorySections.length === 0) return null;
     let sold = 0;
     let capacity = 0;
-    for (const stats of categoryStats.values()) {
-      sold += stats.sold;
-      capacity += stats.capacity;
+    for (const section of categorySections) {
+      for (const room of section.rooms) {
+        capacity += 1;
+        if (occupancy.get(String(room.id))?.has(today)) sold += 1;
+      }
     }
     return { sold, capacity, percent: capacity ? Math.round((sold / capacity) * 100) : 0 };
-  }, [categoryStats]);
+  }, [categorySections, occupancy, today]);
 
   // Each category card, by name, so the chips above can reach the one they
   // stand for. A map rather than an array because the sections come and go as
@@ -3650,15 +3655,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     <div className="bookings-panel">
       {!modalOnly && (
       <>
-      {/* The stepper, search and legend — not sticky any more. Only the
-          category row below (.tape-cats--sticky) stays pinned under the
-          navbar now; this block scrolls away with the rest of the page.
-
-          It was three stacked rows each sparse across its own line, which
-          cost about a hundred and seventy pixels of chrome before the first
-          room. They stay folded into two here regardless: the month
-          stepper, the search field and the actions share the top line, and
-          the legend shares the second with whatever the search has found. */}
+      {/* The stepper, search and actions — not sticky any more. Only the
+          status/category row below (.tape-row--sticky) stays pinned under
+          the navbar now; this block scrolls away with the rest of the page. */}
       <div className="tape-controls">
       <div className="bookings-panel__toolbar">
         <div className="tape-nav">
@@ -3844,86 +3843,91 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         </div>
       </div>
 
-      {/* The colour key, on its own row now rather than sharing the toolbar
-          with the stepper — the window's overall sold figure rides along on
-          the far end, since it's the number the desk opens this screen for. */}
-      <div className="tape-legend">
-        <div className="bookings-panel__toolbar-chips">
-          <span className="tape-legend__item">
-            <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
-          </span>
-          {/* Only where Housekeeping is on, and so has something to say. */}
-          {notReady && (
-            <span className="tape-legend__item" title="Needs cleaning, being cleaned or under repair today">
-              <i className="tape-legend__swatch tape-legend__swatch--notready" />Not ready
+      </div>
+
+      {/* The colour key and the category jump chips, on one sticky row now —
+          out of .tape-controls so only this row (not the stepper/search
+          above it) stays pinned under the navbar while the rest scrolls
+          normally. A divider keeps the two groups reading as what they are:
+          the swatches cut the chart by colour, the chips jump it by
+          category — different controls sharing one line rather than one
+          long run of identical-looking pills. */}
+      {!tapeError && (
+        <div className="tape-row tape-row--sticky">
+          <div className="tape-row__status">
+            <span className="tape-legend__item">
+              <i className="tape-legend__swatch tape-legend__swatch--vacant" />Vacant
             </span>
-          )}
-          {LEGEND_LINKS.map((item) => (
+            {/* Only where Housekeeping is on, and so has something to say. */}
+            {notReady && (
+              <span className="tape-legend__item" title="Needs cleaning, being cleaned or under repair today">
+                <i className="tape-legend__swatch tape-legend__swatch--notready" />Not ready
+              </span>
+            )}
+            {LEGEND_LINKS.map((item) => (
+              <button
+                key={item.status}
+                type="button"
+                className="tape-legend__item tape-legend__item--link"
+                onClick={() => onShowRegister?.(item.status)}
+                title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
+              >
+                <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
+                {item.label}
+              </button>
+            ))}
+            {/* Draft lands in the register beside the other three rather than in
+                the toolbar's modal. The register carries a Draft cut of its own,
+                so following the yellow gets the desk the same kind of page the red
+                and the blue do — a filtered list it can search and sort. The modal
+                stays where it is, on the toolbar button, for a quick look without
+                leaving the chart. */}
             <button
-              key={item.status}
               type="button"
               className="tape-legend__item tape-legend__item--link"
-              onClick={() => onShowRegister?.(item.status)}
-              title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
+              onClick={() => onShowRegister?.('DRAFT')}
+              title="Show drafts in Booking Details"
             >
-              <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
-              {item.label}
+              <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
             </button>
-          ))}
-          {/* Draft lands in the register beside the other three rather than in
-              the toolbar's modal. The register carries a Draft cut of its own,
-              so following the yellow gets the desk the same kind of page the red
-              and the blue do — a filtered list it can search and sort. The modal
-              stays where it is, on the toolbar button, for a quick look without
-              leaving the chart. */}
-          <button
-            type="button"
-            className="tape-legend__item tape-legend__item--link"
-            onClick={() => onShowRegister?.('DRAFT')}
-            title="Show drafts in Booking Details"
-          >
-            <i className="tape-legend__swatch tape-legend__swatch--draft" />Draft
-          </button>
-        </div>
+          </div>
 
-        {overallStats && (
-          <span className="tape-legend__sold">{overallStats.percent}% sold</span>
-        )}
-      </div>
+          {/* Only worth showing when there is somewhere to jump to — with a
+              single category the chip would scroll to the card already
+              filling the screen. */}
+          {categorySections.length > 1 && (
+            <>
+              <span className="tape-row__divider" aria-hidden="true" />
+              <div className="tape-row__cats" role="tablist" aria-label="Jump to a room category">
+                {categorySections.map((section) => {
+                  const stats = categoryStats.get(section.categoryName);
+                  const active = activeCategory === section.categoryName;
+                  return (
+                    <button
+                      key={section.categoryName}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
+                      onClick={() => jumpToCategory(section.categoryName)}
+                      title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
+                        section.rooms.length === 1 ? '' : 's'
+                      }`}
+                    >
+                      {section.categoryName}
+                      <span className="tape-cats__count">{section.rooms.length}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
-      </div>
-
-      {/* The category jump row — out of .tape-controls and sticky on its own
-          now, so only this row (not the stepper/search/legend above it)
-          stays pinned under the navbar while the rest scrolls normally.
-          One chip per grade of room; the status chips above cut the chart
-          by colour, these jump it by category.
-
-          Only worth showing when there is somewhere to jump to — with a
-          single category the chip would scroll to the card already filling
-          the screen. */}
-      {!tapeError && categorySections.length > 1 && (
-        <div className="tape-cats tape-cats--sticky" role="tablist" aria-label="Jump to a room category">
-          {categorySections.map((section) => {
-            const stats = categoryStats.get(section.categoryName);
-            const active = activeCategory === section.categoryName;
-            return (
-              <button
-                key={section.categoryName}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className={`tape-cats__chip${active ? ' tape-cats__chip--active' : ''}`}
-                onClick={() => jumpToCategory(section.categoryName)}
-                title={`Jump to ${section.categoryName} · ${section.rooms.length} room${
-                  section.rooms.length === 1 ? '' : 's'
-                }`}
-              >
-                {section.categoryName}
-                <span className="tape-cats__count">{section.rooms.length}</span>
-              </button>
-            );
-          })}
+          {todayStats && (
+            <span className="tape-legend__sold" title="Rooms occupied tonight, across every category">
+              {todayStats.percent}% sold today
+            </span>
+          )}
         </div>
       )}
 

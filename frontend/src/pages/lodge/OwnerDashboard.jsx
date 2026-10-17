@@ -25,6 +25,7 @@ import ReportsPanel from './ReportsPanel';
 import { REPORT_SECTIONS, reportSectionOf } from '../../lib/reportSections';
 import StaffAndRoles from './StaffAndRoles';
 import FoodSetup from './FoodSetup';
+import BillNumberingPanel from './BillNumberingPanel';
 import FoodSection from './FoodSection';
 import Events from './Events';
 import AssetsPanel from './AssetsPanel';
@@ -238,6 +239,14 @@ const ICON_PATHS = {
       <path d="m12 2 9 5-9 5-9-5 9-5Z" />
       <path d="m3 12 9 5 9-5" />
       <path d="m3 17 9 5 9-5" />
+    </>
+  ),
+  hash: (
+    <>
+      <line x1="4" y1="9" x2="20" y2="9" />
+      <line x1="4" y1="15" x2="20" y2="15" />
+      <line x1="10" y1="3" x2="8" y2="21" />
+      <line x1="16" y1="3" x2="14" y2="21" />
     </>
   ),
 };
@@ -648,7 +657,16 @@ export default function OwnerDashboard() {
             <span className="dash-brand__name" title={me?.lodge.name || undefined}>
               {me?.lodge.name || 'Hotel Management'}
             </span>
-            <span className="dash-brand__tagline">Lodge Management System</span>
+            {/* The property's own location rather than a static product
+                label — actually distinguishes one hotel from another for an
+                owner who manages more than one, instead of repeating
+                "Lodge Management System" under every account. Omitted
+                entirely rather than shown blank when neither is on file. */}
+            {(me?.lodge.city || me?.lodge.state) && (
+              <span className="dash-brand__tagline">
+                {[me.lodge.city, me.lodge.state].filter(Boolean).join(', ')}
+              </span>
+            )}
           </span>
         </div>
 
@@ -830,7 +848,7 @@ export default function OwnerDashboard() {
               title="Sign out"
               onClick={() => setConfirmSignOut(true)}
             >
-              <Icon name="signout" />
+              <Icon name="signout" size={15} />
               <span className="dash-sidebar__item-label">Sign out</span>
             </button>
           </div>
@@ -977,6 +995,8 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'staff' && <StaffAndRoles />}
 
+              {activeFeature && activeFeature.key === 'billNumbering' && <BillNumberingPanel />}
+
               {activeFeature && activeFeature.key === 'food' && (
                 <FoodSection
                   lodge={me.lodge}
@@ -1006,7 +1026,7 @@ export default function OwnerDashboard() {
 
               {activeFeature &&
                 !activeFeature.key.startsWith('report-') &&
-                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
+                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'staff', 'billNumbering', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

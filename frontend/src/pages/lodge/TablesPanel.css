@@ -21,7 +21,7 @@
 }
 
 .table-card:hover {
-  box-shadow: 0 2px 6px rgba(69, 39, 184, 0.08), 0 14px 30px -12px rgba(69, 39, 184, 0.22);
+  box-shadow: 0 2px 6px rgba(7, 39, 72, 0.08), 0 14px 30px -12px rgba(7, 39, 72, 0.22);
   transform: translateY(-2px);
 }
 

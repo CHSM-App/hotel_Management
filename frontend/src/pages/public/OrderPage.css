@@ -59,8 +59,8 @@
 }
 
 .order-page__closed {
-  background: #fdf6e7;
-  border: 1px solid #f0dfae;
+  background: color-mix(in srgb, var(--accent) 15%, white);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, white);
   border-radius: var(--radius-tile);
   padding: 14px 16px;
   margin-bottom: 20px;
@@ -124,7 +124,7 @@
 .order-search input:focus-visible {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.12);
+  box-shadow: 0 0 0 3px rgba(0, 176, 255, 0.12);
 }
 
 /* A carved track with the live segment raised out of it, deliberately not the
@@ -550,7 +550,7 @@
 
 @media (hover: hover) {
   .order-item__add:hover {
-    box-shadow: 0 4px 12px rgba(30, 58, 95, 0.32);
+    box-shadow: 0 4px 12px rgba(10, 58, 107, 0.32);
   }
 }
 
@@ -1007,8 +1007,8 @@
 }
 
 .order-sheet__warn {
-  background: #fdf6e7;
-  border: 1px solid #f0dfae;
+  background: color-mix(in srgb, var(--accent) 15%, white);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, white);
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 13.5px;
@@ -1079,7 +1079,7 @@
   /* A gradient rather than the flat brand fill: this is the one button on the
      sheet that commits, and it should be the one thing on screen with any
      depth to it. */
-  background: linear-gradient(180deg, #2a4f7d 0%, var(--brand) 100%);
+  background: linear-gradient(180deg, var(--brand-ink) 0%, var(--brand) 100%);
   color: #ffffff;
   border-radius: 12px;
   font-family: inherit;
@@ -1088,12 +1088,12 @@
   letter-spacing: 0.01em;
   cursor: pointer;
   min-height: 52px;
-  box-shadow: 0 6px 14px rgba(30, 58, 95, 0.28);
+  box-shadow: 0 6px 14px rgba(10, 58, 107, 0.28);
 }
 
 .order-sheet__place:active {
   transform: translateY(1px);
-  box-shadow: 0 3px 8px rgba(30, 58, 95, 0.26);
+  box-shadow: 0 3px 8px rgba(10, 58, 107, 0.26);
 }
 
 .order-sheet__place:disabled,
@@ -1388,7 +1388,7 @@
 .guest-login__input:focus-visible {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.12);
+  box-shadow: 0 0 0 3px rgba(0, 176, 255, 0.12);
 }
 
 .guest-login__submit {
@@ -1486,9 +1486,9 @@
    side no longer shows, so it has to be caught the moment it appears — it drops
    in from above the fold rather than materialising in place. */
 .order-page__flash {
-  background: #e8f5ec;
-  border: 1px solid #bfe0cb;
-  color: #14532d;
+  background: var(--success-bg);
+  border: 1px solid color-mix(in srgb, var(--success) 45%, white);
+  color: color-mix(in srgb, var(--success) 70%, black);
   border-radius: var(--radius-tile);
   padding: 12px 14px;
   font-size: 14px;
@@ -1721,7 +1721,7 @@
 }
 
 .guest-order--ready .guest-order__chip {
-  color: var(--color-success);
+  color: var(--success);
 }
 
 /* A ring expanding out of the chip and fading — a kitchen saying the food is
@@ -1731,7 +1731,7 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  border: 1.5px solid rgba(22, 163, 74, 0.55);
+  border: 1.5px solid rgba(40, 167, 69, 0.55);
   animation: order-ready-pulse 2.4s ease-out infinite;
   pointer-events: none;
 }
@@ -1761,7 +1761,7 @@
   background: linear-gradient(
     100deg,
     transparent 20%,
-    rgba(30, 58, 95, 0.16) 50%,
+    rgba(10, 58, 107, 0.16) 50%,
     transparent 80%
   );
   animation: order-cooking-sweep 2.1s linear infinite;
@@ -1917,8 +1917,8 @@
   margin-bottom: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #f1eefc;
-  color: #2b1f6b;
+  background: var(--brand-wash);
+  color: var(--brand-ink);
 }
 
 .guest-orders__tab strong {

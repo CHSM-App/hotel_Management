@@ -227,8 +227,8 @@
 
 /* Status badges reuse .badge from the dashboard and only add colour. */
 .events-badge--draft {
-  background: #fbf1e0;
-  color: #8a5a10;
+  background: color-mix(in srgb, var(--accent) 20%, white);
+  color: var(--accent-ink);
 }
 
 .events-badge--confirmed {
@@ -276,12 +276,12 @@
 }
 
 .events-phase--in-progress::before {
-  background: #2aa55b;
-  box-shadow: 0 0 0 3px rgba(42, 165, 91, 0.18);
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.18);
 }
 
 .events-phase--upcoming::before {
-  background: #4f83cc;
+  background: var(--focus);
 }
 
 /* What is on now and what is next today: one quiet bar above the chart, read
@@ -366,16 +366,16 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #4f83cc;
+  background: var(--focus);
 }
 
 .events-today__tag--live {
-  color: #1f7a45;
+  color: color-mix(in srgb, var(--success) 75%, black);
 }
 
 .events-today__tag--live::before {
-  background: #2aa55b;
-  box-shadow: 0 0 0 3px rgba(42, 165, 91, 0.18);
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.18);
 }
 
 @media (max-width: 640px) {
@@ -978,8 +978,8 @@
 }
 
 .events-avail--ok {
-  background: #e6f2ec;
-  color: #276749;
+  background: var(--success-bg);
+  color: color-mix(in srgb, var(--success) 70%, black);
 }
 
 /* The one message on this form that must not be skimmed past. The desk works
@@ -1268,7 +1268,7 @@
   margin-top: 10px;
   font-size: 12.5px;
   font-weight: 600;
-  color: #8a5a10;
+  color: var(--accent-ink);
 }
 
 /* The deposit section on a new enquiry: a collapsible like the booking
@@ -1578,9 +1578,9 @@
   top: 0;
   z-index: 2;
   padding: 8px 12px;
-  background: #f1eefc;
+  background: var(--brand-wash);
   color: var(--brand);
-  border-bottom: 2px solid #ddd6f7;
+  border-bottom: 2px solid var(--brand-wash-edge);
   white-space: nowrap;
 }
 
@@ -1657,8 +1657,8 @@
   position: sticky;
   bottom: 0;
   padding: 8px 12px;
-  background: #f1eefc;
-  border-top: 2px solid #ddd6f7;
+  background: var(--brand-wash);
+  border-top: 2px solid var(--brand-wash-edge);
   font-weight: 800;
   white-space: nowrap;
 }

@@ -41,24 +41,26 @@
      viewport, not to this element. */
   overflow-x: clip;
 
-  --brand: #1246A0;
-  --brand-ink: #0D3882;
-  --brand-lift: #1246A0;
-  --brand-band: #1246A0;
-  --brand-band-deep: #0D3882;
-  --brand-navy: #082B59;
-  --brand-wash: #EAF1FB;
-  --brand-wash-edge: #BBD2EC;
-  --brand-focus: rgba(18, 70, 160, 0.16);
+  --brand: #0A3A6B;
+  --brand-ink: #072748;
+  --brand-lift: #14508C;
+  --brand-band: #0A3A6B;
+  --brand-band-deep: #072748;
+  --brand-navy: #072748;
+  --brand-wash: #E6EDF4;
+  --brand-wash-edge: #C7D6E6;
+  --brand-focus: rgba(0, 176, 255, 0.2);
   --paper: #F4F7FB;
   --surface: #FFFFFF;
   --border: #D5DEEA;
   --ink: #142B4A;
   --text-muted: #64748B;
-  --success: #087A50;
-  --success-bg: #E3F6EE;
-  --danger: #C62828;
-  --danger-bg: #FBEAEA;
+  /* Green/red from the approved contrast palette, same pair the owner
+     dashboard uses — one status system across both consoles. */
+  --success: #28A745;
+  --success-bg: #E8F6EC;
+  --danger: #EA4335;
+  --danger-bg: #FDECEA;
 }
 
 /* A band across the top carrying a name and an avatar — it needs to be
@@ -282,13 +284,14 @@
   transform: translateY(-1px);
 }
 
-/* Selected, but not filled — a solid blue ring reads as "this is the active
-   filter" without the whole card competing for attention in the same hue as
-   the icon chips. */
+/* Selected, but not filled — a solid sky-blue ring reads as "this is the
+   active filter" without the whole card competing for attention in the same
+   hue as the icon chips. Amber is kept for buttons rather than this
+   persistent selected state. */
 .dash-stat--on {
-  border-color: var(--brand);
+  border-color: var(--focus);
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--brand), var(--shadow-raised-hover);
+  box-shadow: 0 0 0 1px var(--focus), var(--shadow-raised-hover);
 }
 
 /* Each card carries its own icon chip, tinted to the stat it represents, so
@@ -477,11 +480,12 @@
   text-decoration: underline;
 }
 
-/* The primary action, in solid brand blue — flat fill, no gradient, with a
-   darker solid swap on hover rather than a brightness filter. */
+/* The primary action, in the palette's own button colour — amber, flat fill,
+   no gradient, with a darker solid swap on hover rather than a brightness
+   filter. Dark ink text rather than white: amber is a light fill. */
 .btn-accent {
-  background: var(--brand);
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--ink);
   border: none;
   border-radius: var(--radius-tile);
   padding: 12px 18px;
@@ -494,20 +498,20 @@
   align-items: center;
   gap: 8px;
   /* A downward cast in the button's own hue rather than a bevel: it sits on a
-     white card, and a blue-tinted shadow reads as the button lifting off it. */
-  box-shadow: 0 2px 6px rgba(18, 70, 160, 0.24), 0 10px 22px -8px rgba(18, 70, 160, 0.4);
+     white card, and an amber-tinted shadow reads as the button lifting off it. */
+  box-shadow: 0 2px 6px rgba(138, 91, 0, 0.24), 0 10px 22px -8px rgba(138, 91, 0, 0.4);
   transition: background-color 150ms ease, box-shadow 150ms ease;
 }
 
 .btn-accent:hover {
-  background: var(--brand-ink);
-  box-shadow: 0 4px 10px rgba(13, 56, 130, 0.28), 0 16px 30px -8px rgba(13, 56, 130, 0.42);
+  background: #E6AC06;
+  box-shadow: 0 4px 10px rgba(138, 91, 0, 0.28), 0 16px 30px -8px rgba(138, 91, 0, 0.42);
 }
 
 /* Pressed into the page rather than nudged: the inset does the travel. */
 .btn-accent:active {
-  background: var(--brand-ink);
-  box-shadow: inset 0 2px 6px rgba(8, 43, 89, 0.4);
+  background: #E6AC06;
+  box-shadow: inset 0 2px 6px rgba(106, 70, 0, 0.4);
 }
 
 .btn-accent:disabled {

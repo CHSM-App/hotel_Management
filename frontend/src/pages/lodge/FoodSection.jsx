@@ -17,7 +17,6 @@ import './Events.css';
 const BILLING_TABS = [
   { key: 'tables', label: 'Food to bill' },
   { key: 'bills', label: 'Bills' },
-  { key: 'numbering', label: 'Numbering' },
 ];
 
 export default function FoodSection({ lodge, permissions = [], initialView = null }) {
@@ -53,8 +52,8 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
   const wanted = view || initialView;
   const showing = canOrders && !(wanted === 'billing' && canBill) ? (orderKeys.includes(wanted) ? wanted : liveKey) : 'billing';
   // With the orders tabs there is no separate Food to bill or Bills list: History
-  // rows carry an Issue bill button and each bill's number / View bill. The billing
-  // strip keeps only what is left (Numbering).
+  // rows carry an Issue bill button and each bill's number / View bill, so a
+  // login with the orders tabs has no billing strip left at all.
   const billingTabs = BILLING_TABS.filter((t) => !(canOrders && (t.key === 'bills' || t.key === 'tables')));
   const activeBillTab = billingTabs.some((t) => t.key === billTab) ? billTab : billingTabs[0]?.key;
 
