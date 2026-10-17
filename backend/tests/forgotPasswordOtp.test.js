@@ -56,13 +56,17 @@ test('the reset writes the new password only after an OTP is consumed', () => {
   // A regression guard with teeth: the whole point of this feature is that the
   // UPDATE cannot be reached without a code. If someone reorders this function
   // so the write happens first, or drops the call, this fails.
+  //
+  // resetPasswordByIdentifier and resetAdminPasswordByIdentifier are thin
+  // wrappers around this shared implementation, so that's where the logic
+  // (and the regression guard) actually lives.
   const src = read('src/modules/auth/auth.service.js');
-  const fn = src.slice(src.indexOf('async function resetPasswordByIdentifier('));
+  const fn = src.slice(src.indexOf('async function resetPasswordByIdentifierFor('));
   const verifyAt = fn.indexOf('verifyAndConsumeOtp');
   const updateAt = fn.indexOf('UPDATE dbo.users SET password_hash');
 
-  assert.ok(verifyAt > -1, 'resetPasswordByIdentifier must verify an OTP');
-  assert.ok(updateAt > -1, 'resetPasswordByIdentifier must update the password hash');
+  assert.ok(verifyAt > -1, 'resetPasswordByIdentifierFor must verify an OTP');
+  assert.ok(updateAt > -1, 'resetPasswordByIdentifierFor must update the password hash');
   assert.ok(verifyAt < updateAt, 'the OTP must be verified before the password is written');
 });
 
@@ -78,8 +82,8 @@ test('the forgot-password and password-change codes use different purposes', () 
 test('the OTP is bound to the looked-up account, not the typed identifier', () => {
   const src = read('src/modules/auth/auth.service.js');
   const sendFn = src.slice(
-    src.indexOf('async function sendForgotPasswordOtp('),
-    src.indexOf('async function resetPasswordByIdentifier(')
+    src.indexOf('async function sendForgotPasswordOtpFor('),
+    src.indexOf('async function resetPasswordByIdentifierFor(')
   );
   assert.match(sendFn, /issueOtp\(\{ userId: user\.id/);
 });
@@ -88,13 +92,13 @@ test('configuration is checked before a code is stored', () => {
   // A server with no provider says so, instead of leaving the user waiting for
   // a message that is never coming.
   const src = read('src/modules/auth/auth.service.js');
-  const fn = src.slice(src.indexOf('async function sendForgotPasswordOtp('));
+  const fn = src.slice(src.indexOf('async function sendForgotPasswordOtpFor('));
   assert.ok(fn.indexOf('isConfigured') < fn.indexOf('issueOtp'), 'configuration must be checked first');
 });
 
 test('the provider reason is logged but not returned to the caller', () => {
   const src = read('src/modules/auth/auth.service.js');
-  const fn = src.slice(src.indexOf('async function sendForgotPasswordOtp('));
+  const fn = src.slice(src.indexOf('async function sendForgotPasswordOtpFor('));
   const body = fn.slice(0, fn.indexOf('\n}\n'));
   assert.match(body, /logger\.error\(\{ err/);
   assert.match(body, /Could not send the code right now/);
@@ -103,7 +107,7 @@ test('the provider reason is logged but not returned to the caller', () => {
 
 test('a wrong or missing code counts against the same lockout as a wrong password', () => {
   const src = read('src/modules/auth/auth.service.js');
-  const fn = src.slice(src.indexOf('async function resetPasswordByIdentifier('));
+  const fn = src.slice(src.indexOf('async function resetPasswordByIdentifierFor('));
   const body = fn.slice(0, fn.indexOf('\n}\n'));
   const invalidAt = body.indexOf("if (!valid)");
   const recordAt = body.indexOf('recordFailure', invalidAt);
