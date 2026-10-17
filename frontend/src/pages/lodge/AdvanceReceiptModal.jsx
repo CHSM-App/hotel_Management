@@ -45,6 +45,17 @@ import './Billing.css';
 // Voiding stays here, and stays manual: an issued money document is corrected
 // by a void that references it, never by deleting it or quietly re-issuing.
 
+// What a cancelled subject's advance receipt settled to — same wording
+// Billing.jsx's Bills list uses, so a kept charge and a refund read the same
+// wherever they're shown. Kept local rather than imported: nothing else in
+// this file shares code with Billing.jsx today, and one four-line function
+// isn't worth a shared-helpers module.
+function advanceSettlementLabel(receipt) {
+  if (receipt.cancellationCharge > 0) return `${formatPrice(receipt.cancellationCharge)} kept`;
+  if (receipt.refundAmount > 0) return `${formatPrice(receipt.refundAmount)} refunded`;
+  return 'not settled';
+}
+
 function PaperSelect({ value, onChange }) {
   return (
     <label className="billing-panel__paper">
@@ -453,6 +464,21 @@ export default function AdvanceReceiptModal({
             <span className="billing-panel__void-tag">Void</span>
             <span className="billing-panel__void-reason">
               {shownReceipt.voidReason || 'No reason recorded.'}
+            </span>
+          </div>
+        )}
+
+        {/* The stay or function this receipt was taken against was later
+            cancelled. The receipt itself stays exactly as issued — the money
+            really was taken — but opened from the Bills list there is no
+            booking/eventBooking prop reaching this modal (see `subject`
+            above) to otherwise say so, so it's read straight off the receipt. */}
+        {shownReceipt?.cancelled && (
+          <div className="billing-panel__void-note" role="status">
+            <span className="billing-panel__void-tag">Cancelled</span>
+            <span className="billing-panel__void-reason">
+              {advanceSettlementLabel(shownReceipt)}
+              {shownReceipt.cancelReason ? ` · ${shownReceipt.cancelReason}` : ''}
             </span>
           </div>
         )}

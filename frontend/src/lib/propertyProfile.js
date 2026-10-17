@@ -110,6 +110,21 @@ export const FEATURES = [
     group: 'Rooms',
   },
   {
+    key: 'customers',
+    title: 'Customer list',
+    description: 'One record per guest — contact details, stay and function history, and spend.',
+    permission: 'customers.manage',
+    // Rooms or events, either is enough — a repeat guest and a wedding
+    // organiser are both customers, and a property with only one of the two
+    // still has a customer list worth keeping. Its own group ('Customers',
+    // not 'Rooms') for the same reason: an events-only property has no Rooms
+    // group to borrow, and every other item in Rooms is gated on hasRooms
+    // alone.
+    capability: ['hasRooms', 'hasEvents'],
+    icon: 'idcard',
+    group: 'Customers',
+  },
+  {
     key: 'food',
     title: 'Food orders & Billing',
     description: 'The live kitchen queue, taking orders, and table and takeaway bills.',
@@ -121,7 +136,7 @@ export const FEATURES = [
   {
     key: 'events',
     title: 'Event Chart',
-    description: 'The function diary — enquiries, holds, quotes and advances for halls and lawns.',
+    description: 'The function diary — drafts, quotes and advances for halls and lawns.',
     permission: 'events.manage',
     // Its own bit rather than a property type: a rooms-only lodge with a
     // lawn and a restaurant with a party hall are both real.
@@ -135,7 +150,7 @@ export const FEATURES = [
     description: 'Function bills and advance receipts.',
     permission: 'billing.manage',
     capability: 'hasEvents',
-    icon: 'receipt',
+    icon: 'ticket',
     group: 'Events',
   },
   {
@@ -144,7 +159,7 @@ export const FEATURES = [
     description: 'Every function as a list, filtered by status.',
     permission: 'events.manage',
     capability: 'hasEvents',
-    icon: 'users',
+    icon: 'clipboardList',
     group: 'Events',
   },
   {
@@ -153,7 +168,7 @@ export const FEATURES = [
     description: 'Venues and add-ons.',
     permission: 'events.manage',
     capability: 'hasEvents',
-    icon: 'wrench',
+    icon: 'sliders',
     group: 'Events',
   },
   {
@@ -168,26 +183,40 @@ export const FEATURES = [
   {
     key: 'housekeeping',
     title: 'Housekeeping',
-    description: 'Room cleaning status, hotel laundry and guests’ laundry.',
-    // Reception and the owner already hold the first two; the Housekeeping role
-    // holds only housekeeping.manage and sees nothing else.
+    description: 'The cleaning board for rooms and event venues: what to clean, what is ready.',
+    // Reception and the owner already hold the last two; the Housekeeping role
+    // holds housekeeping.manage.
     permission: ['housekeeping.manage', 'bookings.manage', 'rooms.manage'],
     // An add-on, switched on per property. (Needs rooms too, which the admin
     // forms and the server both enforce.)
     capability: 'hasHousekeeping',
-    icon: 'bed',
-    group: 'Rooms',
+    icon: 'sparkles',
+    // Its own group, not under Rooms: it looks after event venues too, and a
+    // restaurant with a party hall has no Rooms group to put it in.
+    group: 'Housekeeping',
+  },
+  {
+    key: 'laundry',
+    title: 'Laundry',
+    description: 'Hotel laundry (bedsheets and towels sent for washing and received back) and guests’ laundry.',
+    // The Laundry role holds only laundry.manage and sees nothing else.
+    permission: ['laundry.manage', 'bookings.manage', 'rooms.manage'],
+    // Its own add-on, separate from Housekeeping: a property can have either
+    // without the other. (Needs rooms too.)
+    capability: 'hasLaundry',
+    icon: 'droplet',
+    group: 'Housekeeping',
   },
   {
     key: 'otherServices',
     title: 'Other services',
-    description: 'Laundry, private pool, gaming and other services sold per use, billed like food.',
+    description: 'Private pool, gaming and other services sold per use, billed like food.',
     // Front desk runs the uses; the owner prices them.
     permission: ['rooms.manage', 'bookings.manage', 'billing.manage'],
     // An add-on, switched on per property like events, assets and expenses.
     // (Needs rooms too, which the admin forms and the server both enforce.)
     capability: 'hasOtherServices',
-    icon: 'wrench',
+    icon: 'grid',
     group: 'Rooms',
   },
   {
@@ -196,7 +225,7 @@ export const FEATURES = [
     description: 'The food menu, dining tables, and the QR codes guests scan to order.',
     permission: 'food.manage',
     capability: 'servesFood',
-    icon: 'coffee',
+    icon: 'qrcode',
     group: 'Restaurant',
   },
   {
@@ -208,13 +237,21 @@ export const FEATURES = [
     group: 'Setup',
   },
   {
+    key: 'billNumbering',
+    title: 'Bill Numbering',
+    description: 'Where the next bill and advance receipt continue from.',
+    permission: 'billing.manage',
+    icon: 'hash',
+    group: 'Setup',
+  },
+  {
     key: 'assets',
     title: 'Asset Inventory',
     description: 'Register equipment, track warranty/AMC, and log repairs.',
     permission: 'assets.manage',
     // An add-on, same as Events: off until switched on for the property.
     capability: 'hasAssets',
-    icon: 'wrench',
+    icon: 'archive',
     group: 'Finance & Management',
   },
   {
@@ -236,7 +273,7 @@ export const FEATURES = [
     // second lodge-level switch just for this would be one more thing to
     // remember to turn on.
     capability: 'hasExpenses',
-    icon: 'wallet',
+    icon: 'trendingUp',
     group: 'Finance & Management',
   },
   {
@@ -254,7 +291,7 @@ export const FEATURES = [
     permission: 'reports.view',
     // Any one earns the section; the tabs inside show only what the property has.
     capability: ['hasRooms', 'servesFood', 'hasEvents'],
-    icon: 'barChart',
+    icon: 'pieChart',
     group: 'Reports & Analytics',
   },
   {
@@ -262,7 +299,7 @@ export const FEATURES = [
     title: 'Finance reports',
     description: 'Tax & GST, Profit & Loss, expenses and other income.',
     permission: 'reports.view',
-    icon: 'wallet',
+    icon: 'landmark',
     group: 'Reports & Analytics',
   },
   {
@@ -271,12 +308,12 @@ export const FEATURES = [
     description: 'Equipment owned, its value and upkeep.',
     permission: 'reports.view',
     capability: 'hasAssets',
-    icon: 'wrench',
+    icon: 'layers',
     group: 'Reports & Analytics',
   },
 ];
 
-export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Finance & Management', 'Reports & Analytics', 'Setup'];
+export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Housekeeping', 'Finance & Management', 'Customers', 'Reports & Analytics', 'Setup'];
 
 // A section exists for a property if the property has the capability it needs
 // — any one of them, when a feature (like Reports) is earned by more than

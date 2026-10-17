@@ -11,6 +11,8 @@ class BillableStay {
   final String? checkInDate;
   final String? checkOutDate;
   final num? totalPrice;
+  final num? foodTotal;
+  final num? lateCheckoutCharge;
   final num? advanceAmount;
   final String? actualCheckOutAt;
 
@@ -23,6 +25,8 @@ class BillableStay {
     this.checkInDate,
     this.checkOutDate,
     this.totalPrice,
+    this.foodTotal,
+    this.lateCheckoutCharge,
     this.advanceAmount,
     this.actualCheckOutAt,
   });
@@ -36,11 +40,26 @@ class BillableStay {
     checkInDate: asStringOrNull(json['checkInDate']),
     checkOutDate: asStringOrNull(json['checkOutDate']),
     totalPrice: asNumOrNull(json['totalPrice']),
+    foodTotal: asNumOrNull(json['foodTotal']),
+    lateCheckoutCharge: asNumOrNull(json['lateCheckoutCharge']),
     advanceAmount: asNumOrNull(json['advanceAmount']),
     actualCheckOutAt: asStringOrNull(json['actualCheckOutAt']),
   );
 
-  num get balanceDue => (totalPrice ?? 0) - (advanceAmount ?? 0);
+  /// Room charge + late checkout + any open food tab, same as the web's own
+  /// `b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0)`.
+  num get subtotal =>
+      (totalPrice ?? 0) + (lateCheckoutCharge ?? 0) + (foodTotal ?? 0);
+
+  num get balanceDue => subtotal - (advanceAmount ?? 0);
+
+  int get nights {
+    if (checkInDate == null || checkOutDate == null) return 0;
+    final inD = DateTime.tryParse(checkInDate!);
+    final outD = DateTime.tryParse(checkOutDate!);
+    if (inD == null || outD == null) return 0;
+    return outD.difference(inD).inDays;
+  }
 }
 
 /// One side of a bill — the GST reading or the non-GST one.
@@ -63,6 +82,15 @@ class BillSide {
   final num foodSgstAmount;
   final num foodCgstRatePercent;
   final num foodSgstRatePercent;
+
+  /// Other-services side (laundry, pool, gaming ...) — a third supply, zeroed
+  /// when there is none. Mirrors the web's own `serviceSubtotal`/`service*`
+  /// fields on this same breakdown.
+  final num serviceSubtotal;
+  final num serviceCgstAmount;
+  final num serviceSgstAmount;
+  final num serviceCgstRatePercent;
+  final num serviceSgstRatePercent;
   final num discountAmount;
   final num discountPercent;
   final num roundOff;
@@ -82,6 +110,11 @@ class BillSide {
     this.foodSgstAmount = 0,
     this.foodCgstRatePercent = 0,
     this.foodSgstRatePercent = 0,
+    this.serviceSubtotal = 0,
+    this.serviceCgstAmount = 0,
+    this.serviceSgstAmount = 0,
+    this.serviceCgstRatePercent = 0,
+    this.serviceSgstRatePercent = 0,
     this.discountAmount = 0,
     this.discountPercent = 0,
     this.roundOff = 0,
@@ -102,6 +135,11 @@ class BillSide {
     foodSgstAmount: asNum(json['foodSgstAmount']),
     foodCgstRatePercent: asNum(json['foodCgstRatePercent']),
     foodSgstRatePercent: asNum(json['foodSgstRatePercent']),
+    serviceSubtotal: asNum(json['serviceSubtotal']),
+    serviceCgstAmount: asNum(json['serviceCgstAmount']),
+    serviceSgstAmount: asNum(json['serviceSgstAmount']),
+    serviceCgstRatePercent: asNum(json['serviceCgstRatePercent']),
+    serviceSgstRatePercent: asNum(json['serviceSgstRatePercent']),
     discountAmount: asNum(json['discountAmount']),
     discountPercent: asNum(json['discountPercent']),
     roundOff: asNum(json['roundOff']),
@@ -114,14 +152,75 @@ class BillLine {
   final String label;
   final num amount;
   final int nights;
+  final String? firstDate;
+  final String? lastDate;
 
-  const BillLine({required this.label, required this.amount, this.nights = 0});
+  const BillLine({
+    required this.label,
+    required this.amount,
+    this.nights = 0,
+    this.firstDate,
+    this.lastDate,
+  });
 
   factory BillLine.fromJson(Map<String, dynamic> json) => BillLine(
     label: json['label']?.toString() ?? '',
     amount: asNum(json['amount']),
     nights: asInt(json['nights']),
+    firstDate: asStringOrNull(json['firstDate']),
+    lastDate: asStringOrNull(json['lastDate']),
   );
+}
+
+/// A multi-room bill's lines come back as one flat [BillLine] list whose
+/// labels the backend already prefixes "Room 101 · Room rent" when a booking
+/// spans several rooms (see `combineQuote`/`mergeRoomNights` on the web side —
+/// this app shares that same backend). Splitting them back into one block per
+/// room, mirroring the web's `roomSections` in `multiRoom.js`, so the preview
+/// and PDF can show each room's own rate, extras and total.
+class RoomBillSection {
+  final String room;
+  final BillLine base;
+  final List<BillLine> extras;
+
+  const RoomBillSection({
+    required this.room,
+    required this.base,
+    required this.extras,
+  });
+
+  num get total =>
+      extras.fold<num>(base.amount, (sum, e) => sum + e.amount);
+}
+
+final RegExp _roomLineLabel = RegExp(r'^Room (.+?) · (.*)$');
+
+/// Null for a single-room bill, or an older one whose lines carry no room
+/// prefix — the caller falls back to the plain flat list in that case.
+List<RoomBillSection>? roomBillSections(List<BillLine> roomCharges) {
+  final rooms = <String, List<BillLine>>{};
+  for (final line in roomCharges) {
+    final m = _roomLineLabel.firstMatch(line.label);
+    if (m == null) return null;
+    final room = m.group(1)!;
+    final rest = BillLine(
+      label: m.group(2)!,
+      amount: line.amount,
+      nights: line.nights,
+      firstDate: line.firstDate,
+      lastDate: line.lastDate,
+    );
+    rooms.putIfAbsent(room, () => []).add(rest);
+  }
+  if (rooms.length <= 1) return null;
+  return [
+    for (final entry in rooms.entries)
+      RoomBillSection(
+        room: entry.key,
+        base: entry.value.first,
+        extras: entry.value.skip(1).toList(),
+      ),
+  ];
 }
 
 /// A CYCLE guest who left before the nights they booked ran out.
@@ -168,13 +267,31 @@ class BillPreview {
   final List<BillLine> roomCharges;
   final num lateCheckoutCharge;
   final int lateCheckoutMinutes;
-  final bool lateCheckoutAgreed;
+
+  /// What reception agreed at checkout, in rupees — zero when nothing was
+  /// agreed. Shown regardless of whether [lateCheckoutCharge] is actually
+  /// carrying it on this bill: the desk needs the figure visible to decide
+  /// against it, so dropping the charge must not also hide what is being
+  /// dropped (mirrors the web's own `preview.lateCheckoutAgreed`).
+  final num lateCheckoutAgreed;
   final num advancePaid;
   final String? advanceReceiptNumbers;
   final bool isGstRegistered;
   final BillSide? gst;
   final BillSide? nonGst;
   final EarlyCheckout? earlyCheckout;
+
+  /// Food ordered during the stay, itemised — what the web's "Food ordered
+  /// during the stay" section lists above the bill summary.
+  final List<FoodItemLine> foodItems;
+
+  /// Other services (laundry, pool, gaming ...) riding on this bill,
+  /// itemised the same way.
+  final List<ServiceItemLine> serviceItems;
+
+  /// The order numbers [foodItems] was swept off, so staff can trace a
+  /// query back to a specific ticket — "From order #12, #13".
+  final List<int> orderNumbers;
 
   /// True once a bill has already been issued for this stay. Issuing again
   /// would burn a second serial on one stay, so the screen shuts instead.
@@ -200,13 +317,16 @@ class BillPreview {
     this.roomCharges = const [],
     this.lateCheckoutCharge = 0,
     this.lateCheckoutMinutes = 0,
-    this.lateCheckoutAgreed = false,
+    this.lateCheckoutAgreed = 0,
     this.advancePaid = 0,
     this.advanceReceiptNumbers,
     this.isGstRegistered = false,
     this.gst,
     this.nonGst,
     this.earlyCheckout,
+    this.foodItems = const [],
+    this.serviceItems = const [],
+    this.orderNumbers = const [],
     this.alreadyInvoiced = false,
     this.checkinMode,
     this.discountBase = 0,
@@ -227,7 +347,7 @@ class BillPreview {
         const [],
     lateCheckoutCharge: asNum(json['lateCheckoutCharge']),
     lateCheckoutMinutes: asInt(json['lateCheckoutMinutes']),
-    lateCheckoutAgreed: asBool(json['lateCheckoutAgreed']),
+    lateCheckoutAgreed: asNum(json['lateCheckoutAgreed']),
     advancePaid: asNum(json['advancePaid']),
     advanceReceiptNumbers: asStringOrNull(json['advanceReceiptNumbers']),
     isGstRegistered: asBool(json['isGstRegistered']),
@@ -240,6 +360,22 @@ class BillPreview {
     earlyCheckout: json['earlyCheckout'] == null
         ? null
         : EarlyCheckout.fromJson(json['earlyCheckout'] as Map<String, dynamic>),
+    foodItems:
+        (json['foodItems'] as List?)
+            ?.map((e) => FoodItemLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    serviceItems:
+        (json['serviceItems'] as List?)
+            ?.map((e) => ServiceItemLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    orderNumbers:
+        ((json['orders'] ?? json['foodOrders']) as List?)
+            ?.map((e) => asIntOrNull((e as Map)['orderNumber']))
+            .whereType<int>()
+            .toList() ??
+        const [],
     alreadyInvoiced: asBool(json['alreadyInvoiced']),
     checkinMode: asStringOrNull(
       (json['document'] as Map<String, dynamic>?)?['checkinMode'],
@@ -285,6 +421,39 @@ class FoodItemLine {
     quantity: asNum(json['quantity']),
     lineTotal: asNum(json['lineTotal']),
   );
+}
+
+/// One line of a service used — "2× Laundry ₹200" — on the "Other services"
+/// block of a bill, mirroring the web memo's `invoice.serviceItems`.
+class ServiceItemLine {
+  final String name;
+  final num unitPrice;
+  final num quantity;
+  final num lineTotal;
+  final num gstRatePercent;
+  // Non-null when this line is a guest-laundry garment — used to keep a
+  // laundry-only SERVICE invoice out of the general Bills list, since it
+  // already has its own history under Housekeeping -> Guest laundry.
+  final int? laundryOrderId;
+
+  const ServiceItemLine({
+    required this.name,
+    this.unitPrice = 0,
+    this.quantity = 0,
+    this.lineTotal = 0,
+    this.gstRatePercent = 0,
+    this.laundryOrderId,
+  });
+
+  factory ServiceItemLine.fromJson(Map<String, dynamic> json) =>
+      ServiceItemLine(
+        name: json['name']?.toString() ?? '',
+        unitPrice: asNum(json['unitPrice']),
+        quantity: asNum(json['quantity']),
+        lineTotal: asNum(json['lineTotal']),
+        gstRatePercent: asNum(json['gstRatePercent']),
+        laundryOrderId: asIntOrNull(json['laundryOrderId']),
+      );
 }
 
 /// A table, room, or takeaway with delivered food nobody has paid for yet —
@@ -426,6 +595,97 @@ class FoodBillPreview {
 
   /// No advance ever rides on a table tab, so what the customer hands over is
   /// the total.
+  num get balanceDue => amounts?.totalAmount ?? 0;
+}
+
+/// A GST or non-GST reading of a standalone service bill — the fields
+/// priceServiceBill/buildBreakdown emit under their "service*" names, since a
+/// service-only document has no room or food side to share them with.
+class ServiceBillSide {
+  final String? documentType;
+  final num serviceSubtotal;
+  final num serviceCgstAmount;
+  final num serviceSgstAmount;
+  final num serviceCgstRatePercent;
+  final num serviceSgstRatePercent;
+  final num discountAmount;
+  final num discountPercent;
+  final num roundOff;
+  final num totalAmount;
+
+  const ServiceBillSide({
+    this.documentType,
+    this.serviceSubtotal = 0,
+    this.serviceCgstAmount = 0,
+    this.serviceSgstAmount = 0,
+    this.serviceCgstRatePercent = 0,
+    this.serviceSgstRatePercent = 0,
+    this.discountAmount = 0,
+    this.discountPercent = 0,
+    this.roundOff = 0,
+    this.totalAmount = 0,
+  });
+
+  factory ServiceBillSide.fromJson(Map<String, dynamic> json) =>
+      ServiceBillSide(
+        documentType: asStringOrNull(json['documentType']),
+        serviceSubtotal: asNum(json['serviceSubtotal']),
+        serviceCgstAmount: asNum(json['serviceCgstAmount']),
+        serviceSgstAmount: asNum(json['serviceSgstAmount']),
+        serviceCgstRatePercent: asNum(json['serviceCgstRatePercent']),
+        serviceSgstRatePercent: asNum(json['serviceSgstRatePercent']),
+        discountAmount: asNum(json['discountAmount']),
+        discountPercent: asNum(json['discountPercent']),
+        roundOff: asNum(json['roundOff']),
+        totalAmount: asNum(json['totalAmount']),
+      );
+}
+
+/// What a standalone service bill will say, before it is issued — GET
+/// /billing/services/preview?ids=. No room, no food, no advance: a service
+/// bill is whatever laundry/pool/gaming usages the desk selected (already
+/// held on screen as [ServiceUsage] rows), priced on their own document.
+class ServiceBillPreview {
+  final String? tableLabel;
+  final String? customerName;
+  final String? customerPhone;
+  final bool isGstRegistered;
+  final String? gstin;
+  final ServiceBillSide? gst;
+  final ServiceBillSide? nonGst;
+
+  const ServiceBillPreview({
+    this.tableLabel,
+    this.customerName,
+    this.customerPhone,
+    this.isGstRegistered = false,
+    this.gstin,
+    this.gst,
+    this.nonGst,
+  });
+
+  factory ServiceBillPreview.fromJson(Map<String, dynamic> json) =>
+      ServiceBillPreview(
+        tableLabel: asStringOrNull(json['tableLabel']),
+        customerName: asStringOrNull(json['customerName']),
+        customerPhone: asStringOrNull(json['customerPhone']),
+        isGstRegistered: asBool(json['isGstRegistered']),
+        gstin: asStringOrNull(json['gstin']),
+        gst: json['gst'] == null
+            ? null
+            : ServiceBillSide.fromJson(json['gst'] as Map<String, dynamic>),
+        nonGst: json['nonGst'] == null
+            ? null
+            : ServiceBillSide.fromJson(json['nonGst'] as Map<String, dynamic>),
+      );
+
+  /// Which side is actually issued — decided by the property, not the desk.
+  String get billingSide => isGstRegistered ? 'GST' : 'NON_GST';
+
+  ServiceBillSide? get amounts => isGstRegistered ? gst : nonGst;
+
+  /// No advance ever rides on a service bill, so what the guest hands over
+  /// is the total.
   num get balanceDue => amounts?.totalAmount ?? 0;
 }
 
@@ -609,6 +869,10 @@ class Invoice {
   /// customer no way to check what they ate.
   final List<FoodItemLine> foodItems;
 
+  /// Other services used (laundry, pool, gaming ...) — a third supply,
+  /// itemised separately from food. Mirrors the web memo's `serviceItems`.
+  final List<ServiceItemLine> serviceItems;
+
   final num nightsSubtotal;
   final num roomSubtotal;
   final num lateCheckoutCharge;
@@ -617,8 +881,10 @@ class Invoice {
   /// AMOUNT on the memo is this, not the gross.
   final num roomTaxable;
   final num foodTaxable;
+  final num serviceTaxable;
 
   final num foodSubtotal;
+  final num serviceSubtotal;
   final num cgstAmount;
   final num sgstAmount;
   final num cgstRatePercent;
@@ -627,6 +893,10 @@ class Invoice {
   final num foodSgstAmount;
   final num foodCgstRatePercent;
   final num foodSgstRatePercent;
+  final num serviceCgstAmount;
+  final num serviceSgstAmount;
+  final num serviceCgstRatePercent;
+  final num serviceSgstRatePercent;
   final num discountAmount;
   final num discountPercent;
   final String? discountReason;
@@ -684,12 +954,15 @@ class Invoice {
     this.checkinMode,
     this.roomCharges = const [],
     this.foodItems = const [],
+    this.serviceItems = const [],
     this.nightsSubtotal = 0,
     this.roomSubtotal = 0,
     this.lateCheckoutCharge = 0,
     this.roomTaxable = 0,
     this.foodTaxable = 0,
+    this.serviceTaxable = 0,
     this.foodSubtotal = 0,
+    this.serviceSubtotal = 0,
     this.cgstAmount = 0,
     this.sgstAmount = 0,
     this.cgstRatePercent = 0,
@@ -698,6 +971,10 @@ class Invoice {
     this.foodSgstAmount = 0,
     this.foodCgstRatePercent = 0,
     this.foodSgstRatePercent = 0,
+    this.serviceCgstAmount = 0,
+    this.serviceSgstAmount = 0,
+    this.serviceCgstRatePercent = 0,
+    this.serviceSgstRatePercent = 0,
     this.discountAmount = 0,
     this.discountPercent = 0,
     this.discountReason,
@@ -763,12 +1040,19 @@ class Invoice {
             ?.map((e) => FoodItemLine.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
+    serviceItems:
+        (json['serviceItems'] as List?)
+            ?.map((e) => ServiceItemLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
     nightsSubtotal: asNum(json['nightsSubtotal']),
     roomSubtotal: asNum(json['roomSubtotal']),
     lateCheckoutCharge: asNum(json['lateCheckoutCharge']),
     roomTaxable: asNum(json['roomTaxable']),
     foodTaxable: asNum(json['foodTaxable']),
+    serviceTaxable: asNum(json['serviceTaxable']),
     foodSubtotal: asNum(json['foodSubtotal']),
+    serviceSubtotal: asNum(json['serviceSubtotal']),
     cgstAmount: asNum(json['cgstAmount']),
     sgstAmount: asNum(json['sgstAmount']),
     cgstRatePercent: asNum(json['cgstRatePercent']),
@@ -777,6 +1061,10 @@ class Invoice {
     foodSgstAmount: asNum(json['foodSgstAmount']),
     foodCgstRatePercent: asNum(json['foodCgstRatePercent']),
     foodSgstRatePercent: asNum(json['foodSgstRatePercent']),
+    serviceCgstAmount: asNum(json['serviceCgstAmount']),
+    serviceSgstAmount: asNum(json['serviceSgstAmount']),
+    serviceCgstRatePercent: asNum(json['serviceCgstRatePercent']),
+    serviceSgstRatePercent: asNum(json['serviceSgstRatePercent']),
     discountAmount: asNum(json['discountAmount']),
     discountPercent: asNum(json['discountPercent']),
     discountReason: asStringOrNull(json['discountReason']),
@@ -816,11 +1104,6 @@ class Invoice {
     if (lateCheckoutCharge > 0)
       BillLine(label: 'Late checkout', amount: lateCheckoutCharge),
   ];
-
-  /// What the stay came to before tax was taken out and before anything was
-  /// knocked off — the figure the memo writes against the top of the stay
-  /// block.
-  num get gross => roomSubtotal + foodSubtotal;
 
   bool get isVoid => status == 'VOID';
 
@@ -1133,6 +1416,14 @@ class BillDocument {
   /// stream off of — an EVENT invoice, or a receipt taken against a
   /// function's booking.
   bool get isEventBill => isReceipt ? receipt!.isEventReceipt : invoice!.isEventBill;
+
+  /// A guest-laundry invoice is a SERVICE bill whose lines all trace back to
+  /// a laundry order — it already has its own history under Housekeeping ->
+  /// Guest laundry, so the Bills list would just be showing it twice.
+  bool get isLaundryInvoice =>
+      !isReceipt &&
+      kind == 'SERVICE' &&
+      invoice!.serviceItems.any((item) => item.laundryOrderId != null);
 }
 
 /// One document series' numbering — GET/PATCH /billing/series, the same

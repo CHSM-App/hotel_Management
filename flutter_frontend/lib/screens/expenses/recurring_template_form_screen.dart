@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/expense.dart';
@@ -93,7 +94,7 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: now.subtract(const Duration(days: 365)),
       lastDate: DateTime(now.year + 3),
@@ -147,84 +148,143 @@ class _RecurringTemplateFormScreenState extends ConsumerState<RecurringTemplateF
   Widget build(BuildContext context) {
     final state = ref.watch(expensesViewModelProvider);
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit recurring expense' : 'New recurring expense')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
           children: [
-            NeuCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_error != null) ...[
-                    _ErrorBanner(_error!),
-                    const SizedBox(height: AppTheme.s16),
-                  ],
-
-                  const SectionLabel('What repeats', number: 1),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    key: _titleFieldKey,
-                    controller: _title,
-                    label: 'Title',
-                    hint: 'Rent, electricity, lift AMC…',
-                    required: true,
-                    errorText: _titleError,
-                    focusNode: _titleFocus,
-                    onChanged: (_) => setState(() {}),
-                    forceCapitalizeWords: true,
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  CategoryComboField(
-                    key: _categoryFieldKey,
-                    controller: _category,
-                    options: {...state.categories.map((c) => c.name), ...kSuggestedExpenseCategories}.toList()..sort(),
-                    errorText: _categoryError,
-                  ),
-                  if (_categoryError == null)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 4),
-                      child: Text("Pick from the list or type a new one — it's added the first time it's used.", style: TextStyle(color: AppTheme.muted, fontSize: 11.5)),
-                    ),
-                  const SectionDivider(),
-                  const SectionLabel('Schedule', number: 2),
-                  const SizedBox(height: AppTheme.s12),
-                  const Text(
-                    "How much and who gets paid are entered each time — \"Log this month\" records that occurrence once it's actually due.",
-                    style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  const RequiredLabel('Repeats'),
-                  const SizedBox(height: AppTheme.s8),
-                  OptionDropdown(
-                    values: kFrequencies,
-                    labels: kFrequencyLabel,
-                    selected: _frequency,
-                    onSelect: (v) => setState(() => _frequency = v),
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    key: _dateFieldKey,
-                    controller: _nextDueDate,
-                    label: 'Next due date',
-                    readOnly: true,
-                    onTap: _pickDate,
-                    required: true,
-                    errorText: _dateError,
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x331457AD),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
                   ),
                 ],
               ),
+              child: Icon(
+                _isEdit ? Icons.edit_rounded : Icons.event_repeat_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
-            const SizedBox(height: AppTheme.s24),
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: state.submitting ? null : _save,
-              child: state.submitting
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Save'),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _isEdit ? 'Edit recurring expense' : 'New recurring expense',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
             ),
           ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
+              children: [
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s12 + 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_error != null) ...[
+                        _ErrorBanner(_error!),
+                        const SizedBox(height: AppTheme.s12),
+                      ],
+
+                      const SectionLabel('What repeats', number: 1, icon: Icons.repeat_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        dense: true,
+                        key: _titleFieldKey,
+                        controller: _title,
+                        label: 'Title',
+                        hint: 'Rent, electricity, lift AMC…',
+                        required: true,
+                        errorText: _titleError,
+                        focusNode: _titleFocus,
+                        onChanged: (_) => setState(() {}),
+                        forceCapitalizeWords: true,
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      CategoryComboField(
+                        key: _categoryFieldKey,
+                        controller: _category,
+                        options: {...state.categories.map((c) => c.name), ...kSuggestedExpenseCategories}.toList()..sort(),
+                        errorText: _categoryError,
+                      ),
+                      if (_categoryError == null)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text("Pick from the list or type a new one — it's added the first time it's used.", style: TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+                        ),
+                      const SectionDivider(),
+                      const SectionLabel('Schedule', number: 2, icon: Icons.calendar_today_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      const Text(
+                        "How much and who gets paid are entered each time — \"Log this month\" records that occurrence once it's actually due.",
+                        style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                      const RequiredLabel('Repeats'),
+                      const SizedBox(height: AppTheme.s8),
+                      OptionDropdown(
+                        values: kFrequencies,
+                        labels: kFrequencyLabel,
+                        selected: _frequency,
+                        onSelect: (v) => setState(() => _frequency = v),
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(
+                        dense: true,
+                        key: _dateFieldKey,
+                        controller: _nextDueDate,
+                        label: 'Next due date',
+                        readOnly: true,
+                        onTap: _pickDate,
+                        required: true,
+                        errorText: _dateError,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppTheme.s16),
+                NeuButton(
+                  primary: true,
+                  expand: true,
+                  onPressed: state.submitting ? null : _save,
+                  child: state.submitting
+                      ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Save'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

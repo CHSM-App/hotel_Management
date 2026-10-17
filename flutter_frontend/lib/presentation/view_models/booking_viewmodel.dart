@@ -85,6 +85,12 @@ class BookingState {
   /// own. Held as typed text; blank means the category price.
   final String roomTotal;
 
+  /// Whether the desk has actually typed into the room price box this
+  /// session. [roomTotal] alone can't tell a box left blank on purpose apart
+  /// from one nobody has touched yet — both read as "" — so a blank box is
+  /// only ever flagged as a problem to fix when this is true.
+  final bool roomTotalTouched;
+
   /// A concession off the whole quote, as typed. Blank means none.
   ///
   /// Not a re-negotiated nightly rate — that is [roomTotal]. This comes off
@@ -154,6 +160,7 @@ class BookingState {
     this.availableBeds,
     this.extras = const {},
     this.roomTotal = '',
+    this.roomTotalTouched = false,
     this.discount = '',
     this.quote,
     this.quoting = false,
@@ -202,6 +209,7 @@ class BookingState {
     bool clearAvailableBeds = false,
     Map<int, ExtraDraft>? extras,
     String? roomTotal,
+    bool? roomTotalTouched,
     String? discount,
     Quote? quote,
     bool clearQuote = false,
@@ -241,6 +249,9 @@ class BookingState {
         : (availableBeds ?? this.availableBeds),
     extras: extras ?? this.extras,
     roomTotal: roomTotal ?? this.roomTotal,
+    roomTotalTouched: clearRoom
+        ? false
+        : (roomTotalTouched ?? this.roomTotalTouched),
     discount: discount ?? this.discount,
     quote: clearQuote ? null : (quote ?? this.quote),
     quoting: quoting ?? this.quoting,
@@ -298,8 +309,7 @@ class BookingState {
   /// Whether this booking actually holds more than one room — [multiRoomMode]
   /// alone just means the picker is showing; a room has to have been picked
   /// in it too.
-  bool get isMultiRoom =>
-      multiRoomMode && extraRooms.any((r) => r.isPicked);
+  bool get isMultiRoom => multiRoomMode && extraRooms.any((r) => r.isPicked);
 
   /// Every room on the booking — room 1 (if picked) plus every picked extra.
   List<Room> get pickedRooms => [
@@ -369,7 +379,9 @@ class BookingState {
         .map((e) => ChartSection(categoryName: e.key, rooms: e.value))
         .toList();
     if (dormitoryRooms.isNotEmpty) {
-      sections.add(ChartSection(categoryName: 'Dormitory', rooms: dormitoryRooms));
+      sections.add(
+        ChartSection(categoryName: 'Dormitory', rooms: dormitoryRooms),
+      );
     }
     return sections;
   }
@@ -449,17 +461,35 @@ class ChartRoom {
   TapeChartBooking? stayOn(DateTime day) {
     final today = _today();
     TapeChartBooking? found;
-    for (final b in stays) {
-      final inDate = DateTime.tryParse(b.checkInDate ?? '');
-      var outDate = DateTime.tryParse(b.checkOutDate ?? '');
-      if (inDate == null || outDate == null) continue;
-      if (b.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
+    for (final s in _spans) {
+      var outDate = s.out;
+      if (s.booking.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
         outDate = today;
       }
-      if (!day.isBefore(inDate) && day.isBefore(outDate)) found = b;
+      if (!day.isBefore(s.inn) && day.isBefore(outDate)) found = s.booking;
     }
     return found;
   }
+
+  /// The stays' dates parsed once per [ChartRoom] instead of on every call —
+  /// each tile asks [stayOn] several times a build, so re-parsing the ISO
+  /// strings each time was most of the cost of drawing a row.
+  static final _spanCache = Expando<List<_Span>>();
+  static final _draftSpanCache = Expando<List<_DraftSpan>>();
+
+  List<_Span> get _spans => _spanCache[this] ??= [
+    for (final b in stays)
+      if (DateTime.tryParse(b.checkInDate ?? '') case final inn?)
+        if (DateTime.tryParse(b.checkOutDate ?? '') case final out?)
+          _Span(b, inn, out),
+  ];
+
+  List<_DraftSpan> get _draftSpans => _draftSpanCache[this] ??= [
+    for (final d in drafts)
+      if (DateTime.tryParse(d.checkInDate ?? '') case final inn?)
+        if (DateTime.tryParse(d.checkOutDate ?? '') case final out?)
+          _DraftSpan(d, inn, out),
+  ];
 
   /// Every stay holding a bed on [day] — unlike [stayOn] (which picks one
   /// "winner" the way an ordinary room's single occupant does), a dormitory
@@ -468,12 +498,12 @@ class ChartRoom {
   List<TapeChartBooking> bedStaysOn(DateTime day) {
     final today = _today();
     final result = <TapeChartBooking>[];
-    for (final b in stays) {
-      final inDate = DateTime.tryParse(b.checkInDate ?? '');
-      var outDate = DateTime.tryParse(b.checkOutDate ?? '');
-      if (inDate == null || outDate == null) continue;
-      if (b.status == 'CHECKED_OUT' && outDate.isAfter(today)) outDate = today;
-      if (!day.isBefore(inDate) && day.isBefore(outDate)) result.add(b);
+    for (final s in _spans) {
+      var outDate = s.out;
+      if (s.booking.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
+        outDate = today;
+      }
+      if (!day.isBefore(s.inn) && day.isBefore(outDate)) result.add(s.booking);
     }
     return result;
   }
@@ -494,7 +524,10 @@ class ChartRoom {
     // to 1 per stay for a row that predates bedIds.
     final occupied = buyout
         ? room.dormitoryBedCount
-        : bs.fold<int>(0, (sum, b) => sum + (b.bedIds.isNotEmpty ? b.bedIds.length : 1));
+        : bs.fold<int>(
+            0,
+            (sum, b) => sum + (b.bedIds.isNotEmpty ? b.bedIds.length : 1),
+          );
     return DormitoryOccupancy(
       occupied: occupied,
       total: room.dormitoryBedCount,
@@ -508,11 +541,8 @@ class ChartRoom {
   /// reads as that booking, never as the draft underneath it.
   TapeChartDraft? draftOn(DateTime day) {
     if (stayOn(day) != null) return null;
-    for (final d in drafts) {
-      final inDate = DateTime.tryParse(d.checkInDate ?? '');
-      final outDate = DateTime.tryParse(d.checkOutDate ?? '');
-      if (inDate == null || outDate == null) continue;
-      if (!day.isBefore(inDate) && day.isBefore(outDate)) return d;
+    for (final s in _draftSpans) {
+      if (!day.isBefore(s.inn) && day.isBefore(s.out)) return s.draft;
     }
     return null;
   }
@@ -521,6 +551,20 @@ class ChartRoom {
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day);
   }
+}
+
+class _Span {
+  final TapeChartBooking booking;
+  final DateTime inn;
+  final DateTime out;
+  const _Span(this.booking, this.inn, this.out);
+}
+
+class _DraftSpan {
+  final TapeChartDraft draft;
+  final DateTime inn;
+  final DateTime out;
+  const _DraftSpan(this.draft, this.inn, this.out);
 }
 
 /// How full a dormitory room is on one night — [occupied] beds out of
@@ -567,6 +611,16 @@ class BookingViewModel extends StateNotifier<BookingState> {
 
   BookingViewModel(this.usecase) : super(BookingState());
 
+  /// Counts each [refreshQuote] call so a reply that lands after a newer one
+  /// was already fired — the desk typed again before the first reply came
+  /// back — is dropped instead of clobbering the total with stale figures.
+  /// Mirrors the website's own `current` flag on its price-quote effect.
+  int _quoteRequestId = 0;
+
+  void _refreshQuoteDebounced() {
+    refreshQuote();
+  }
+
   static String iso(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
@@ -577,10 +631,12 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// Reception negotiates a total — "call it 350 for the two nights" — and the
   /// booking stores a rate. Divided by the nights alone, never by the count: an
   /// agreed figure is what the whole line costs, so three beds at an agreed 100
-  /// is 100, not three times 33.33.
+  /// is 100, not three times 33.33. A typed `0` is a deliberate "free", not
+  /// "no override" — only a blank or negative box falls back to the category's
+  /// own rate.
   static num? perNight(String typed, int nights) {
     final total = num.tryParse(typed.trim());
-    if (total == null || total <= 0) return null;
+    if (total == null || total < 0) return null;
     final per = nights <= 0 ? 1 : nights;
     return (total / per * 100).round() / 100;
   }
@@ -611,7 +667,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
       );
       state = state.copyWith(chart: AsyncValue.data(data));
     } catch (e, st) {
-      state = state.copyWith(error: messageFor(e), errorField: fieldFor(e), chart: AsyncValue.error(e, st));
+      state = state.copyWith(
+        error: messageFor(e),
+        errorField: fieldFor(e),
+        chart: AsyncValue.error(e, st),
+      );
     }
   }
 
@@ -647,7 +707,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
   }
 
   /// Slide the chart to a different window and refetch.
-  Future<void> setChartRange(DateTime from, DateTime to, {bool silent = false}) async {
+  Future<void> setChartRange(
+    DateTime from,
+    DateTime to, {
+    bool silent = false,
+  }) async {
     state = state.copyWith(chartFrom: from, chartTo: to);
     await loadChart(silent: silent);
   }
@@ -674,7 +738,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// span the desk had scrolled to, the way stepping there resets a window
   /// that had grown from scrolling.
   Future<void> shiftChart(int direction) {
-    final from = DateTime(state.chartFrom.year, state.chartFrom.month + direction, 1);
+    final from = DateTime(
+      state.chartFrom.year,
+      state.chartFrom.month + direction,
+      1,
+    );
     return setChartRange(from, DateTime(from.year, from.month + 1, 1));
   }
 
@@ -743,7 +811,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
+      state = state.copyWith(
+        submitting: false,
+        error: messageFor(e),
+        errorField: fieldFor(e),
+      );
       return null;
     }
   }
@@ -777,7 +849,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
+      state = state.copyWith(
+        submitting: false,
+        error: messageFor(e),
+        errorField: fieldFor(e),
+      );
       return null;
     }
   }
@@ -799,7 +875,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
     int bookingId, {
     String? idProofType,
     String? idProofNumber,
+    XFile? idProofFile,
     List<PaymentDraft> advanceLines = const [],
+    List<GuestDraft> guests = const [],
+    List<VehicleDraft> vehicles = const [],
   }) async {
     if (state.submitting) return null;
     state = state.copyWith(submitting: true, clearError: true);
@@ -820,6 +899,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
           if (paid.length > 1)
             'advanceLines': _jsonList(paid.map((l) => l.toJson())),
         },
+        'guests': _jsonList(guests.map((g) => g.toJson())),
+        'vehicles': _jsonList(
+          vehicles.where((v) => !v.isEmpty).map((v) => v.toJson()),
+        ),
+        ..._idProofParts(idProofFile, guests),
       });
 
       final booking = await usecase.checkIn(bookingId, form);
@@ -827,7 +911,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
+      state = state.copyWith(
+        submitting: false,
+        error: messageFor(e),
+        errorField: fieldFor(e),
+      );
       return null;
     }
   }
@@ -859,7 +947,8 @@ class BookingViewModel extends StateNotifier<BookingState> {
         if (refundAmount != null) 'refundAmount': refundAmount,
         if (refundAmount != null && refundAmount > 0 && refundMethod != null)
           'refundPaymentMethod': refundMethod,
-        if (cancellationCharge != null) 'cancellationCharge': cancellationCharge,
+        if (cancellationCharge != null)
+          'cancellationCharge': cancellationCharge,
         if (cancellationCharge != null && chargeMethod != null)
           'cancellationChargePaymentMethod': chargeMethod,
       };
@@ -871,7 +960,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
+      state = state.copyWith(
+        submitting: false,
+        error: messageFor(e),
+        errorField: fieldFor(e),
+      );
       return null;
     }
   }
@@ -967,7 +1060,8 @@ class BookingViewModel extends StateNotifier<BookingState> {
       clearPrimaryBookingRoomId: !isMulti,
       // "Different dates per room" if any further room's own dates differ
       // from room 1's.
-      multiRoomDifferentDates: isMulti &&
+      multiRoomDifferentDates:
+          isMulti &&
           booking.rooms
               .skip(1)
               .any(
@@ -1092,17 +1186,23 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// already continuing one — reopening a draft and saving it again should
   /// not lay down a second copy of the same half-finished booking.
   Future<bool> saveDraft(DraftForm form) async {
+    // Deliberately not `submitting`: that flag drives the main "Add and check
+    // in" button's spinner, which made saving a draft look like a check-in
+    // in progress. The screen tracks its own in-flight flag for this.
     if (state.submitting) return false;
-    state = state.copyWith(submitting: true, clearError: true);
+    state = state.copyWith(clearError: true);
     try {
       final saved = state.draftId == null
           ? await usecase.createDraft(form.toJson())
           : await usecase.updateDraft(state.draftId!, form.toJson());
-      state = state.copyWith(submitting: false, draftId: saved.id);
+      state = state.copyWith(draftId: saved.id);
       await loadChart();
       return true;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
+      state = state.copyWith(
+        error: messageFor(e),
+        errorField: fieldFor(e),
+      );
       return false;
     }
   }
@@ -1153,6 +1253,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       clearAvailableBeds: true,
       extras: const {},
       roomTotal: '',
+      roomTotalTouched: false,
       clearQuote: true,
     );
     if (room.isDormitory) await loadAvailableBeds();
@@ -1214,6 +1315,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       // The agreed figure is for the line, not per unit, so it survives a
       // change of count untouched.
       agreedTotal: current.agreedTotal,
+      agreedTotalTouched: current.agreedTotalTouched,
     );
     state = state.copyWith(extras: next);
     await refreshQuote();
@@ -1222,27 +1324,23 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// What reception agreed for this extra across the whole stay. Blank puts it
   /// back on the lodge's own rate.
   Future<void> setExtraTotal(int chargeId, String total) async {
-    final next = Map<int, ExtraDraft>.from(state.extras);
-    final current = next[chargeId] ?? ExtraDraft();
-    next[chargeId] = ExtraDraft(
-      quantity: current.quantity,
-      agreedTotal: total,
+    state = state.copyWith(
+      extras: ChargeSelections.withAgreedAmount(state.extras, chargeId, total),
     );
-    state = state.copyWith(extras: next);
-    await refreshQuote();
+    _refreshQuoteDebounced();
   }
 
   /// What reception agreed for the room across the whole stay. Blank puts it
   /// back on the category's own rate.
   Future<void> setRoomTotal(String total) async {
-    state = state.copyWith(roomTotal: total);
-    await refreshQuote();
+    state = state.copyWith(roomTotal: total, roomTotalTouched: true);
+    _refreshQuoteDebounced();
   }
 
   /// Take a concession off the whole stay. Blank means none.
   Future<void> setDiscount(String amount) async {
     state = state.copyWith(discount: amount);
-    await refreshQuote();
+    _refreshQuoteDebounced();
   }
 
   // ── Multi-room bookings ──────────────────────────────────────────────────
@@ -1322,10 +1420,14 @@ class BookingViewModel extends StateNotifier<BookingState> {
     final draft = state.extraRooms[index];
     final dates = MultiRoomLogic.roomDates(state, draft);
     if (dates == null) return;
-    _updateExtraRoom(
-      index,
-      (r) => r.copyWith(availableRooms: const AsyncValue.loading()),
-    );
+    // Keep the current options visible while dates are rechecked, like the
+    // website. Show a loader only on the card's first availability request.
+    if (draft.availableRooms is! AsyncData<List<Room>>) {
+      _updateExtraRoom(
+        index,
+        (r) => r.copyWith(availableRooms: const AsyncValue.loading()),
+      );
+    }
     try {
       final editId = state.editBookingId;
       final taken = MultiRoomLogic.pickedRoomIds(
@@ -1339,9 +1441,16 @@ class BookingViewModel extends StateNotifier<BookingState> {
               checkInDate: iso(dates.$1),
             );
       final free = rooms.where((r) => !taken.contains(r.id)).toList();
+      // Keep the selected room while dates are rechecked. Retain it if it is
+      // still free; clear it only when the new date range makes it unavailable.
+      final stillAvailable =
+          draft.room == null || free.any((r) => r.id == draft.room!.id);
       _updateExtraRoom(
         index,
-        (r) => r.copyWith(availableRooms: AsyncValue.data(free)),
+        (r) => r.copyWith(
+          availableRooms: AsyncValue.data(free),
+          clearRoom: !stillAvailable,
+        ),
       );
     } catch (e, st) {
       _updateExtraRoom(
@@ -1359,14 +1468,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
     if (index < 0 || index >= state.extraRooms.length) return;
     _updateExtraRoom(
       index,
-      (r) => r.copyWith(
-        checkIn: checkIn,
-        checkOut: checkOut,
-        clearRoom: true,
-      ),
+      (r) => r.copyWith(checkIn: checkIn, checkOut: checkOut),
     );
     await loadExtraRoomAvailableRooms(index);
-    state = state.copyWith(discount: '', clearQuote: true);
+    // Keep the previous quote visible while the replacement is calculated.
+    state = state.copyWith(discount: '');
     await refreshQuote();
   }
 
@@ -1380,10 +1486,12 @@ class BookingViewModel extends StateNotifier<BookingState> {
         clearAvailableBeds: true,
         extras: const {},
         roomTotal: '',
+        roomTotalTouched: false,
       ),
     );
     if (room.isDormitory) await _loadExtraRoomBeds(index);
-    state = state.copyWith(discount: '', clearQuote: true);
+    // The web form keeps its quote card in place during re-pricing.
+    state = state.copyWith(discount: '');
     await refreshQuote();
   }
 
@@ -1475,13 +1583,16 @@ class BookingViewModel extends StateNotifier<BookingState> {
         extras: ChargeSelections.withAgreedAmount(r.extras, chargeId, total),
       ),
     );
-    await refreshQuote();
+    _refreshQuoteDebounced();
   }
 
   Future<void> setExtraRoomTotal(int index, String total) async {
     if (index < 0 || index >= state.extraRooms.length) return;
-    _updateExtraRoom(index, (r) => r.copyWith(roomTotal: total));
-    await refreshQuote();
+    _updateExtraRoom(
+      index,
+      (r) => r.copyWith(roomTotal: total, roomTotalTouched: true),
+    );
+    _refreshQuoteDebounced();
   }
 
   void _updateExtraRoom(
@@ -1514,6 +1625,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
 
     if (state.isMultiRoom) return _refreshMultiRoomQuote();
 
+    final requestId = ++_quoteRequestId;
     state = state.copyWith(quoting: true, clearError: true);
     try {
       final quote = await usecase.priceQuote(
@@ -1525,9 +1637,15 @@ class BookingViewModel extends StateNotifier<BookingState> {
         discountAmount: wholeAmount(state.discount),
         bedIds: state.bedIds,
       );
+      if (requestId != _quoteRequestId) return;
       state = state.copyWith(quoting: false, quote: quote);
     } catch (e) {
-      state = state.copyWith(quoting: false, error: messageFor(e), errorField: fieldFor(e));
+      if (requestId != _quoteRequestId) return;
+      state = state.copyWith(
+        quoting: false,
+        error: messageFor(e),
+        errorField: fieldFor(e),
+      );
     }
   }
 
@@ -1537,6 +1655,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
   Future<void> _refreshMultiRoomQuote() async {
     final window = MultiRoomLogic.bookingWindow(state);
     if (window == null) return;
+    final requestId = ++_quoteRequestId;
     state = state.copyWith(quoting: true, clearError: true);
     try {
       final rooms = MultiRoomLogic.roomsPayload(state);
@@ -1546,6 +1665,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
         checkOutDate: iso(window.$2),
         discountAmount: wholeAmount(state.discount),
       );
+      if (requestId != _quoteRequestId) return;
       final roomNumbers = MultiRoomLogic.pickedExtraRooms(
         state,
       ).map((r) => r.room!.roomNumber).toList();
@@ -1559,7 +1679,12 @@ class BookingViewModel extends StateNotifier<BookingState> {
         multiQuote: response,
       );
     } catch (e) {
-      state = state.copyWith(quoting: false, error: messageFor(e), errorField: fieldFor(e));
+      if (requestId != _quoteRequestId) return;
+      state = state.copyWith(
+        quoting: false,
+        error: messageFor(e),
+        errorField: fieldFor(e),
+      );
     }
   }
 
@@ -1585,6 +1710,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     List<GuestDraft> guests = const [],
     List<VehicleDraft> vehicles = const [],
     List<PaymentDraft> advanceLines = const [],
+    bool sendWhatsApp = false,
   }) async {
     if (state.submitting) return null;
     final room = state.room;
@@ -1618,6 +1744,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
         'numGuests': '$numGuests',
         'guestName': guestName.trim(),
         'guestPhone': guestPhone.trim(),
+        // Saving never sends the guest's WhatsApp confirmation by itself; the
+        // "Booking saved" card has its own button for that.
+        'sendWhatsApp': '$sendWhatsApp',
         // Not a fixed value: a stay starting today is a walk-in and is checked
         // in below, a later one is a reservation and waits.
         'bookingType': state.bookingType,
@@ -1686,7 +1815,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
       state = state.copyWith(submitting: false);
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
+      state = state.copyWith(
+        submitting: false,
+        error: messageFor(e),
+        errorField: fieldFor(e),
+      );
       // A 409 here means someone else took this room out from under the
       // desk between opening this form and pressing Save. Leaving it
       // selected would let Save be pressed again against the very room that
@@ -1769,7 +1902,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
       await loadChart();
       return booking;
     } catch (e) {
-      state = state.copyWith(submitting: false, error: messageFor(e), errorField: fieldFor(e));
+      state = state.copyWith(
+        submitting: false,
+        error: messageFor(e),
+        errorField: fieldFor(e),
+      );
       // Same as in submit(): a 409 means the room just chosen is no longer
       // free, and refreshing the list is what drops it out of the picker so
       // Save can't be pressed again against it unchanged.

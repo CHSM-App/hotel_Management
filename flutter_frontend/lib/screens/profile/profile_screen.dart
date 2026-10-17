@@ -10,6 +10,8 @@ import '../../core/constant.dart';
 import '../../domain/models/me.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
+import '../rooms/room_form_pieces.dart';
+import '../shell/sign_out_dialog.dart';
 import '../theme.dart';
 
 /// The account screen — who is signed in, what property they're on, and the
@@ -191,6 +193,8 @@ class ProfileScreen extends ConsumerWidget {
                       if (me.user.role == 'OWNER') ...[
                         const SizedBox(height: AppTheme.s16),
                         _LogoSection(lodge: me.lodge),
+                        const SizedBox(height: AppTheme.s12),
+                        _HeroImageSection(lodge: me.lodge),
                       ],
                       if (_hasText(me.lodge.slug)) ...[
                         const SizedBox(height: AppTheme.s16),
@@ -280,27 +284,7 @@ class ProfileScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
   ) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: const Text('Sign out?', style: TextStyle(color: AppTheme.heading)),
-        content: const Text(
-          'You will need your phone or email and password to get back in.',
-          style: TextStyle(color: AppTheme.text),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Stay signed in'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out', style: TextStyle(color: AppTheme.danger)),
-          ),
-        ],
-      ),
-    );
+    final ok = await showSignOutDialog(context);
     if (ok == true) {
       await ref.read(authViewModelProvider.notifier).signOut();
       // ProfileScreen is pushed on top of DashboardShell, which sits inside
@@ -315,20 +299,15 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   static Future<void> _openChangePassword(BuildContext context, WidgetRef ref) {
-    return showModalBottomSheet(
+    return showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (_) => const _ChangePasswordSheet(),
     );
   }
 
   static Future<void> _openEditLodge(BuildContext context, WidgetRef ref, Lodge lodge) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _EditLodgeSheet(lodge: lodge),
+    return Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => _EditLodgeSheet(lodge: lodge)),
     );
   }
 }
@@ -340,10 +319,52 @@ class _Sheet extends StatelessWidget {
   final String title;
   final Widget child;
 
-  const _Sheet({required this.title, required this.child});
+  /// Shows as a centred popup dialog instead of a bottom-anchored sheet.
+  final bool dialog;
+
+  const _Sheet({required this.title, required this.child, this.dialog = false});
 
   @override
   Widget build(BuildContext context) {
+    if (dialog) {
+      return Dialog(
+        backgroundColor: AppTheme.bg,
+        insetPadding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rLarge)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppTheme.s24, AppTheme.s16, AppTheme.s8, 0),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.s24,
+                    AppTheme.s16,
+                    AppTheme.s24,
+                    AppTheme.s24,
+                  ),
+                  child: child,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final maxHeight = MediaQuery.of(context).size.height * 0.9;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -450,7 +471,7 @@ class _Header extends ConsumerWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, Color(0xFF434190)],
+                    colors: [AppTheme.accent, Color(0xFF10499A)],
                   ),
                 ),
                 child: Stack(
@@ -1251,187 +1272,436 @@ class _EditLodgeSheetState extends ConsumerState<_EditLodgeSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return _Sheet(
-      title: 'Edit hotel profile',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: NeuField(controller: _name, label: 'Name', required: true),
-              ),
-              const SizedBox(width: AppTheme.s12),
-              Expanded(
-                child: NeuField(
-                  controller: _gstin,
-                  label: 'GSTIN',
-                  hint: widget.lodge.isGstRegistered ? '27ABCDE1234F1Z5' : 'Not GST registered',
-                  readOnly: !widget.lodge.isGstRegistered,
+    final lodge = widget.lodge;
+    final hasLogo = ProfileScreen._hasText(lodge.logoUrl);
+    final hasPin = _latitude.text.trim().isNotEmpty && _longitude.text.trim().isNotEmpty;
+
+    return Scaffold(
+      backgroundColor: AppTheme.bg,
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x331457AD),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
+                  ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.s16),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: NeuField(
-                  controller: _phone,
-                  label: 'Phone',
-                  keyboardType: TextInputType.phone,
-                ),
-              ),
-              const SizedBox(width: AppTheme.s12),
-              Expanded(
-                child: NeuField(
-                  controller: _whatsapp,
-                  label: 'WhatsApp number',
-                  keyboardType: TextInputType.phone,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.s16),
-          NeuField(controller: _address, label: 'Address'),
-          const SizedBox(height: AppTheme.s16),
-          Row(
-            children: [
-              Expanded(child: NeuField(controller: _city, label: 'City')),
-              const SizedBox(width: AppTheme.s12),
-              Expanded(child: NeuField(controller: _state, label: 'State')),
-            ],
-          ),
-          const SizedBox(height: AppTheme.s16),
-          Text(
-            'Map location',
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(fontSize: 12.5),
-          ),
-          const SizedBox(height: AppTheme.s8),
-          Row(
-            children: [
-              Expanded(
-                child: NeuField(
-                  controller: _latitude,
-                  label: 'Latitude',
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                ),
-              ),
-              const SizedBox(width: AppTheme.s12),
-              Expanded(
-                child: NeuField(
-                  controller: _longitude,
-                  label: 'Longitude',
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.s8),
-          Wrap(
-            spacing: AppTheme.s12,
-            runSpacing: AppTheme.s8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _LinkButton(
-                icon: Icons.my_location_rounded,
-                label: _locating ? 'Locating…' : 'Use my current location',
-                onTap: _locating ? null : _useCurrentLocation,
-              ),
-              _LinkButton(
-                icon: Icons.close_rounded,
-                label: 'Clear pin',
-                onTap: _clearPin,
-              ),
-              if (_latitude.text.trim().isNotEmpty && _longitude.text.trim().isNotEmpty)
-                _LinkButton(
-                  icon: Icons.map_outlined,
-                  label: 'Check on Google Maps',
-                  onTap: _viewOnMap,
-                ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.s16),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: NeuField(controller: _nameMr, label: 'Name in Marathi (bill masthead)'),
-              ),
-              const SizedBox(width: AppTheme.s12),
-              Expanded(
-                child: NeuField(controller: _addressMr, label: 'Address in Marathi'),
-              ),
-            ],
-          ),
-          if (ProfileScreen._hasText(widget.lodge.logoUrl)) ...[
-            const SizedBox(height: AppTheme.s16),
-            InkWell(
-              onTap: () => setState(() => _showLogoOnReceipt = !_showLogoOnReceipt),
-              borderRadius: BorderRadius.circular(AppTheme.rSmall),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Checkbox(
-                      value: _showLogoOnReceipt,
-                      onChanged: (v) => setState(() => _showLogoOnReceipt = v ?? false),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Show the logo on printed bills',
-                              style: TextStyle(
-                                color: AppTheme.heading,
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Prints in the masthead above the hotel name. Upload or '
-                              'change the logo itself from the profile screen.',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(fontSize: 11.5),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              child: const Icon(Icons.edit_rounded, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            const Expanded(
+              child: Text(
+                'Edit hotel profile',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
             ),
           ],
-          if (_error != null) ...[
-            const SizedBox(height: AppTheme.s12),
-            Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
-          ],
-          const SizedBox(height: AppTheme.s24),
-          NeuButton(
-            primary: true,
-            expand: true,
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Text('Save changes'),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
+            ),
           ),
+        ),
+      ),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
+              children: [
+                _EditLodgeHeader(lodge: lodge),
+                const SizedBox(height: AppTheme.s12),
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s12 + 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_error != null) ...[
+                        _EditErrorBanner(_error!),
+                        const SizedBox(height: AppTheme.s12),
+                      ],
+
+                      const SectionLabel('Property', number: 1, icon: Icons.storefront_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      _FieldPair(
+                        first: NeuField(
+                          dense: true,
+                          controller: _name,
+                          label: 'Name',
+                          required: true,
+                          forceCapitalizeWords: true,
+                        ),
+                        second: NeuField(
+                          dense: true,
+                          controller: _gstin,
+                          label: 'GSTIN',
+                          hint: lodge.isGstRegistered ? '27ABCDE1234F1Z5' : 'Not GST registered',
+                          readOnly: !lodge.isGstRegistered,
+                        ),
+                      ),
+
+                      const SectionDivider(),
+                      const SectionLabel('Contact', number: 2, icon: Icons.call_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      _FieldPair(
+                        first: NeuField(
+                          dense: true,
+                          controller: _phone,
+                          label: 'Phone',
+                          keyboardType: TextInputType.phone,
+                          hint: '9876543210',
+                        ),
+                        second: NeuField(
+                          dense: true,
+                          controller: _whatsapp,
+                          label: 'WhatsApp number',
+                          keyboardType: TextInputType.phone,
+                          hint: '9876543210',
+                        ),
+                      ),
+
+                      const SectionDivider(),
+                      const SectionLabel('Address', number: 3, icon: Icons.location_on_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(dense: true, controller: _address, label: 'Street address'),
+                      const SizedBox(height: AppTheme.s8),
+                      _FieldPair(
+                        first: NeuField(dense: true, controller: _city, label: 'City'),
+                        second: NeuField(dense: true, controller: _state, label: 'State'),
+                      ),
+
+                      const SectionDivider(),
+                      const SectionLabel('Map location', number: 4, icon: Icons.map_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      _FieldPair(
+                        alwaysRow: true,
+                        first: NeuField(
+                          dense: true,
+                          controller: _latitude,
+                          label: 'Latitude',
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                        second: NeuField(
+                          dense: true,
+                          controller: _longitude,
+                          label: 'Longitude',
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      Wrap(
+                        spacing: AppTheme.s8,
+                        runSpacing: AppTheme.s8,
+                        children: [
+                          _PillButton(
+                            icon: Icons.my_location_rounded,
+                            label: _locating ? 'Locating…' : 'Use current location',
+                            onTap: _locating ? null : _useCurrentLocation,
+                            filled: true,
+                          ),
+                          if (hasPin) ...[
+                            _PillButton(
+                              icon: Icons.map_outlined,
+                              label: 'View on map',
+                              onTap: _viewOnMap,
+                            ),
+                            _PillButton(
+                              icon: Icons.close_rounded,
+                              label: 'Clear',
+                              onTap: _clearPin,
+                            ),
+                          ],
+                        ],
+                      ),
+
+                      const SectionDivider(),
+                      const SectionLabel('Bill masthead', number: 5, icon: Icons.receipt_long_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(dense: true, controller: _nameMr, label: 'Name in Marathi'),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(dense: true, controller: _addressMr, label: 'Address in Marathi'),
+                      if (hasLogo) ...[
+                        const SizedBox(height: AppTheme.s12),
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s4, AppTheme.s8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.accent.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                            border: Border.all(color: AppTheme.accent.withValues(alpha: 0.18)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.image_outlined, size: 18, color: AppTheme.accent),
+                              const SizedBox(width: AppTheme.s8),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Logo on printed bills',
+                                      style: TextStyle(
+                                        color: AppTheme.heading,
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'Prints above the hotel name.',
+                                      style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: _showLogoOnReceipt,
+                                onChanged: (v) => setState(() => _showLogoOnReceipt = v),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppTheme.s16),
+                _actions(context),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _actions(BuildContext context) {
+    return Row(
+                  children: [
+                    Expanded(
+                      child: NeuButton(
+                        expand: true,
+                        onPressed: _saving ? null : () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.s12),
+                    Expanded(
+                      flex: 2,
+                      child: NeuButton(
+                        primary: true,
+                        expand: true,
+                        onPressed: _saving ? null : _save,
+                        child: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Text('Save changes'),
+                      ),
+                    ),
+                  ],
+    );
+  }
+}
+
+/// A compact identity strip atop the edit form — the logo (or monogram) and
+/// the property's current name, so the owner can see what they're editing.
+class _EditLodgeHeader extends StatelessWidget {
+  final Lodge lodge;
+
+  const _EditLodgeHeader({required this.lodge});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLogo = ProfileScreen._hasText(lodge.logoUrl);
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.accent, Color(0xFF10499A)],
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.rLarge),
+        boxShadow: const [
+          BoxShadow(color: Color(0x331457AD), offset: Offset(0, 4), blurRadius: 12),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 2),
+            ),
+            child: hasLogo
+                ? Image.network(
+                    '$baseUrl${lodge.logoUrl}',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        _LogoSectionState._monogram(lodge.name),
+                  )
+                : _LogoSectionState._monogram(lodge.name),
+          ),
+          const SizedBox(width: AppTheme.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  lodge.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Shown on bills, receipts and your public page',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontSize: 11.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Two fields side by side on wider screens, stacked on narrow phones.
+/// [alwaysRow] keeps short paired values (like coordinates) on one line.
+class _FieldPair extends StatelessWidget {
+  final Widget first;
+  final Widget second;
+  final bool alwaysRow;
+
+  const _FieldPair({required this.first, required this.second, this.alwaysRow = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (alwaysRow || constraints.maxWidth >= 420) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: first),
+              const SizedBox(width: AppTheme.s12),
+              Expanded(child: second),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [first, const SizedBox(height: AppTheme.s8), second],
+        );
+      },
+    );
+  }
+}
+
+class _PillButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool filled;
+
+  const _PillButton({required this.icon, required this.label, this.onTap, this.filled = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: Material(
+        color: filled ? AppTheme.accent.withValues(alpha: 0.1) : AppTheme.card,
+        shape: StadiumBorder(
+          side: BorderSide(color: filled ? AppTheme.accent.withValues(alpha: 0.25) : AppTheme.border),
+        ),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: AppTheme.accent),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppTheme.accent,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EditErrorBanner extends StatelessWidget {
+  final String message;
+  const _EditErrorBanner(this.message);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.danger.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(child: Text(message, style: const TextStyle(color: AppTheme.danger, fontSize: 13))),
         ],
       ),
     );
@@ -1569,6 +1839,7 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
   Widget build(BuildContext context) {
     return _Sheet(
       title: 'Change password',
+      dialog: true,
       child: _codeSent ? _codeStep() : _detailsStep(),
     );
   }
@@ -1672,6 +1943,108 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
           child: const Text('Change details / resend code'),
         ),
       ],
+    );
+  }
+}
+
+/// The public page's hero background. Left unset, the page falls back to the
+/// first room/venue photo. Owner-only, mirrors HotelProfileModal's hero
+/// image controls on the web.
+class _HeroImageSection extends ConsumerStatefulWidget {
+  final Lodge lodge;
+
+  const _HeroImageSection({required this.lodge});
+
+  @override
+  ConsumerState<_HeroImageSection> createState() => _HeroImageSectionState();
+}
+
+class _HeroImageSectionState extends ConsumerState<_HeroImageSection> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _run(Future<void> Function() action) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pickAndUpload() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked == null) return;
+    await _run(() async {
+      final form = dio.FormData.fromMap({
+        'heroImage': await dio.MultipartFile.fromFile(picked.path, filename: picked.name),
+      });
+      await ref.read(authViewModelProvider.notifier).updateMyLodgeHeroImage(form);
+    });
+  }
+
+  Future<void> _remove() => _run(() => ref.read(authViewModelProvider.notifier).removeMyLodgeHeroImage());
+
+  @override
+  Widget build(BuildContext context) {
+    final url = widget.lodge.heroImageUrl;
+    final hasHero = ProfileScreen._hasText(url);
+    return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Public page hero image', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontSize: 13.5)),
+          const SizedBox(height: 2),
+          Text(
+            hasHero
+                ? 'Shown as the background of your public page.'
+                : 'Not set — the first room or venue photo is used instead.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11.5),
+          ),
+          if (hasHero) ...[
+            const SizedBox(height: AppTheme.s12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              child: AspectRatio(
+                aspectRatio: 16 / 6,
+                child: Image.network(
+                  '$baseUrl$url',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.bg),
+                ),
+              ),
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: AppTheme.s8),
+            Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
+          ],
+          const SizedBox(height: AppTheme.s12),
+          Wrap(
+            spacing: AppTheme.s12,
+            runSpacing: AppTheme.s8,
+            children: [
+              _LinkButton(
+                icon: Icons.upload_rounded,
+                label: _busy ? 'Uploading…' : (hasHero ? 'Replace image' : 'Upload image'),
+                onTap: _busy ? null : _pickAndUpload,
+              ),
+              if (hasHero)
+                _LinkButton(
+                  icon: Icons.delete_outline_rounded,
+                  label: 'Remove',
+                  onTap: _busy ? null : _remove,
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

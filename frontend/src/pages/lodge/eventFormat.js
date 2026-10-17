@@ -12,26 +12,21 @@ export const EVENT_TYPE_LABEL = {
 };
 
 export const EVENT_STATUS_LABEL = {
-  ENQUIRY: 'Enquiry',
-  TENTATIVE: 'On hold',
+  DRAFT: 'Draft',
   CONFIRMED: 'Confirmed',
   SETTLED: 'Settled',
   CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
 };
 
 // The colour each status wears on the diary, the legend and the hover card.
-// Chosen to say the same thing the tape chart's colours say: amber is held
-// but not yet sold (a draft there, a hold here), red is sold (a reservation
-// there, a confirmed function here), slate is finished business. Blue is the
-// one hue left over for an enquiry — interest, nothing taken.
+// Chosen to say the same thing the tape chart's colours say: amber is not
+// yet sold (a draft there and here), red is sold (a reservation there, a
+// confirmed function here), slate is finished business.
 export const EVENT_STATUS_COLOR = {
-  ENQUIRY: '#5a8fd0',
-  TENTATIVE: '#f2c31d',
-  CONFIRMED: '#c0392b',
+  DRAFT: '#f2c31d',
+  CONFIRMED: '#e0453c',
   SETTLED: '#8695a3',
   CANCELLED: '#cfd6dd',
-  EXPIRED: '#cfd6dd',
 };
 
 export const SLOT_LABEL = {
@@ -50,12 +45,12 @@ export const SLOT_HOURS = {
   FULL_DAY: ['09:00', '23:00'],
 };
 
-// Statuses that still occupy the diary. Cancelled and expired ones are kept
+// Statuses that still occupy the diary. Cancelled ones are kept
 // for the record but hidden unless asked for.
-export const LIVE_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'];
+export const LIVE_STATUSES = ['DRAFT', 'CONFIRMED', 'SETTLED'];
 
 export function isClosedStatus(status) {
-  return status === 'CANCELLED' || status === 'EXPIRED';
+  return status === 'CANCELLED';
 }
 
 // YYYY-MM-DD in local time. toISOString() would give the UTC day, which is
@@ -127,18 +122,6 @@ export function eventDayKeys(startAt, endAt) {
   return keys;
 }
 
-// "in 3 h 20 m" / "expired" for a tentative hold's countdown.
-export function formatHoldRemaining(holdExpiresAt, now = Date.now()) {
-  if (!holdExpiresAt) return '';
-  const ms = new Date(holdExpiresAt).getTime() - now;
-  if (ms <= 0) return 'expired';
-  const mins = Math.floor(ms / 60000);
-  const hours = Math.floor(mins / 60);
-  if (hours >= 48) return `in ${Math.floor(hours / 24)} days`;
-  if (hours >= 1) return `in ${hours} h ${mins % 60} m`;
-  return `in ${mins} m`;
-}
-
 // ---------------------------------------------------------------------------
 // The diary's rolling window: 'YYYY-MM-DD' arithmetic done in UTC so a step
 // of thirty days is always thirty days, whatever the clocks did in between.
@@ -191,6 +174,36 @@ export function formatWindowLabel(fromKey, toKey) {
     secondary: sameYear ? String(from.getUTCFullYear()) : `${from.getUTCFullYear()} – ${to.getUTCFullYear()}`,
   };
 }
+
+// Where a function is in time, which its status does not say: Confirmed and
+// Settled are about the money, and a function next week and one in the hall
+// now are both "Confirmed". Worked out from the booked times (and the desk's
+// "Mark as Completed"), so nobody has to set it. null for a draft or a
+// cancelled function, which does not hold the venue.
+export function eventPhase(ev, now = Date.now()) {
+  if (!ev || !['CONFIRMED', 'SETTLED'].includes(ev.status)) return null;
+  if (ev.completedAt || new Date(ev.endAt).getTime() <= now) return 'COMPLETED';
+  if (new Date(ev.startAt).getTime() > now) return 'UPCOMING';
+  return 'IN_PROGRESS';
+}
+
+// "In Progress · ends 11:00 pm", "Upcoming · in 3 days", "Completed".
+export function eventPhaseLabel(ev, now = Date.now()) {
+  const phase = eventPhase(ev, now);
+  if (!phase) return '';
+  if (phase === 'COMPLETED') return 'Completed';
+  const today = toDateKey(new Date(now));
+  if (phase === 'IN_PROGRESS') {
+    const sameDay = toDateKey(new Date(ev.endAt)) === today;
+    return `In Progress · ends ${sameDay ? '' : `${new Date(ev.endAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, `}${formatEventTime(ev.endAt)}`;
+  }
+  const days = Math.round((new Date(`${toDateKey(new Date(ev.startAt))}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000);
+  if (days <= 0) return `Upcoming · today ${formatEventTime(ev.startAt)}`;
+  if (days === 1) return `Upcoming · tomorrow ${formatEventTime(ev.startAt)}`;
+  return `Upcoming · in ${days} days`;
+}
+
+export const phaseTagClass = (phase) => `events-phase events-phase--${String(phase || '').toLowerCase().replace('_', '-')}`;
 
 export function statusBadgeClass(status) {
   return `badge events-badge events-badge--${String(status || '').toLowerCase()}`;

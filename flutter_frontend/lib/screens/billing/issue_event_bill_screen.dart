@@ -84,16 +84,22 @@ class _Body extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
       children: [
+        // ── Function ──────────────────────────────────────────────────────
+        // Mirrors the web's own `billTarget.kind === 'EVENT'` section in
+        // Billing.jsx: the organiser and the function named plainly, before
+        // any tax workings — what the desk checks against the booking, not
+        // what prints on the document.
         NeuCard(
           radius: AppTheme.rMedium,
+          padding: const EdgeInsets.all(AppTheme.s12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Container(
-                    width: 36,
-                    height: 36,
+                    width: 30,
+                    height: 30,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -106,17 +112,77 @@ class _Body extends ConsumerWidget {
                       ),
                       borderRadius: BorderRadius.circular(AppTheme.rSmall),
                     ),
-                    child: const Icon(Icons.receipt_long_rounded, color: AppTheme.accent, size: 18),
+                    child: const Icon(Icons.celebration_rounded, color: AppTheme.accent, size: 16),
                   ),
                   const SizedBox(width: AppTheme.s8),
                   Expanded(
                     child: Text(
-                      kDocumentLabels[amounts?.documentType] ?? 'Bill',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      'Function',
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: AppTheme.s8),
+              _InfoRow(label: 'Organiser', value: preview.guestName ?? '—'),
+              _InfoRow(
+                label: 'Function',
+                value: '${preview.eventTitle ?? 'Function'} · ${preview.venueName ?? '—'}',
+              ),
+              _InfoRow(label: 'Plates billed', value: '${preview.billablePax}'),
+              for (final line in preview.roomCharges)
+                _InfoRow(label: line.label, value: formatPrice(line.amount)),
+
+              if (preview.extrasOnDay.isNotEmpty) ...[
+                const SizedBox(height: AppTheme.s4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8 + 2, vertical: AppTheme.s8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Added on the day: ${preview.extrasOnDay.map((x) => '${x.label}${x.quantity > 1 ? ' × ${x.quantity}' : ''}'
+                            ' (${x.needsPricing ? 'price to set' : formatPrice(x.amount)})').join(' · ')}'
+                        ' — included in the lines above.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      if (preview.hasUnpricedExtras) ...[
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Price every extra before this bill can be issued.',
+                          style: TextStyle(color: AppTheme.danger, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        // ── Bill ──────────────────────────────────────────────────────────
+        // Which side a bill is issued on isn't the desk's call — it follows
+        // the property's registration, named here before the figures it
+        // produces.
+        const SizedBox(height: AppTheme.s8),
+        NeuCard(
+          radius: AppTheme.rMedium,
+          padding: const EdgeInsets.all(AppTheme.s12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Bill', style: Theme.of(context).textTheme.titleSmall),
+                  ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                     decoration: BoxDecoration(
                       color: AppTheme.accent.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(999),
@@ -128,26 +194,31 @@ class _Body extends ConsumerWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: AppTheme.s8),
+              const SizedBox(height: 2),
               Text(
-                '${preview.eventTitle ?? 'Function'} · ${preview.venueName ?? '—'} · ${preview.billablePax} guests',
+                preview.isGstRegistered
+                    ? 'Issued under GSTIN ${preview.gstin}.'
+                    : 'This property isn’t GST registered — every bill is a cash receipt.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
-              const Divider(height: AppTheme.s24),
+              const SizedBox(height: AppTheme.s8),
+              const Divider(height: 1, color: AppTheme.border),
+              const SizedBox(height: AppTheme.s8),
 
-              for (final line in preview.roomCharges) _Row(label: line.label, value: line.amount),
-
-              if (preview.foodItems.isNotEmpty) ...[
-                const SizedBox(height: AppTheme.s4),
-                Text('Catering', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.heading)),
-                for (final item in preview.foodItems)
-                  _Row(label: '${item.name} (${item.quantity} × ${formatPrice(item.unitPrice)})', value: item.lineTotal),
+              if ((amounts?.roomSubtotal ?? 0) > 0) ...[
+                for (final line in preview.roomCharges) _Row(label: line.label, value: line.amount, muted: true),
+                _Row(label: 'Venue charges', value: amounts?.roomSubtotal ?? 0),
               ],
 
-              if ((amounts?.discountAmount ?? 0) > 0)
-                _Row(label: 'Discount', value: -amounts!.discountAmount),
+              if ((amounts?.foodSubtotal ?? 0) > 0)
+                _Row(label: 'Catering', value: amounts!.foodSubtotal),
 
-              const Divider(height: AppTheme.s24),
+              if ((amounts?.discountAmount ?? 0) > 0)
+                _Row(
+                  label: 'Discount'
+                      '${state.discountReason.trim().isNotEmpty ? ' – ${state.discountReason.trim()}' : ''}',
+                  value: -amounts!.discountAmount,
+                ),
 
               if ((amounts?.cgstAmount ?? 0) > 0 || (amounts?.sgstAmount ?? 0) > 0) ...[
                 _Row(label: 'CGST (${amounts?.cgstRatePercent ?? 0}%)', value: amounts?.cgstAmount ?? 0, muted: true),
@@ -160,30 +231,45 @@ class _Body extends ConsumerWidget {
               if ((amounts?.roundOff ?? 0) != 0)
                 _Row(label: 'Round off', value: amounts!.roundOff, muted: true),
 
-              _Row(label: 'Grand total', value: amounts?.totalAmount ?? 0, strong: true),
+              const SizedBox(height: AppTheme.s4),
+              const Divider(height: 1, color: AppTheme.border),
+              const SizedBox(height: AppTheme.s8),
+
+              _Row(label: kDocumentLabels[amounts?.documentType] ?? 'Bill of supply', value: amounts?.totalAmount ?? 0, strong: true),
 
               if (preview.advancePaid > 0)
                 _Row(
                   label: preview.advanceReceiptNumbers == null
-                      ? 'Less advance'
-                      : 'Less advance (Rec. ${preview.advanceReceiptNumbers})',
+                      ? 'Advance already paid'
+                      : 'Advance already paid (Rec. ${preview.advanceReceiptNumbers})',
                   value: -preview.advancePaid,
                 ),
 
               const SizedBox(height: AppTheme.s4),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8 + 2),
                 decoration: BoxDecoration(
-                  color: AppTheme.accent.withValues(alpha: 0.07),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppTheme.accent.withValues(alpha: 0.1),
+                      AppTheme.sidebarBrand.withValues(alpha: 0.07),
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                  border: Border.all(color: AppTheme.accent.withValues(alpha: 0.15)),
                 ),
                 child: Row(
                   children: [
-                    Text('Balance due', style: Theme.of(context).textTheme.titleSmall),
+                    Text(
+                      'Balance due',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontSize: 13),
+                    ),
                     const Spacer(),
                     Text(
                       formatPrice(preview.balanceDue),
-                      style: const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w700, fontSize: 17),
+                      style: const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w800, fontSize: 17),
                     ),
                   ],
                 ),
@@ -192,50 +278,16 @@ class _Body extends ConsumerWidget {
           ),
         ),
 
-        if (preview.extrasOnDay.isNotEmpty) ...[
-          const SizedBox(height: AppTheme.s12),
-          NeuCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Extras on the day', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: AppTheme.s8),
-                for (final e in preview.extrasOnDay)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${e.label}${e.quantity > 1 ? ' × ${e.quantity}' : ''}',
-                            style: const TextStyle(color: AppTheme.text, fontSize: 13),
-                          ),
-                        ),
-                        Text(
-                          e.needsPricing ? 'price to set' : formatPrice(e.amount),
-                          style: TextStyle(color: e.needsPricing ? AppTheme.danger : AppTheme.text, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (preview.hasUnpricedExtras) ...[
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Close this screen and set a price on each extra before the bill can be issued.',
-                    style: TextStyle(color: AppTheme.danger, fontSize: 12),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+        // ── Discount ─────────────────────────────────────────────────────
+        const SizedBox(height: AppTheme.s8),
+        _EventDiscountSection(state: state),
 
-        const SizedBox(height: AppTheme.s16),
+        const SizedBox(height: AppTheme.s12),
         Row(
           children: [
-            const Icon(Icons.payments_outlined, color: AppTheme.accent, size: 18),
+            const Icon(Icons.payments_outlined, color: AppTheme.accent, size: 17),
             const SizedBox(width: AppTheme.s8),
-            Text('Record how the organiser paid', style: Theme.of(context).textTheme.titleMedium),
+            Text('Record how the guest paid', style: Theme.of(context).textTheme.titleSmall),
           ],
         ),
         const SizedBox(height: AppTheme.s4),
@@ -245,10 +297,10 @@ class _Body extends ConsumerWidget {
               : '${formatPrice(state.balanceDue)} is due. Choose the payment type for each amount taken.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
-        const SizedBox(height: AppTheme.s12),
+        const SizedBox(height: AppTheme.s8),
         if (!state.nothingDue) _PaymentRows(state: state),
 
-        const SizedBox(height: AppTheme.s16),
+        const SizedBox(height: AppTheme.s12),
         if (state.error != null) ...[
           Text(state.error!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger)),
           const SizedBox(height: AppTheme.s12),
@@ -339,6 +391,126 @@ class _Body extends ConsumerWidget {
   }
 }
 
+/// One fact about the function, plainly — mirrors a `chart-row` in the web's
+/// own Function section: a label on the left, the value on the right, no
+/// tax workings attached.
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _InfoRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+            ),
+          ),
+          const SizedBox(width: AppTheme.s8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A discount on a function's bill, in rupees, with the reason that prints
+/// beside it — mirrors the web's own Discount section for `stream="event"`,
+/// shown unconditionally rather than gated behind a cycle stay the way a
+/// room bill's own [IssueBillScreen] discount is.
+class _EventDiscountSection extends ConsumerStatefulWidget {
+  final BillingState state;
+
+  const _EventDiscountSection({required this.state});
+
+  @override
+  ConsumerState<_EventDiscountSection> createState() => _EventDiscountSectionState();
+}
+
+class _EventDiscountSectionState extends ConsumerState<_EventDiscountSection> {
+  late final _amount = TextEditingController(text: widget.state.discountInput);
+  late final _reason = TextEditingController(text: widget.state.discountReason);
+
+  @override
+  void didUpdateWidget(covariant _EventDiscountSection old) {
+    super.didUpdateWidget(old);
+    if (_amount.text != widget.state.discountInput) {
+      _amount.text = widget.state.discountInput;
+    }
+    if (_reason.text != widget.state.discountReason) {
+      _reason.text = widget.state.discountReason;
+    }
+  }
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = ref.read(billingViewModelProvider.notifier);
+    final discount = widget.state.cycleDiscount;
+    final discountAmount = widget.state.eventPreview?.amounts?.discountAmount ?? 0;
+
+    return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Discount', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppTheme.s8),
+          NeuField(
+            controller: _amount,
+            label: 'Amount',
+            hint: '0',
+            keyboardType: TextInputType.number,
+            onChanged: vm.setDiscount,
+            dense: true,
+          ),
+          const SizedBox(height: AppTheme.s8),
+          NeuField(
+            controller: _reason,
+            label: 'Reason (printed on bill)',
+            hint: 'e.g. Leaving early, regular guest',
+            maxLength: 100,
+            onChanged: vm.setDiscountReason,
+            dense: true,
+          ),
+          const SizedBox(height: AppTheme.s4),
+          Text(
+            discount > 0
+                ? 'Shown on the bill as "Discount'
+                      '${widget.state.discountReason.trim().isNotEmpty ? ' – ${widget.state.discountReason.trim()}' : ''}" '
+                      'of ${formatPrice(discountAmount)}.'
+                : 'No discount on this bill.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Row extends StatelessWidget {
   final String label;
   final num value;
@@ -351,20 +523,20 @@ class _Row extends StatelessWidget {
   Widget build(BuildContext context) {
     final colour = strong ? AppTheme.heading : muted ? AppTheme.muted : AppTheme.text;
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
       child: Row(
         children: [
           Expanded(
             child: Text(
               label,
-              style: TextStyle(color: colour, fontSize: strong ? 15 : 13, fontWeight: strong ? FontWeight.w500 : FontWeight.w400),
+              style: TextStyle(color: colour, fontSize: strong ? 14.5 : 12.5, fontWeight: strong ? FontWeight.w700 : FontWeight.w400),
               overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: AppTheme.s8),
           Text(
             formatPrice(value),
-            style: TextStyle(color: colour, fontSize: strong ? 16 : 13, fontWeight: strong ? FontWeight.w500 : FontWeight.w400),
+            style: TextStyle(color: colour, fontSize: strong ? 15.5 : 13, fontWeight: strong ? FontWeight.w700 : FontWeight.w500),
           ),
         ],
       ),
@@ -383,11 +555,12 @@ class _PaymentRows extends ConsumerWidget {
     final problem = state.settlementProblem;
 
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         children: [
           for (var i = 0; i < state.payment.length; i++)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s12),
+              padding: const EdgeInsets.only(bottom: AppTheme.s8),
               child: PaymentRow(
                 key: ValueKey(i),
                 line: state.payment[i],
@@ -397,12 +570,14 @@ class _PaymentRows extends ConsumerWidget {
             ),
           if (state.payment.length < 5)
             NeuButton(
+              soft: true,
               expand: true,
+              minHeight: 40,
               onPressed: vm.addPaymentRow,
-              padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+              padding: const EdgeInsets.symmetric(vertical: AppTheme.s8 + 2),
               child: const Text('+ Add another payment'),
             ),
-          const Divider(height: AppTheme.s24),
+          const Divider(height: AppTheme.s16),
           Row(
             children: [
               Expanded(child: Text('Recorded', style: Theme.of(context).textTheme.bodySmall)),
@@ -411,7 +586,7 @@ class _PaymentRows extends ConsumerWidget {
                 style: TextStyle(
                   color: state.settles ? AppTheme.vacant : AppTheme.danger,
                   fontSize: 15,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],

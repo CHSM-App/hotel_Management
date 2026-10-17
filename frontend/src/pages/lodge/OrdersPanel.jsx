@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Billing from './Billing';
-import { apiGet, apiPost, apiPatch, ApiError } from '../../lib/api';
+import { apiGet, apiPost, apiPatch, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
@@ -32,6 +32,65 @@ const isMobile = (value) => /^[6-9]\d{9}$/.test(mobileDigits(value));
 // for the modal chrome — is where the shape actually lives.
 function FoodTypeMark({ type }) {
   return <span className={`food-mark food-mark--${type.toLowerCase().replace('_', '-')}`} />;
+}
+
+// A handful of small stroke icons for the take-order page — drawn inline
+// rather than pulled from a shared set, the same way Bookings.jsx draws its
+// own PhoneIcon/IdIcon: a few lines each, and this panel doesn't otherwise
+// import from the icon set OwnerDashboard.jsx keeps (importing it back would
+// be a circular dependency — that file is what renders this one).
+function UtensilsIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 2v7a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V2M5 2v20M19 2c-2 2-3 5-3 8s1 4 3 4v8" />
+    </svg>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M19 12H5M11 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+function PersonIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" />
+    </svg>
+  );
+}
+
+function PhoneFieldIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L14 13l5 2v4a2 2 0 0 1-2 2C9.6 21 3 14.4 3 6a2 2 0 0 1 1-2Z" />
+    </svg>
+  );
+}
+
+function TargetIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 21s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z" />
+      <circle cx="12" cy="9" r="2.5" />
+    </svg>
+  );
+}
+
+// Stands in for a dish with no photo on file — the same square the photo
+// itself would fill, so a menu that's half-photographed doesn't jump
+// between two different row heights.
+function DishIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 12a8 8 0 0 1 16 0" />
+      <path d="M3 12h18M5 12v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6" />
+    </svg>
+  );
 }
 
 const STATUS_LABEL = {
@@ -597,12 +656,14 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
                 {key ? (
                   <button
                     type="button"
+                    className="history-table__sort"
                     onClick={() => toggleQSort(key)}
-                    style={{ all: 'inherit', cursor: 'pointer', padding: 0 }}
                     title={`Sort by ${label}`}
                   >
                     {label}
-                    {qSort.key === key ? (qSort.dir === 1 ? ' ▲' : ' ▼') : ''}
+                    <span className="history-table__sort-icon" aria-hidden="true">
+                      {qSort.key === key ? (qSort.dir === 1 ? '▲' : '▼') : '⇅'}
+                    </span>
                   </button>
                 ) : (
                   label
@@ -753,6 +814,38 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
     </section>
     );
   };
+
+  // Taking or editing an order used to open over whatever the screen was
+  // already showing, as a dialog boxed down to fit the viewport with its own
+  // room — the full menu — behind it. It's its own page instead: the queue,
+  // history and tabs step aside entirely rather than sitting dimmed behind a
+  // backdrop, so the menu gets the whole screen to lay out in.
+  if (showCounterForm || editing) {
+    return (
+      <CounterOrderForm
+        lodge={lodge}
+        editOrder={editing}
+        onClose={() => {
+          setShowCounterForm(false);
+          setEditing(null);
+        }}
+        onPlaced={(order) => {
+          const wasEdit = Boolean(editing);
+          setShowCounterForm(false);
+          setEditing(null);
+          if (canWorkQueue) load();
+          // The only confirmation a captain gets that the order actually went
+          // in — the page just leaves otherwise, and silence reads as failure
+          // when you can't see the kitchen queue to check.
+          setPlacedNotice(wasEdit ? `Order #${order.orderNumber} updated.` : `Order #${order.orderNumber} sent to the kitchen.`);
+          setHistoryRefresh((n) => n + 1);
+          // Anyone with the queue stays on it; a captain lands on their live
+          // tab (the "Kitchen queue" strip item), not History.
+          if (!wasEdit && !canWorkQueue) setView('ACTIVE');
+        }}
+      />
+    );
+  }
 
   return (
     <div className="orders-panel">
@@ -931,38 +1024,6 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
         />
       )}
 
-      {editing && (
-        <CounterOrderForm
-          lodge={lodge}
-          editOrder={editing}
-          onClose={() => setEditing(null)}
-          onPlaced={(order) => {
-            setEditing(null);
-            if (canWorkQueue) load();
-            setPlacedNotice(`Order #${order.orderNumber} updated.`);
-            setHistoryRefresh((n) => n + 1);
-          }}
-        />
-      )}
-
-      {showCounterForm && (
-        <CounterOrderForm
-          lodge={lodge}
-          onClose={() => setShowCounterForm(false)}
-          onPlaced={(order) => {
-            setShowCounterForm(false);
-            if (canWorkQueue) load();
-            // The only confirmation a captain gets that the order actually
-            // went in — the form just closes otherwise, and silence reads as
-            // failure when you can't see the kitchen queue to check.
-            setPlacedNotice(`Order #${order.orderNumber} sent to the kitchen.`);
-            setHistoryRefresh((n) => n + 1);
-            // Anyone with the queue stays on it; a captain lands on their live
-            // tab (the "Kitchen queue" strip item), not History.
-            if (!canWorkQueue) setView('ACTIVE');
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -2122,6 +2183,12 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
   const [guestPhone, setGuestPhone] = useState('');
   const [query, setQuery] = useState('');
   const [activeSectionId, setActiveSectionId] = useState(null);
+  // Every section's own heading, so the jump dropdown can scroll straight to
+  // one instead of filtering the list down to it.
+  const sectionRefs = useRef(new Map());
+  const scrollToSection = (id) => {
+    sectionRefs.current.get(String(id))?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  };
   const [error, setError] = useState('');
   const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -2167,14 +2234,6 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load the menu.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape' && !submitting) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, submitting]);
 
   // Selecting a room asks the server who is in it. Resolved server-side against
   // the live booking rather than read off the room list, so what staff verify
@@ -2248,9 +2307,11 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
 
   const needle = query.trim().toLowerCase();
   const searching = needle !== '';
-  const activeSection =
-    sellable.find((s) => String(s.id) === String(activeSectionId)) ?? sellable[0] ?? null;
 
+  // Every section, one below the next — the same single scrollable list the
+  // guest's own QR menu uses, rather than one section at a time behind a
+  // dropdown. The dropdown stays, but only to jump the scroll position; it
+  // no longer decides what's rendered.
   const shownSections = searching
     ? sellable
         .map((section) => ({
@@ -2258,9 +2319,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
           items: section.items.filter((item) => item.name.toLowerCase().includes(needle)),
         }))
         .filter((section) => section.items.length > 0)
-    : activeSection
-    ? [activeSection]
-    : [];
+    : sellable;
 
   const allItems = sellable.flatMap((s) => s.items);
   const lines = Object.entries(cart)
@@ -2362,15 +2421,10 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
   };
 
   return (
-    <div className="glass-backdrop counter-backdrop" onClick={() => !submitting && onClose()}>
-      <div
-        className="glass-panel counter-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="counterOrderTitle"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="menu-modal__head">
+    <div className="order-take-page">
+      <div className="order-take-page__head">
+        <div className="order-take-page__heading">
+          <UtensilsIcon />
           <div>
             <h3 id="counterOrderTitle">{editOrder ? `Edit order #${editOrder.orderNumber}` : 'Take an order'}</h3>
             <p className="menu-modal__sub">
@@ -2379,112 +2433,118 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
                 : 'Goes straight into the kitchen queue — staff took it, so it skips the accept step.'}
             </p>
           </div>
-          <button
-            type="button"
-            className="menu-modal__close"
-            onClick={onClose}
-            disabled={submitting}
-            aria-label="Close"
-          >
-            ×
-          </button>
         </div>
+        <button
+          type="button"
+          className="order-take-page__back"
+          onClick={onClose}
+          disabled={submitting}
+        >
+          <BackIcon />
+          Back
+        </button>
+      </div>
 
-        <form className="counter-form" onSubmit={handleSubmit} noValidate>
-          <div className="counter-form__scroll">
-            {error && (
-              <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
-                {error}
-              </div>
-            )}
+      <form className="counter-form" onSubmit={handleSubmit} noValidate>
+        <div className="counter-form__scroll">
+          {error && (
+            <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
+              {error}
+            </div>
+          )}
 
-            {cookedLines.length > 0 && (
-              <p className="menu-panel__hint">
-                Already ready: {cookedLines.map((l) => `${l.quantity}× ${l.name}`).join(', ')}
-              </p>
-            )}
+          {cookedLines.length > 0 && (
+            <p className="menu-panel__hint">
+              Already ready: {cookedLines.map((l) => `${l.quantity}× ${l.name}`).join(', ')}
+            </p>
+          )}
 
-            {!editOrder && (
-            <div className="field">
-              <label htmlFor="orderTarget">Where&apos;s it going?</label>
+          {!editOrder && (
+          <div className="field">
+            <label htmlFor="orderTarget">Where&apos;s it going?</label>
+            <div className="counter-field-icon">
+              <TargetIcon />
               <select
-                id="orderTarget"
-                value={`${target.kind}:${target.id}${target.bookingId ? `:${target.bookingId}` : ''}`}
-                onChange={(e) => {
-                  const [kind, id, bookingId = ''] = e.target.value.split(':');
-                  setTarget({ kind, id, bookingId });
-                  // Reset here, where the choice is made, so the previous
-                  // room's guest never lingers beside a new selection.
-                  setOccupancy(null);
-                  setOccupancyLoading(kind === 'ROOM' && !!id);
-                }}
-              >
-                <option value="COUNTER:">Counter / takeaway</option>
-                {rooms.flatMap((r) => {
-                  // One entry per guest in the room, named, so a guest holding two
-                  // rooms is listed twice (once per room) and a dormitory lists
-                  // each of its guests — the food is charged to that stay.
-                  const guests = roomGuests.filter((g) => String(g.roomId) === String(r.id));
-                  return guests.length > 0
-                    ? guests.map((g) => (
-                        <option key={`room-${r.id}-${g.bookingId}`} value={`ROOM:${r.id}:${g.bookingId}`}>
-                          Room {r.roomNumber} · {g.guestName || 'Guest'}
-                        </option>
-                      ))
-                    : [];
-                })}
-                {tables.map((t) => (
-                  <option key={`table-${t.id}`} value={`TABLE:${t.id}`}>
-                    {t.label}
-                  </option>
-                ))}
+              id="orderTarget"
+              value={`${target.kind}:${target.id}${target.bookingId ? `:${target.bookingId}` : ''}`}
+              onChange={(e) => {
+                const [kind, id, bookingId = ''] = e.target.value.split(':');
+                setTarget({ kind, id, bookingId });
+                // Reset here, where the choice is made, so the previous
+                // room's guest never lingers beside a new selection.
+                setOccupancy(null);
+                setOccupancyLoading(kind === 'ROOM' && !!id);
+              }}
+            >
+              <option value="COUNTER:">Counter / takeaway</option>
+              {rooms.flatMap((r) => {
+                // One entry per guest in the room, named, so a guest holding two
+                // rooms is listed twice (once per room) and a dormitory lists
+                // each of its guests — the food is charged to that stay.
+                const guests = roomGuests.filter((g) => String(g.roomId) === String(r.id));
+                return guests.length > 0
+                  ? guests.map((g) => (
+                      <option key={`room-${r.id}-${g.bookingId}`} value={`ROOM:${r.id}:${g.bookingId}`}>
+                        Room {r.roomNumber} · {g.guestName || 'Guest'}
+                      </option>
+                    ))
+                  : [];
+              })}
+              {tables.map((t) => (
+                <option key={`table-${t.id}`} value={`TABLE:${t.id}`}>
+                  {t.label}
+                </option>
+              ))}
               </select>
             </div>
-            )}
+          </div>
+          )}
 
-            {!editOrder && target.kind === 'ROOM' && (
-              <div className="occupancy" aria-live="polite">
-                {occupancyLoading && <p className="occupancy__muted">Checking who&apos;s in this room…</p>}
+          {!editOrder && target.kind === 'ROOM' && (
+            <div className="occupancy" aria-live="polite">
+              {occupancyLoading && <p className="occupancy__muted">Checking who&apos;s in this room…</p>}
 
-                {!occupancyLoading && occupancy?.failed && (
-                  <p className="occupancy__muted">
-                    Couldn&apos;t check the register just now — confirm the guest at the desk.
+              {!occupancyLoading && occupancy?.failed && (
+                <p className="occupancy__muted">
+                  Couldn&apos;t check the register just now — confirm the guest at the desk.
+                </p>
+              )}
+
+              {!occupancyLoading && occupancy && !occupancy.failed && occupancy.occupied && (
+                <>
+                  <p className="occupancy__label">Checked in to this room</p>
+                  <p className="occupancy__name">{occupancy.guestName || 'Name not on the booking'}</p>
+                  {occupancy.guestPhone && <p className="occupancy__phone">{occupancy.guestPhone}</p>}
+                  <p className="occupancy__hint">
+                    Check this matches the guest ordering before you charge it to the room.
                   </p>
-                )}
+                </>
+              )}
 
-                {!occupancyLoading && occupancy && !occupancy.failed && occupancy.occupied && (
-                  <>
-                    <p className="occupancy__label">Checked in to this room</p>
-                    <p className="occupancy__name">{occupancy.guestName || 'Name not on the booking'}</p>
-                    {occupancy.guestPhone && <p className="occupancy__phone">{occupancy.guestPhone}</p>}
-                    <p className="occupancy__hint">
-                      Check this matches the guest ordering before you charge it to the room.
-                    </p>
-                  </>
-                )}
+              {!occupancyLoading && occupancy && !occupancy.failed && !occupancy.occupied && (
+                <p className="occupancy__vacant occupancy__vacant--error" role="alert">
+                  Nobody is checked in to this room. Select a different room, or the counter, to place
+                  this order.
+                </p>
+              )}
+            </div>
+          )}
 
-                {!occupancyLoading && occupancy && !occupancy.failed && !occupancy.occupied && (
-                  <p className="occupancy__vacant occupancy__vacant--error" role="alert">
-                    Nobody is checked in to this room. Select a different room, or the counter, to place
-                    this order.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Only the counter asks for these. A room or a table already
-                identifies the payer — the booking above, or the table the
-                party is sitting at — so re-typing a name there would be a
-                second, weaker record of something the register already knows.
-                A takeaway has neither: this is the only trace of who the food
-                is for, so it is required rather than optional. */}
-            {!editOrder && target.kind === 'COUNTER' && (
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="orderGuest">
-                    Guest name
-                    <Req />
-                  </label>
+          {/* Only the counter asks for these. A room or a table already
+              identifies the payer — the booking above, or the table the
+              party is sitting at — so re-typing a name there would be a
+              second, weaker record of something the register already knows.
+              A takeaway has neither: this is the only trace of who the food
+              is for, so it is required rather than optional. */}
+          {!editOrder && target.kind === 'COUNTER' && (
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="orderGuest">
+                  Guest name
+                  <Req />
+                </label>
+                <div className="counter-field-icon">
+                  <PersonIcon />
                   <input
                     id="orderGuest"
                     aria-invalid={invalid('orderGuest')}
@@ -2492,13 +2552,16 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
                     onChange={(e) => setGuestName(capitalizeName(e.target.value))}
                     placeholder="Who's collecting"
                   />
-                  {fieldErr('orderGuest')}
                 </div>
-                <div className="field">
-                  <label htmlFor="orderPhone">
-                    Phone
-                    <Req />
-                  </label>
+                {fieldErr('orderGuest')}
+              </div>
+              <div className="field">
+                <label htmlFor="orderPhone">
+                  Phone
+                  <Req />
+                </label>
+                <div className="counter-field-icon">
+                  <PhoneFieldIcon />
                   <input
                     id="orderPhone"
                     inputMode="tel"
@@ -2507,108 +2570,145 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
                     onChange={(e) => setGuestPhone(typedMobile(e.target.value))}
                     placeholder="To call when it's ready"
                   />
-                  {fieldErr('orderPhone')}
                 </div>
+                {fieldErr('orderPhone')}
               </div>
-            )}
+            </div>
+          )}
 
-            {!sections && <PageLoader inline label="Loading the menu" />}
+          {!sections && <PageLoader inline label="Loading the menu" />}
 
-            {sections && sellable.length === 0 && (
-              <p className="menu-panel__hint">Nothing on the menu is available right now.</p>
-            )}
+          {sections && sellable.length === 0 && (
+            <p className="menu-panel__hint">Nothing on the menu is available right now.</p>
+          )}
 
-            {sellable.length > 0 && (
-              <>
-                <div className="counter-find">
-                  <div className="menu-search">
-                    <span className="menu-search__icon" aria-hidden="true" />
-                    <input
-                      type="search"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Search every section…"
-                      aria-label="Search the menu"
-                    />
-                  </div>
-                  {!searching && sellable.length > 1 && (
-                    <select
-                      className="counter-find__section"
-                      value={activeSection?.id ?? ''}
-                      aria-label="Menu section"
-                      onChange={(e) => setActiveSectionId(e.target.value)}
+          {sellable.length > 0 && (
+            <>
+              <div className="menu-search">
+                <span className="menu-search__icon" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search every section…"
+                  aria-label="Search the menu"
+                />
+              </div>
+
+              {/* A shortcut, not a filter — same as the guest's own QR menu:
+                  tapping a section scrolls the one long list to it rather
+                  than hiding the rest, and the dish steppers underneath keep
+                  working on whatever is already on screen. */}
+              {!searching && sellable.length > 1 && (
+                <nav className="counter-sections" aria-label="Menu sections">
+                  {sellable.map((s) => (
+                    <button
+                      type="button"
+                      key={s.id}
+                      className="counter-sections__tab"
+                      aria-current={activeSectionId === String(s.id) ? 'true' : undefined}
+                      onClick={() => {
+                        setActiveSectionId(String(s.id));
+                        scrollToSection(s.id);
+                      }}
                     >
-                      {sellable.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.items.length})
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
+                      {s.name}
+                    </button>
+                  ))}
+                </nav>
+              )}
 
-                {shownSections.length === 0 && (
-                  <p className="menu-panel__hint">Nothing matches that.</p>
-                )}
+              {shownSections.length === 0 && (
+                <p className="menu-panel__hint">Nothing matches that.</p>
+              )}
 
-                {shownSections.map((section) => (
-                  <div className="counter-section" key={section.id}>
-                    {searching && <div className="form-section__title">{section.name}</div>}
-                    {section.items.map((item) => (
-                      <div className="counter-line" key={item.id}>
-                        <div className="counter-line__main">
-                          <FoodTypeMark type={item.foodType} />
-                          <span className="counter-line__name">{item.name}</span>
-                          {item.portions.length === 0 && (
-                            <>
-                              <span className="counter-line__price">{formatPrice(item.price)}</span>
-                              <Stepper
-                                qty={cart[cartKey(item.id, null)] || 0}
-                                onChange={(q) => setQty(item.id, null, q)}
-                                label={item.name}
-                              />
-                            </>
-                          )}
-                        </div>
-
-                        {item.portions.length > 0 && (
-                          <div className="counter-line__sizes">
-                            {item.portions.map((portion) => (
-                              <div className="counter-line__size" key={portion.id}>
-                                <span className="counter-line__size-label">{portion.label}</span>
-                                <span className="counter-line__price">
-                                  {formatPrice(portion.price)}
-                                </span>
-                                <Stepper
-                                  qty={cart[cartKey(item.id, portion.id)] || 0}
-                                  onChange={(q) => setQty(item.id, portion.id, q)}
-                                  label={`${item.name}, ${portion.label}`}
-                                />
-                              </div>
-                            ))}
-                          </div>
+              {shownSections.map((section) => (
+                <div
+                  className="counter-section"
+                  key={section.id}
+                  ref={(el) => {
+                    if (el) sectionRefs.current.set(String(section.id), el);
+                    else sectionRefs.current.delete(String(section.id));
+                  }}
+                >
+                  <div className="form-section__title">{section.name}</div>
+                  {section.items.map((item) => (
+                    <div className="counter-line" key={item.id}>
+                      <div className="counter-line__main">
+                        {item.image ? (
+                          <img
+                            className="counter-line__photo"
+                            src={`${API_BASE}/menu-images/${item.image}`}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : (
+                          <span className="counter-line__photo counter-line__photo--placeholder" aria-hidden="true">
+                            <DishIcon />
+                          </span>
+                        )}
+                        <FoodTypeMark type={item.foodType} />
+                        <span className="counter-line__name">{item.name}</span>
+                        {item.portions.length === 0 && (
+                          <>
+                            <span className="counter-line__price">{formatPrice(item.price)}</span>
+                            <Stepper
+                              qty={cart[cartKey(item.id, null)] || 0}
+                              onChange={(q) => setQty(item.id, null, q)}
+                              label={item.name}
+                            />
+                          </>
                         )}
                       </div>
-                    ))}
-                  </div>
-                ))}
-              </>
-            )}
 
-            <div className="field">
+                      {item.portions.length > 0 && (
+                        <div className="counter-line__sizes">
+                          {item.portions.map((portion) => (
+                            <div className="counter-line__size" key={portion.id}>
+                              <span className="counter-line__size-label">{portion.label}</span>
+                              <span className="counter-line__price">
+                                {formatPrice(portion.price)}
+                              </span>
+                              <Stepper
+                                qty={cart[cartKey(item.id, portion.id)] || 0}
+                                onChange={(q) => setQty(item.id, portion.id, q)}
+                                label={`${item.name}, ${portion.label}`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </>
+          )}
+
+        </div>
+
+        {/* The cart, as its own column rather than a bar pinned under the
+            menu — on a wide screen there's room to keep what's been picked
+            in view the whole time the menu is being read, instead of only
+            at the bottom of it. */}
+        <div className="counter-cart">
+          <div className="counter-summary">
+            <h4 className="counter-cart__title">Your order</h4>
+
+            <div className="field counter-cart__note">
               <label htmlFor="orderNote">
                 Note for the kitchen <span className="field__optional">optional</span>
               </label>
-              <input
+              <textarea
                 id="orderNote"
+                rows={2}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Less spicy, no onion"
               />
             </div>
-          </div>
 
-          <div className="counter-summary">
             {lines.length === 0 ? (
               <p className="counter-summary__empty">Nothing added yet.</p>
             ) : (
@@ -2632,16 +2732,18 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
                 ))}
               </ul>
             )}
+          </div>
 
-            <div className="counter-foot">
-              <span className="counter-total">
-                {count > 0 && (
-                  <span className="counter-total__count">
-                    {count} item{count === 1 ? '' : 's'}
-                  </span>
-                )}
-                {formatPrice(total)}
-              </span>
+          <div className="counter-foot">
+            <span className="counter-total">
+              {count > 0 && (
+                <span className="counter-total__count">
+                  {count} item{count === 1 ? '' : 's'}
+                </span>
+              )}
+              {formatPrice(total)}
+            </span>
+            <div className="counter-foot__actions">
               <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>
                 Cancel
               </button>
@@ -2664,8 +2766,8 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
               </button>
             </div>
           </div>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   );
 }

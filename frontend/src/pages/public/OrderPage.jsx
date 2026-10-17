@@ -1310,6 +1310,7 @@ export default function OrderPage({ mode }) {
                                 src={`${API_BASE}/menu-images/${item.image}`}
                                 alt={item.name}
                                 loading="lazy"
+                                decoding="async"
                               />
                             )}
                           </div>

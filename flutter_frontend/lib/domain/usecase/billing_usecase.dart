@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
+import '../models/event_booking.dart';
 import '../models/invoice.dart';
+import '../models/lodge_service.dart' show ServiceUsage;
 import '../repository/billing_repo.dart';
 
 class BillingUsecase {
@@ -10,6 +12,9 @@ class BillingUsecase {
 
   /// Stays that have checked out and have no bill yet.
   Future<List<BillableStay>> queue() => repository.queue();
+
+  /// Functions that are over (or marked complete) and have no bill yet.
+  Future<List<EventBooking>> queueEvents() => repository.queueEvents();
 
   /// What the bill will say.
   Future<BillPreview> preview(
@@ -81,8 +86,15 @@ class BillingUsecase {
   Future<Invoice> invoice(int id) => repository.invoice(id);
 
   /// What a function's bill will say.
-  Future<EventBillPreview> previewEventBill(int eventId) =>
-      repository.previewEventBill(eventId);
+  Future<EventBillPreview> previewEventBill(
+    int eventId, {
+    num discountAmount = 0,
+    String? discountReason,
+  }) => repository.previewEventBill(
+    eventId,
+    discountAmount: discountAmount,
+    discountReason: discountReason,
+  );
 
   /// Cut the bill for a function.
   Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body) =>
@@ -98,4 +110,23 @@ class BillingUsecase {
   /// Every advance receipt on file for the lodge, for the Bills list.
   Future<List<AdvanceReceipt>> allAdvanceReceipts() =>
       repository.allAdvanceReceipts();
+
+  /// Completed, unbilled services (laundry, pool, gaming ...) waiting on
+  /// their own document or on a guest's room bill.
+  Future<List<ServiceUsage>> billableServiceUsages() =>
+      repository.billableServiceUsages();
+
+  /// What a standalone service bill will say.
+  Future<ServiceBillPreview> previewServiceBill(List<int> usageIds) =>
+      repository.previewServiceBill(usageIds);
+
+  /// Bill the selected uses on their own document.
+  Future<Invoice> issueServiceInvoice(
+    List<int> usageIds,
+    Map<String, dynamic> body,
+  ) => repository.issueServiceInvoice(usageIds, body);
+
+  /// Charges the selected, completed services to a guest's room bill.
+  Future<void> addServicesToRoom(List<int> usageIds, int bookingId) =>
+      repository.addServicesToRoom(usageIds, bookingId);
 }

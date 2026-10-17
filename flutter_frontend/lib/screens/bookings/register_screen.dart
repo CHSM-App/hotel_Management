@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/booking.dart';
@@ -91,11 +92,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     }
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// [silent] skips the full-list spinner — used coming back from a stay's
+  /// own detail screen, where the list underneath is already on the right
+  /// range and losing it to a blank loader for the moment a refetch takes
+  /// would read as the whole register reloading rather than one row
+  /// quietly catching up.
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final rows = await ref
           .read(bookingUsecaseProvider)
@@ -113,6 +121,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      // A silent refresh that fails leaves the list exactly as it was —
+      // the desk didn't ask for this fetch, so it shouldn't lose the rows
+      // it can already see over it failing quietly in the background.
+      if (silent) return;
       setState(() {
         _loading = false;
         _error = 'Could not load the register.';
@@ -123,7 +135,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   void _setRange(String from, String to) {
     setState(() {
       _fromDate = from;
-      _toDate = to;
+      _toDate = to.compareTo(from) < 0 ? from : to;
     });
     _load();
   }
@@ -287,7 +299,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           builder: (_) => BookingDetailScreen(bookingId: b.id),
                         ),
                       );
-                      _load();
+                      _load(silent: true);
                     },
                   ),
                 ),
@@ -300,7 +312,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     await Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => TakeBookingScreen(draft: d)),
                     );
-                    _load();
+                    _load(silent: true);
                   },
                 ),
               ),
@@ -368,97 +380,123 @@ class _RangeAndSearch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
-      radius: AppTheme.rMedium,
-      shadow: AppTheme.extruded,
-      padding: const EdgeInsets.all(AppTheme.s12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _DateField(
-                  label: 'From',
-                  value: fromDate,
-                  onPick: (v) => onFromTo(v, toDate),
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _DateField(
+                label: 'From',
+                value: fromDate,
+                onPick: (v) => onFromTo(v, toDate),
               ),
-              const SizedBox(width: AppTheme.s8),
-              Expanded(
-                child: _DateField(
-                  label: 'To',
-                  value: toDate,
-                  minDate: fromDate,
-                  onPick: (v) => onFromTo(fromDate, v),
-                ),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            Expanded(
+              child: _DateField(
+                label: 'To',
+                value: toDate,
+                minDate: fromDate,
+                onPick: (v) => onFromTo(fromDate, v),
               ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.s12),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: NeuPressed(
-                    radius: AppTheme.rMedium,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.s12,
-                      vertical: 4,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppTheme.shadowDark, width: 1.3),
+                  boxShadow: AppTheme.subtle,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent.withValues(alpha: 0.10),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.search_rounded,
+                        size: 17,
+                        color: AppTheme.accent,
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.search_rounded, size: 18, color: AppTheme.muted),
-                        const SizedBox(width: AppTheme.s8),
-                        Expanded(
-                          child: TextField(
-                            onChanged: onSearch,
-                            controller: searchController,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              hintText: 'Name, room, phone or bill number',
-                              hintStyle: TextStyle(color: AppTheme.muted, fontSize: 13),
-                            ),
-                            style: const TextStyle(color: AppTheme.heading, fontSize: 13),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: TextField(
+                        onChanged: onSearch,
+                        controller: searchController,
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontSize: 14,
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: 'Name, room, phone or bill number',
+                          hintStyle: TextStyle(
+                            color: AppTheme.muted,
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 13),
+                        ),
+                      ),
+                    ),
+                    if (searchNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          searchController.clear();
+                          onSearch('');
+                        },
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          margin: const EdgeInsets.only(right: 2),
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.bg,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 15,
+                            color: AppTheme.muted,
                           ),
                         ),
-                        if (searchNotEmpty)
-                          InkResponse(
-                            onTap: () {
-                              searchController.clear();
-                              onSearch('');
-                            },
-                            radius: 18,
-                            child: const Icon(
-                              Icons.close_rounded,
-                              size: 18,
-                              color: AppTheme.muted,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                      ),
+                  ],
                 ),
-                const SizedBox(width: AppTheme.s8),
-                CompositedTransformTarget(
-                  link: filterLink,
-                  child: OverlayPortal(
-                    controller: filterPortalController,
-                    overlayChildBuilder: filterOverlayBuilder,
-                    child: _FilterButton(
-                      count: activeFilterCount,
-                      open: filterOpen,
-                      onTap: onToggleFilter,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
-      ),
+            const SizedBox(width: AppTheme.s8),
+            CompositedTransformTarget(
+              link: filterLink,
+              child: OverlayPortal(
+                controller: filterPortalController,
+                overlayChildBuilder: filterOverlayBuilder,
+                child: _FilterButton(
+                  count: activeFilterCount,
+                  open: filterOpen,
+                  onTap: onToggleFilter,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -484,44 +522,64 @@ class _FilterButton extends StatelessWidget {
     final on = count > 0 || open;
     return GestureDetector(
       onTap: onTap,
-      child: NeuPressed(
-        radius: AppTheme.rMedium,
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-        child: SizedBox(
-          width: 18,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              Icon(
-                Icons.filter_alt_rounded,
-                size: 18,
-                color: on ? AppTheme.accent : AppTheme.muted,
-              ),
-              if (count > 0)
-                Positioned(
-                  top: -4,
-                  right: -4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: const BoxDecoration(
+      child: Container(
+        width: 48,
+        height: 48,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: on
+              ? const LinearGradient(
+                  colors: [AppTheme.accent, AppTheme.sidebarBrand],
+                )
+              : null,
+          color: on ? null : AppTheme.card,
+          shape: BoxShape.circle,
+          border: on
+              ? null
+              : Border.all(color: AppTheme.shadowDark, width: 1.3),
+          boxShadow: on
+              ? [
+                  BoxShadow(
+                    color: AppTheme.accent.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : AppTheme.subtle,
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.filter_alt_rounded,
+              size: 19,
+              color: on ? Colors.white : AppTheme.accent,
+            ),
+            if (count > 0)
+              Positioned(
+                top: -4,
+                right: -6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.accent, width: 1.2),
+                  ),
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  child: Text(
+                    '$count',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
                       color: AppTheme.accent,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
-                    child: Text(
-                      '$count',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
@@ -550,44 +608,85 @@ class _DateField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final parsed = DateTime.tryParse(value);
-    return GestureDetector(
-      onTap: () async {
-        final now = DateTime.now();
-        final min = minDate != null ? DateTime.tryParse(minDate!) : null;
-        final picked = await showDatePicker(
-          context: context,
-          initialDate: parsed ?? now,
-          firstDate: min ?? DateTime(now.year - 5),
-          lastDate: DateTime(now.year + 1),
-        );
-        if (picked == null) return;
-        onPick(_RegisterScreenState._iso(picked));
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10)),
-          const SizedBox(height: 2),
-          NeuPressed(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.s8,
-              vertical: 6,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          final now = DateTime.now();
+          final min = minDate != null ? DateTime.tryParse(minDate!) : null;
+          final picked = await showAppDatePicker(
+            context: context,
+            initialDate: parsed ?? now,
+            firstDate: min ?? DateTime(now.year - 5),
+            lastDate: DateTime(now.year + 1),
+          );
+          if (picked == null) return;
+          onPick(_RegisterScreenState._iso(picked));
+        },
+        borderRadius: BorderRadius.circular(999),
+        highlightColor: AppTheme.accent.withValues(alpha: 0.05),
+        splashColor: AppTheme.accent.withValues(alpha: 0.08),
+        child: Container(
+          height: 50,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: AppTheme.accent.withValues(alpha: 0.4),
+              width: 1.3,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.event_rounded, size: 13, color: AppTheme.muted),
-                const SizedBox(width: 6),
-                Text(
-                  parsed == null
-                      ? value
-                      : '${parsed.day} ${_months[parsed.month]} ${parsed.year}',
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 12),
-                ),
-              ],
-            ),
+            boxShadow: AppTheme.subtle,
           ),
-        ],
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.calendar_today_rounded,
+                  size: 14,
+                  color: AppTheme.accent,
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      parsed == null
+                          ? value
+                          : '${parsed.day} ${_months[parsed.month]} ${parsed.year}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.s4),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -612,43 +711,33 @@ class _StatusChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 190,
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        boxShadow: AppTheme.subtle,
-      ),
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Chip(
-            label: 'All',
-            count: allCount,
-            on: selected.isEmpty,
-            icon: Icons.apps_rounded,
-            onTap: onClearAll,
+    return NeuFilterPanel(
+      children: [
+        NeuFilterRow(
+          label: 'All',
+          count: allCount,
+          on: selected.isEmpty,
+          icon: Icons.apps_rounded,
+          onTap: onClearAll,
+        ),
+        for (final key in _kStatusOrder)
+          NeuFilterRow(
+            label: kRegisterStatusLabel[key]!,
+            count: counts[key] ?? 0,
+            on: selected.contains(key),
+            color: BookingActions.statusColor(key),
+            icon: _kStatusIcon[key]!,
+            onTap: () => onToggle(key),
           ),
-          for (final key in _kStatusOrder)
-            _Chip(
-              label: kRegisterStatusLabel[key]!,
-              count: counts[key] ?? 0,
-              on: selected.contains(key),
-              color: BookingActions.statusColor(key),
-              icon: _kStatusIcon[key]!,
-              onTap: () => onToggle(key),
-            ),
-          _Chip(
-            label: 'Draft',
-            count: counts['DRAFT'] ?? 0,
-            on: selected.contains('DRAFT'),
-            color: AppTheme.draft,
-            icon: Icons.edit_note_rounded,
-            onTap: () => onToggle('DRAFT'),
-          ),
-        ],
-      ),
+        NeuFilterRow(
+          label: 'Draft',
+          count: counts['DRAFT'] ?? 0,
+          on: selected.contains('DRAFT'),
+          color: AppTheme.draft,
+          icon: Icons.edit_note_rounded,
+          onTap: () => onToggle('DRAFT'),
+        ),
+      ],
     );
   }
 }
@@ -706,68 +795,6 @@ class _DraftRegisterCard extends StatelessWidget {
   }
 }
 
-class _Chip extends StatelessWidget {
-  final String label;
-  final int count;
-  final bool on;
-  final Color? color;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _Chip({
-    required this.label,
-    required this.count,
-    required this.on,
-    required this.icon,
-    required this.onTap,
-    this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tint = color ?? AppTheme.accent;
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
-        decoration: BoxDecoration(
-          color: on ? tint.withValues(alpha: 0.10) : Colors.transparent,
-          border: Border(
-            left: BorderSide(
-              color: on ? tint : Colors.transparent,
-              width: 3,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: on ? tint : AppTheme.muted),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: on ? tint : AppTheme.text,
-                  fontSize: 13,
-                  fontWeight: on ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ),
-            Text(
-              '$count',
-              style: TextStyle(
-                color: on ? tint : AppTheme.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ── One row ───────────────────────────────────────────────────────────────
 
 class _RegisterCard extends StatelessWidget {
@@ -794,19 +821,6 @@ class _RegisterCard extends StatelessWidget {
           child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // A colour bar down the left edge — the status reads at a glance
-            // even before the eye lands on the chip, the same way a coloured
-            // spine helps a stack of folders sort itself without reading
-            // every label.
-            Container(
-              width: 4,
-              decoration: BoxDecoration(
-                color: statusColor,
-                borderRadius: const BorderRadius.horizontal(
-                  left: Radius.circular(AppTheme.rMedium),
-                ),
-              ),
-            ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(

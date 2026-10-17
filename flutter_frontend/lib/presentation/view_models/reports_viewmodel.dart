@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/asset.dart';
 import '../../domain/models/expense.dart';
 import '../../domain/models/income.dart';
+import '../../domain/models/invoice.dart';
 import '../../domain/models/report.dart';
 import '../../domain/usecase/assets_usecase.dart';
+import '../../domain/usecase/billing_usecase.dart';
 import '../../domain/usecase/expenses_usecase.dart';
 import '../../domain/usecase/income_usecase.dart';
 import '../../domain/usecase/reports_usecase.dart';
@@ -54,6 +56,8 @@ class ReportsState {
   final AsyncValue<GstSummaryReport>? gst;
   final AsyncValue<EventsReport>? events;
   final AsyncValue<FoodOrdersReport>? foodOrders;
+  final AsyncValue<ServicesReport>? services;
+  final AsyncValue<LaundryReport>? laundry;
   final AsyncValue<AnalyticsOverview>? analyticsOverview;
   final AsyncValue<ProfitLossReport>? profitLoss;
   final String plGranularity;
@@ -61,6 +65,7 @@ class ReportsState {
   final AsyncValue<List<Expense>>? expensesReport;
   final AsyncValue<List<IncomeEntry>>? incomeReport;
   final AsyncValue<AssetsReportData>? assetsReport;
+  final AsyncValue<List<Invoice>>? billsReport;
 
   const ReportsState({
     required this.fromDate,
@@ -71,6 +76,8 @@ class ReportsState {
     this.gst,
     this.events,
     this.foodOrders,
+    this.services,
+    this.laundry,
     this.analyticsOverview,
     this.profitLoss,
     this.plGranularity = 'year',
@@ -78,6 +85,7 @@ class ReportsState {
     this.expensesReport,
     this.incomeReport,
     this.assetsReport,
+    this.billsReport,
   });
 
   bool get validRange => fromDate.isNotEmpty && toDate.isNotEmpty && toDate.compareTo(fromDate) >= 0;
@@ -91,6 +99,8 @@ class ReportsState {
     AsyncValue<GstSummaryReport>? gst,
     AsyncValue<EventsReport>? events,
     AsyncValue<FoodOrdersReport>? foodOrders,
+    AsyncValue<ServicesReport>? services,
+    AsyncValue<LaundryReport>? laundry,
     AsyncValue<AnalyticsOverview>? analyticsOverview,
     AsyncValue<ProfitLossReport>? profitLoss,
     String? plGranularity,
@@ -98,6 +108,7 @@ class ReportsState {
     AsyncValue<List<Expense>>? expensesReport,
     AsyncValue<List<IncomeEntry>>? incomeReport,
     AsyncValue<AssetsReportData>? assetsReport,
+    AsyncValue<List<Invoice>>? billsReport,
   }) => ReportsState(
     fromDate: fromDate ?? this.fromDate,
     toDate: toDate ?? this.toDate,
@@ -107,6 +118,8 @@ class ReportsState {
     gst: gst ?? this.gst,
     events: events ?? this.events,
     foodOrders: foodOrders ?? this.foodOrders,
+    services: services ?? this.services,
+    laundry: laundry ?? this.laundry,
     analyticsOverview: analyticsOverview ?? this.analyticsOverview,
     profitLoss: profitLoss ?? this.profitLoss,
     plGranularity: plGranularity ?? this.plGranularity,
@@ -114,6 +127,7 @@ class ReportsState {
     expensesReport: expensesReport ?? this.expensesReport,
     incomeReport: incomeReport ?? this.incomeReport,
     assetsReport: assetsReport ?? this.assetsReport,
+    billsReport: billsReport ?? this.billsReport,
   );
 }
 
@@ -122,12 +136,14 @@ class ReportsViewModel extends StateNotifier<ReportsState> {
   final ExpensesUsecase expensesUsecase;
   final AssetsUsecase assetsUsecase;
   final IncomeUsecase incomeUsecase;
+  final BillingUsecase billingUsecase;
 
   ReportsViewModel(
     this.usecase,
     this.expensesUsecase,
     this.assetsUsecase,
     this.incomeUsecase,
+    this.billingUsecase,
   ) : super(ReportsState(fromDate: startOfMonthIso(), toDate: todayIso())) {
     _loadAll();
     _loadStatic();
@@ -165,6 +181,8 @@ class ReportsViewModel extends StateNotifier<ReportsState> {
       gst: const AsyncValue.loading(),
       events: const AsyncValue.loading(),
       foodOrders: const AsyncValue.loading(),
+      services: const AsyncValue.loading(),
+      laundry: const AsyncValue.loading(),
       analyticsOverview: const AsyncValue.loading(),
       profitLoss: const AsyncValue.loading(),
     );
@@ -176,6 +194,8 @@ class ReportsViewModel extends StateNotifier<ReportsState> {
       _loadGst(from, to),
       _loadEvents(from, to),
       _loadFoodOrders(from, to),
+      _loadServices(from, to),
+      _loadLaundry(from, to),
       _loadAnalyticsOverview(from, to),
       _loadProfitLoss(from, to),
     ]);
@@ -187,8 +207,14 @@ class ReportsViewModel extends StateNotifier<ReportsState> {
       expensesReport: const AsyncValue.loading(),
       incomeReport: const AsyncValue.loading(),
       assetsReport: const AsyncValue.loading(),
+      billsReport: const AsyncValue.loading(),
     );
-    await Future.wait([_loadExpensesReport(), _loadIncomeReport(), _loadAssetsReport()]);
+    await Future.wait([
+      _loadExpensesReport(),
+      _loadIncomeReport(),
+      _loadAssetsReport(),
+      _loadBillsReport(),
+    ]);
   }
 
   Future<void> _loadBookings(String from, String to) async {
@@ -269,6 +295,32 @@ class ReportsViewModel extends StateNotifier<ReportsState> {
     }
   }
 
+  Future<void> _loadServices(String from, String to) async {
+    try {
+      final report = await usecase.servicesReport(fromDate: from, toDate: to);
+      if (state.fromDate == from && state.toDate == to) {
+        state = state.copyWith(services: AsyncValue.data(report));
+      }
+    } catch (e, st) {
+      if (state.fromDate == from && state.toDate == to) {
+        state = state.copyWith(services: AsyncValue.error(RoomsViewModel.messageFor(e), st));
+      }
+    }
+  }
+
+  Future<void> _loadLaundry(String from, String to) async {
+    try {
+      final report = await usecase.laundryReport(fromDate: from, toDate: to);
+      if (state.fromDate == from && state.toDate == to) {
+        state = state.copyWith(laundry: AsyncValue.data(report));
+      }
+    } catch (e, st) {
+      if (state.fromDate == from && state.toDate == to) {
+        state = state.copyWith(laundry: AsyncValue.error(RoomsViewModel.messageFor(e), st));
+      }
+    }
+  }
+
   Future<void> _loadAnalyticsOverview(String from, String to) async {
     try {
       final analytics = await usecase.analyticsOverview(fromDate: from, toDate: to);
@@ -325,6 +377,15 @@ class ReportsViewModel extends StateNotifier<ReportsState> {
       state = state.copyWith(incomeReport: AsyncValue.data(income));
     } catch (e, st) {
       state = state.copyWith(incomeReport: AsyncValue.error(RoomsViewModel.messageFor(e), st));
+    }
+  }
+
+  Future<void> _loadBillsReport() async {
+    try {
+      final invoices = await billingUsecase.invoices();
+      state = state.copyWith(billsReport: AsyncValue.data(invoices));
+    } catch (e, st) {
+      state = state.copyWith(billsReport: AsyncValue.error(RoomsViewModel.messageFor(e), st));
     }
   }
 

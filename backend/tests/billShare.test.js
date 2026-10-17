@@ -80,6 +80,52 @@ test('an event bill uses the event start/end instants for the stay slots', () =>
   assert.strictEqual(parts[5], '1 Mar 2026');
 });
 
+// The event bill template's own seven variables — venue and a single event
+// date rather than a check-in/check-out pair.
+test('an event bill fills the seven template variables in the event template\'s own order', () => {
+  const eventInvoice = {
+    ...invoice,
+    check_in_date: null,
+    check_out_date: null,
+    event_start_at: '2026-03-01T12:30:00.000Z',
+    event_end_at: '2026-03-01T16:30:00.000Z',
+    venue_name: 'Lawn',
+  };
+  const sample = billShare.buildEventBillSample(eventInvoice, LINK);
+  const parts = sample.split(',');
+  assert.strictEqual(parts.length, 7, `expected 7 variables, got ${parts.length}: ${sample}`);
+  assert.deepStrictEqual(parts, [
+    'Anil Kumar',
+    'Hotel Renuka Palace',
+    'INV/2026/007',
+    'Lawn',
+    '1 Mar 2026',
+    'Rs 1234.50',
+    LINK,
+  ]);
+});
+
+test('isEventInvoice tells an event bill apart from a room-stay bill', () => {
+  assert.strictEqual(billShare.isEventInvoice({ event_start_at: '2026-03-01T12:30:00.000Z' }), true);
+  assert.strictEqual(billShare.isEventInvoice({ event_start_at: null }), false);
+  assert.strictEqual(billShare.isEventInvoice(invoice), false);
+});
+
+test('a comma in an event bill\'s values cannot shift its template variables either', () => {
+  const eventInvoice = {
+    ...invoice,
+    guest_name: 'Sharma, Organiser',
+    venue_name: 'Lawn, Poolside',
+    event_start_at: '2026-03-01T12:30:00.000Z',
+  };
+  const sample = billShare.buildEventBillSample(eventInvoice, LINK);
+  const parts = sample.split(',');
+  assert.strictEqual(parts.length, 7);
+  assert.strictEqual(parts[0], 'Sharma - Organiser');
+  assert.strictEqual(parts[3], 'Lawn - Poolside');
+  assert.strictEqual(parts[6], LINK);
+});
+
 // Two decimal places always: a bill for a round number is still money, and
 // "Rs 1200" beside a printed "₹1,200.00" invites the guest to wonder which is
 // the real figure.
@@ -105,20 +151,57 @@ test('whitespace in a value is collapsed, not preserved', () => {
 // link the guest cannot open; an address with no template has nothing to send.
 test('WhatsApp is unavailable unless both the template and the public URL are set', () => {
   const template = process.env.WHATSAPP_BILL_TEMPLATE_ID;
+  const eventTemplate = process.env.WHATSAPP_EVENT_BILL_TEMPLATE_ID;
   const base = process.env.PUBLIC_BASE_URL;
   try {
     delete process.env.WHATSAPP_BILL_TEMPLATE_ID;
+    delete process.env.WHATSAPP_EVENT_BILL_TEMPLATE_ID;
     process.env.PUBLIC_BASE_URL = 'https://hotel.example.com';
-    assert.strictEqual(billShare.whatsAppAvailable(), false, 'no template');
+    assert.strictEqual(billShare.whatsAppAvailable(), false, 'no template of either kind');
 
     delete process.env.PUBLIC_BASE_URL;
     assert.strictEqual(billShare.whatsAppAvailable(), false, 'no public URL');
   } finally {
     if (template === undefined) delete process.env.WHATSAPP_BILL_TEMPLATE_ID;
     else process.env.WHATSAPP_BILL_TEMPLATE_ID = template;
+    if (eventTemplate === undefined) delete process.env.WHATSAPP_EVENT_BILL_TEMPLATE_ID;
+    else process.env.WHATSAPP_EVENT_BILL_TEMPLATE_ID = eventTemplate;
     if (base === undefined) delete process.env.PUBLIC_BASE_URL;
     else process.env.PUBLIC_BASE_URL = base;
   }
+});
+
+// Either template alone is meant to be enough to turn the capability on — a
+// property that only ever runs room stays shouldn't need the event template
+// approved too, and vice versa. Checked by source rather than by toggling
+// process.env at runtime: BILL_TEMPLATE_ID/EVENT_BILL_TEMPLATE_ID are read
+// once when whatsapp.js is first required (see isConfigured/API_TOKEN,
+// frozen the same way), so flipping an env var afterwards in-process cannot
+// move what isBillTemplateConfigured() already returns.
+test('either the stay or the event bill template alone is enough to turn WhatsApp on', () => {
+  const src = read('src/modules/billing/billShare.service.js');
+  const fn = src.slice(src.indexOf('function whatsAppAvailable'), src.indexOf('module.exports'));
+  assert.match(fn, /whatsapp\.isBillTemplateConfigured\(\)\s*\|\|\s*whatsapp\.isEventBillTemplateConfigured\(\)/);
+});
+
+// The desk presses the same button either way; which template actually goes
+// out is decided from the invoice itself, inside the function, not before.
+test('shareInvoiceOnWhatsApp decides the template from the invoice, after reading it', () => {
+  const src = read('src/modules/billing/billShare.service.js');
+  const fn = src.slice(src.indexOf('async function shareInvoiceOnWhatsApp'), src.indexOf('async function readSharedBill'));
+  assert.match(fn, /const invoice = await loadInvoice/);
+  assert.match(fn, /const isEvent = isEventInvoice\(invoice\)/);
+  assert.match(fn, /isEvent \? whatsapp\.isEventBillTemplateConfigured\(\) : whatsapp\.isBillTemplateConfigured\(\)/);
+  assert.match(fn, /isEvent \? buildEventBillSample\(invoice, link\) : buildBillSample\(invoice, link\)/);
+  assert.match(fn, /isEvent \? whatsapp\.EVENT_BILL_TEMPLATE_ID : whatsapp\.BILL_TEMPLATE_ID/);
+});
+
+// The venue name has to actually be read off the booking behind the invoice,
+// not left for buildEventBillSample to invent from nothing.
+test('loadInvoice joins the event venue so the event bill template has a venue to name', () => {
+  const src = read('src/modules/billing/billShare.service.js');
+  assert.match(src, /LEFT JOIN dbo\.event_venues v ON v\.id = eb\.venue_id/);
+  assert.match(src, /v\.name AS venue_name/);
 });
 
 // The link is the whole credential, so the route that serves it has to be

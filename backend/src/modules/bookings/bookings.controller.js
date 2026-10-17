@@ -107,7 +107,14 @@ async function listAvailableBedsHandler(req, res, next) {
       throw new ApiError('Choose a room.', 400);
     }
     const { checkInDate, checkOutDate } = parseDateRange(req.query);
-    const result = await bookingsService.listAvailableBeds(req.user.lodgeId, roomId, checkInDate, checkOutDate);
+    const excludeBookingId = req.query.bookingId ? Number(req.query.bookingId) : null;
+    const result = await bookingsService.listAvailableBeds(
+      req.user.lodgeId,
+      roomId,
+      checkInDate,
+      checkOutDate,
+      excludeBookingId
+    );
     res.json(result);
   } catch (err) {
     next(err);
@@ -445,6 +452,29 @@ async function updateBookingHandler(req, res, next) {
   }
 }
 
+// The rooms whose check-out is due soon or already past it, for the bell in
+// the nav bar — the same deadline getLateCheckoutHandler reads for one
+// booking, swept across every room currently checked in.
+async function listCheckoutAlertsHandler(req, res, next) {
+  try {
+    const alerts = await bookingsService.listCheckoutAlerts(req.user.lodgeId);
+    res.json({ alerts });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The check-in mirror of listCheckoutAlertsHandler — today's arrivals due
+// soon or already overdue.
+async function listCheckinAlertsHandler(req, res, next) {
+  try {
+    const alerts = await bookingsService.listCheckinAlerts(req.user.lodgeId);
+    res.json({ alerts });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Read before the desk commits to anything: how overdue the stay is and what
 // the property's policy suggests that is worth.
 async function getLateCheckoutHandler(req, res, next) {
@@ -482,6 +512,15 @@ async function cancelBookingHandler(req, res, next) {
     }
     const booking = await bookingsService.cancelBooking(req.user.lodgeId, Number(req.params.id), parsed.data);
     res.json({ booking });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function sendBookingWhatsAppHandler(req, res, next) {
+  try {
+    const whatsapp = await bookingsService.sendBookingWhatsApp(req.user.lodgeId, Number(req.params.id));
+    res.json({ whatsapp });
   } catch (err) {
     next(err);
   }
@@ -568,6 +607,9 @@ module.exports = {
   checkInHandler,
   updateBookingHandler,
   getLateCheckoutHandler,
+  listCheckoutAlertsHandler,
+  listCheckinAlertsHandler,
   checkOutHandler,
   cancelBookingHandler,
+  sendBookingWhatsAppHandler,
 };

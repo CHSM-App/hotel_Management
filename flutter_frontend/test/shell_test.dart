@@ -10,6 +10,7 @@ import 'package:hotel_manager/domain/models/me.dart';
 import 'package:hotel_manager/domain/models/quote.dart';
 import 'package:hotel_manager/domain/models/room.dart';
 import 'package:hotel_manager/domain/models/session.dart';
+import 'package:hotel_manager/domain/models/staff_alert.dart';
 import 'package:hotel_manager/domain/models/tape_chart.dart';
 import 'package:hotel_manager/domain/repository/auth_repo.dart';
 import 'package:hotel_manager/domain/repository/booking_repo.dart';
@@ -58,6 +59,13 @@ class _FakeAuth implements AuthRepository {
     required String identifier,
     required String newPassword,
   }) async => throw UnimplementedError();
+
+  @override
+  Future<Me> updateMyLodgeLogo(FormData form) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Me> removeMyLodgeLogo() async => throw UnimplementedError();
 }
 
 /// One stay for the chart, and the room it sits on. The chart needs both a
@@ -67,7 +75,7 @@ class _Stay {
   final Booking booking;
   final String categoryName;
 
-  const _Stay(this.booking, {this.categoryName = 'Standard'});
+  const _Stay(this.booking) : categoryName = 'Standard';
 }
 
 class _FakeBookings implements BookingRepository {
@@ -113,6 +121,9 @@ class _FakeBookings implements BookingRepository {
       Booking(id: id, status: 'CANCELLED');
 
   @override
+  Future<Map<String, dynamic>> sendWhatsApp(int id) async => {'status': 'sent'};
+
+  @override
   Future<List<Room>> availableRooms(String a, String b) async => const [];
 
   @override
@@ -144,6 +155,12 @@ class _FakeBookings implements BookingRepository {
   @override
   Future<Booking> booking(int id) async =>
       rows.firstWhere((b) => b.id == id, orElse: () => Booking(id: id));
+
+  @override
+  Future<List<CheckAlert>> checkinAlerts() async => const [];
+
+  @override
+  Future<List<CheckAlert>> checkoutAlerts() async => const [];
 
   @override
   Future<List<GuestMatch>> searchGuests(String query) async => const [];
@@ -181,6 +198,17 @@ class _FakeBookings implements BookingRepository {
   @override
   Future<Booking> checkOut(int id, Map<String, dynamic> body) async =>
       Booking(id: id, status: 'CHECKED_OUT');
+
+  @override
+  Future<LateCheckout> roomLateCheckout(int id, int roomId) async =>
+      LateCheckout(bookingId: id);
+
+  @override
+  Future<Booking> checkOutRoom(
+    int id,
+    int roomId,
+    Map<String, dynamic> body,
+  ) async => Booking(id: id, status: 'CHECKED_OUT');
 
   @override
   Future<List<BookingDraft>> drafts() async => const [];

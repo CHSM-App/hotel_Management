@@ -12,7 +12,8 @@ class ChargeSelections {
 
   /// What was agreed for one extra's line, per night — null means "charge
   /// the lodge's own rate", the same convention [selectionOf] and
-  /// [chargesPayload] use.
+  /// [chargesPayload] use. A typed `0` is a deliberate "free", not "no
+  /// override" — only a blank or negative box falls back to the lodge's rate.
   static num? selectionAgreed(
     Map<int, ExtraDraft> extras,
     int chargeId,
@@ -21,7 +22,7 @@ class ChargeSelections {
     final draft = extras[chargeId];
     if (draft == null) return null;
     final total = num.tryParse(draft.agreedTotal.trim());
-    if (total == null || total <= 0) return null;
+    if (total == null || total < 0) return null;
     final per = nights <= 0 ? 1 : nights;
     return (total / per * 100).round() / 100;
   }
@@ -57,6 +58,7 @@ class ChargeSelections {
     next[chargeId] = ExtraDraft(
       quantity: quantity,
       agreedTotal: current.agreedTotal,
+      agreedTotalTouched: current.agreedTotalTouched,
     );
     return next;
   }
@@ -71,6 +73,7 @@ class ChargeSelections {
     next[chargeId] = ExtraDraft(
       quantity: current.quantity,
       agreedTotal: agreedTotal,
+      agreedTotalTouched: true,
     );
     return next;
   }

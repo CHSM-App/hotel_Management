@@ -47,13 +47,17 @@ function validateMaterial(form, isEditing) {
     else if (value < 0) errors.lowStockThreshold = 'The low-stock level can’t be negative.';
   }
 
-  if (!isEditing) {
-    const opening = String(form.quantity).trim();
-    if (opening !== '') {
-      const value = Number(opening);
-      if (!Number.isFinite(value)) errors.quantity = 'That needs to be a number.';
-      else if (value < 0) errors.quantity = 'Opening stock can’t be negative.';
-    }
+  // Opening stock is optional on a brand-new material — a lodge often adds
+  // the material first and counts the shelf afterwards. Editing one that
+  // already has a figure on the books is a correction to it, not a blank
+  // nobody's filled in yet, so it can't be left empty.
+  const qty = String(form.quantity).trim();
+  if (isEditing && qty === '') {
+    errors.quantity = 'Stock on hand is required.';
+  } else if (qty !== '') {
+    const value = Number(qty);
+    if (!Number.isFinite(value)) errors.quantity = 'That needs to be a number.';
+    else if (value < 0) errors.quantity = isEditing ? 'Stock on hand can’t be negative.' : 'Opening stock can’t be negative.';
   }
 
   return errors;
@@ -165,7 +169,7 @@ export default function InventoryPanel() {
             name: material.name,
             unit: material.unit,
             category: material.category || 'OTHER',
-            quantity: '',
+            quantity: String(material.quantity),
             lowStockThreshold: material.lowStockThreshold ? String(material.lowStockThreshold) : '',
           }
         : emptyMaterialForm
@@ -184,27 +188,38 @@ export default function InventoryPanel() {
       return;
     }
 
+    // The unit change itself is what the service can't write a ledger entry
+    // for — every past movement and recipe quantity in it keeps meaning what
+    // it always meant, in a unit the row no longer claims to be. A quantity
+    // correction gets logged automatically; this one needs a human to have
+    // actually meant it.
+    if (editingId) {
+      const original = materials?.find((m) => m.id === editingId);
+      if (original && original.unit !== form.unit) {
+        const ok = window.confirm(
+          `“${original.name}” has history recorded in ${UNIT_LABEL[original.unit]}. Changing the unit to ` +
+            `${UNIT_LABEL[form.unit]} won't convert its past stock movements or any recipe quantities — they'll ` +
+            `keep reading as ${UNIT_LABEL[original.unit]} values under the new unit. Continue?`
+        );
+        if (!ok) return;
+      }
+    }
+
     setSubmitting(true);
     setFormError('');
     try {
       const body = {
         name: form.name.trim(),
+        unit: form.unit,
         category: form.category,
+        quantity: String(form.quantity).trim() === '' ? 0 : Number(form.quantity),
         lowStockThreshold: String(form.lowStockThreshold).trim() === '' ? 0 : Number(form.lowStockThreshold),
       };
 
       if (editingId) {
         await apiPatch(`/inventory/materials/${editingId}`, body, { token: session?.token });
       } else {
-        await apiPost(
-          '/inventory/materials',
-          {
-            ...body,
-            unit: form.unit,
-            quantity: String(form.quantity).trim() === '' ? 0 : Number(form.quantity),
-          },
-          { token: session?.token }
-        );
+        await apiPost('/inventory/materials', body, { token: session?.token });
       }
 
       setShowForm(false);
@@ -536,7 +551,7 @@ export default function InventoryPanel() {
                 </div>
                 <p className="modal-form__sub">
                   {editingId
-                    ? 'What this material is called and when to warn about it. The unit it is counted in is fixed.'
+                    ? 'Everything about this material, including its unit and the stock on hand.'
                     : 'Something the kitchen buys and counts — rice, oil, gas. Recipes draw down against it.'}
                 </p>
               </div>
@@ -583,52 +598,53 @@ export default function InventoryPanel() {
                 <span className="field__hint">Decides which heading it sits under on this screen.</span>
               </div>
 
-              {editingId ? (
-                // The unit is fixed once anything has been counted in it. 500 is
-                // a different fact in grams than in kilos, and nothing on the
-                // old movements says which one they meant.
-                <p className="field__hint inv-modal__note">
-                  Counted in <strong>{UNITS.find((u) => u.key === form.unit)?.name}</strong>. The unit can’t
-                  be changed once stock has been recorded — retire this and add a new material instead.
-                </p>
-              ) : (
-                <>
-                  <div className="field">
-                    <label htmlFor="materialUnit">Counted in</label>
-                    <select
-                      id="materialUnit"
-                      value={form.unit}
-                      onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
-                    >
-                      {UNITS.map((u) => (
-                        <option key={u.key} value={u.key}>
-                          {u.name} ({u.label})
-                        </option>
-                      ))}
-                    </select>
-                    <span className="field__hint">
-                      Count stock the way it is bought — rice by the kilo, oil by the litre. Recipes
-                      are written in the smaller unit and converted for you, so a dish takes
-                      180&nbsp;g of a material stocked in kg.
-                    </span>
-                  </div>
+              <div className="field">
+                <label htmlFor="materialUnit">Counted in</label>
+                <select
+                  id="materialUnit"
+                  value={form.unit}
+                  onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+                >
+                  {UNITS.map((u) => (
+                    <option key={u.key} value={u.key}>
+                      {u.name} ({u.label})
+                    </option>
+                  ))}
+                </select>
+                <span className="field__hint">
+                  {editingId
+                    ? // Changeable, but nothing converts behind it: 500 is a
+                      // different fact in grams than in kilos, and this
+                      // material's past movements and any recipe quantities
+                      // against it keep reading in whatever unit they were
+                      // written in. Only change it to fix a mistake made
+                      // when the material was first set up.
+                      'Changing this does not convert past stock movements or recipe quantities already written against this material.'
+                    : 'Count stock the way it is bought — rice by the kilo, oil by the litre. Recipes are written in the smaller unit and converted for you, so a dish takes 180 g of a material stocked in kg.'}
+                </span>
+              </div>
 
-                  <div className="field">
-                    <label htmlFor="materialQty">
-                      Stock on hand <span className="field__optional">optional</span>
-                    </label>
-                    <input
-                      id="materialQty"
-                      type="number"
-                      step="0.001"
-                      value={form.quantity}
-                      onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
-                      placeholder="0"
-                    />
-                    {fieldErrors.quantity && <span className="field__error">{fieldErrors.quantity}</span>}
-                  </div>
-                </>
-              )}
+              <div className="field">
+                <label htmlFor="materialQty">
+                  Stock on hand {!editingId && <span className="field__optional">optional</span>}
+                  {editingId && <Req />}
+                </label>
+                <input
+                  id="materialQty"
+                  type="number"
+                  step="0.001"
+                  value={form.quantity}
+                  onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
+                  placeholder="0"
+                  aria-invalid={Boolean(fieldErrors.quantity)}
+                />
+                {editingId && (
+                  <span className="field__hint">
+                    Correcting this writes an adjustment to the stock history, the same as the Stock button would.
+                  </span>
+                )}
+                {fieldErrors.quantity && <span className="field__error">{fieldErrors.quantity}</span>}
+              </div>
 
               <div className="field">
                 <label htmlFor="materialLow">

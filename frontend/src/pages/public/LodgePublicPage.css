@@ -726,6 +726,34 @@
   border-radius: var(--radius-card, 12px);
   overflow: hidden;
   box-shadow: var(--site-shadow-card);
+  transition: transform 260ms ease, box-shadow 260ms ease, border-color 260ms ease;
+}
+
+/* Hovered, a room lights up in the brand's violet: a violet edge, a halo
+   around the card, and a soft light rising behind its text (the body's
+   ::before, below). Strong enough to show on the page's white ground. */
+.lodge-public__room:hover {
+  transform: translateY(-4px);
+  border-color: var(--brand);
+  box-shadow:
+    0 0 0 1px rgba(10, 58, 107, 0.35),
+    0 14px 34px -8px rgba(10, 58, 107, 0.5),
+    0 0 28px -4px rgba(10, 58, 107, 0.45);
+}
+
+.lodge-public__room:hover .lodge-public__room-body::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lodge-public__room,
+  .lodge-public__room-body::before {
+    transition: none;
+  }
+
+  .lodge-public__room:hover {
+    transform: none;
+  }
 }
 
 .lodge-public__room--unavailable {
@@ -819,10 +847,25 @@
 }
 
 .lodge-public__room-body {
+  position: relative;
+  /* Its own stacking layer, so the glow below sits behind the text and the
+     button rather than over them. */
+  isolation: isolate;
   flex: 1;
   display: flex;
   flex-direction: column;
   padding: 16px 18px 18px;
+}
+
+.lodge-public__room-body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(120% 65% at 50% 100%, rgba(10, 58, 107, 0.14), rgba(10, 58, 107, 0) 70%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 260ms ease;
 }
 
 .lodge-public__room-top {
@@ -1198,6 +1241,54 @@
   overflow: hidden;
 }
 
+/* --- guest reviews ----------------------------------------------------- */
+
+.lodge-public__reviews {
+  scroll-margin-top: var(--site-nav-h);
+}
+
+.lodge-public__review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.lodge-public__review-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card, 12px);
+  box-shadow: var(--site-shadow-card);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lodge-public__review-stars {
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: #f5a623;
+}
+
+.lodge-public__review-stars-off {
+  color: var(--border);
+}
+
+.lodge-public__review-comment {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  flex: 1;
+}
+
+.lodge-public__review-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .lodge-public__menu-head {
   display: flex;
   align-items: center;
@@ -1227,7 +1318,7 @@
    is more, instead of being cut by the card's padding box. */
 .lodge-public__shelf {
   border-top: 1px solid var(--border);
-  padding: 16px 20px 18px;
+  padding: 16px 20px 4px;
 }
 
 .lodge-public__shelf-head {
@@ -1249,15 +1340,17 @@
   color: var(--ink);
 }
 
+/* A flat tint in the brand's own wash: it is a count, not a control, and the
+   pressed-in shadow it used to carry made it look like something to tap. */
 .lodge-public__menu-section-count {
   font-family: var(--sans);
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-muted);
-  background: var(--neu-sunken);
-  box-shadow: var(--site-shadow-pressed);
+  color: var(--brand-ink);
+  background: var(--brand-wash);
   border-radius: 999px;
   padding: 2px 9px;
+  font-variant-numeric: tabular-nums;
 }
 
 .lodge-public__shelf-arrows {
@@ -1266,12 +1359,11 @@
 }
 
 .lodge-public__shelf-arrow {
-  width: 32px;
-  height: 32px;
-  border: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
-  box-shadow: var(--site-shadow-raised);
   color: var(--brand);
   font-size: 22px;
   line-height: 1;
@@ -1283,7 +1375,8 @@
 }
 
 .lodge-public__shelf-arrow:hover:not(:disabled) {
-  box-shadow: var(--site-shadow-hover);
+  border-color: var(--brand);
+  background: var(--brand-wash);
   color: var(--brand-ink);
 }
 
@@ -1299,7 +1392,9 @@
 .lodge-public__shelf-row {
   list-style: none;
   margin: 0 -20px;
-  padding: 6px 20px 10px;
+  /* Room above and below for the tiles' glow: a row that scrolls sideways
+     clips whatever spills past its top and bottom edge. */
+  padding: 10px 20px 26px;
   display: flex;
   gap: 14px;
   overflow-x: auto;
@@ -1313,20 +1408,29 @@
   display: none;
 }
 
+/* A white tile with a hairline edge, lit from behind: a soft halo in the
+   brand's violet around it, and a wash of the same light falling in from the
+   top of its own face. Kept low at rest — eight tiles glowing at full strength
+   read as a strip of buttons — and brought up on hover. */
 .lodge-public__dish {
-  flex: 0 0 220px;
+  flex: 0 0 224px;
   scroll-snap-align: start;
   display: flex;
   flex-direction: column;
-  background: var(--paper);
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgba(10, 58, 107, 0.13), rgba(10, 58, 107, 0) 70%),
+    var(--surface);
+  border: 1px solid var(--brand-wash-edge);
   border-radius: 12px;
-  box-shadow: var(--site-shadow-raised);
+  box-shadow: 0 0 0 1px rgba(10, 58, 107, 0.06), 0 6px 20px -6px rgba(10, 58, 107, 0.32);
   overflow: hidden;
-  transition: var(--neu-transition);
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
 }
 
 .lodge-public__dish:hover {
-  box-shadow: var(--site-shadow-hover);
+  border-color: var(--brand-band);
+  box-shadow: 0 0 0 1px rgba(10, 58, 107, 0.18), 0 10px 30px -6px rgba(10, 58, 107, 0.5);
+  transform: translateY(-2px);
 }
 
 .lodge-public__dish-photo {
@@ -1349,15 +1453,9 @@
 .lodge-public__dish-body {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 12px 13px 13px;
+  gap: 6px;
+  padding: 14px 14px 12px;
   flex: 1;
-}
-
-/* Without a photo the tile is text only; a slim accent rule at the top keeps
-   it from reading as a blank card next to its photographed neighbours. */
-.lodge-public__dish--no-photo {
-  border-top: 3px solid var(--brand);
 }
 
 .lodge-public__dish-head {
@@ -1366,30 +1464,40 @@
   gap: 8px;
 }
 
+/* Two lines at most, so one long name cannot make its tile, and with it the
+   whole row, a line taller than the rest. */
 .lodge-public__dish-name {
   font-size: 14.5px;
   font-weight: 600;
   color: var(--ink);
   line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .lodge-public__dish-desc {
   margin: 0;
   font-size: 12.5px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--text-muted);
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
+/* The price sits on its own rule at the foot of every tile, so down a row the
+   prices line up whether or not the dish has a description above. */
 .lodge-public__dish-price {
   margin-top: auto;
-  padding-top: 6px;
-  font-size: 13.5px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
   font-weight: 700;
-  color: var(--brand);
+  color: var(--brand-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 /* The veg / non-veg mark. */
@@ -1539,12 +1647,12 @@
   /* Narrower tiles on a phone so the next one peeks in from the edge - the
      peek is what tells a thumb the row scrolls. Arrows are for pointers. */
   .lodge-public__shelf {
-    padding: 14px 14px 16px;
+    padding: 14px 14px 2px;
   }
 
   .lodge-public__shelf-row {
     margin: 0 -14px;
-    padding: 4px 14px 8px;
+    padding: 8px 14px 22px;
     gap: 10px;
     scroll-padding-left: 14px;
   }

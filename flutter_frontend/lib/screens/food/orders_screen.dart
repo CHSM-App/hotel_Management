@@ -6,10 +6,13 @@ import '../../domain/models/invoice.dart';
 import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/orders_viewmodel.dart';
+import '../../widgets/compact_date_picker.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../billing/invoice_preview_screen.dart';
 import '../billing/issue_food_bill_screen.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'counter_order_screen.dart';
 
@@ -98,18 +101,21 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
+          // In table view the scroll is the rows', a level below the
+          // table's horizontal scroller.
+          notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
           onRefresh: () => (!state.myOrdersMode && state.tab == OrdersTab.queue)
               ? vm.loadQueue()
               : vm.loadHistory(),
           color: AppTheme.accent,
-          child: ListView(
+          child: TablePageBody(
+            table: state.listView == 'sheet',
             padding: const EdgeInsets.fromLTRB(
               AppTheme.s16,
               AppTheme.s8,
               AppTheme.s16,
               88,
             ),
-            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               if (!widget.hideTabs) ...[
                 _TabRow(
@@ -243,7 +249,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           if (pending > 0)
             Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.s8),
@@ -255,7 +261,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s12),
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
             child: _SectionHeader(
               label: 'Live orders',
               count: filtered.length,
@@ -361,7 +367,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
             return;
           }
           final now = DateTime.now();
-          final range = await showDateRangePicker(
+          final range = await showAppDateRangePicker(
             context: context,
             initialDateRange: DateTimeRange(
               start: state.historyCustomFrom,
@@ -665,14 +671,14 @@ class _ResponsiveCards extends StatelessWidget {
             children: [
               for (final card in cards)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s12),
+                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
                   child: card,
                 ),
             ],
           );
         }
 
-        const spacing = AppTheme.s12;
+        const spacing = AppTheme.s8;
         final itemWidth = (width - spacing * (columns - 1)) / columns;
         return Wrap(
           spacing: spacing,
@@ -688,10 +694,6 @@ class _ResponsiveCards extends StatelessWidget {
 
 // ── Queue / history switch ──────────────────────────────────────────────────
 
-/// Same sliding-pill segmented control the billing screen's To-bill/Issued
-/// switch and the rooms screen's Rooms/Price-chart switch use — one connected
-/// control with a moving highlight, rather than two separate boxes that don't
-/// read as a single tab bar.
 class _TabRow extends StatelessWidget {
   final OrdersState state;
   final bool canWorkQueue;
@@ -703,88 +705,18 @@ class _TabRow extends StatelessWidget {
     required this.onSelect,
   });
 
-  static const double _height = 38;
-
   @override
   Widget build(BuildContext context) {
-    // Same two tabs for everyone, same as OrdersPanel.jsx: a captain (no
-    // orders.manage) gets them too — the first still reads "Kitchen queue"
-    // there, it just holds their own still-open orders instead of the real
-    // cooking pipeline; the second is what has been settled.
-    //
-    // The count rides on the tab because a cook (or a captain) looking at
-    // the day's history still needs to know something new has come in.
+    // The new-order count rides on the Kitchen tab so a cook (or captain)
+    // looking at History still sees something has come in.
     final waiting = state.needsAccepting;
-    final kitchenLabel = waiting > 0 ? 'Kitchen ($waiting new)' : 'Kitchen';
-    final selectedIndex = state.tab == OrdersTab.queue ? 0 : 1;
-
-    Widget segment(String label, bool isSelected, VoidCallback onTap) =>
-        Expanded(
-          child: GestureDetector(
-            onTap: onTap,
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              height: _height,
-              child: Center(
-                child: AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
-                  style: TextStyle(
-                    color: isSelected ? AppTheme.accent : AppTheme.text,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                  child: Text(label, overflow: TextOverflow.ellipsis),
-                ),
-              ),
-            ),
-          ),
-        );
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: selectedIndex == 0
-                ? Alignment.centerLeft
-                : Alignment.centerRight,
-            child: FractionallySizedBox(
-              widthFactor: 0.5,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  color: AppTheme.card,
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: AppTheme.extruded,
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              segment(
-                kitchenLabel,
-                selectedIndex == 0,
-                () => onSelect(OrdersTab.queue),
-              ),
-              segment(
-                'History',
-                selectedIndex == 1,
-                () => onSelect(OrdersTab.history),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return PillTabs(
+      selected: state.tab == OrdersTab.queue ? 'queue' : 'history',
+      onSelect: (k) => onSelect(k == 'queue' ? OrdersTab.queue : OrdersTab.history),
+      tabs: [
+        PillTab('queue', 'Kitchen', Icons.soup_kitchen_rounded, count: waiting > 0 ? waiting : null),
+        const PillTab('history', 'History', Icons.history_rounded),
+      ],
     );
   }
 }
@@ -959,7 +891,8 @@ class OrdersViewToggle extends StatelessWidget {
           onTap: () => onChanged(value),
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
           child: Container(
-            padding: const EdgeInsets.all(AppTheme.s8),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
             decoration: BoxDecoration(
               color: on ? AppTheme.accent.withValues(alpha: 0.1) : null,
               borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -976,24 +909,29 @@ class OrdersViewToggle extends StatelessWidget {
 
     return Align(
       alignment: Alignment.centerRight,
-      child: NeuCard(
-        radius: AppTheme.rSmall,
-        shadow: AppTheme.subtle,
-        padding: const EdgeInsets.all(2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            button('sheet', Icons.table_rows_rounded, 'Spreadsheet view'),
-            button('cards', Icons.view_agenda_rounded, 'Card view'),
-          ],
+      // Same 50px height as _SearchField so the two sit level in a row.
+      child: SizedBox(
+        height: 50,
+        child: NeuCard(
+          radius: AppTheme.rSmall,
+          shadow: AppTheme.subtle,
+          padding: const EdgeInsets.all(2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              button('sheet', Icons.table_rows_rounded, 'Spreadsheet view'),
+              button('cards', Icons.view_agenda_rounded, 'Card view'),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// History's own period picker — Today, This month, or a custom range, as
-/// three always-visible chips, same as OrdersPanel.jsx's own
+/// History's own period picker — Today, This month, This year, or a custom
+/// range, as always-visible chips, same as OrdersPanel.jsx's own
 /// `order-history__filters` period row — not folded behind a funnel icon.
 class _PeriodChipsRow extends StatelessWidget {
   final String period;
@@ -1051,6 +989,7 @@ class _PeriodChipsRow extends StatelessWidget {
         children: [
           chip('today', 'Today'),
           chip('month', 'This month'),
+          chip('year', 'This year'),
           chip('custom', period == 'custom' ? _customLabel : 'Custom'),
         ],
       ),
@@ -1271,16 +1210,12 @@ class _OrderCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // A thin status-colour band across the top — the ticket's stage
-            // readable at a glance, before any text is parsed, without the
-            // heavier full-height rail competing with the content beside it.
-            Container(height: 4, color: colour),
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppTheme.s12,
+                AppTheme.s8 + 2,
+                AppTheme.s4 + 2,
+                AppTheme.s8 + 2,
                 AppTheme.s8,
-                AppTheme.s12,
-                AppTheme.s12,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1360,6 +1295,8 @@ class _OrderCard extends ConsumerWidget {
                             Text(
                               order.billed
                                   ? 'Billed'
+                                  : order.onRoomBill
+                                  ? 'On room bill'
                                   : order.readyToBill
                                   ? 'Ready to bill'
                                   : order.statusLabel,
@@ -1582,6 +1519,7 @@ class _OrderCard extends ConsumerWidget {
                     const SizedBox(height: AppTheme.s8),
                     NeuButton(
                       expand: true,
+                      soft: true,
                       padding: const EdgeInsets.symmetric(
                         vertical: AppTheme.s8 + 2,
                       ),
@@ -1589,7 +1527,7 @@ class _OrderCard extends ConsumerWidget {
                           _viewOrderBill(context, ref, order.invoiceId!),
                       child: const Text(
                         'View bill',
-                        style: TextStyle(fontSize: 13),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                       ),
                     ),
                   ],
@@ -1597,10 +1535,11 @@ class _OrderCard extends ConsumerWidget {
                   // Delivered and unbilled: either straight to a bill
                   // (this login also holds billing.manage, same as
                   // OrdersPanel.jsx's `readyToBill.issues`) or queued for
-                  // whoever does (`canBillFood` alone) — never both.
-                  if (canIssueBill &&
-                      order.isDeliveredUnbilled &&
-                      order.billableAsFoodTab) ...[
+                  // whoever does (`canBillFood` alone) — never both. Same as
+                  // OrdersPanel.jsx's `canIssue`, this doesn't gate on
+                  // source/bookingId — a room order can still get its own
+                  // standalone food bill instead of going on the room.
+                  if (canIssueBill && order.isDeliveredUnbilled) ...[
                     const SizedBox(height: AppTheme.s8),
                     NeuButton(
                       primary: true,
@@ -2201,27 +2140,97 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: _totalWidth,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _sheetRow(header: true, cells: headerCells),
-                for (var i = 0; i < widget.orders.length; i++) ...[
-                  _sheetRow(
-                    shaded: i.isOdd,
-                    accent: _OrderCard._statusColour(widget.orders[i].status),
-                    cells: _rowCells(context, widget.orders[i]),
-                  ),
-                  if (_open.contains(widget.orders[i].id))
-                    _dishesExpanded(widget.orders[i], shaded: i.isOdd),
-                ],
+            child: StickyHeaderTable(
+              header: _sheetRow(header: true, cells: headerCells),
+              rows: [
+                      for (var i = 0; i < widget.orders.length; i++) ...[
+                        _sheetRow(
+                          shaded: i.isOdd,
+                          accent: _OrderCard._statusColour(
+                            widget.orders[i].status,
+                          ),
+                          cells: _rowCells(context, widget.orders[i]),
+                        ),
+                        if (_open.contains(widget.orders[i].id))
+                          _dishesExpanded(widget.orders[i], shaded: i.isOdd),
+                      ],
+                      _sheetFooter(),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// "N orders", and the total they add up to — same closing summary the
+  /// billing screen's own invoice table ends on (`_InvoiceTableFooter`), so
+  /// a spreadsheet full of tickets doesn't leave the day's total to be
+  /// added up by eye.
+  Widget _sheetFooter() {
+    final total = widget.orders.fold<num>(0, (sum, o) => sum + o.subtotal);
+    // "Total" sits at the same column index (6) in both the live and
+    // history layouts — what trails it differs (Actions alone vs. Took then
+    // Actions), so the spacer after the amount sums whatever's left rather
+    // than assuming a fixed final column.
+    const totalIndex = 6;
+    final labelWidth =
+        _widths.sublist(0, totalIndex).reduce((a, b) => a + b) + _railWidth;
+    final amountWidth = _widths[totalIndex];
+    final trailingWidth = _widths
+        .sublist(totalIndex + 1)
+        .fold<double>(0, (a, b) => a + b);
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppTheme.bg,
+        border: Border(top: BorderSide(color: AppTheme.border, width: 0.8)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: labelWidth,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                '${widget.orders.length} order'
+                '${widget.orders.length == 1 ? '' : 's'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: amountWidth,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 10,
+              ),
+              child: Text(
+                formatPrice(total),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: trailingWidth),
+        ],
       ),
     );
   }
@@ -2257,7 +2266,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                 child: Padding(
                   padding: EdgeInsets.symmetric(
                     horizontal: AppTheme.s8,
-                    vertical: header ? AppTheme.s12 : AppTheme.s8 + 2,
+                    vertical: header ? AppTheme.s8 : AppTheme.s4 + 1,
                   ),
                   child: cells[i],
                 ),
@@ -2497,6 +2506,8 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
     final colour = _OrderCard._statusColour(order.status);
     final statusText = order.billed
         ? 'Billed'
+        : order.onRoomBill
+        ? 'On room bill'
         : order.readyToBill
         ? 'Ready to bill'
         : order.statusLabel;
@@ -2641,9 +2652,9 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       );
     }
 
-    if (widget.canIssueBill &&
-        order.isDeliveredUnbilled &&
-        order.billableAsFoodTab) {
+    // Same as OrdersPanel.jsx's `canIssue`: no source/bookingId gate here —
+    // a room order can still get its own standalone food bill.
+    if (widget.canIssueBill && order.isDeliveredUnbilled) {
       buttons.add(
         _SheetActionButton(
           label: 'Issue bill',

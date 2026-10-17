@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/expense.dart';
@@ -9,10 +10,12 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/reports_viewmodel.dart';
 import '../../widgets/neu.dart';
 import '../bookings/receipt_download.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'asset_report_excel.dart';
 import 'asset_report_pdf.dart';
 import 'assets_report_tab.dart';
+import 'bills_report_panel.dart';
 import 'booking_report_excel.dart';
 import 'booking_report_pdf.dart';
 import 'bookings_report_panel.dart';
@@ -31,9 +34,15 @@ import 'gst_report_panel.dart';
 import 'income_report_excel.dart';
 import 'income_report_pdf.dart';
 import 'income_report_tab.dart';
+import 'laundry_report_excel.dart';
+import 'laundry_report_panel.dart';
+import 'laundry_report_pdf.dart';
 import 'overview_report_panel.dart';
 import 'profit_loss_panel.dart';
 import 'report_widgets.dart';
+import 'services_report_excel.dart';
+import 'services_report_panel.dart';
+import 'services_report_pdf.dart';
 
 enum _ReportFormat { pdf, excel }
 
@@ -79,6 +88,8 @@ class _ReportTab {
     'hasEvents' => lodge.hasEvents,
     'hasAssets' => lodge.hasAssets,
     'hasExpenses' => lodge.hasExpenses,
+    'hasOtherServices' => lodge.hasOtherServices,
+    'hasLaundry' => lodge.hasLaundry,
     _ => true,
   };
 }
@@ -89,8 +100,8 @@ class _ReportTab {
 /// tab strip at all when just one is left.
 const _kReportSections = <String, List<String>>{
   'overview': ['overview'],
-  'sales': ['bookings', 'events', 'food'],
-  'finance': ['profitLoss', 'expenses', 'income', 'gst'],
+  'sales': ['bookings', 'events', 'food', 'services', 'laundry'],
+  'finance': ['bills', 'profitLoss', 'expenses', 'income', 'gst'],
   'assets': ['assets'],
 };
 
@@ -99,6 +110,9 @@ const _kAllReportTabs = <_ReportTab>[
   _ReportTab(key: 'bookings', label: 'Room Bookings', capability: 'hasRooms'),
   _ReportTab(key: 'events', label: 'Events & functions', capability: 'hasEvents'),
   _ReportTab(key: 'food', label: 'Restaurant', capability: 'servesFood'),
+  _ReportTab(key: 'services', label: 'Other services', capability: 'hasOtherServices'),
+  _ReportTab(key: 'laundry', label: 'Laundry', capability: 'hasLaundry'),
+  _ReportTab(key: 'bills', label: 'Bills'),
   _ReportTab(key: 'gst', label: 'Tax & GST'),
   _ReportTab(
     key: 'profitLoss',
@@ -127,7 +141,13 @@ class ReportsScreen extends ConsumerStatefulWidget {
   /// four sidebar rows existed.
   final String? only;
 
-  const ReportsScreen({super.key, this.onBack, this.only});
+  /// When set, the PDF/Excel download icons are pushed up into the shell's
+  /// own top bar (next to the section title) instead of this screen opening
+  /// a second header row underneath for them. Set by DashboardShell; left
+  /// null for any other host, which gets the local row as before.
+  final ValueNotifier<Widget?>? headerActions;
+
+  const ReportsScreen({super.key, this.onBack, this.only, this.headerActions});
 
   @override
   ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
@@ -136,19 +156,19 @@ class ReportsScreen extends ConsumerStatefulWidget {
 /// Tabs whose data is fetched over the shared date range (and so need the
 /// range picker on screen); Expenses/Other Income/Assets report their full
 /// history instead, the same distinction ReportsPanel.jsx draws.
-const _kDateRangedTabs = {'overview', 'bookings', 'events', 'food', 'gst', 'profitLoss'};
+const _kDateRangedTabs = {'overview', 'bookings', 'events', 'food', 'services', 'laundry', 'gst', 'profitLoss'};
 
 /// Tabs that load their full history once and filter it client-side —
 /// still shown with the same From/To range picker above the tab strip as
 /// the server-ranged tabs, just wired to a locally held range instead of
 /// the shared [ReportsState].
-const _kLocalRangedTabs = {'expenses', 'income', 'assets'};
+const _kLocalRangedTabs = {'expenses', 'income', 'assets', 'bills'};
 
 /// Tabs with a matching PDF/Excel builder, same parity as the web's own
 /// preview/export buttons for Bookings/Events/Food/GST/Expenses/Other
 /// Income/Assets. Profit & Loss has no PDF/Excel on the website either, so it
 /// stays data-only.
-const _kDownloadableTabs = {'bookings', 'events', 'food', 'gst', 'expenses', 'income', 'assets'};
+const _kDownloadableTabs = {'bookings', 'events', 'food', 'services', 'laundry', 'gst', 'expenses', 'income', 'assets'};
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _tab = 'overview';
@@ -171,6 +191,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   bool _canDownload(ReportsState state) => switch (_tab) {
     'events' => state.events is AsyncData,
     'food' => state.foodOrders is AsyncData,
+    'services' => state.services is AsyncData,
+    'laundry' => state.laundry is AsyncData,
     'gst' => state.gst is AsyncData,
     'bookings' => state.bookings is AsyncData,
     'expenses' => state.expensesReport is AsyncData,
@@ -196,6 +218,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           path = format == _ReportFormat.pdf
               ? await FoodOrderReportPdf.download(report)
               : await FoodOrderReportExcel.download(report);
+        case 'services':
+          final report = (state.services as AsyncData<ServicesReport>).value;
+          path = format == _ReportFormat.pdf
+              ? await ServicesReportPdf.download(report, lodgeName: lodge?.name)
+              : await ServicesReportExcel.download(report, lodgeName: lodge?.name);
+        case 'laundry':
+          final report = (state.laundry as AsyncData<LaundryReport>).value;
+          final guestLaundry = lodge?.hasOtherServices ?? false;
+          path = format == _ReportFormat.pdf
+              ? await LaundryReportPdf.download(report, guestLaundry: guestLaundry)
+              : await LaundryReportExcel.download(report, guestLaundry: guestLaundry);
         case 'gst':
           final report = (state.gst as AsyncData<GstSummaryReport>).value;
           final gstin = lodge?.isGstRegistered == true ? lodge?.gstin : null;
@@ -249,6 +282,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   @override
+  void dispose() {
+    // Scheduled for after this build, not before — if the frame never runs
+    // (disposed mid-build) there's nothing to cancel, and clearing here
+    // just stops a stale icon pair lingering in the shell's bar once this
+    // section isn't showing anymore.
+    widget.headerActions?.value = null;
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final me = ref.watch(authViewModelProvider).me;
     final state = ref.watch(reportsViewModelProvider);
@@ -271,16 +314,31 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final showRange = _kDateRangedTabs.contains(_tab);
     final showLocalRange = _kLocalRangedTabs.contains(_tab);
     final showDownload = _kDownloadableTabs.contains(_tab);
+    final canDownload = _canDownload(state);
+
+    if (widget.headerActions != null) {
+      final actions = showDownload
+          ? _DownloadActions(
+              canDownload: canDownload,
+              downloading: _downloading,
+              onDownload: (format) => _download(state, format),
+            )
+          : null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.headerActions!.value = actions;
+      });
+    }
 
     return Column(
       children: [
-        _ReportsTitleBar(
-          onBack: widget.onBack,
-          showDownload: showDownload,
-          canDownload: _canDownload(state),
-          downloading: _downloading,
-          onDownload: (format) => _download(state, format),
-        ),
+        if (widget.headerActions == null)
+          _ReportsTitleBar(
+            onBack: widget.onBack,
+            showDownload: showDownload,
+            canDownload: canDownload,
+            downloading: _downloading,
+            onDownload: (format) => _download(state, format),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
             AppTheme.s16,
@@ -290,9 +348,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ),
           child: Column(
             children: [
+              if (tabs.length > 1) ...[
+                _SubTabs(tabs: tabs, selected: _tab, onSelect: (t) => setState(() => _tab = t)),
+                const SizedBox(height: AppTheme.s12),
+              ],
               if (showRange) ...[
                 _RangePicker(state: state),
-                const SizedBox(height: AppTheme.s12),
               ] else if (showLocalRange) ...[
                 ReportDateRangeFilter(
                   fromDate: _localFromDate,
@@ -300,10 +361,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   onFromChanged: (v) => setState(() => _localFromDate = v),
                   onToChanged: (v) => setState(() => _localToDate = v),
                 ),
-                const SizedBox(height: AppTheme.s12),
               ],
-              if (tabs.length > 1)
-                _SubTabs(tabs: tabs, selected: _tab, onSelect: (t) => setState(() => _tab = t)),
             ],
           ),
         ),
@@ -325,11 +383,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     'bookings' => const BookingsReportPanel(),
                     'events' => const EventsReportPanel(),
                     'food' => const FoodOrdersReportPanel(),
+                    'services' => const ServicesReportPanel(),
+                    'laundry' => const LaundryReportPanel(),
                     'gst' => const GstReportPanel(),
                     'profitLoss' => const ProfitLossPanel(),
                     'expenses' => ExpensesReportTab(fromDate: _localFromDate, toDate: _localToDate),
                     'income' => IncomeReportTab(fromDate: _localFromDate, toDate: _localToDate),
                     'assets' => AssetsReportTab(fromDate: _localFromDate, toDate: _localToDate),
+                    'bills' => BillsReportPanel(fromDate: _localFromDate, toDate: _localToDate),
                     _ => const OverviewReportPanel(),
                   },
           ),
@@ -384,43 +445,82 @@ class _ReportsTitleBar extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
-              if (showDownload) ...[
-                IconButton(
-                  tooltip: 'Download PDF',
-                  onPressed: !canDownload || downloading != null
-                      ? null
-                      : () => onDownload(_ReportFormat.pdf),
-                  icon: downloading == _ReportFormat.pdf
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.picture_as_pdf_rounded),
-                  color: Colors.white,
-                  style: IconButton.styleFrom(backgroundColor: AppTheme.accent),
+              if (showDownload)
+                _DownloadActions(
+                  canDownload: canDownload,
+                  downloading: downloading,
+                  onDownload: onDownload,
                 ),
-                const SizedBox(width: AppTheme.s8),
-                IconButton(
-                  tooltip: 'Download Excel',
-                  onPressed: !canDownload || downloading != null
-                      ? null
-                      : () => onDownload(_ReportFormat.excel),
-                  icon: downloading == _ReportFormat.excel
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.table_chart_rounded),
-                  color: Colors.white,
-                  style: IconButton.styleFrom(backgroundColor: AppTheme.edit),
-                ),
-              ],
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The PDF/Excel icon pair — shared between [_ReportsTitleBar]'s own row
+/// (used when nothing lifts it elsewhere) and the shell top bar, which
+/// [_ReportsScreenState] feeds this same widget through `headerActions`.
+class _DownloadActions extends StatelessWidget {
+  final bool canDownload;
+  final _ReportFormat? downloading;
+  final ValueChanged<_ReportFormat> onDownload;
+
+  const _DownloadActions({
+    required this.canDownload,
+    required this.downloading,
+    required this.onDownload,
+  });
+
+  static const _size = 36.0;
+  static const _iconSize = 19.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Download PDF',
+          onPressed: !canDownload || downloading != null
+              ? null
+              : () => onDownload(_ReportFormat.pdf),
+          icon: downloading == _ReportFormat.pdf
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.picture_as_pdf_rounded),
+          iconSize: _iconSize,
+          color: Colors.white,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: _size, minHeight: _size),
+          visualDensity: VisualDensity.compact,
+          style: IconButton.styleFrom(backgroundColor: AppTheme.accent),
+        ),
+        const SizedBox(width: AppTheme.s4),
+        IconButton(
+          tooltip: 'Download Excel',
+          onPressed: !canDownload || downloading != null
+              ? null
+              : () => onDownload(_ReportFormat.excel),
+          icon: downloading == _ReportFormat.excel
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.table_chart_rounded),
+          iconSize: _iconSize,
+          color: Colors.white,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: _size, minHeight: _size),
+          visualDensity: VisualDensity.compact,
+          style: IconButton.styleFrom(backgroundColor: AppTheme.edit),
+        ),
+      ],
     );
   }
 }
@@ -432,38 +532,29 @@ class _SubTabs extends StatelessWidget {
 
   const _SubTabs({required this.tabs, required this.selected, required this.onSelect});
 
+  static const _icons = {
+    'overview': Icons.dashboard_rounded,
+    'bookings': Icons.bed_rounded,
+    'events': Icons.celebration_rounded,
+    'food': Icons.restaurant_rounded,
+    'services': Icons.room_service_rounded,
+    'laundry': Icons.local_laundry_service_rounded,
+    'bills': Icons.receipt_long_rounded,
+    'gst': Icons.account_balance_rounded,
+    'profitLoss': Icons.trending_up_rounded,
+    'expenses': Icons.payments_rounded,
+    'income': Icons.savings_rounded,
+    'assets': Icons.inventory_2_rounded,
+  };
+
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final tab in tabs) ...[
-            GestureDetector(
-              onTap: () => onSelect(tab.key),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s12),
-                decoration: BoxDecoration(
-                  color: tab.key == selected ? AppTheme.accent : AppTheme.card,
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                  border: tab.key == selected ? null : Border.all(color: AppTheme.border),
-                  boxShadow: tab.key == selected ? AppTheme.subtle : null,
-                ),
-                child: Text(
-                  tab.label,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: tab.key == selected ? Colors.white : AppTheme.text,
-                    fontWeight: tab.key == selected ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            if (tab != tabs.last) const SizedBox(width: AppTheme.s8),
-          ],
-        ],
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: [
+        for (final t in tabs) PillTab(t.key, t.label, _icons[t.key] ?? Icons.bar_chart_rounded),
+      ],
     );
   }
 }
@@ -479,30 +570,25 @@ class _RangePicker extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.read(reportsViewModelProvider.notifier);
 
-    return NeuCard(
-      radius: AppTheme.rMedium,
-      shadow: AppTheme.subtle,
-      padding: const EdgeInsets.all(AppTheme.s12),
-      child: Row(
-        children: [
-          Expanded(
-            child: _DateField(
-              label: 'From',
-              value: state.fromDate,
-              onPick: (picked) => vm.setRange(picked, state.toDate),
-            ),
+    return Row(
+      children: [
+        Expanded(
+          child: _DateField(
+            label: 'From',
+            value: state.fromDate,
+            onPick: (picked) => vm.setRange(picked, state.toDate),
           ),
-          const SizedBox(width: AppTheme.s8),
-          Expanded(
-            child: _DateField(
-              label: 'To',
-              value: state.toDate,
-              minDate: state.fromDate,
-              onPick: (picked) => vm.setRange(state.fromDate, picked),
-            ),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Expanded(
+          child: _DateField(
+            label: 'To',
+            value: state.toDate,
+            minDate: state.fromDate,
+            onPick: (picked) => vm.setRange(state.fromDate, picked),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -527,7 +613,7 @@ class _DateField extends StatelessWidget {
       onTap: () async {
         final now = DateTime.now();
         final min = minDate != null ? DateTime.tryParse(minDate!) : null;
-        final picked = await showDatePicker(
+        final picked = await showAppDatePicker(
           context: context,
           initialDate: parsed ?? now,
           firstDate: min ?? DateTime(now.year - 5),
@@ -538,34 +624,40 @@ class _DateField extends StatelessWidget {
             '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
         onPick(iso);
       },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
-          ),
-          const SizedBox(height: 2),
-          NeuPressed(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.event_rounded, size: 14, color: AppTheme.muted),
-                const SizedBox(width: AppTheme.s8),
-                Flexible(
-                  child: Text(
-                    parsed == null
-                        ? value
-                        : '${parsed.day} ${_monthShort(parsed.month)} ${parsed.year}',
-                    style: const TextStyle(color: AppTheme.heading, fontSize: 13),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.card,
+          borderRadius: BorderRadius.circular(AppTheme.rLarge),
+          border: Border.all(color: AppTheme.border),
+          boxShadow: AppTheme.subtle,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: AppTheme.accent,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: const Icon(Icons.calendar_today_rounded, size: 12, color: Colors.white),
             ),
-          ),
-        ],
+            const SizedBox(width: AppTheme.s8),
+            Flexible(
+              child: Text(
+                parsed == null ? label : '${parsed.day} ${_monthShort(parsed.month)} ${parsed.year}',
+                style: TextStyle(
+                  color: parsed == null ? AppTheme.muted : AppTheme.heading,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

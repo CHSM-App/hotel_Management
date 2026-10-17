@@ -11,11 +11,6 @@ class StaffMember {
   final String roleName;
   final bool isActive;
 
-  /// True right after a reset — they'll be forced to choose their own on
-  /// next sign-in. Shown as a small note next to Status, same as the web
-  /// table's own "Temporary password" line.
-  final bool mustResetPassword;
-
   const StaffMember({
     required this.id,
     required this.name,
@@ -24,7 +19,6 @@ class StaffMember {
     required this.roleKey,
     required this.roleName,
     required this.isActive,
-    this.mustResetPassword = false,
   });
 
   factory StaffMember.fromJson(Map<String, dynamic> json) => StaffMember(
@@ -35,7 +29,6 @@ class StaffMember {
     roleKey: json['roleKey']?.toString() ?? '',
     roleName: json['roleName']?.toString() ?? '',
     isActive: asBool(json['isActive']),
-    mustResetPassword: asBool(json['mustResetPassword']),
   );
 }
 

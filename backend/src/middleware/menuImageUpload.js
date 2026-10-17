@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
 const { uploadDir } = require('../config/uploadRoot');
+const { compressUploadedImages } = require('./imageCompression');
 
 // A photo of the dish, shown on the menu a guest orders from. Not sensitive —
 // it is the most public thing this system holds — so it is served from a static
@@ -39,7 +40,7 @@ const upload = multer({
 // One photo per dish, under the field name "image". A menu item is a single
 // thing on a list — a gallery would be a different screen, not a bigger form.
 function menuImageUpload(req, res, next) {
-  upload.single('image')(req, res, (err) => {
+  upload.single('image')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(new ApiError('The dish photo must be 5MB or smaller.', 400));
@@ -50,6 +51,7 @@ function menuImageUpload(req, res, next) {
       return next(new ApiError('Could not upload the photo.', 400));
     }
     if (err) return next(err);
+    await compressUploadedImages(req, { maxDimension: 1600, quality: 78 });
     next();
   });
 }

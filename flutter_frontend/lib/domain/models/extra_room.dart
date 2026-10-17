@@ -29,6 +29,11 @@ class ExtraRoomDraft {
   /// own. Typed text; blank means the category price.
   final String roomTotal;
 
+  /// Mirrors [BookingState.roomTotalTouched] for this room: whether the desk
+  /// has actually typed into its price box, so a blank box left untouched is
+  /// never flagged the same way as one typed into and then cleared.
+  final bool roomTotalTouched;
+
   /// BOOKED, CHECKED_IN, CHECKED_OUT or CANCELLED — 'BOOKED' for a room just
   /// picked and not yet saved. Only a BOOKED room can be removed.
   final String status;
@@ -54,6 +59,7 @@ class ExtraRoomDraft {
     this.checkOut,
     this.extras = const {},
     this.roomTotal = '',
+    this.roomTotalTouched = false,
     this.status = 'BOOKED',
     this.quote,
     this.availableRooms,
@@ -72,6 +78,7 @@ class ExtraRoomDraft {
     bool clearDates = false,
     Map<int, ExtraDraft>? extras,
     String? roomTotal,
+    bool? roomTotalTouched,
     String? status,
     RoomQuote? quote,
     bool clearQuote = false,
@@ -87,6 +94,9 @@ class ExtraRoomDraft {
     checkOut: clearDates ? null : (checkOut ?? this.checkOut),
     extras: clearRoom ? const {} : (extras ?? this.extras),
     roomTotal: clearRoom ? '' : (roomTotal ?? this.roomTotal),
+    roomTotalTouched: clearRoom
+        ? false
+        : (roomTotalTouched ?? this.roomTotalTouched),
     status: status ?? this.status,
     quote: clearQuote ? null : (quote ?? this.quote),
     availableRooms: availableRooms ?? this.availableRooms,

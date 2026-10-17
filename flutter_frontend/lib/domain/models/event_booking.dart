@@ -254,13 +254,20 @@ class EventBooking {
   final String? roomsTo;
   final String? roomsNotes;
   final String status;
-  final String? holdExpiresAt;
   final String? cancelReason;
   final num? refundAmount;
   final String? refundPaymentMethod;
   final num? cancellationCharge;
   final List<EventAddonLine> addons;
+
+  /// Addons the desk added without a price yet — the bill will not issue
+  /// while any stand. Mirrors unpricedExtras in events.service.js.
+  final int unpricedExtras;
   final EventInvoiceRef? invoice;
+  // When the desk marked the function over — not a status: the status walk
+  // is about the money, and a function can be over and unbilled, or billed
+  // and still running. Mirrors completedAt in events.service.js.
+  final String? completedAt;
 
   const EventBooking({
     required this.id,
@@ -295,14 +302,15 @@ class EventBooking {
     this.roomsFrom,
     this.roomsTo,
     this.roomsNotes,
-    this.status = 'ENQUIRY',
-    this.holdExpiresAt,
+    this.status = 'DRAFT',
     this.cancelReason,
     this.refundAmount,
     this.refundPaymentMethod,
     this.cancellationCharge,
     this.addons = const [],
+    this.unpricedExtras = 0,
     this.invoice,
+    this.completedAt,
   });
 
   factory EventBooking.fromJson(Map<String, dynamic> json) => EventBooking(
@@ -340,8 +348,7 @@ class EventBooking {
     roomsFrom: asStringOrNull(json['roomsFrom']),
     roomsTo: asStringOrNull(json['roomsTo']),
     roomsNotes: asStringOrNull(json['roomsNotes']),
-    status: json['status']?.toString() ?? 'ENQUIRY',
-    holdExpiresAt: asStringOrNull(json['holdExpiresAt']),
+    status: json['status']?.toString() ?? 'DRAFT',
     cancelReason: asStringOrNull(json['cancelReason']),
     refundAmount: asNumOrNull(json['refundAmount']),
     refundPaymentMethod: asStringOrNull(json['refundPaymentMethod']),
@@ -349,17 +356,46 @@ class EventBooking {
     addons: (json['addons'] as List? ?? [])
         .map((e) => EventAddonLine.fromJson(e as Map<String, dynamic>))
         .toList(),
+    unpricedExtras: asInt(json['unpricedExtras']),
     invoice: json['invoice'] is Map
         ? EventInvoiceRef.fromJson((json['invoice'] as Map).cast<String, dynamic>())
         : null,
+    completedAt: asStringOrNull(json['completedAt']),
   );
 
   /// A saved rate above zero is what "catering" means; there is no flag —
   /// same rule EventDetail.jsx's hasCatering uses.
   bool get hasCatering => perPlateRate > 0;
 
-  bool get isClosed => status == 'CANCELLED' || status == 'EXPIRED';
+  bool get isClosed => status == 'CANCELLED';
+
+  /// Whether, and when, "Mark as Completed" can be used — mirrors
+  /// EventDetail.jsx's `canComplete`.
+  bool get canComplete =>
+      (status == 'CONFIRMED' || status == 'SETTLED') && completedAt == null && (DateTime.tryParse(startAt)?.isBefore(DateTime.now()) ?? false);
 }
+
+/// Where a function is in time, which its status does not say: Confirmed
+/// and Settled are about the money, and a function next week and one in the
+/// hall now are both "Confirmed". Worked out from the booked times (and the
+/// desk's "Mark as Completed"), so nobody has to set it. Null for a draft or
+/// cancelled function, which does not hold the venue. Mirrors eventPhase in
+/// eventFormat.js.
+String? eventPhase(EventBooking ev, [DateTime? now]) {
+  if (ev.status != 'CONFIRMED' && ev.status != 'SETTLED') return null;
+  final n = now ?? DateTime.now();
+  final end = DateTime.tryParse(ev.endAt);
+  if (ev.completedAt != null || (end != null && !end.isAfter(n))) return 'COMPLETED';
+  final start = DateTime.tryParse(ev.startAt);
+  if (start != null && start.isAfter(n)) return 'UPCOMING';
+  return 'IN_PROGRESS';
+}
+
+const kEventPhaseLabel = <String, String>{
+  'UPCOMING': 'Upcoming',
+  'IN_PROGRESS': 'In Progress',
+  'COMPLETED': 'Completed',
+};
 
 /// GET /events/availability — whether a venue is free over a window, and
 /// what it clashes with if not.
@@ -405,12 +441,10 @@ const kEventTypeLabel = <String, String>{
 };
 
 const kEventStatusLabel = <String, String>{
-  'ENQUIRY': 'Enquiry',
-  'TENTATIVE': 'On hold',
+  'DRAFT': 'Draft',
   'CONFIRMED': 'Confirmed',
   'SETTLED': 'Settled',
   'CANCELLED': 'Cancelled',
-  'EXPIRED': 'Expired',
 };
 
 const kSlotLabel = <String, String>{

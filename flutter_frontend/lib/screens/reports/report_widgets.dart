@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 
 import '../../domain/models/report.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 
@@ -34,8 +36,9 @@ class StatItem {
   final String label;
   final String value;
   final bool accent;
+  final String? note;
 
-  const StatItem({required this.label, required this.value, this.accent = false});
+  const StatItem({required this.label, required this.value, this.accent = false, this.note});
 }
 
 /// A wrapping grid of stat tiles, the phone equivalent of the web's
@@ -43,43 +46,71 @@ class StatItem {
 class StatGrid extends StatelessWidget {
   final List<StatItem> items;
 
-  const StatGrid({super.key, required this.items});
+  final int columns;
+  final bool compact;
+
+  const StatGrid({super.key, required this.items, this.columns = 2, this.compact = true});
+
+  Widget _buildCard(BuildContext context, StatItem item) {
+    return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      padding: compact
+          ? const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 6)
+          : const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            item.label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
+            overflow: TextOverflow.ellipsis,
+          ),
+          SizedBox(height: compact ? 2 : 4),
+          Text(
+            item.value,
+            style: (compact ? Theme.of(context).textTheme.titleMedium : Theme.of(context).textTheme.titleLarge)?.copyWith(
+              color: item.accent ? AppTheme.accent : AppTheme.heading,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (item.note != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              item.note!,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppTheme.s8,
-      runSpacing: AppTheme.s8,
-      children: [
-        for (final item in items)
-          SizedBox(
-            width: (MediaQuery.sizeOf(context).width - AppTheme.s16 * 2 - AppTheme.s8) / 2,
-            child: NeuCard(
-              radius: AppTheme.rMedium,
-              shadow: AppTheme.subtle,
-              padding: const EdgeInsets.all(AppTheme.s12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.label,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.value,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: item.accent ? AppTheme.accent : AppTheme.heading,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
+    final rows = <Widget>[];
+    for (var i = 0; i < items.length; i += columns) {
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var c = 0; c < columns; c++) ...[
+                if (c > 0) const SizedBox(width: AppTheme.s8),
+                Expanded(
+                  child: i + c < items.length ? _buildCard(context, items[i + c]) : const SizedBox.shrink(),
+                ),
+              ],
+            ],
           ),
-      ],
-    );
+        ),
+      );
+      if (i + columns < items.length) rows.add(const SizedBox(height: AppTheme.s8));
+    }
+    return Column(children: rows);
   }
 }
 
@@ -698,26 +729,21 @@ class ReportDateRangeFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
-      radius: AppTheme.rMedium,
-      shadow: AppTheme.subtle,
-      padding: const EdgeInsets.all(AppTheme.s12),
-      child: Row(
-        children: [
-          Expanded(
-            child: _DateFilterField(label: 'From', value: fromDate, onPick: onFromChanged),
+    return Row(
+      children: [
+        Expanded(
+          child: _DateFilterField(label: 'From', value: fromDate, onPick: onFromChanged),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Expanded(
+          child: _DateFilterField(
+            label: 'To',
+            value: toDate,
+            minDate: fromDate,
+            onPick: onToChanged,
           ),
-          const SizedBox(width: AppTheme.s8),
-          Expanded(
-            child: _DateFilterField(
-              label: 'To',
-              value: toDate,
-              minDate: fromDate,
-              onPick: onToChanged,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -742,7 +768,7 @@ class _DateFilterField extends StatelessWidget {
       onTap: () async {
         final now = DateTime.now();
         final min = minDate != null ? DateTime.tryParse(minDate!) : null;
-        final picked = await showDatePicker(
+        final picked = await showAppDatePicker(
           context: context,
           initialDate: parsed ?? now,
           firstDate: min ?? DateTime(now.year - 10),
@@ -753,29 +779,40 @@ class _DateFilterField extends StatelessWidget {
             '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
         onPick(iso);
       },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w400)),
-          const SizedBox(height: 2),
-          NeuPressed(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.event_rounded, size: 14, color: AppTheme.muted),
-                const SizedBox(width: AppTheme.s8),
-                Flexible(
-                  child: Text(
-                    parsed == null ? value : '${parsed.day} ${_monthShort(parsed.month)} ${parsed.year}',
-                    style: const TextStyle(color: AppTheme.heading, fontSize: 13),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.card,
+          borderRadius: BorderRadius.circular(AppTheme.rLarge),
+          border: Border.all(color: AppTheme.border),
+          boxShadow: AppTheme.subtle,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: AppTheme.accent,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: const Icon(Icons.calendar_today_rounded, size: 12, color: Colors.white),
             ),
-          ),
-        ],
+            const SizedBox(width: AppTheme.s8),
+            Flexible(
+              child: Text(
+                parsed == null ? label : '${parsed.day} ${_monthShort(parsed.month)} ${parsed.year}',
+                style: TextStyle(
+                  color: parsed == null ? AppTheme.muted : AppTheme.heading,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1189,34 +1226,33 @@ class ReportDataTable extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: _width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _row(
+            child: StickyHeaderTable(
+              header: _row(
                   context,
                   columns.map((c) => c.label.toUpperCase()).toList(),
                   columns.map((c) => c.align).toList(),
                   header: true,
                 ),
-                for (var i = 0; i < rows.length; i++)
-                  _row(
-                    context,
-                    rows[i],
-                    columns.map((c) => c.align).toList(),
-                    shaded: i.isOdd,
-                  ),
-                if (totals != null)
-                  _row(
-                    context,
-                    totals!,
-                    columns.map((c) => c.align).toList(),
-                    bold: true,
-                    border: true,
-                  ),
+              rows: [
+                      for (var i = 0; i < rows.length; i++)
+                        _row(
+                          context,
+                          rows[i],
+                          columns.map((c) => c.align).toList(),
+                          shaded: i.isOdd,
+                        ),
+                      if (totals != null)
+                        _row(
+                          context,
+                          totals!,
+                          columns.map((c) => c.align).toList(),
+                          bold: true,
+                          border: true,
+                        ),
               ],
             ),
           ),
@@ -1237,14 +1273,14 @@ class ReportDataTable extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: header
-            ? AppTheme.bg
+            ? AppTheme.sidebarBrandWash
             : shaded
-            ? AppTheme.border.withValues(alpha: 0.4)
+            ? AppTheme.bg
             : AppTheme.card,
         border: Border(
           bottom: BorderSide(
-            color: AppTheme.border,
-            width: border ? 1.4 : 0.8,
+            color: header ? AppTheme.sidebarBrandWashEdge : AppTheme.border,
+            width: header || border ? 1.4 : 0.8,
           ),
         ),
       ),
@@ -1255,7 +1291,10 @@ class ReportDataTable extends StatelessWidget {
             SizedBox(
               width: columns[i].width,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                padding: EdgeInsets.symmetric(
+                  horizontal: AppTheme.s8,
+                  vertical: header ? 12 : 11,
+                ),
                 child: Text(
                   i < cells.length ? cells[i] : '',
                   textAlign: aligns[i],
@@ -1263,11 +1302,13 @@ class ReportDataTable extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: header
                       ? Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
+                          color: AppTheme.accent,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                          fontSize: 11.5,
                         )
                       : Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.text,
+                          color: bold ? AppTheme.heading : AppTheme.text,
                           fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
                           fontSize: 12.5,
                         ),

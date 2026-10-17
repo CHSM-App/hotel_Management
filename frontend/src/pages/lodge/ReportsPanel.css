@@ -135,6 +135,12 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* .dash-card clips overflow to keep its own corners clean, which also
+     clipped the Download dropdown the moment it tried to hang below the
+     card's bottom edge. Nothing in this bar needs that clipping — it's
+     fields and buttons, not an image or table bleeding to the radius — so
+     it's turned back off here. */
+  overflow: visible;
 }
 
 .reports-panel__compact-row {
@@ -253,14 +259,17 @@
   font-weight: 600;
 }
 
+/* A build failure (Excel/PDF couldn't be assembled) rather than ordinary
+   guidance — reads as a problem, not a footnote. */
+.reports-panel__hint--error {
+  color: var(--danger);
+}
+
+/* The same underlined strip as .subtabs in RoomsAndRates.css. */
 .reports-panel__subtabs {
   display: flex;
-  gap: 2px;
-  padding: 4px;
-  background: var(--neu-sunken);
-  border-radius: 12px;
-  width: fit-content;
-  max-width: 100%;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
   /* Slides at every width, not just below a breakpoint — see the note on
      .subtabs in RoomsAndRates.css. */
   overflow-x: auto;
@@ -276,16 +285,16 @@
 .reports-panel__subtabs-item {
   background: transparent;
   border: none;
-  border-radius: 9px;
-  padding: 8px 16px;
-  font-size: 13px;
+  border-bottom: 2px solid transparent;
+  padding: 8px 2px;
+  margin-right: 18px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
   flex: 0 0 auto;
   white-space: nowrap;
   scroll-snap-align: start;
-  transition: var(--neu-transition);
 }
 
 .reports-panel__subtabs-item:hover {
@@ -294,33 +303,7 @@
 
 .reports-panel__subtabs-item[aria-current='page'] {
   color: var(--brand-ink);
-  background: var(--surface);
-  box-shadow: var(--shadow-raised);
-}
-
-.reports-panel__download {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 20px;
-  padding: 16px 20px;
-  background: linear-gradient(180deg, var(--surface) 0%, var(--paper) 180%);
-}
-
-.reports-panel__download-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.reports-panel__download .reports-panel__hint {
-  margin-top: 4px;
-}
-
-.reports-panel__download-actions {
-  display: flex;
-  gap: 10px;
+  border-bottom-color: var(--brand);
 }
 
 .reports-panel__muted {
@@ -414,34 +397,9 @@
     width: 100%;
   }
 
-  /* Full-width buttons on a phone — the download card's text and its two
-     actions stack, and half-width buttons in a stacked row read as cramped. */
-  .reports-panel__download-actions {
-    width: 100%;
-  }
-
-  .reports-panel__download-actions > * {
-    flex: 1;
-  }
-
   .reports-panel__stat-value {
     font-size: 15px;
   }
-}
-
-/* The report PDF, shown in the browser's own viewer before it is saved. Tall
-   enough to read a landscape A4 page without scrolling the panel underneath it,
-   and it is the real file rather than an HTML impression — so what is on screen
-   and what gets filed cannot drift apart. */
-.reports-panel__preview {
-  width: 100%;
-  height: 70vh;
-  min-height: 420px;
-  margin-top: 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--shadow-inset);
 }
 
 /* A small caption row above a table — names what's below without the weight
@@ -453,6 +411,14 @@
   letter-spacing: 0.04em;
   color: var(--text-muted);
   margin: 4px 2px;
+}
+
+/* Breathing room between two stat grids stacked one after the other — e.g.
+   the Room Bookings tab's "Stays checking in" and "Money received" groups,
+   which are on different date bases and need to read as separate sections,
+   not one continuous grid. */
+.reports-panel__stat-grid + .reports-panel__section-label {
+  margin-top: 20px;
 }
 
 /* Pairs the register's section label with the tax-columns switch on one row,

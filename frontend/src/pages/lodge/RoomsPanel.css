@@ -81,8 +81,8 @@
 }
 
 .rooms-panel__note {
-  background: #fdf6e8;
-  border: 1px solid #f0dfab;
+  background: color-mix(in srgb, var(--accent) 15%, white);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, white);
   color: var(--ink);
   font-size: 13px;
   font-weight: 500;
@@ -120,7 +120,7 @@
    being thrown onto the page; the stock grey elevation reads as a generic
    panel. */
 .room-card:hover {
-  box-shadow: 0 2px 6px rgba(69, 39, 184, 0.08), 0 14px 30px -12px rgba(69, 39, 184, 0.22);
+  box-shadow: 0 2px 6px rgba(7, 39, 72, 0.08), 0 14px 30px -12px rgba(7, 39, 72, 0.22);
   transform: translateY(-2px);
 }
 
@@ -257,13 +257,13 @@
 
 .room-card__cover--empty .room-card__status.badge--on {
   background: var(--success-bg);
-  border-color: rgba(21, 128, 61, 0.22);
+  border-color: rgba(40, 167, 69, 0.22);
   color: var(--success);
 }
 
 .room-card__cover--empty .room-card__status.badge--off {
   background: var(--danger-bg);
-  border-color: rgba(192, 57, 43, 0.22);
+  border-color: rgba(234, 67, 53, 0.22);
   color: var(--danger);
 }
 
@@ -288,11 +288,11 @@
 }
 
 .room-card__cover--empty .room-card__status.badge--on:hover {
-  border-color: rgba(21, 128, 61, 0.5);
+  border-color: rgba(40, 167, 69, 0.5);
 }
 
 .room-card__cover--empty .room-card__status.badge--off:hover {
-  border-color: rgba(192, 57, 43, 0.5);
+  border-color: rgba(234, 67, 53, 0.5);
 }
 
 .room-card__status {
@@ -807,7 +807,7 @@
 }
 
 .bed-row__remove:hover {
-  color: var(--danger, #b3261e);
+  color: var(--danger);
   box-shadow: var(--shadow-raised-hover);
 }
 
@@ -823,7 +823,7 @@
   font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
-  color: var(--accent, #2f4858);
+  color: var(--brand);
 }
 
 .bed-add:hover {
@@ -848,7 +848,7 @@
 .field--checkbox input[type='checkbox'] {
   width: 1.05rem;
   height: 1.05rem;
-  accent-color: var(--accent, #2f4858);
+  accent-color: var(--brand);
   cursor: pointer;
 }
 
@@ -920,8 +920,8 @@
    warning rather than the same neutral fact chip everything else here is —
    and it's a real button (see the onClick), not just colored text. */
 .room-card__chip--warn {
-  background: var(--danger-bg, #fbe7e7);
-  color: var(--danger, #b3261e);
+  background: var(--danger-bg);
+  color: var(--danger);
   cursor: pointer;
   border: none;
   font: inherit;

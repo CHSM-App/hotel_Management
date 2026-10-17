@@ -5,10 +5,14 @@ import '../../data/repositories/assets_impl.dart';
 import '../../data/repositories/auth_impl.dart';
 import '../../data/repositories/booking_impl.dart';
 import '../../data/repositories/billing_impl.dart';
+import '../../data/repositories/customers_impl.dart';
 import '../../data/repositories/events_impl.dart';
 import '../../data/repositories/expenses_impl.dart';
 import '../../data/repositories/food_setup_impl.dart';
+import '../../data/repositories/housekeeping_impl.dart';
 import '../../data/repositories/income_impl.dart';
+import '../../data/repositories/laundry_impl.dart';
+import '../../data/repositories/lodge_services_impl.dart';
 import '../../data/repositories/orders_impl.dart';
 import '../../data/repositories/reports_impl.dart';
 import '../../data/repositories/rooms_impl.dart';
@@ -17,10 +21,14 @@ import '../../domain/repository/assets_repo.dart';
 import '../../domain/repository/auth_repo.dart';
 import '../../domain/repository/booking_repo.dart';
 import '../../domain/repository/billing_repo.dart';
+import '../../domain/repository/customers_repo.dart';
 import '../../domain/repository/events_repo.dart';
 import '../../domain/repository/expenses_repo.dart';
 import '../../domain/repository/food_setup_repo.dart';
+import '../../domain/repository/housekeeping_repo.dart';
 import '../../domain/repository/income_repo.dart';
+import '../../domain/repository/laundry_repo.dart';
+import '../../domain/repository/lodge_services_repo.dart';
 import '../../domain/repository/orders_repo.dart';
 import '../../domain/repository/reports_repo.dart';
 import '../../domain/repository/rooms_repo.dart';
@@ -80,4 +88,20 @@ final incomeRepositoryProvider = Provider<IncomeRepository>(
 
 final staffRepositoryProvider = Provider<StaffRepository>(
   (ref) => StaffImpl(ref.watch(apiServiceProvider)),
+);
+
+final customersRepositoryProvider = Provider<CustomersRepository>(
+  (ref) => CustomersImpl(ref.watch(apiServiceProvider)),
+);
+
+final laundryRepositoryProvider = Provider<LaundryRepository>(
+  (ref) => LaundryImpl(ref.watch(apiServiceProvider)),
+);
+
+final housekeepingRepositoryProvider = Provider<HousekeepingRepository>(
+  (ref) => HousekeepingImpl(ref.watch(apiServiceProvider)),
+);
+
+final lodgeServicesRepositoryProvider = Provider<LodgeServicesRepository>(
+  (ref) => LodgeServicesImpl(ref.watch(apiServiceProvider)),
 );

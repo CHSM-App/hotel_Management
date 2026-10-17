@@ -262,6 +262,15 @@ async function updateVendorHandler(req, res, next) {
   }
 }
 
+async function deleteVendorHandler(req, res, next) {
+  try {
+    await assetsService.deleteVendor(req.user.lodgeId, 'asset', Number(req.params.id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listWorkOrdersHandler(req, res, next) {
   try {
     const workOrders = await assetsService.listWorkOrders(req.user.lodgeId, {
@@ -333,6 +342,7 @@ module.exports = {
   listVendorsHandler,
   createVendorHandler,
   updateVendorHandler,
+  deleteVendorHandler,
   listWorkOrdersHandler,
   createWorkOrderHandler,
   createWorkOrdersBulkHandler,

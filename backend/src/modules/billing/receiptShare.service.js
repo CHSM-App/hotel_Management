@@ -6,6 +6,7 @@ const { logger } = require('../../config/logger');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR } = require('../../middleware/receiptShareUpload');
 const whatsapp = require('../../config/whatsapp');
+const { publicBaseUrl } = require('../../config/publicBaseUrl');
 
 // Handing an advance receipt to a guest on WhatsApp, from the server rather
 // than from the desk's own phone. Same shape as billShare.service.js, and the
@@ -20,25 +21,19 @@ const whatsapp = require('../../config/whatsapp');
 //   {{2}} hotel_name       {{5}} payment_method
 //   {{3}} receipt_number   {{6}} link to the PDF
 //
-// "Dear {{1}}, [hotel_name] {{2}}, We've received your advance payment.
-//  Receipt No. {{3}} / Amount: {{4}} / Paid via: {{5}}
-//  / View / Download Receipt: {{6}}"
+// "Dear {{1}}, Thank you for choosing {{2}}! We've received your advance
+//  payment. Receipt No: {{3}} / Amount: ₹{{4}} / Paid via: {{5}} / View /
+//  Download Receipt: {{6}}. Thank you for choosing us!"
+//
+// Generic by design, unlike the bill template: no room number, no check-in/
+// check-out, no venue — so one approved template covers an advance against
+// either a room stay or an event booking, and loadReceipt below already
+// reads whichever of the two a given receipt belongs to.
 const RECEIPT_CAMPAIGN = 'receipt_share';
 
 // Same TTL as a shared bill — a guest reopening a receipt from the same chat
 // a few weeks later is the ordinary case this window is sized for.
 const LINK_TTL_DAYS = 30;
-
-function publicBaseUrl() {
-  const base = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
-  if (!base) {
-    throw new ApiError(
-      'Sharing a receipt on WhatsApp needs PUBLIC_BASE_URL set to the address guests reach this site at.',
-      503
-    );
-  }
-  return base;
-}
 
 // Same packing rule as billShare.service.js: the provider joins a template's
 // variables with commas, so a comma inside a value shifts every later one
@@ -67,10 +62,6 @@ function buildReceiptSample(receipt, link) {
     clean(PAYMENT_METHOD_LABEL[receipt.payment_method] || receipt.payment_method),
     // Not cleaned: a URL has no commas and clean() would mangle one that did.
     link,
-    // The approved template uses {{2}} twice ("payment to {{2}}" and "Thank you
-    // for choosing {{2}}"); the provider counts occurrences, so it expects a
-    // seventh value, the hotel name again.
-    clean(receipt.lodge_name),
   ].join(',');
 }
 

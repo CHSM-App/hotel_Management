@@ -1136,67 +1136,6 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
 
       {!error && bookings && (filtered.length > 0 || filteredDrafts.length > 0) && (
         <div className="dash-card">
-          <div className="guest-register__card-head">
-            <div>
-              <h3 className="guest-register__card-title">{draftsOnly ? 'Drafts' : 'Register'}</h3>
-              <p className="guest-register__card-sub">
-                {/* Drafts are not filed under the range, so naming it here would
-                    claim a filter that isn't being applied to them. With stays
-                    showing beside them the range is being applied — to the
-                    stays — so it is named, and the drafts are called out as the
-                    part of the list it doesn't govern. */}
-                {draftsOnly
-                  ? 'Booking forms saved before they were finished'
-                  : `${formatDateLong(fromDate)} to ${formatDateLong(toDate)}${
-                      showingDrafts ? ', plus every parked draft' : ''
-                    }`}
-              </p>
-            </div>
-            <div className="guest-register__card-tools">
-              <span className="guest-register__card-count">
-                {draftsOnly
-                  ? `${filteredDrafts.length} ${filteredDrafts.length === 1 ? 'draft' : 'drafts'}`
-                  : // Counted apart when both are on screen: a draft is not an
-                    // entry in the register, and adding the two into one total
-                    // would claim more stays in the range than there are.
-                    [
-                      filtered.length === bookings.length
-                        ? `${filtered.length} ${filtered.length === 1 ? 'entry' : 'entries'}`
-                        : `${filtered.length} of ${bookings.length} entries`,
-                      showingDrafts
-                        ? `${filteredDrafts.length} ${filteredDrafts.length === 1 ? 'draft' : 'drafts'}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-              </span>
-              {/* Check-ins happen while this screen is open. */}
-              <button
-                type="button"
-                className="guest-register__refresh"
-                onClick={load}
-                disabled={loading}
-                title="Reload this range"
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                  <path d="M21 3v6h-6" />
-                </svg>
-                {loading ? 'Refreshing…' : 'Refresh'}
-              </button>
-            </div>
-          </div>
-
           {/* The head stays put while the rows scroll — a register is read a
               long way down, and a column of bare timestamps is unreadable once
               its heading has scrolled off. */}
@@ -1272,16 +1211,7 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
                           )}
                         </div>
                         <div className="guest-register__cell-sub">
-                          {/* Ringing the guest is the commonest reason an old
-                              row is looked up, so the number dials from the
-                              register itself without opening the record. */}
-                          {b.guestPhone ? (
-                            <a className="guest-register__row-phone" href={`tel:${b.guestPhone}`}>
-                              {b.guestPhone}
-                            </a>
-                          ) : (
-                            'No phone'
-                          )}
+                          {b.guestPhone || 'No phone'}
                           {b.numGuests > 1 ? ` · ${b.numGuests} people` : ''}
                         </div>
                         {matchedCoGuest && !b.guestName.toLowerCase().includes(query) && (

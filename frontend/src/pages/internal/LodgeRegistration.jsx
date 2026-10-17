@@ -54,6 +54,7 @@ const initialForm = {
   hasExpenses: false,
   hasOtherServices: false,
   hasHousekeeping: false,
+  hasLaundry: false,
   isGstRegistered: false,
   gstin: '',
   isSpecifiedPremises: false,
@@ -127,9 +128,11 @@ export default function LodgeRegistration() {
       hasExpenses: form.hasExpenses,
       // Sold from the rooms side, so a restaurant can't carry it.
       hasOtherServices: form.hasOtherServices && baseCapabilities.hasRooms,
-      hasHousekeeping: form.hasHousekeeping && baseCapabilities.hasRooms,
+      // Rooms or event venues: either gives housekeeping and laundry something to look after.
+      hasHousekeeping: form.hasHousekeeping && (baseCapabilities.hasRooms || form.hasEvents),
+      hasLaundry: form.hasLaundry && (baseCapabilities.hasRooms || form.hasEvents),
     }),
-    [baseCapabilities, form.hasEvents, form.hasAssets, form.hasExpenses, form.hasOtherServices, form.hasHousekeeping]
+    [baseCapabilities, form.hasEvents, form.hasAssets, form.hasExpenses, form.hasOtherServices, form.hasHousekeeping, form.hasLaundry]
   );
 
   const includedFeatures = useMemo(() => featuresForCapabilities(capabilities), [capabilities]);
@@ -149,7 +152,8 @@ export default function LodgeRegistration() {
     { key: 'assets', formKey: 'hasAssets', feature: FEATURES.find((f) => f.key === 'assets') },
     { key: 'expenses', formKey: 'hasExpenses', feature: FEATURES.find((f) => f.key === 'expenses') },
     { key: 'otherServices', formKey: 'hasOtherServices', feature: FEATURES.find((f) => f.key === 'otherServices'), needsRooms: true },
-    { key: 'housekeeping', formKey: 'hasHousekeeping', feature: FEATURES.find((f) => f.key === 'housekeeping'), needsRooms: true },
+    { key: 'housekeeping', formKey: 'hasHousekeeping', feature: FEATURES.find((f) => f.key === 'housekeeping'), needsRooms: true, orEvents: true },
+    { key: 'laundry', formKey: 'hasLaundry', feature: FEATURES.find((f) => f.key === 'laundry'), needsRooms: true, orEvents: true },
   ];
   const baseFeatures = FEATURES.filter((f) => !ADDONS.some((a) => a.key === f.key));
 
@@ -211,7 +215,8 @@ export default function LodgeRegistration() {
         hasExpenses: Boolean(rest.hasExpenses),
       };
       caps.hasOtherServices = Boolean(rest.hasOtherServices) && caps.hasRooms;
-      caps.hasHousekeeping = Boolean(rest.hasHousekeeping) && caps.hasRooms;
+      caps.hasHousekeeping = Boolean(rest.hasHousekeeping) && (caps.hasRooms || caps.hasEvents);
+      caps.hasLaundry = Boolean(rest.hasLaundry) && (caps.hasRooms || caps.hasEvents);
       const payload = {
         ...rest,
         ...caps,
@@ -480,26 +485,30 @@ export default function LodgeRegistration() {
               <div className="reg-access-group">
                 <div className="reg-access-group__label">Add-ons — switch on per property</div>
                 <div className="reg-access-list">
-                  {ADDONS.map(({ formKey, feature, needsRooms }) => (
+                  {ADDONS.map(({ formKey, feature, needsRooms, orEvents }) => {
+                    // Not offered until the property has what the add-on looks after.
+                    const blocked = needsRooms && !baseCapabilities.hasRooms && !(orEvents && form.hasEvents);
+                    return (
                     <label key={formKey} className="reg-access-row reg-access-row--toggle">
                       <div className="reg-access-row__text">
                         <span className="reg-access-row__title">{feature.title}</span>
                         <span className="reg-access-row__desc">
                           {feature.description}
-                          {needsRooms && !baseCapabilities.hasRooms && ' Needs rooms.'}
+                          {blocked && (orEvents ? ' Needs rooms or events.' : ' Needs rooms.')}
                         </span>
                       </div>
                       <span className="reg-switch">
                         <input
                           type="checkbox"
-                          checked={form[formKey] && (!needsRooms || baseCapabilities.hasRooms)}
-                          disabled={needsRooms && !baseCapabilities.hasRooms}
+                          checked={form[formKey] && !blocked}
+                          disabled={blocked}
                           onChange={update(formKey)}
                         />
                         <span className="reg-switch__track"><span className="reg-switch__thumb" /></span>
                       </span>
                     </label>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </section>

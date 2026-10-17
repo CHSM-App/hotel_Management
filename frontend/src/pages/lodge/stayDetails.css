@@ -145,3 +145,33 @@
   background: var(--paper);
   box-shadow: var(--shadow-inset);
 }
+
+/* One room of a several-room price breakdown: its heading, its lines, its own
+   total. Set off from the next room by a hairline. */
+.pb__room {
+  padding: 6px 0;
+  border-top: 1px dashed var(--border);
+}
+
+.pb__room:first-of-type {
+  border-top: 0;
+}
+
+.pb__room-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 2px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.pb__room-head span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pb__room-total {
+  font-weight: 700;
+  color: var(--ink);
+}

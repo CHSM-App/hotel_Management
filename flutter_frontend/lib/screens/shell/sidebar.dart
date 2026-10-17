@@ -25,6 +25,10 @@ class Sidebar extends StatelessWidget {
   final Map<String, bool> groupToggle;
   final ValueChanged<String> onToggleGroup;
 
+  /// Open housekeeping issue count — the same number the web rail's red
+  /// `dash-sidebar__count` pill shows next to "Housekeeping". Zero hides it.
+  final int issueCount;
+
   /// Who is signed in and what property this is — the property's name and
   /// the signed-in user's name/role both show in the header above the nav.
   /// Null while `/me` is still loading.
@@ -57,6 +61,7 @@ class Sidebar extends StatelessWidget {
     required this.onSelect,
     required this.groupToggle,
     required this.onToggleGroup,
+    this.issueCount = 0,
     required this.me,
     required this.onProfileTap,
     required this.onLogoutTap,
@@ -83,6 +88,7 @@ class Sidebar extends StatelessWidget {
               groupToggle: groupToggle,
               onToggleGroup: onToggleGroup,
               collapsed: collapsed,
+              issueCount: issueCount,
               onProfileTap: onProfileTap,
             ),
           ),
@@ -116,6 +122,7 @@ class _SidebarNav extends StatefulWidget {
   final Map<String, bool> groupToggle;
   final ValueChanged<String> onToggleGroup;
   final bool collapsed;
+  final int issueCount;
 
   /// Opens the profile/settings screen — rendered as its own standalone row
   /// right below the last group, always visible and never collapsed with
@@ -130,6 +137,7 @@ class _SidebarNav extends StatefulWidget {
     required this.groupToggle,
     required this.onToggleGroup,
     required this.collapsed,
+    this.issueCount = 0,
     required this.onProfileTap,
   });
 
@@ -138,7 +146,9 @@ class _SidebarNav extends StatefulWidget {
     'Rooms',
     'Restaurant',
     'Events',
+    'Housekeeping',
     'Finance & Management',
+    'Customers',
     'Reports & Analytics',
     'Setup',
   ];
@@ -192,6 +202,7 @@ class _SidebarNavState extends State<_SidebarNav> {
       feature: f,
       selected: f.key == widget.activeKey,
       collapsed: widget.collapsed,
+      badgeCount: f.key == 'housekeeping' ? widget.issueCount : 0,
       onTap: () => widget.onSelect(f.key),
     ),
   );
@@ -215,67 +226,83 @@ class _SidebarNavState extends State<_SidebarNav> {
         if (features.any((f) => f.group == g)) g,
     ];
 
-    return ListView(
+    // A SingleChildScrollView + Column rather than a lazy ListView: every row
+    // must exist for [_scrollToActive] to find its context, and a group far
+    // down (Reports & Analytics) is never built by a ListView until scrolled to.
+    return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
         vertical: AppTheme.s16 + 2,
         horizontal: collapsed ? AppTheme.s8 : AppTheme.s12 + 2,
       ),
-      children: [
-        if (ungrouped.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s16 + 6),
-            child: Column(
-              children: [for (final f in ungrouped) _item(f)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (ungrouped.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppTheme.s16 + 6),
+              child: Column(children: [for (final f in ungrouped) _item(f)]),
             ),
-          ),
-        for (int i = 0; i < groups.length; i++)
-          Padding(
-            padding: EdgeInsets.only(
-              bottom: i == groups.length - 1 ? 0 : AppTheme.s16 + 6,
-            ),
-            child: Column(
-              children: [
-                // Collapsed mode has no room for a group label, so rows sit
-                // flat with a hairline divider between clusters instead —
-                // the grouping still reads, just without the text that
-                // would otherwise wrap or clip at 72px.
-                if (collapsed) ...[
-                  if (i > 0)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
-                      child: Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: AppTheme.sidebarBorder,
+          for (int i = 0; i < groups.length; i++)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: i == groups.length - 1 ? 0 : AppTheme.s16 + 6,
+              ),
+              child: Column(
+                children: [
+                  // Collapsed mode has no room for a group label, so rows sit
+                  // flat with a hairline divider between clusters instead —
+                  // the grouping still reads, just without the text that
+                  // would otherwise wrap or clip at 72px.
+                  if (collapsed) ...[
+                    if (i > 0)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
+                        child: Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: AppTheme.sidebarBorder,
+                        ),
                       ),
-                    ),
-                  for (final f in features.where((f) => f.group == groups[i]))
-                    _item(f),
-                ] else ...[
-                  _GroupHeader(
-                    title: groups[i],
-                    expanded: _groupOpen(groups[i], activeGroup),
-                    onTap: () => widget.onToggleGroup(groups[i]),
-                  ),
-                  if (_groupOpen(groups[i], activeGroup))
-                    for (final f in features.where(
-                      (f) => f.group == groups[i],
-                    ))
+                    for (final f in features.where((f) => f.group == groups[i]))
                       _item(f),
+                  ] else ...[
+                    _GroupHeader(
+                      title: groups[i],
+                      expanded: _groupOpen(groups[i], activeGroup),
+                      onTap: () => widget.onToggleGroup(groups[i]),
+                      // Mirrors the web rail: the group-level badge only shows
+                      // while the group is collapsed — once it's open, the
+                      // Housekeeping row itself carries the count instead.
+                      badgeCount:
+                          groups[i] == 'Housekeeping' &&
+                              !_groupOpen(groups[i], activeGroup)
+                          ? widget.issueCount
+                          : 0,
+                    ),
+                    if (_groupOpen(groups[i], activeGroup))
+                      for (final f in features.where(
+                        (f) => f.group == groups[i],
+                      ))
+                        _item(f),
+                  ],
                 ],
-              ],
+              ),
+            ),
+          // Below every group, its own row rather than folded into any of
+          // them — Settings isn't gated by a permission the way the groups
+          // above it are, so it never collapses with one and never needs its
+          // own header.
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
+            child: const Divider(
+              height: 1,
+              thickness: 1,
+              color: AppTheme.sidebarBorder,
             ),
           ),
-        // Below every group, its own row rather than folded into any of
-        // them — Settings isn't gated by a permission the way the groups
-        // above it are, so it never collapses with one and never needs its
-        // own header.
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
-          child: const Divider(height: 1, thickness: 1, color: AppTheme.sidebarBorder),
-        ),
-        _SettingsNavRow(collapsed: collapsed, onTap: widget.onProfileTap),
-      ],
+          _SettingsNavRow(collapsed: collapsed, onTap: widget.onProfileTap),
+        ],
+      ),
     );
   }
 }
@@ -533,7 +560,9 @@ class _SidebarFooter extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppTheme.rMedium),
           hoverColor: AppTheme.danger.withValues(alpha: 0.08),
           onTap: enabled ? onLogoutTap : null,
-          child: collapsed ? Tooltip(message: 'Sign out', child: content) : content,
+          child: collapsed
+              ? Tooltip(message: 'Sign out', child: content)
+              : content,
         ),
       ),
     );
@@ -544,12 +573,14 @@ class _SidebarItem extends StatelessWidget {
   final Feature feature;
   final bool selected;
   final bool collapsed;
+  final int badgeCount;
   final VoidCallback onTap;
 
   const _SidebarItem({
     required this.feature,
     required this.selected,
     required this.collapsed,
+    this.badgeCount = 0,
     required this.onTap,
   });
 
@@ -562,7 +593,24 @@ class _SidebarItem extends StatelessWidget {
     );
 
     final row = collapsed
-        ? SizedBox(height: 40, child: Center(child: icon))
+        ? SizedBox(
+            height: 40,
+            child: Center(
+              child: badgeCount <= 0
+                  ? icon
+                  : Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        icon,
+                        Positioned(
+                          right: -6,
+                          top: -4,
+                          child: _CountBadge(count: badgeCount),
+                        ),
+                      ],
+                    ),
+            ),
+          )
         : Row(
             children: [
               // The web's own short left-edge bar on the selected row — a
@@ -594,10 +642,16 @@ class _SidebarItem extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: selected ? AppTheme.sidebarBrandInk : AppTheme.sidebarText,
+                    color: selected
+                        ? AppTheme.sidebarBrandInk
+                        : AppTheme.sidebarText,
                   ),
                 ),
               ),
+              if (badgeCount > 0) ...[
+                const SizedBox(width: AppTheme.s8),
+                _CountBadge(count: badgeCount),
+              ],
             ],
           );
 
@@ -606,9 +660,7 @@ class _SidebarItem extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
-        hoverColor: selected
-            ? AppTheme.sidebarBrandWash
-            : AppTheme.bg,
+        hoverColor: selected ? AppTheme.sidebarBrandWash : AppTheme.bg,
         onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
@@ -630,7 +682,9 @@ class _SidebarItem extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
-      child: collapsed ? Tooltip(message: feature.title, child: button) : button,
+      child: collapsed
+          ? Tooltip(message: feature.title, child: button)
+          : button,
     );
   }
 }
@@ -641,15 +695,23 @@ class _SidebarItem extends StatelessWidget {
 /// leftover item tacked on below the real groups — the one difference is
 /// the trailing icon: a plain chevron rather than the rotating one, since
 /// tapping this pushes a new screen instead of expanding rows in place.
-class _SettingsNavRow extends StatelessWidget {
+class _SettingsNavRow extends StatefulWidget {
   final bool collapsed;
   final VoidCallback onTap;
 
   const _SettingsNavRow({required this.collapsed, required this.onTap});
 
   @override
+  State<_SettingsNavRow> createState() => _SettingsNavRowState();
+}
+
+class _SettingsNavRowState extends State<_SettingsNavRow> {
+  bool _open = false;
+
+  @override
   Widget build(BuildContext context) {
-    if (collapsed) {
+    final onTap = widget.onTap;
+    if (widget.collapsed) {
       final button = Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
@@ -660,7 +722,11 @@ class _SettingsNavRow extends StatelessWidget {
           child: const SizedBox(
             height: 40,
             child: Center(
-              child: Icon(Icons.settings_outlined, size: 20, color: AppTheme.sidebarTextMuted),
+              child: Icon(
+                Icons.settings_outlined,
+                size: 20,
+                color: AppTheme.sidebarTextMuted,
+              ),
             ),
           ),
         ),
@@ -668,37 +734,91 @@ class _SettingsNavRow extends StatelessWidget {
       return Tooltip(message: 'Settings', child: button);
     }
 
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(AppTheme.rSmall),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppTheme.rSmall),
-        hoverColor: AppTheme.bg,
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, AppTheme.s8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'SETTINGS',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.sidebarText,
-                    letterSpacing: 0.9,
+    // Same grammar as [_GroupHeader]: the header only expands, and the
+    // Profile row inside it is what actually opens the screen.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+            hoverColor: AppTheme.bg,
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s12,
+                AppTheme.s4,
+                AppTheme.s12,
+                AppTheme.s8,
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'SETTINGS',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.sidebarText,
+                        letterSpacing: 0.9,
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _open ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 150),
+                    child: const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: AppTheme.sidebarTextMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (_open)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
+                hoverColor: AppTheme.bg,
+                onTap: onTap,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppTheme.s12,
+                    vertical: AppTheme.s8 + 1,
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(width: AppTheme.s8 + 3),
+                      Icon(
+                        Icons.person_outline_rounded,
+                        size: 18,
+                        color: AppTheme.sidebarTextMuted,
+                      ),
+                      SizedBox(width: AppTheme.s12 - 2),
+                      Text(
+                        'Profile',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.sidebarText,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 16,
-                color: AppTheme.sidebarTextMuted,
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+      ],
     );
   }
 }
@@ -709,11 +829,13 @@ class _SettingsNavRow extends StatelessWidget {
 class _GroupHeader extends StatelessWidget {
   final String title;
   final bool expanded;
+  final int badgeCount;
   final VoidCallback onTap;
 
   const _GroupHeader({
     required this.title,
     required this.expanded,
+    this.badgeCount = 0,
     required this.onTap,
   });
 
@@ -746,6 +868,10 @@ class _GroupHeader extends StatelessWidget {
                   ),
                 ),
               ),
+              if (badgeCount > 0) ...[
+                _CountBadge(count: badgeCount),
+                const SizedBox(width: AppTheme.s8),
+              ],
               AnimatedRotation(
                 duration: const Duration(milliseconds: 150),
                 turns: expanded ? 0.5 : 0,
@@ -757,6 +883,39 @@ class _GroupHeader extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The small red count pill both the item row and the group header use —
+/// same red (`AppTheme.danger`) pill the Housekeeping screen's own "Issues"
+/// sub-tab badge already uses, so the number reads the same wherever it
+/// shows up in the app.
+class _CountBadge extends StatelessWidget {
+  final int count;
+
+  const _CountBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 18),
+      height: 18,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      decoration: const BoxDecoration(
+        color: AppTheme.danger,
+        borderRadius: BorderRadius.all(Radius.circular(999)),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          height: 1,
         ),
       ),
     );

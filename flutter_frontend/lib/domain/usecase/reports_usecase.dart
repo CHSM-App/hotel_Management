@@ -42,6 +42,16 @@ class ReportsUsecase {
     String compareMode = 'previous_period',
   }) => repository.analyticsOverview(fromDate: fromDate, toDate: toDate, compareMode: compareMode);
 
+  Future<ServicesReport> servicesReport({
+    required String fromDate,
+    required String toDate,
+  }) => repository.servicesReport(fromDate: fromDate, toDate: toDate);
+
+  Future<LaundryReport> laundryReport({
+    required String fromDate,
+    required String toDate,
+  }) => repository.laundryReport(fromDate: fromDate, toDate: toDate);
+
   Future<ProfitLossReport> profitLoss({
     required String fromDate,
     required String toDate,

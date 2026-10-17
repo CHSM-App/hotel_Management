@@ -43,74 +43,157 @@ class _PaymentRowState extends State<PaymentRow> {
     super.dispose();
   }
 
+  /// A distinct mark per method so the closed field and the open menu read
+  /// at a glance rather than by the label text alone.
+  static IconData _iconFor(String method) => switch (method) {
+        'CASH' => Icons.payments_outlined,
+        'UPI' => Icons.qr_code_scanner_rounded,
+        'CARD' => Icons.credit_card_rounded,
+        _ => Icons.account_balance_wallet_outlined,
+      };
+
+  Widget _methodDropdown() {
+    return SizedBox(
+      height: 44,
+      child: NeuPressed(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: widget.line.method,
+            isExpanded: true,
+            isDense: true,
+            icon: const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: AppTheme.muted,
+              size: 20,
+            ),
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
+            elevation: 6,
+            dropdownColor: AppTheme.card,
+            hint: const Text(
+              'Choose one',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: AppTheme.muted, fontSize: 13),
+            ),
+            // A compact icon + label once closed — the fuller row below is
+            // only worth the width while the menu is open.
+            selectedItemBuilder: (context) => [
+              for (final e in kPaymentMethods.entries)
+                Row(
+                  children: [
+                    Icon(_iconFor(e.key), size: 16, color: AppTheme.accent),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: Text(
+                        e.value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.heading,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+            items: [
+              for (final e in kPaymentMethods.entries)
+                DropdownMenuItem(
+                  value: e.key,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 26,
+                        height: 26,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withValues(alpha: 0.10),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(_iconFor(e.key), size: 14, color: AppTheme.accent),
+                      ),
+                      const SizedBox(width: AppTheme.s12),
+                      Text(
+                        e.value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+            onChanged: (m) {
+              setState(() => widget.line.method = m);
+              widget.onChanged();
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Expanded(
-              child: NeuPressed(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: widget.line.method,
-                    isExpanded: true,
-                    dropdownColor: AppTheme.bg,
-                    hint: const Text(
-                      'Choose one',
-                      style: TextStyle(color: AppTheme.muted, fontSize: 14),
-                    ),
-                    items: [
-                      for (final e in kPaymentMethods.entries)
-                        DropdownMenuItem(value: e.key, child: Text(e.value)),
-                    ],
-                    onChanged: (m) {
-                      setState(() => widget.line.method = m);
-                      widget.onChanged();
-                    },
-                  ),
-                ),
-              ),
-            ),
+            Expanded(child: _methodDropdown()),
             const SizedBox(width: AppTheme.s8),
             SizedBox(
-              width: 96,
-              child: NeuPressed(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                child: TextField(
-                  controller: _amount,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.right,
-                  onTap: () => _amount.selection = TextSelection(
-                    baseOffset: 0,
-                    extentOffset: _amount.text.length,
-                  ),
-                  onChanged: (v) {
-                    widget.line.amount = v;
-                    widget.onChanged();
-                  },
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 13,
-                  ),
-                  decoration: const InputDecoration(
-                    hintText: '0',
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 10),
-                  ),
+              height: 36,
+              width: 36,
+              child: IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: widget.onRemove == null
+                    ? AppTheme.muted.withValues(alpha: 0.4)
+                    : AppTheme.danger,
+                onPressed: widget.onRemove,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s8),
+        SizedBox(
+          height: 44,
+          width: double.infinity,
+          child: NeuPressed(
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+            child: Center(
+              child: TextField(
+                controller: _amount,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.left,
+                onTap: () => _amount.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: _amount.text.length,
+                ),
+                onChanged: (v) {
+                  widget.line.amount = v;
+                  widget.onChanged();
+                },
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontSize: 13,
+                ),
+                decoration: const InputDecoration(
+                  hintText: '0',
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
                 ),
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20),
-              color: widget.onRemove == null
-                  ? AppTheme.muted.withValues(alpha: 0.4)
-                  : AppTheme.danger,
-              onPressed: widget.onRemove,
-            ),
-          ],
+          ),
         ),
         // Only for money that left a trail — asking for a reference against
         // cash is asking for one to be invented.

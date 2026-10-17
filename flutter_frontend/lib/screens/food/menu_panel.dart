@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/menu.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../presentation/view_models/menu_viewmodel.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'menu_excel_import.dart';
@@ -24,19 +26,111 @@ class _MenuPanelState extends ConsumerState<MenuPanel> {
   int? _activeSectionId;
   bool _isTableView = true;
 
+  // Pins the section-pill strip to the top of the scroll view while every
+  // section's dishes scroll underneath it in one long list — a real sliver
+  // header, same as the counter-order screen's own sticky menu tabs —
+  // instead of the old "tap a pill, only that section renders" filter.
+  // Tapping a pill scrolls to its section; scrolling past a section's
+  // heading swaps the highlighted pill to match.
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _scrollViewportKey = GlobalKey();
+  final Map<int, GlobalKey> _sectionAnchorKeys = {};
+  List<int> _renderedSectionIds = const [];
+
+  static const double _tabsHeight = 44;
+
+  GlobalKey _sectionAnchorKey(int id) =>
+      _sectionAnchorKeys.putIfAbsent(id, GlobalKey.new);
+
   @override
   void initState() {
     super.initState();
     Future.microtask(() => ref.read(menuViewModelProvider.notifier).load());
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  double? _anchorTop(GlobalKey? key) {
+    final renderObject = key?.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) return null;
+    return renderObject.localToGlobal(Offset.zero).dy;
+  }
+
+  /// The scroll viewport's own top (fixed on screen) plus the pinned pill
+  /// strip's height — the line a section heading has to climb above to
+  /// count as "under the tabs."
+  double _thresholdY() {
+    final renderObject = _scrollViewportKey.currentContext?.findRenderObject();
+    final viewportTop = (renderObject is RenderBox && renderObject.attached)
+        ? renderObject.localToGlobal(Offset.zero).dy
+        : 0.0;
+    return viewportTop + _tabsHeight;
+  }
+
+  void _onScroll() {
+    final threshold = _thresholdY();
+    int? next;
+    for (final id in _renderedSectionIds) {
+      final top = _anchorTop(_sectionAnchorKeys[id]);
+      if (top != null && top <= threshold) {
+        next = id;
+      } else {
+        break;
+      }
+    }
+    if (next != null && next != _activeSectionId) {
+      setState(() => _activeSectionId = next);
+    }
+  }
+
+  Future<void> _scrollToAnchor(GlobalKey? key) async {
+    if (key == null || !_scrollController.hasClients) return;
+    final renderObject = key.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) return;
+    final targetTop = renderObject.localToGlobal(Offset.zero).dy;
+    final delta = targetTop - _thresholdY();
+    final position = _scrollController.position;
+    final newOffset = (_scrollController.offset + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    await _scrollController.animateTo(
+      newOffset,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  /// Tapping a pill is the one case where the tap itself — not wherever the
+  /// scroll settles — says which section is "selected": [_onScroll] reads
+  /// anchor positions on every frame of the animation this kicks off, and a
+  /// frame right as the scroll settles can misjudge which section's heading
+  /// is at the threshold, leaving a different pill highlighted than the one
+  /// just tapped. Re-asserting the tapped section once the scroll actually
+  /// finishes makes the tap authoritative over whatever [_onScroll] guessed
+  /// mid-flight.
+  void _selectSection(MenuSection section) {
+    setState(() => _activeSectionId = section.id);
+    _scrollToAnchor(_sectionAnchorKeys[section.id]).then((_) {
+      if (!mounted) return;
+      setState(() => _activeSectionId = section.id);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(menuViewModelProvider);
     final sections = state.sections;
-    final active = sections.any((s) => s.id == _activeSectionId)
-        ? sections.firstWhere((s) => s.id == _activeSectionId)
-        : (sections.isNotEmpty ? sections.first : null);
+    _renderedSectionIds = sections.map((s) => s.id).toList();
+    final selectedId = sections.any((s) => s.id == _activeSectionId)
+        ? _activeSectionId
+        : (sections.isNotEmpty ? sections.first.id : null);
 
     return Stack(
       fit: StackFit.expand,
@@ -44,160 +138,142 @@ class _MenuPanelState extends ConsumerState<MenuPanel> {
         RefreshIndicator(
           onRefresh: () => ref.read(menuViewModelProvider.notifier).load(),
           color: AppTheme.accent,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-              AppTheme.s16,
-              AppTheme.s4,
-              AppTheme.s16,
-              96,
-            ),
+          child: CustomScrollView(
+            key: _scrollViewportKey,
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${sections.length} sections · '
-                      '${sections.fold<int>(0, (n, s) => n + s.items.length)} dishes',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+            // A menu tops out at a few hundred dishes across a handful of
+            // sections — mounting every section up front (rather than
+            // Flutter's default 250px cache extent) is cheap enough to trade
+            // for tap-to-scroll and scroll-highlight actually reaching a
+            // section several screens down.
+            cacheExtent: 20000,
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.s16,
+                    AppTheme.s4,
+                    AppTheme.s16,
+                    AppTheme.s4,
                   ),
-                  _ViewToggle(
-                    isTableView: _isTableView,
-                    onChanged: (v) => setState(() => _isTableView = v),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Wrap(
-                alignment: WrapAlignment.end,
-                spacing: AppTheme.s8,
-                runSpacing: 4,
-                children: [
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.s8,
-                        vertical: 4,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${sections.length} sections · '
+                        '${sections.fold<int>(0, (n, s) => n + s.items.length)} dishes',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
-                    ),
-                    onPressed: () => showMenuImportDialog(context),
-                    icon: const Icon(Icons.file_upload_outlined, size: 16),
-                    label: const Text('Import'),
-                  ),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.s8,
-                        vertical: 4,
+                      const SizedBox(height: 4),
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: AppTheme.s8,
+                        runSpacing: 4,
+                        children: [
+                          _ChipButton(
+                            icon: Icons.file_upload_outlined,
+                            label: 'Import',
+                            color: AppTheme.muted,
+                            onTap: () => showMenuImportDialog(context),
+                          ),
+                          _ChipButton(
+                            icon: Icons.add_rounded,
+                            label: 'Section',
+                            color: AppTheme.accent,
+                            filled: true,
+                            onTap: () => _showSectionForm(context, ref),
+                          ),
+                          if (sections.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                right: AppTheme.s8,
+                              ),
+                              child: _ViewToggle(
+                                isTableView: _isTableView,
+                                onChanged: (v) =>
+                                    setState(() => _isTableView = v),
+                              ),
+                            ),
+                        ],
                       ),
-                    ),
-                    onPressed: () => _showSectionForm(context, ref),
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: const Text('Section'),
+                    ],
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 4),
               if (state.isLoading && sections.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: CircularProgressIndicator(),
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(),
+                    ),
                   ),
                 )
               else if (state.error != null && sections.isEmpty)
-                NeuNotice(icon: Icons.cloud_off_rounded, message: state.error!)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s16,
+                    ),
+                    child: NeuNotice(
+                      icon: Icons.cloud_off_rounded,
+                      message: state.error!,
+                    ),
+                  ),
+                )
               else if (sections.isEmpty)
-                NeuNotice(
-                  icon: Icons.restaurant_menu_rounded,
-                  message:
-                      'No menu yet. Add a section like "Thali" or "Tandoor", '
-                      'then add a dish to it.',
-                  action: NeuButton(
-                    onPressed: () => _showSectionForm(context, ref),
-                    child: const Text('Add a section'),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s16,
+                    ),
+                    child: NeuNotice(
+                      icon: Icons.restaurant_menu_rounded,
+                      message:
+                          'No menu yet. Add a section like "Thali" or "Tandoor", '
+                          'then add a dish to it.',
+                      action: NeuButton(
+                        onPressed: () => _showSectionForm(context, ref),
+                        child: const Text('Add a section'),
+                      ),
+                    ),
                   ),
                 )
               else ...[
-                SizedBox(
-                  height: 32,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: sections.length,
-                    separatorBuilder: (_, __) =>
-                        const SizedBox(width: AppTheme.s8),
-                    itemBuilder: (context, i) {
-                      final s = sections[i];
-                      final selected = s.id == active?.id;
-                      final out = s.items.where((it) => !it.isAvailable).length;
-                      return GestureDetector(
-                        onTap: () => setState(() => _activeSectionId = s.id),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.s12,
-                          ),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: selected ? AppTheme.accent : AppTheme.card,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: selected
-                                  ? AppTheme.accent
-                                  : AppTheme.border,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                s.name,
-                                style: TextStyle(
-                                  color: selected
-                                      ? Colors.white
-                                      : (s.isActive
-                                            ? AppTheme.text
-                                            : AppTheme.muted),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${s.items.length}',
-                                style: TextStyle(
-                                  color: selected
-                                      ? Colors.white70
-                                      : AppTheme.muted,
-                                  fontSize: 11,
-                                ),
-                              ),
-                              if (out > 0) ...[
-                                const SizedBox(width: 4),
-                                Icon(
-                                  Icons.error,
-                                  size: 12,
-                                  color: selected
-                                      ? Colors.white
-                                      : AppTheme.draft,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _StickySectionTabsDelegate(
+                    height: _tabsHeight,
+                    sections: sections,
+                    selectedId: selectedId,
+                    onSelect: _selectSection,
                   ),
                 ),
-                const SizedBox(height: AppTheme.s8),
-                if (active != null)
-                  _SectionBody(
-                    section: active,
-                    allSections: sections,
-                    isTableView: _isTableView,
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.s16,
+                    AppTheme.s8,
+                    AppTheme.s16,
+                    96,
                   ),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      for (final section in sections)
+                        Padding(
+                          key: _sectionAnchorKey(section.id),
+                          padding: const EdgeInsets.only(bottom: AppTheme.s16),
+                          child: _SectionBody(
+                            section: section,
+                            allSections: sections,
+                            isTableView: _isTableView,
+                          ),
+                        ),
+                    ]),
+                  ),
+                ),
               ],
             ],
           ),
@@ -213,7 +289,7 @@ class _MenuPanelState extends ConsumerState<MenuPanel> {
                 : () => showMenuItemFormPage(
                     context,
                     sections: sections,
-                    defaultCategoryId: active?.id,
+                    defaultCategoryId: selectedId,
                   ),
             child: const Icon(Icons.add_rounded),
           ),
@@ -221,6 +297,115 @@ class _MenuPanelState extends ConsumerState<MenuPanel> {
       ],
     );
   }
+}
+
+/// The section-pill strip, pinned above the scrolling dish list — tapping a
+/// pill scrolls to that section ([_MenuPanelState._selectSection]), and
+/// scrolling the list past a section's heading swaps the highlighted pill to
+/// match ([_MenuPanelState._onScroll]).
+class _StickySectionTabsDelegate extends SliverPersistentHeaderDelegate {
+  final double height;
+  final List<MenuSection> sections;
+  final int? selectedId;
+  final ValueChanged<MenuSection> onSelect;
+
+  _StickySectionTabsDelegate({
+    required this.height,
+    required this.sections,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  @override
+  double get minExtent => height;
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(
+      height: height,
+      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        boxShadow: overlapsContent
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
+      child: SizedBox(
+        height: 32,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: sections.length,
+          separatorBuilder: (_, __) => const SizedBox(width: AppTheme.s8),
+          itemBuilder: (context, i) {
+            final s = sections[i];
+            final selected = s.id == selectedId;
+            final out = s.items.where((it) => !it.isAvailable).length;
+            return GestureDetector(
+              onTap: () => onSelect(s),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? AppTheme.accent : AppTheme.card,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: selected ? AppTheme.accent : AppTheme.border,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      s.name,
+                      style: TextStyle(
+                        color: selected
+                            ? Colors.white
+                            : (s.isActive ? AppTheme.text : AppTheme.muted),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${s.items.length}',
+                      style: TextStyle(
+                        color: selected ? Colors.white70 : AppTheme.muted,
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (out > 0) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.error,
+                        size: 12,
+                        color: selected ? Colors.white : AppTheme.draft,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _StickySectionTabsDelegate oldDelegate) =>
+      oldDelegate.sections != sections || oldDelegate.selectedId != selectedId;
 }
 
 class _SectionBody extends ConsumerWidget {
@@ -251,122 +436,143 @@ class _SectionBody extends ConsumerWidget {
         .where((i) => i.foodType == 'NON_VEG')
         .toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Text(
-                section.name,
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
+    // Faded, not hidden — same 0.68 opacity the web dashboard's own
+    // .menu-section--off applies to a hidden section's whole card, so a
+    // section a guest can't see still reads at a glance as "this one's off"
+    // rather than looking identical to a live one.
+    return Opacity(
+      opacity: section.isActive ? 1 : 0.68,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title, "Add item", "Mark all out" and the kebab all on one line —
+          // same row the web dashboard's own section head puts them on,
+          // rather than the actions wrapping to a row of their own below.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  section.name,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
-            // Shrinks the kebab's tap target from Material's 48dp minimum
-            // down to its icon size, so a one-line heading like this one
-            // isn't left with a wide empty band below it to match.
-            Theme(
-              data: Theme.of(context).copyWith(
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              if (!section.isActive) ...[
+                const SizedBox(width: 6),
+                const _Badge('Hidden', AppTheme.muted),
+                const SizedBox(width: 4),
+              ],
+              // Icon-only beside the title — the labels live in each button's
+              // own tooltip — so a long section name keeps most of the row
+              // instead of being squeezed down to a couple of letters.
+              _IconChipButton(
+                icon: Icons.add_rounded,
+                tooltip: 'Add item',
+                color: AppTheme.accent,
+                filled: true,
+                onTap: () => showMenuItemFormPage(
+                  context,
+                  sections: allSections,
+                  defaultCategoryId: section.id,
+                ),
               ),
-              child: NeuRowMenu(
-                onEdit: () =>
-                    _showSectionForm(context, ref, section: section),
-                onDelete: () => _confirmDeleteSection(context, ref),
+              if (section.items.isNotEmpty) ...[
+                const SizedBox(width: AppTheme.s4),
+                _IconChipButton(
+                  icon: allOut
+                      ? Icons.restart_alt_rounded
+                      : Icons.block_rounded,
+                  tooltip: allOut ? 'Bring all back' : 'Mark all out',
+                  color: allOut ? AppTheme.vacant : AppTheme.danger,
+                  onTap: () => allOut
+                      ? vm.setSectionAvailability(section.id, true)
+                      : _confirmMarkAllOut(context, vm),
+                ),
+              ],
+              // Shrinks the kebab's tap target from Material's 48dp minimum
+              // down to its icon size, so a one-line heading like this one
+              // isn't left with a wide empty band below it to match.
+              Theme(
+                data: Theme.of(context).copyWith(
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: NeuRowMenu(
+                  onEdit: () =>
+                      _showSectionForm(context, ref, section: section),
+                  onDelete: () => _confirmDeleteSection(context, ref),
+                  extraLabel: section.isActive
+                      ? 'Hide from guests'
+                      : 'Show to guests',
+                  extraIcon: section.isActive
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  onExtra: () =>
+                      vm.setSectionActive(section.id, !section.isActive),
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        // A second row for the actions rather than crowding them beside the
-        // title: "Mark all out" plus "Add item" beside a long section name
-        // wrapped or clipped on a phone-width screen when they all rode the
-        // same row as the title.
-        Wrap(
-          alignment: WrapAlignment.end,
-          spacing: AppTheme.s8,
-          runSpacing: 4,
-          children: [
-            if (section.items.isNotEmpty)
-              _ChipButton(
-                icon: allOut ? Icons.restart_alt_rounded : Icons.block_rounded,
-                label: allOut ? 'Bring all back' : 'Mark all out',
-                color: allOut ? AppTheme.vacant : AppTheme.danger,
-                onTap: () => vm.setSectionAvailability(section.id, allOut),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s4),
+          if (section.items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppTheme.s16),
+              child: Text(
+                'Nothing in this section yet.',
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-            _ChipButton(
-              icon: Icons.add_rounded,
-              label: 'Add item',
-              color: AppTheme.accent,
-              filled: true,
-              onTap: () => showMenuItemFormPage(
-                context,
+            )
+          else if (isTableView) ...[
+            if (vegItems.isNotEmpty)
+              _FoodTypeTableGroup(
+                label: 'Veg',
+                color: AppTheme.vacant,
+                items: vegItems,
                 sections: allSections,
-                defaultCategoryId: section.id,
               ),
-            ),
+            if (eggItems.isNotEmpty)
+              _FoodTypeTableGroup(
+                label: 'Egg',
+                color: AppTheme.draft,
+                items: eggItems,
+                sections: allSections,
+              ),
+            if (nonVegItems.isNotEmpty)
+              _FoodTypeTableGroup(
+                label: 'Non-veg',
+                color: AppTheme.danger,
+                items: nonVegItems,
+                sections: allSections,
+              ),
+          ] else ...[
+            if (vegItems.isNotEmpty)
+              _FoodTypeGroup(
+                label: 'Veg',
+                color: AppTheme.vacant,
+                items: vegItems,
+                sections: allSections,
+              ),
+            if (eggItems.isNotEmpty)
+              _FoodTypeGroup(
+                label: 'Egg',
+                color: AppTheme.draft,
+                items: eggItems,
+                sections: allSections,
+              ),
+            if (nonVegItems.isNotEmpty)
+              _FoodTypeGroup(
+                label: 'Non-veg',
+                color: AppTheme.danger,
+                items: nonVegItems,
+                sections: allSections,
+              ),
           ],
-        ),
-        const SizedBox(height: AppTheme.s8),
-        if (section.items.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppTheme.s16),
-            child: Text(
-              'Nothing in this section yet.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          )
-        else if (isTableView) ...[
-          if (vegItems.isNotEmpty)
-            _FoodTypeTableGroup(
-              label: 'Veg',
-              color: AppTheme.vacant,
-              items: vegItems,
-              sections: allSections,
-            ),
-          if (eggItems.isNotEmpty)
-            _FoodTypeTableGroup(
-              label: 'Egg',
-              color: AppTheme.draft,
-              items: eggItems,
-              sections: allSections,
-            ),
-          if (nonVegItems.isNotEmpty)
-            _FoodTypeTableGroup(
-              label: 'Non-veg',
-              color: AppTheme.danger,
-              items: nonVegItems,
-              sections: allSections,
-            ),
-        ] else ...[
-          if (vegItems.isNotEmpty)
-            _FoodTypeGroup(
-              label: 'Veg',
-              color: AppTheme.vacant,
-              items: vegItems,
-              sections: allSections,
-            ),
-          if (eggItems.isNotEmpty)
-            _FoodTypeGroup(
-              label: 'Egg',
-              color: AppTheme.draft,
-              items: eggItems,
-              sections: allSections,
-            ),
-          if (nonVegItems.isNotEmpty)
-            _FoodTypeGroup(
-              label: 'Non-veg',
-              color: AppTheme.danger,
-              items: nonVegItems,
-              sections: allSections,
-            ),
         ],
-      ],
+      ),
     );
   }
 
@@ -399,6 +605,44 @@ class _SectionBody extends ConsumerWidget {
     );
     if (sure != true) return;
     await ref.read(menuViewModelProvider.notifier).deleteSection(section.id);
+  }
+
+  /// Same confirm the web dashboard asks before this bulk write — it takes a
+  /// whole course off the guest's menu in one tap, reached easily by a thumb
+  /// in a busy kitchen, so it's asked about first rather than applied
+  /// straight away like "Bring all back" (the harmless direction) is.
+  Future<void> _confirmMarkAllOut(
+    BuildContext context,
+    MenuViewModel vm,
+  ) async {
+    final on = section.items.where((i) => i.isAvailable).length;
+    if (on == 0) return;
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.bg,
+        title: Text(
+          'Mark all $on dish${on == 1 ? '' : 'es'} in "${section.name}" '
+          'out of stock?',
+          style: const TextStyle(color: AppTheme.heading, fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Mark all out',
+              style: TextStyle(color: AppTheme.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (sure != true) return;
+    await vm.setSectionAvailability(section.id, false);
   }
 }
 
@@ -635,6 +879,43 @@ class _ChipButton extends StatelessWidget {
   }
 }
 
+/// A round icon-only button — [_ChipButton] without the label, for a row
+/// (the section head) too tight to spell every action out. The label still
+/// reaches an accessibility reader / long-press hint through [tooltip].
+class _IconChipButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final bool filled;
+  final VoidCallback onTap;
+  const _IconChipButton({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: filled ? color : color.withValues(alpha: 0.1),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Icon(icon, size: 16, color: filled ? Colors.white : color),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Toggles a section's dishes between the card grid and a scrollable
 /// spreadsheet-style table — same two pills look as the section strip above
 /// it, just two icons instead of names.
@@ -747,29 +1028,21 @@ class _DishTable extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Scrollbar(
-        thumbVisibility: true,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.only(bottom: 6),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              minWidth: _rowWidth + AppTheme.s12 * 2,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _DishTableHeader(),
-                for (var i = 0; i < items.length; i++)
-                  _DishTableRow(
-                    item: items[i],
-                    sections: sections,
-                    striped: i.isOdd,
-                    isLast: i == items.length - 1,
-                  ),
-              ],
-            ),
+      child: HScrollTable(
+        rowsScrollbar: true,
+        child: SizedBox(
+          width: _rowWidth + AppTheme.s12 * 2,
+          child: StickyHeaderTable(
+            header: const _DishTableHeader(),
+            rows: [
+              for (var i = 0; i < items.length; i++)
+                _DishTableRow(
+                  item: items[i],
+                  sections: sections,
+                  striped: i.isOdd,
+                  isLast: i == items.length - 1,
+                ),
+            ],
           ),
         ),
       ),
@@ -1007,7 +1280,8 @@ class _DishTableRow extends ConsumerWidget {
                       const SizedBox(width: 2),
                       Theme(
                         data: Theme.of(context).copyWith(
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: NeuRowMenu(
                           onEdit: () => showMenuItemFormPage(
@@ -1393,6 +1667,32 @@ class _SectionFormDialogState extends ConsumerState<_SectionFormDialog> {
             children: [
               Row(
                 children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppTheme.accent, Color(0xFF10499A)],
+                      ),
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x331457AD),
+                          offset: Offset(0, 3),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      isEdit ? Icons.edit_rounded : Icons.view_agenda_rounded,
+                      color: Colors.white,
+                      size: 17,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s12),
                   Expanded(
                     child: Text(
                       isEdit ? 'Edit section' : 'New section',

@@ -328,12 +328,31 @@ export default function MenuPanel() {
   const [sections, setSections] = useState(() => readCache('/menu'));
   const [error, setError] = useState('');
 
-  // One section on screen at a time, chosen from the picker above it. A full à
-  // la carte menu runs past a hundred dishes; showing all ten sections at once
-  // is a scroll nobody can find anything in.
+  // The whole menu is one scroll, section after section — the picker above it
+  // is a shortcut into that scroll, not a filter on it, so it stays in sync
+  // with whichever section has actually reached the top as the kitchen scrolls
+  // past the others. Same pattern the guest-facing order page uses for the
+  // same reason: a menu read top to bottom is how a printed one works, and the
+  // tabs should follow that instead of replacing it.
   const [activeSectionId, setActiveSectionId] = useState(null);
   const [query, setQuery] = useState('');
   const [outOnly, setOutOnly] = useState(false);
+
+  // Every section's card, keyed by id: a tab scrolls to these, and the
+  // scrollspy below reads their positions to say which one is on screen.
+  const sectionRefs = useRef({});
+  // The sticky bar's own box, measured so the scrollspy knows how much of the
+  // top of the viewport it hides — see spyLine below.
+  const stickyRef = useRef(null);
+  // The tab strip, so the live tab can be scrolled into view on its own axis
+  // without touching the page's vertical scroll.
+  const tabStripWrapRef = useRef(null);
+  // A tab click scrolls the page, and that scroll would otherwise drive the
+  // scrollspy through every section it passes over on the way there — the
+  // strip would flicker through four tabs before landing on the fifth. Set
+  // while the smooth scroll runs, it holds the tab that was actually chosen.
+  const jumpingRef = useRef(false);
+  const jumpTimer = useRef(null);
 
   const [sectionForm, setSectionForm] = useState(emptySectionForm);
   const [editingSectionId, setEditingSectionId] = useState(null);
@@ -666,18 +685,21 @@ export default function MenuPanel() {
   const outOfStock =
     sections?.reduce((sum, s) => sum + s.items.filter((i) => !i.isAvailable).length, 0) ?? 0;
 
-  // Searching is a question about the whole menu, not the section on screen, so
-  // it steps over the picker and returns every section that has a hit.
+  // Not just the active section: the whole menu, one section after another, so
+  // scrolling reads it the way a printed card is read. Searching is a
+  // different question — it's about the whole menu regardless of position, so
+  // it steps over the picker's notion of "current" and returns every section
+  // that has a hit instead.
   const shownSections = useMemo(() => {
     if (!sections) return null;
-    if (!searching) return activeSection ? [activeSection] : [];
+    if (!searching) return sections;
     return sections
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => matchesFilters(item, needle, outOnly)),
       }))
       .filter((section) => section.items.length > 0);
-  }, [sections, activeSection, needle, outOnly, searching]);
+  }, [sections, needle, outOnly, searching]);
 
   const shownCount = shownSections?.reduce((sum, s) => sum + s.items.length, 0) ?? 0;
 
@@ -685,6 +707,88 @@ export default function MenuPanel() {
     setQuery('');
     setOutOnly(false);
   };
+
+  // How far down the viewport a section's card has to have travelled before it
+  // counts as the one on screen: everything under the sticky bar is hidden
+  // behind it, so the line where a card's top disappears under the bar is the
+  // line where the next section has taken over. Read off the bar's actual
+  // position rather than just its own height, since the bar sits below the
+  // app's topbar (--dash-topbar-h) and the obscured zone is both put together.
+  const spyLine = () => (stickyRef.current?.getBoundingClientRect().bottom ?? 0) + 12;
+
+  const goToSection = (id) => {
+    setActiveSectionId(id);
+
+    const el = sectionRefs.current[id];
+    if (!el) return;
+
+    jumpingRef.current = true;
+    window.clearTimeout(jumpTimer.current);
+    // A hair above the card's own top edge, so the section that just became
+    // active is unambiguously past the line and the spy agrees with the tab.
+    jumpTimer.current = window.setTimeout(() => {
+      jumpingRef.current = false;
+    }, 700);
+
+    window.scrollTo({
+      top: window.scrollY + el.getBoundingClientRect().top - spyLine() - 4,
+      behavior: 'smooth',
+    });
+  };
+
+  useEffect(() => () => window.clearTimeout(jumpTimer.current), []);
+
+  // The scrollspy. A plain scroll listener rather than an IntersectionObserver:
+  // what decides the active tab is which card was last crossed, which is a
+  // question about the order of every section at one instant, not about any
+  // one of them entering the viewport.
+  useEffect(() => {
+    if (searching || !sections || sections.length < 2) return undefined;
+
+    const onScroll = () => {
+      if (jumpingRef.current) return;
+
+      const line = spyLine();
+      let current = sections[0]?.id ?? null;
+
+      for (const section of sections) {
+        const el = sectionRefs.current[section.id];
+        if (!el) continue;
+        if (el.getBoundingClientRect().top - line <= 0) current = section.id;
+        else break;
+      }
+
+      // A short last section can't reach the top of a scrolled-out page, so
+      // it would never light up its own tab. At the bottom, it's the one
+      // being read whether or not its card made it that far.
+      const atBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+      if (atBottom) current = sections[sections.length - 1].id;
+
+      setActiveSectionId((prev) => (prev === current ? prev : current));
+    };
+
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [sections, searching]);
+
+  // Keeps the live tab on screen. The strip can hold more sections than a
+  // screen is wide, so the one scrolled into is sometimes off the end of it —
+  // this moves the strip, and only the strip, horizontally.
+  useEffect(() => {
+    const wrap = tabStripWrapRef.current;
+    if (!wrap || !activeSection) return;
+
+    const strip = wrap.querySelector('.tabstrip');
+    const tab = wrap.querySelector('.tabstrip__tab--on');
+    if (!strip || !tab) return;
+
+    strip.scrollTo({
+      left: tab.offsetLeft - (strip.clientWidth - tab.offsetWidth) / 2,
+      behavior: 'smooth',
+    });
+  }, [activeSection]);
 
   // Named in the dialog header so "Add a dish" says where it's going without
   // the owner having to read the Section field back.
@@ -744,6 +848,62 @@ export default function MenuPanel() {
     ? namedPortions.map((r) => `${r.label.trim()} ${priceOrDash(r.price)}`).join(' · ')
     : priceOrDash(itemForm.price);
 
+  // Shared by every section card in the scroll. isCurrent tints the one the
+  // tab strip is pointing at, so the section a cook has scrolled to is still
+  // obvious even without the sticky bar — a long section's own head can be
+  // well above the fold by the time its dishes fill the screen.
+  const renderSectionHead = (section, isCurrent) => {
+    const groups = groupByType(section.items);
+    return (
+      <div className={`menu-section__head${isCurrent ? ' menu-section__head--current' : ''}`}>
+        <div className="menu-section__heading">
+          <h3 className="menu-section__title">
+            {section.name}
+            {!section.isActive && <span className="badge badge--off">Hidden</span>}
+          </h3>
+          <p className="menu-section__meta">
+            {section.items.length} dish{section.items.length === 1 ? '' : 'es'}
+            {groups.map((group) => (
+              <span className="menu-section__tally" key={group.key}>
+                <FoodTypeMark type={group.key} />
+                {group.items.length} {group.label.toLowerCase()}
+              </span>
+            ))}
+          </p>
+        </div>
+        <div className="menu-section__actions">
+          <button type="button" onClick={() => openItemForm(null, section.id)}>
+            Add item
+          </button>
+          {/* The day-end action, in the open. When the fish is off,
+              every fish dish goes off together — see
+              setCategoryItemsAvailable in menu.service.js. */}
+          {section.items.length > 0 &&
+            (section.items.every((i) => !i.isAvailable) ? (
+              <button type="button" onClick={() => setSectionAvailability(section, true)}>
+                Bring all back
+              </button>
+            ) : (
+              <button type="button" onClick={() => setSectionAvailability(section, false)}>
+                Mark all out
+              </button>
+            ))}
+          <RowMenu label={`More actions for ${section.name}`}>
+            <button type="button" onClick={() => openSectionForm(section)}>
+              Edit section
+            </button>
+            <button type="button" onClick={() => toggleSectionActive(section)}>
+              {section.isActive ? 'Hide from guests' : 'Show to guests'}
+            </button>
+            <button type="button" className="menu-danger" onClick={() => deleteSection(section)}>
+              Delete section
+            </button>
+          </RowMenu>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="menu-panel">
       <div className="menu-bar">
@@ -780,21 +940,29 @@ export default function MenuPanel() {
 
         <div className="menu-bar__row menu-bar__row--stats">
           <div className="menu-stats">
-            <span className="menu-stat">
+            <span className="menu-stats__item">
               <strong>{sections?.length ?? '—'}</strong> sections
             </span>
-            <span className="menu-stat">
+            <span className="menu-stats__dot" aria-hidden="true" />
+            <span className="menu-stats__item">
               <strong>{itemCount}</strong> dishes
             </span>
-            <button
-              type="button"
-              className={`menu-stat menu-stat--btn ${outOnly ? 'is-on' : ''}`}
-              aria-pressed={outOnly}
-              onClick={() => setOutOnly((v) => !v)}
-              disabled={outOfStock === 0 && !outOnly}
-            >
-              <strong>{outOfStock}</strong> out of stock
-            </button>
+            {/* Worth a chip, and the click it offers, only once there's
+                something to act on — a permanent "0 out of stock" pill is
+                dead weight on every property that doesn't have the problem. */}
+            {(outOfStock > 0 || outOnly) && (
+              <>
+                <span className="menu-stats__dot" aria-hidden="true" />
+                <button
+                  type="button"
+                  className={`menu-stats__flag ${outOnly ? 'is-on' : ''}`}
+                  aria-pressed={outOnly}
+                  onClick={() => setOutOnly((v) => !v)}
+                >
+                  <strong>{outOfStock}</strong> out of stock
+                </button>
+              </>
+            )}
           </div>
           {searching && (
             <div className="menu-bar__searching">
@@ -834,32 +1002,38 @@ export default function MenuPanel() {
         </div>
       )}
 
-      {/* The picker comes before the menu itself: pick a section, then read it.
-          It's hidden while searching, when the results decide what's shown.
+      {/* A shortcut, not a filter: tapping a tab scrolls the one long menu to
+          that section and leaves everything above and below it still there to
+          scroll back through — the same "jump, don't replace" the guest-facing
+          order page uses. Hidden while searching, when the results decide
+          what's on screen instead.
 
-          A strip of tabs rather than the dropdown this used to be. Ten sections
-          is one tap here against two there, every section and its size is
-          readable without opening anything, and it matches how the Recipes and
-          Inventory tabs pick a group. It scrolls sideways when it has to. */}
+          Sticky on its own rather than wrapped with the section head it used
+          to carry: every section now has its own head inline below, so there
+          is nothing left here but the one row. */}
       {!error && !searching && sections && sections.length > 0 && (
-        <SectionTabs
-          ariaLabel="Menu sections"
-          activeId={activeSection?.id}
-          onChange={setActiveSectionId}
-          tabs={sections.map((section) => {
-            const out = section.items.filter((i) => !i.isAvailable).length;
-            return {
-              id: section.id,
-              name: section.name,
-              count: section.items.length,
-              // A section with dishes off the menu is worth seeing before you
-              // open it — that is usually why you came looking.
-              flagged: out > 0,
-              flagTitle: `${out} out of stock`,
-              dimmed: !section.isActive,
-            };
-          })}
-        />
+        <div className="menu-panel__sticky" ref={stickyRef}>
+          <div ref={tabStripWrapRef}>
+            <SectionTabs
+              ariaLabel="Menu sections"
+              activeId={activeSection?.id}
+              onChange={goToSection}
+              tabs={sections.map((section) => {
+                const out = section.items.filter((i) => !i.isAvailable).length;
+                return {
+                  id: section.id,
+                  name: section.name,
+                  count: section.items.length,
+                  // A section with dishes off the menu is worth seeing before you
+                  // open it — that is usually why you came looking.
+                  flagged: out > 0,
+                  flagTitle: `${out} out of stock`,
+                  dimmed: !section.isActive,
+                };
+              })}
+            />
+          </div>
+        </div>
       )}
 
       {!error && searching && shownSections?.length === 0 && (
@@ -876,62 +1050,21 @@ export default function MenuPanel() {
       {!error &&
         shownSections?.map((section) => {
           const groups = groupByType(section.items);
+          // Not during search: every result is equally relevant there, and
+          // there's no single "current" section for the (hidden) tab strip
+          // to be pointing at.
+          const isCurrent = !searching && section.id === activeSection?.id;
 
           return (
             <div
               className={`menu-section ${section.isActive ? '' : 'menu-section--off'}`}
               key={section.id}
+              ref={(el) => {
+                if (el) sectionRefs.current[section.id] = el;
+                else delete sectionRefs.current[section.id];
+              }}
             >
-              <div className="menu-section__head">
-                <div className="menu-section__heading">
-                  <h3 className="menu-section__title">
-                    {section.name}
-                    {!section.isActive && <span className="badge badge--off">Hidden</span>}
-                  </h3>
-                  <p className="menu-section__meta">
-                    {section.items.length} dish{section.items.length === 1 ? '' : 'es'}
-                    {groups.map((group) => (
-                      <span className="menu-section__tally" key={group.key}>
-                        <FoodTypeMark type={group.key} />
-                        {group.items.length} {group.label.toLowerCase()}
-                      </span>
-                    ))}
-                  </p>
-                </div>
-                <div className="menu-section__actions">
-                  <button type="button" onClick={() => openItemForm(null, section.id)}>
-                    Add item
-                  </button>
-                  {/* The day-end action, in the open. When the fish is off,
-                      every fish dish goes off together — see
-                      setCategoryItemsAvailable in menu.service.js. */}
-                  {section.items.length > 0 &&
-                    (section.items.every((i) => !i.isAvailable) ? (
-                      <button type="button" onClick={() => setSectionAvailability(section, true)}>
-                        Bring all back
-                      </button>
-                    ) : (
-                      <button type="button" onClick={() => setSectionAvailability(section, false)}>
-                        Mark all out
-                      </button>
-                    ))}
-                  <RowMenu label={`More actions for ${section.name}`}>
-                    <button type="button" onClick={() => openSectionForm(section)}>
-                      Edit section
-                    </button>
-                    <button type="button" onClick={() => toggleSectionActive(section)}>
-                      {section.isActive ? 'Hide from guests' : 'Show to guests'}
-                    </button>
-                    <button
-                      type="button"
-                      className="menu-danger"
-                      onClick={() => deleteSection(section)}
-                    >
-                      Delete section
-                    </button>
-                  </RowMenu>
-                </div>
-              </div>
+              {renderSectionHead(section, isCurrent)}
 
               {groups.length === 0 ? (
                 <div className="menu-section__empty">Nothing in this section yet.</div>
@@ -958,6 +1091,7 @@ export default function MenuPanel() {
                               src={`${API_BASE}/menu-images/${item.image}`}
                               alt=""
                               loading="lazy"
+                              decoding="async"
                             />
                           )}
                           <div className="dish-card__main">
@@ -1414,22 +1548,17 @@ export default function MenuPanel() {
                       Price
                       <Req />
                     </label>
-                    <div className="menu-money">
-                      <span className="menu-money__symbol" aria-hidden="true">
-                        ₹
-                      </span>
-                      <input
-                        id="itemPrice"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        inputMode="decimal"
-                        value={itemForm.price}
-                        aria-invalid={Boolean(itemErrors.price)}
-                        onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))}
-                        placeholder="220"
-                      />
-                    </div>
+                    <input
+                      id="itemPrice"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      inputMode="decimal"
+                      value={itemForm.price}
+                      aria-invalid={Boolean(itemErrors.price)}
+                      onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))}
+                      placeholder="220"
+                    />
                     {itemErrors.price && <p className="field__error">{itemErrors.price}</p>}
                   </div>
                 )}

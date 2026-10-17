@@ -19,8 +19,8 @@ async function listSwitchableCharges(lodgeId) {
     name: row.name,
     chargePerNight: Number(row.charge_per_night),
     isActive: !!row.is_active,
-    // Read-only: it decides whether booking screens put a count box beside the
-    // extra, and nothing on the rates screen offers to change it.
+    // Charged per unit: booking screens put a count box beside the extra. Set
+    // by the "Charge per unit" tick on the rates screen.
     isCounter: !!row.is_counter,
     createdAt: row.created_at,
   }));
@@ -44,10 +44,11 @@ async function createSwitchableCharge(lodgeId, input) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('name', sql.NVarChar, input.name)
     .input('chargePerNight', sql.Decimal(10, 2), input.chargePerNight)
+    .input('isCounter', sql.Bit, input.isCounter ? 1 : 0)
     .query(`
-      INSERT INTO dbo.switchable_charges (lodge_id, name, charge_per_night)
+      INSERT INTO dbo.switchable_charges (lodge_id, name, charge_per_night, is_counter)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @name, @chargePerNight)
+      VALUES (@lodgeId, @name, @chargePerNight, @isCounter)
     `);
 
   return { id: result.recordset[0].id };
@@ -80,7 +81,13 @@ async function updateSwitchableCharge(lodgeId, chargeId, input) {
     .input('chargeId', sql.BigInt, chargeId)
     .input('name', sql.NVarChar, input.name)
     .input('chargePerNight', sql.Decimal(10, 2), input.chargePerNight)
-    .query('UPDATE dbo.switchable_charges SET name = @name, charge_per_night = @chargePerNight WHERE id = @chargeId');
+    // Null when the caller did not say: the extra keeps how it is charged.
+    .input('isCounter', sql.Bit, input.isCounter === undefined ? null : input.isCounter ? 1 : 0)
+    .query(`
+      UPDATE dbo.switchable_charges
+      SET name = @name, charge_per_night = @chargePerNight, is_counter = ISNULL(@isCounter, is_counter)
+      WHERE id = @chargeId
+    `);
 
   return { id: chargeId };
 }

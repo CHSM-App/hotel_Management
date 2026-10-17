@@ -249,19 +249,14 @@ test('every query touching a lodge-scoped table filters by lodge', () => {
       why: 'Guest order tracking, reached by an unguessable random token rather than a session. There is no lodge context to filter by — the token is the capability.',
     },
     {
-      file: 'staff/staff.service.js',
-      match: '@email IS NOT NULL AND email = @email',
-      why: 'Deliberately global, on both the create and the edit path: phone and email are unique across the whole platform (uq_users_email), so these uniqueness checks must see every lodge or the INSERT fails on the index instead of with a readable message.',
+      file: 'public/public.service.js',
+      match: 'WHERE token = @token AND submitted_at IS NULL',
+      why: 'Guest feedback submission, same shape as the order-tracking token above: the guest has no session and no lodge context, only the unguessable token the WhatsApp link carried, which is the whole of the capability.',
     },
     {
       file: 'roles/roles.service.js',
       match: 'UPDATE dbo.roles SET',
       why: 'Fetch-then-act, but keyed on role_key rather than id: the id written here comes from a SELECT two statements earlier filtered on lodge_id = @lodgeId AND role_key, so the row is already proven to belong to the caller.',
-    },
-    {
-      file: 'lodges/lodges.service.js',
-      match: 'SELECT id FROM dbo.users WHERE phone = @phone',
-      why: 'Same global uniqueness rule, checked before SUPERADMIN creates a property owner. Scoping it to one lodge would let a duplicate through to the unique index.',
     },
     {
       file: 'expenses/expenses.service.js',

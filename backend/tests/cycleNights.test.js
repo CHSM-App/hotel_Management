@@ -90,10 +90,11 @@ test('CYCLE shares the fixed-time deadline with NIGHT_BASED', () => {
   assert.equal(checkoutDeadline({ ...args, checkinMode: 'HOUR_24' }).toISOString(), ist('2026-08-02T14:00:00').toISOString());
 });
 
-// The billing side of the same rule: a CYCLE guest who left before the nights
-// they booked ran out is shown what the unused ones cost, priced as the last
-// nights of the stay. Everyone else, and any stay without both timestamps,
-// gets nothing — there is no early departure to price.
+// The billing side of the same rule: a guest who left before the nights they
+// booked ran out is shown what the unused ones cost, priced as the last
+// nights of the stay, whatever the property's checkin mode. A full stay, and
+// any stay without both timestamps, gets nothing — there is no early
+// departure to price.
 const { earlyCheckoutOf } = require('../src/modules/billing/billing.service');
 
 test('unused nights on a CYCLE stay are the last ones, at their own rate', () => {
@@ -112,7 +113,7 @@ test('unused nights on a CYCLE stay are the last ones, at their own rate', () =>
   });
 });
 
-test('no early checkout on a full stay, other modes, or without timestamps', () => {
+test('no early checkout on a full stay, or without timestamps', () => {
   const full = {
     checkin_mode: 'CYCLE',
     check_out_time: '09:00:00',
@@ -121,6 +122,36 @@ test('no early checkout on a full stay, other modes, or without timestamps', () 
     actual_check_out_at: ist('2026-08-03T08:00:00'),
   };
   assert.equal(earlyCheckoutOf(full, [1000, 1200]), null);
-  assert.equal(earlyCheckoutOf({ ...full, checkin_mode: 'NIGHT_BASED', actual_check_out_at: ist('2026-08-02T08:00:00') }, [1000, 1200]), null);
   assert.equal(earlyCheckoutOf({ ...full, actual_check_out_at: null }, [1000, 1200]), null);
+});
+
+test('NIGHT_BASED shares the CYCLE boundary rule', () => {
+  const booking = {
+    checkin_mode: 'NIGHT_BASED',
+    check_out_time: '09:00:00',
+    late_grace_minutes: 60,
+    actual_check_in_at: ist('2026-08-01T14:00:00'),
+    actual_check_out_at: ist('2026-08-02T08:00:00'), // one night, booked three
+  };
+  assert.deepEqual(earlyCheckoutOf(booking, [1000, 1200, 1500]), {
+    plannedNights: 3,
+    actualNights: 1,
+    unusedNights: 2,
+    unusedAmount: 2700,
+  });
+});
+
+test('HOUR_24 counts unused nights in 24-hour blocks from arrival', () => {
+  const booking = {
+    checkin_mode: 'HOUR_24',
+    late_grace_minutes: 60,
+    actual_check_in_at: ist('2026-08-01T20:00:00'),
+    actual_check_out_at: ist('2026-08-02T21:30:00'), // ~25.5h, past the 1h grace → 2 nights, booked three
+  };
+  assert.deepEqual(earlyCheckoutOf(booking, [1000, 1200, 1500]), {
+    plannedNights: 3,
+    actualNights: 2,
+    unusedNights: 1,
+    unusedAmount: 1500,
+  });
 });

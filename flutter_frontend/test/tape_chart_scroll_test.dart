@@ -8,6 +8,7 @@ import 'package:hotel_manager/domain/models/guest_match.dart';
 import 'package:hotel_manager/domain/models/late_checkout.dart';
 import 'package:hotel_manager/domain/models/quote.dart';
 import 'package:hotel_manager/domain/models/room.dart';
+import 'package:hotel_manager/domain/models/staff_alert.dart';
 import 'package:hotel_manager/domain/models/tape_chart.dart';
 import 'package:hotel_manager/domain/repository/booking_repo.dart';
 import 'package:hotel_manager/presentation/providers/repository_provider.dart';
@@ -79,6 +80,12 @@ class _FakeBookingRepository implements BookingRepository {
   Future<Booking> booking(int id) => throw UnimplementedError();
 
   @override
+  Future<List<CheckAlert>> checkinAlerts() async => const [];
+
+  @override
+  Future<List<CheckAlert>> checkoutAlerts() async => const [];
+
+  @override
   Future<List<GuestMatch>> searchGuests(String query) =>
       throw UnimplementedError();
 
@@ -116,6 +123,18 @@ class _FakeBookingRepository implements BookingRepository {
 
   @override
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>
+      throw UnimplementedError();
+
+  @override
+  Future<Map<String, dynamic>> sendWhatsApp(int id) =>
+      throw UnimplementedError();
+
+  @override
+  Future<LateCheckout> roomLateCheckout(int id, int roomId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<Booking> checkOutRoom(int id, int roomId, Map<String, dynamic> body) =>
       throw UnimplementedError();
 
   @override

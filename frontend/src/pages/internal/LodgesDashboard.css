@@ -1,10 +1,66 @@
+/* Superadmin panel theme -------------------------------------------------
+   Solid royal-blue palette. This file has no CSS-module isolation — Vite
+   bundles every stylesheet into one global file, and OwnerDashboard.jsx
+   renders its own top-level wrapper with the *same* "dash-shell" class name
+   (see the notes in OwnerDashboard.css about that collision). A bare
+   .dash-shell rule here would therefore also repaint the owner-facing
+   dashboard, so every superadmin-only addition below — the palette, the
+   zoom, the overflow clip — is scoped to the compound
+   .dash-shell.vt-admin-shell selector, matched only by LodgesDashboard's and
+   LodgeDetail's own wrapper (they add the second class explicitly in their
+   JSX). The plain .dash-shell rule stays exactly as it was before this
+   theme existed, since OwnerDashboard's CSS depends on it for its own
+   defaults (see its --dash-topbar-h override). */
 .dash-shell {
   min-height: 100svh;
   background: var(--paper);
-  /* The bar's own height, published so the sidebar can subtract it instead of
-     carrying a guess. It was guessing 73px against an actual 80px, and that
+  /* Both bars' own heights, published so anything stacking sticky elements
+     below them can offset by the real number instead of carrying a guess —
+     the topbar one was guessing 73px against an actual 80px once, and that
      kind of drift is invisible until something has to line up with it. */
   --dash-topbar-h: 58px;
+  --dash-toolbar-h: 60px;
+}
+
+.dash-shell.vt-admin-shell {
+  background: var(--paper);
+  /* Zoomed out 10% — the same effect as the browser's own Ctrl/Cmd-minus,
+     scoped to just this panel. Everything (fonts, padding, the table) scales
+     down together, which also buys the wide lodge table real breathing room
+     before it needs to fall back to its own horizontal scroll. */
+  zoom: 0.9;
+  /* A hard backstop against page-wide horizontal scroll: if anything inside
+     (the table, a long unbroken string, whatever) ever ends up wider than
+     the viewport, it gets clipped here instead of dragging the topbar and
+     everything else sideways with it. `clip` rather than `hidden` on
+     purpose — unlike hidden/auto/scroll, it does NOT force the paired
+     overflow-y to 'auto' (that pairing rule is what the comment on
+     .dash-table-scroll below is working around), so this costs nothing on
+     the vertical axis: normal page scroll and every position: sticky
+     descendant (topbar, toolbar, table header) still bind to the real
+     viewport, not to this element. */
+  overflow-x: clip;
+
+  --brand: #0A3A6B;
+  --brand-ink: #072748;
+  --brand-lift: #14508C;
+  --brand-band: #0A3A6B;
+  --brand-band-deep: #072748;
+  --brand-navy: #072748;
+  --brand-wash: #E6EDF4;
+  --brand-wash-edge: #C7D6E6;
+  --brand-focus: rgba(0, 176, 255, 0.2);
+  --paper: #F4F7FB;
+  --surface: #FFFFFF;
+  --border: #D5DEEA;
+  --ink: #142B4A;
+  --text-muted: #64748B;
+  /* Green/red from the approved contrast palette, same pair the owner
+     dashboard uses — one status system across both consoles. */
+  --success: #28A745;
+  --success-bg: #E8F6EC;
+  --danger: #EA4335;
+  --danger-bg: #FDECEA;
 }
 
 /* A band across the top carrying a name and an avatar — it needs to be
@@ -17,19 +73,27 @@
   gap: 12px;
   height: var(--dash-topbar-h);
   padding: 0 40px;
-  /* Lit from the left rather than filled flat: the band runs the full width of
-     a desk monitor, and a single violet across that distance reads as a slab.
-     The gradient gives it a light source that agrees with the one the cards
-     below it are lit by. */
-  background: linear-gradient(90deg, var(--brand-band), var(--brand-band-deep));
+  /* Pinned above the toolbar below it — without this the toolbar's own
+     sticky top:0 would pin it at the very top of the viewport while the
+     topbar (ordinary flow, no z-index) was still scrolling past, and for
+     that stretch the two painted in DOM order: topbar over toolbar,
+     burying the search box the moment you started scrolling. Sticky +
+     the higher z-index below settles which one wins for good. */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  /* Solid fill, no gradient — a flat enterprise-blue band rather than a lit
+     slab. */
+  background: var(--brand);
   color: #ffffff;
+  box-shadow: 0 2px 10px -2px rgba(8, 43, 89, 0.35);
 }
 
 /* The bar is a fixed 58px and the property's name is whatever the owner typed.
    A flex item defaults to min-width: auto, so a long name wrapped to a second
    line and spilled out of the band on a phone instead of giving way to the
    avatar beside it. It takes the slack and truncates. */
-.dash-topbar > :first-child {
+.dash-topbar__brand {
   min-width: 0;
 }
 
@@ -52,29 +116,85 @@
   white-space: nowrap;
 }
 
+/* Who's signed in, not just that someone is — a name and role beat a static
+   "Vengurla Tech admin" label that never changes no matter who's at the
+   keyboard. Divided from Sign out by a hairline rather than a gap alone, so
+   the eye reads "identity, then the thing that ends the session" as two
+   groups rather than one row of equally-weighted items. */
+.dash-topbar__profile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.dash-topbar__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.dash-topbar__who {
+  display: none;
+  line-height: 1.25;
+}
+
+.dash-topbar__name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #ffffff;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-topbar__role {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.78);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@media (min-width: 560px) {
+  .dash-topbar__who {
+    display: block;
+  }
+}
+
 .dash-topbar__signout {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.25);
   color: #ffffff;
-  border-radius: 8px;
-  padding: 6px 14px;
+  padding: 6px 0 6px 18px;
   min-height: 34px;
   cursor: pointer;
   font-weight: 500;
 }
 
 .dash-topbar__signout:hover {
-  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
 }
 
-/* 40px on every side was a lot of nothing around content that is mostly grids
-   and tables. Trimmed asymmetrically: less at the top, where the section tabs
-   already separate the page from the bar above it, and a little kept at the
-   bottom so the last row doesn't sit on the viewport edge. */
+/* Runs the full width of the viewport rather than sitting in a centred
+   1100px column — a sheet this wide (nine columns plus actions) was fighting
+   its own container on anything wider than a laptop, forcing a horizontal
+   scroll while two bare margins sat empty on either side. Padding alone now
+   keeps content off the viewport edge. */
 .dash-main {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 22px 28px 32px;
+  width: 100%;
+  padding: 22px 32px 32px;
 }
 
 .dash-header {
@@ -88,6 +208,9 @@
 
 .dash-header h1 {
   font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
 .dash-header__count {
@@ -104,20 +227,21 @@
 
 .btn-outline {
   background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--border);
+  color: var(--brand);
+  border: 1px solid var(--brand);
   border-radius: var(--radius-tile);
   padding: 12px 16px;
   min-height: 44px;
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .btn-outline:hover:not(:disabled) {
-  border-color: var(--brand);
-  color: var(--brand);
+  background: var(--brand-wash);
+  border-color: var(--brand-ink);
+  color: var(--brand-ink);
 }
 
 .btn-outline:disabled {
@@ -125,14 +249,145 @@
   cursor: not-allowed;
 }
 
+/* Summary strip: the portfolio-level counts an admin opens this page to
+   check before ever reading a row. Each card is also a filter toggle — the
+   count and the control that explains it live in the same place, rather than
+   a static number up top that can drift from what the table below shows. */
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.dash-stat {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card, 12px);
+  padding: 15px 17px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-raised);
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.dash-stat--static {
+  cursor: default;
+}
+
+.dash-stat:hover:not(.dash-stat--static) {
+  border-color: var(--brand-wash-edge);
+  box-shadow: var(--shadow-raised-hover);
+  transform: translateY(-1px);
+}
+
+/* Selected, but not filled — a solid sky-blue ring reads as "this is the
+   active filter" without the whole card competing for attention in the same
+   hue as the icon chips. Amber is kept for buttons rather than this
+   persistent selected state. */
+.dash-stat--on {
+  border-color: var(--focus);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--focus), var(--shadow-raised-hover);
+}
+
+/* Each card carries its own icon chip, tinted to the stat it represents, so
+   the four cards read as distinct signals (what / good / needs-attention /
+   fresh) at a glance instead of four identical grey tiles with only a number
+   to tell them apart. */
+.dash-stat__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--brand-wash);
+  color: var(--brand);
+}
+
+.dash-stat__icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.dash-stat--active .dash-stat__icon {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.dash-stat--inactive .dash-stat__icon {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.dash-stat--new .dash-stat__icon {
+  background: #fbf1e0;
+  color: var(--accent-ink);
+}
+
+.dash-stat__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dash-stat__value {
+  font-size: 23px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-stat--active .dash-stat__value {
+  color: var(--success);
+}
+
+.dash-stat--inactive .dash-stat__value {
+  color: var(--danger);
+}
+
+.dash-stat__label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .dash-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Toolbar: search + filter chips, above the sheet ------------------------ */
 
+/* Pinned to the viewport once the page scrolls past it — search and the
+   filter chips are what you reach for while scanning a long list, so they
+   stay reachable instead of scrolling off with row one. Sticks just below
+   the topbar (also sticky, and above this in z-index) rather than at the
+   very top, so the two never fight for the same strip. The negative margin
+   cancels its own padding so pinning it doesn't shift anything below. */
 .dash-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin: 0 -32px 16px;
+  padding: 10px 32px;
+  position: sticky;
+  top: var(--dash-topbar-h);
+  z-index: 5;
+  background: var(--paper);
+  box-shadow: 0 1px 0 var(--border);
 }
 
 .dash-search {
@@ -161,12 +416,17 @@
   background: var(--surface);
   font-size: 13.5px;
   color: var(--ink);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.dash-search input::placeholder {
+  color: var(--text-muted);
 }
 
 .dash-search input:focus {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.13);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 .dash-filters {
@@ -200,7 +460,7 @@
 .dash-select:focus {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.13);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 .dash-select--on {
@@ -220,14 +480,12 @@
   text-decoration: underline;
 }
 
-/* The primary action, in the brand violet. It carried the gold accent and a
-   pair of red-tinted neumorphic shadows left over from an earlier palette —
-   three unrelated hues in one control. It is now the same violet as the topbar
-   above it, lit from the same side, so the page has exactly one colour that
-   means "this is the thing to press". */
+/* The primary action, in the palette's own button colour — amber, flat fill,
+   no gradient, with a darker solid swap on hover rather than a brightness
+   filter. Dark ink text rather than white: amber is a light fill. */
 .btn-accent {
-  background-image: linear-gradient(135deg, var(--brand-lift), var(--brand));
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--ink);
   border: none;
   border-radius: var(--radius-tile);
   padding: 12px 18px;
@@ -240,28 +498,38 @@
   align-items: center;
   gap: 8px;
   /* A downward cast in the button's own hue rather than a bevel: it sits on a
-     white card, and a violet-tinted shadow reads as the button lifting off it. */
-  box-shadow: 0 2px 6px rgba(69, 39, 184, 0.26), 0 10px 22px -8px rgba(69, 39, 184, 0.46);
-  transition: filter 150ms ease, box-shadow 150ms ease;
+     white card, and an amber-tinted shadow reads as the button lifting off it. */
+  box-shadow: 0 2px 6px rgba(138, 91, 0, 0.24), 0 10px 22px -8px rgba(138, 91, 0, 0.4);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
 }
 
 .btn-accent:hover {
-  filter: brightness(1.06);
-  box-shadow: 0 4px 10px rgba(69, 39, 184, 0.3), 0 16px 30px -8px rgba(69, 39, 184, 0.5);
+  background: #E6AC06;
+  box-shadow: 0 4px 10px rgba(138, 91, 0, 0.28), 0 16px 30px -8px rgba(138, 91, 0, 0.42);
 }
 
 /* Pressed into the page rather than nudged: the inset does the travel. */
 .btn-accent:active {
-  filter: brightness(0.98);
-  box-shadow: inset 0 2px 6px rgba(45, 22, 130, 0.45);
+  background: #E6AC06;
+  box-shadow: inset 0 2px 6px rgba(106, 70, 0, 0.4);
 }
 
+.btn-accent:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Not clipped (no overflow: hidden): an ancestor with any overflow other
+   than visible becomes the nearest "scrolling box" for a sticky descendant's
+   positioning, even with nothing to actually scroll inside it — which pinned
+   the table header to this card instead of the viewport and made it inert
+   below. The corners that clipping used to round for free are rounded by
+   hand instead, on the table's own edge cells. */
 .dash-card {
   background: var(--surface);
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   box-shadow: var(--shadow-raised);
-  border-radius: 12px;
-  overflow: hidden;
+  border-radius: var(--radius-card, 16px);
 }
 
 .dash-state {
@@ -278,98 +546,181 @@
 
 .dash-table th {
   text-align: left;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border);
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--brand-ink);
   white-space: nowrap;
+  background: var(--brand);
 }
 
+/* Roomy enough to read comfortably, tight enough that a platform admin
+   scrolling fifty properties is still comparing rows at a glance rather than
+   reading one at a time. */
 .dash-table td {
-  padding: 16px 20px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border);
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .dash-table tr:last-child td {
   border-bottom: none;
 }
 
-/* Spreadsheet finish: vertical gridlines between every column, a zebra so a
-   row can be traced across a wide table without a ruler, and the header
-   pinned so a long list still shows what each column is while scrolling.
-   .dash-table--sheet only — kept off the base .dash-table in case something
-   else in the app reuses that class without wanting the grid look. */
+/* Clean register finish: no vertical gridlines — rows separate by a faint
+   zebra and a horizontal rule alone, and the header stays pinned so a long
+   list still shows what each column is while scrolling. .dash-table--sheet
+   only — kept off the base .dash-table in case something else in the app
+   reuses that class without wanting this finish. */
 .dash-table--sheet {
   table-layout: auto;
 }
 
-.dash-table--sheet th,
-.dash-table--sheet td {
-  border-right: 1px solid var(--border);
+/* Replaces the rounding .dash-card's overflow: hidden used to do for free —
+   see the note on .dash-card for why that had to go. */
+.dash-table--sheet thead th:first-child {
+  border-top-left-radius: var(--radius-card, 16px);
 }
 
-.dash-table--sheet th:last-child,
-.dash-table--sheet td:last-child {
-  border-right: none;
+.dash-table--sheet thead th:last-child {
+  border-top-right-radius: var(--radius-card, 16px);
 }
 
+.dash-table--sheet tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-card, 16px);
+}
+
+.dash-table--sheet tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-card, 16px);
+}
+
+/* Third sticky strip: topbar (z-index 10), toolbar (5) below it, and the
+   column headers (3) below both — pinned the same `top` offset the toolbar
+   itself sticks at, plus the toolbar's own height, so it settles directly
+   under it with no gap and no overlap. */
 .dash-table--sheet thead th {
   position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--paper);
+  top: calc(var(--dash-topbar-h) + var(--dash-toolbar-h));
+  z-index: 3;
+  background: var(--brand);
+  box-shadow: 0 1px 0 var(--brand-ink);
 }
 
 .dash-table--sheet tbody tr:nth-child(even) td {
-  background: #fafbfd;
+  background: #FAFCFE;
+}
+
+.dash-table--sheet tbody tr {
+  transition: background-color 120ms ease;
 }
 
 .dash-table--sheet tbody tr:hover td {
   background: var(--brand-wash);
 }
 
+/* The Actions header sits above a right-aligned "View" button in every row,
+   so it reads as a pair with that column instead of floating left over a
+   right-set control. Frozen to the scroll container's right edge (see
+   .dash-table__actions below) so it rides along as a matching pair with the
+   button column beneath it, rather than getting clipped mid-column while the
+   body cell stays pinned. (position/background/z-index for the top-sticky
+   behaviour already come from the higher-specificity .dash-table--sheet
+   thead th rule above — this only adds the right-edge pin.) */
+.dash-th--actions {
+  text-align: right;
+  position: sticky;
+  right: 0;
+}
+
+/* Ten columns need roughly 1300px to lay out without crowding. Below that,
+   .dash-table-scroll takes overflow-x: auto (see the breakpoint further
+   down) so the TABLE grows its own horizontal scrollbar instead of forcing
+   the whole page wider — without this, .dash-main has no width limit of its
+   own, so an overflowing table used to stretch the topbar and stat cards
+   off-screen along with it rather than just scrolling itself.
+   Setting overflow-x: auto also quietly turns this div's overflow-y to
+   'auto' (the CSS spec forces a 'visible' axis to compute as 'auto' once its
+   pair isn't 'visible'), which detaches the sticky table header from the
+   viewport — the header stops pinning and just scrolls with the rows below
+   that breakpoint. Above it, this div stays overflow: visible so the sticky
+   chain still runs straight through to the page. */
 .dash-table-scroll {
-  overflow-x: auto;
-  /* A sheet is read by comparing rows over a long list — cap the visible
-     height and let the sticky header stay put while the body scrolls,
-     rather than pushing "Add new lodge" a screen down for fifty rows. */
-  max-height: 72vh;
-  overflow-y: auto;
+  overflow-x: visible;
+}
+
+@media (max-width: 1300px) {
+  .dash-table-scroll {
+    overflow-x: auto;
+  }
 }
 
 .dash-th--sortable {
   cursor: pointer;
   user-select: none;
+  transition: color 120ms ease;
 }
 
 .dash-th--sortable span:first-child {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .dash-th--sortable:hover {
-  color: var(--ink);
+  color: #ffffff;
 }
 
 .dash-th--sorted {
-  color: var(--brand);
+  color: #ffffff;
 }
 
+/* A crisp chevron rather than a glyph pulled from the system font — always
+   present at low opacity so every sortable header hints that it's clickable,
+   not just the one currently active. */
 .dash-sort-arrow {
-  display: inline-block;
-  width: 9px;
-  font-size: 9px;
-  margin-left: 3px;
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+
+.dash-sort-arrow svg {
+  width: 100%;
+  height: 100%;
+}
+
+.dash-th--sortable:hover .dash-sort-arrow {
+  opacity: 0.85;
+}
+
+.dash-sort-arrow--on {
+  opacity: 1;
+}
+
+/* Primary vs secondary columns: Lodge, Owner and Status are what this page
+   is opened to check, so they carry the darker ink; Location, Type, Check-in,
+   GST and Onboarded are supporting detail and read a shade lighter. One table,
+   two levels of emphasis — a scan down the primary columns alone still tells
+   the whole story. */
+.dash-col-primary {
+  color: var(--ink);
+}
+
+.dash-col-secondary {
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .dash-lodge-name {
   font-weight: 600;
   color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dash-lodge-slug {
@@ -377,7 +728,7 @@
   font-size: 12px;
 }
 
-.dash-owner-phone {
+.dash-owner-email {
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -390,15 +741,29 @@
   border-radius: 999px;
 }
 
+.badge--dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
 .badge--on {
-  /* Green, not brand violet: this is a state, and the violet is already the
+  /* Green, not brand blue: this is a state, and the blue is already the
      chrome's own colour everywhere else on the page. */
   background: var(--success-bg);
   color: var(--success);
 }
 
 .badge--off {
-  background: #f1efe9;
+  background: #EEF1F5;
   color: var(--text-muted);
 }
 
@@ -421,37 +786,87 @@
   white-space: nowrap;
 }
 
+/* A small bordered pill for a secondary inline action next to a heading —
+   LodgeDetail's "Upload logo" / "Replace logo" / "Remove". Same outlined
+   language as .btn-view-row below, without that one's forced icon+label
+   layout, since these buttons are text-only. */
 .btn-view {
   display: inline-block;
-  border: none;
-  border-radius: 10px;
-  padding: 7px 14px;
-  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--brand);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.btn-view:hover:not(:disabled) {
+  border-color: var(--brand);
+  background: var(--brand-wash);
+}
+
+.btn-view:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* A named action, not a bare glyph — "View" plus a chevron reads at a glance
+   on a long sheet in a way a 16px eye icon doesn't, and it's a button, so
+   hover/focus states are never in question. Outlined rather than filled: the
+   row already carries enough colour in its badges, and fifty filled buttons
+   down one column would out-shout them. */
+.btn-view-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px 6px 14px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--brand);
   background: var(--surface);
   text-decoration: none;
-  box-shadow: var(--shadow-raised);
-  transition: box-shadow 150ms ease;
+  white-space: nowrap;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
 
-/* Hover can't change the fill any more — it's the same colour as the row it
-   sits in — so the lift is the hover state. */
-.btn-view:hover {
-  box-shadow: var(--shadow-raised-hover);
+.btn-view-row svg {
+  width: 13px;
+  height: 13px;
+  transition: transform 150ms ease;
 }
 
-.btn-view:active {
+.btn-view-row:hover {
+  border-color: var(--brand);
+  background: var(--brand-wash);
+}
+
+.btn-view-row:hover svg {
+  transform: translateX(2px);
+}
+
+.btn-view-row:active {
   box-shadow: var(--shadow-pressed);
 }
 
 @media (max-width: 640px) {
+  /* .dash-table-scroll already has overflow-x: auto from the 1300px
+     breakpoint above — nothing further to do for the table itself here. */
   .dash-topbar {
     padding: 0 16px;
   }
 
   .dash-main {
     padding: 20px 16px 40px;
+  }
+
+  .dash-toolbar {
+    margin: 0 -16px 16px;
+    padding: 10px 16px;
   }
 
   .dash-topbar__mark {

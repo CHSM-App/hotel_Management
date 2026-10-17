@@ -3,22 +3,17 @@ import 'json.dart';
 /// What POST /auth/login hands back.
 ///
 /// One token, silently renewed by TokenInterceptor before it expires.
-/// `mustResetPassword` is set
-/// when the account was created with a temporary password and the desk has to
-/// change it before doing anything else.
 class Session {
   final String token;
   final String role;
   final String? name;
   final int? lodgeId;
-  final bool mustResetPassword;
 
   const Session({
     required this.token,
     required this.role,
     this.name,
     this.lodgeId,
-    this.mustResetPassword = false,
   });
 
   factory Session.fromJson(Map<String, dynamic> json) => Session(
@@ -28,7 +23,6 @@ class Session {
     // lodges.id is a BIGINT, so this arrives as "1" rather than 1. Casting it
     // to num threw on a login that had already succeeded — see json.dart.
     lodgeId: asIntOrNull(json['lodgeId']),
-    mustResetPassword: asBool(json['mustResetPassword']),
   );
 }
 

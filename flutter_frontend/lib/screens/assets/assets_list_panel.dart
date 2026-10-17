@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/asset.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'asset_detail_screen.dart';
@@ -92,11 +93,14 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
+          // In table view the scroll is the rows', a level below the
+          // table's horizontal scroller.
+          notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
           onRefresh: () => ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true),
           color: AppTheme.accent,
-          child: ListView(
+          child: TablePageBody(
+            table: _view == 'table',
             padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
-            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -108,7 +112,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                       decoration: BoxDecoration(
                         color: AppTheme.card,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppTheme.border),
+                        border: Border.all(color: AppTheme.shadowDark, width: 1.3),
                         boxShadow: AppTheme.subtle,
                       ),
                       child: Row(
@@ -181,21 +185,16 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                     onDelete: (a) => _confirmDelete(context, ref, a),
                   )
                 else
-                  for (final a in shown)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: _AssetCard(
-                        asset: a,
-                        onTap: () => _viewDetails(context, ref, a),
-                        onViewDetails: () => _viewDetails(context, ref, a),
-                        onEdit: () async {
-                          await showAssetFormSheet(context, asset: a);
-                          ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true);
-                        },
-                        onReportIssue: () => showReportIssueDialog(context, assetId: a.id),
-                        onDelete: () => _confirmDelete(context, ref, a),
-                      ),
-                    ),
+                  _AssetCardsGrid(
+                    assets: shown,
+                    onTap: (a) => _viewDetails(context, ref, a),
+                    onEdit: (a) async {
+                      await showAssetFormSheet(context, asset: a);
+                      ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true);
+                    },
+                    onReportIssue: (a) => showReportIssueDialog(context, assetId: a.id),
+                    onDelete: (a) => _confirmDelete(context, ref, a),
+                  ),
               ],
             ],
           ),
@@ -312,11 +311,12 @@ const _kAssetTableColumns = [
 ];
 
 /// The sheet-style view — every asset's tag/name/category/location/status/
-/// warranty/AMC/open-work-orders in one scrollable, sortable grid, mirroring
-/// the web table (TABLE_SORT_ACCESSORS/asset-table in AssetsPanel.jsx):
-/// clickable column headers, a coloured status pill, and a per-row ⋮ menu
-/// for the same actions the card view offers.
-class _AssetTable extends StatefulWidget {
+/// warranty/AMC/open-work-orders in one scrollable grid. Same plain-header
+/// spreadsheet pattern as [BillingQueueTable]/[ReadyToBillTable] in
+/// billing_screen.dart: a tinted header row (no clickable sort — the list is
+/// already name-sorted above) and a per-row ⋮ menu for the same actions the
+/// card view offers.
+class _AssetTable extends StatelessWidget {
   final List<Asset> assets;
   final ValueChanged<Asset> onTap;
   final ValueChanged<Asset> onEdit;
@@ -331,70 +331,6 @@ class _AssetTable extends StatefulWidget {
     required this.onDelete,
   });
 
-  @override
-  State<_AssetTable> createState() => _AssetTableState();
-}
-
-class _AssetTableState extends State<_AssetTable> {
-  // null key means unsorted (register order) — three-state toggle per
-  // column, same cycle as toggleTableSort in AssetsPanel.jsx: asc -> desc ->
-  // unsorted.
-  String? _sortKey;
-  bool _sortDesc = false;
-
-  String _location(Asset a) {
-    if (a.roomNumber != null) return 'Room ${a.roomNumber}';
-    return [if (a.floor.isNotEmpty) 'Floor ${a.floor}', a.department].where((s) => s.isNotEmpty).join(' · ');
-  }
-
-  Comparable? _sortValue(Asset a, String key) => switch (key) {
-    'tag' => a.assetTag,
-    'name' => a.name,
-    'category' => a.categoryName,
-    'location' => _location(a),
-    'status' => kAssetStatusLabel[a.status] ?? a.status,
-    'warranty' => a.warrantyExpiry,
-    'amc' => a.amcExpiry,
-    'openWos' => a.openWorkOrders,
-    _ => null,
-  };
-
-  List<Asset> get _sorted {
-    final key = _sortKey;
-    if (key == null) return widget.assets;
-    final dir = _sortDesc ? -1 : 1;
-    final sorted = [...widget.assets];
-    sorted.sort((a, b) {
-      final av = _sortValue(a, key);
-      final bv = _sortValue(b, key);
-      final aEmpty = av == null || av == '';
-      final bEmpty = bv == null || bv == '';
-      // Nulls/empties sink to the bottom regardless of direction — same as
-      // the web's own sort, where "no warranty on file" isn't meaningfully
-      // before or after a real date.
-      if (aEmpty && bEmpty) return 0;
-      if (aEmpty) return 1;
-      if (bEmpty) return -1;
-      if (av is num && bv is num) return (av - bv).sign.toInt() * dir;
-      return av.toString().toLowerCase().compareTo(bv.toString().toLowerCase()) * dir;
-    });
-    return sorted;
-  }
-
-  void _toggleSort(String key) {
-    setState(() {
-      if (_sortKey != key) {
-        _sortKey = key;
-        _sortDesc = false;
-      } else if (!_sortDesc) {
-        _sortDesc = true;
-      } else {
-        _sortKey = null;
-        _sortDesc = false;
-      }
-    });
-  }
-
   Color _statusColor(String status) => switch (status) {
     'IN_USE' => AppTheme.vacant,
     'UNDER_REPAIR' => AppTheme.draft,
@@ -403,7 +339,6 @@ class _AssetTableState extends State<_AssetTable> {
 
   @override
   Widget build(BuildContext context) {
-    final rows = _sorted;
     final width = _kAssetTableColumns.fold<double>(0, (sum, c) => sum + c.width) + 36;
 
     return NeuCard(
@@ -412,48 +347,33 @@ class _AssetTableState extends State<_AssetTable> {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
-                    color: AppTheme.bg,
-                    border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
+                    color: AppTheme.sidebarBrandWash,
+                    border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
                   ),
                   child: Row(
                     children: [
                       for (final c in _kAssetTableColumns)
                         SizedBox(
                           width: c.width,
-                          child: GestureDetector(
-                            onTap: () => _toggleSort(c.key),
-                            behavior: HitTestBehavior.opaque,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
-                              child: Row(
-                                mainAxisAlignment: c.align == TextAlign.right ? MainAxisAlignment.end : MainAxisAlignment.start,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      c.label.toUpperCase(),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.3),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Icon(
-                                    _sortKey != c.key
-                                        ? Icons.unfold_more_rounded
-                                        : (_sortDesc ? Icons.arrow_drop_down_rounded : Icons.arrow_drop_up_rounded),
-                                    size: 14,
-                                    color: _sortKey == c.key ? AppTheme.accent : AppTheme.muted,
-                                  ),
-                                ],
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
+                            child: Text(
+                              c.label.toUpperCase(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: c.align,
+                              style: const TextStyle(
+                                color: AppTheme.sidebarBrandInk,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
                               ),
                             ),
                           ),
@@ -462,7 +382,9 @@ class _AssetTableState extends State<_AssetTable> {
                     ],
                   ),
                 ),
-                for (var i = 0; i < rows.length; i++) _AssetTableRow(asset: rows[i], shaded: i.isOdd, statusColor: _statusColor, parent: widget),
+              rows: [
+                      for (var i = 0; i < assets.length; i++)
+                        _AssetTableRow(asset: assets[i], shaded: i.isOdd, statusColor: _statusColor, parent: this),
               ],
             ),
           ),
@@ -489,7 +411,7 @@ class _AssetTableRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cells = {
       'tag': asset.assetTag ?? '—',
-      'name': asset.name,
+      'name': asset.quantity != null ? '${asset.name} × ${asset.quantity}' : asset.name,
       'category': asset.categoryName,
       'location': _location(asset).isEmpty ? '—' : _location(asset),
       'warranty': asset.warrantyExpiry != null ? formatIsoDate(asset.warrantyExpiry!) : '—',
@@ -541,9 +463,14 @@ class _AssetTableRow extends StatelessWidget {
               ),
             SizedBox(
               width: 36,
-              child: PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+              child: NeuActionMenu<String>(
+                iconSize: 18,
+                actions: const [
+                  NeuMenuAction('view', Icons.visibility_outlined, 'View details'),
+                  NeuMenuAction('edit', Icons.edit_outlined, 'Edit asset'),
+                  NeuMenuAction('report', Icons.report_problem_outlined, 'Report an issue'),
+                  NeuMenuAction('delete', Icons.delete_outline_rounded, 'Delete', danger: true),
+                ],
                 onSelected: (v) => switch (v) {
                   'view' => parent.onTap(asset),
                   'edit' => parent.onEdit(asset),
@@ -551,12 +478,6 @@ class _AssetTableRow extends StatelessWidget {
                   'delete' => parent.onDelete(asset),
                   _ => null,
                 },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'view', child: Text('View details')),
-                  PopupMenuItem(value: 'edit', child: Text('Edit asset')),
-                  PopupMenuItem(value: 'report', child: Text('Report an issue')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete')),
-                ],
               ),
             ),
           ],
@@ -566,6 +487,74 @@ class _AssetTableRow extends StatelessWidget {
   }
 }
 
+/// Responsive card grid — one column on a phone-width screen, two on a
+/// wider phone/tablet, three past that, same sizing approach as
+/// AssetStatGrid: measure the available width once with LayoutBuilder and
+/// lay the cards out in a Wrap rather than reaching for a GridView (which
+/// needs a fixed aspect ratio these cards, with variable badge rows, don't
+/// have).
+class _AssetCardsGrid extends StatelessWidget {
+  final List<Asset> assets;
+  final ValueChanged<Asset> onTap;
+  final ValueChanged<Asset> onEdit;
+  final ValueChanged<Asset> onReportIssue;
+  final ValueChanged<Asset> onDelete;
+
+  const _AssetCardsGrid({
+    required this.assets,
+    required this.onTap,
+    required this.onEdit,
+    required this.onReportIssue,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = AppTheme.s8;
+        final cols = constraints.maxWidth >= 920 ? 3 : (constraints.maxWidth >= 520 ? 2 : 1);
+        final width = cols == 1 ? constraints.maxWidth : (constraints.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final a in assets)
+              SizedBox(
+                width: width,
+                child: _AssetCard(
+                  asset: a,
+                  onTap: () => onTap(a),
+                  onViewDetails: () => onTap(a),
+                  onEdit: () => onEdit(a),
+                  onReportIssue: () => onReportIssue(a),
+                  onDelete: () => onDelete(a),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// One expiry badge's worth of state — "expired" or "expiring soon" within
+/// 30 days, same rule as expiryFlag in AssetsPanel.jsx — computed fresh off
+/// the ISO date string rather than stored, so it's never stale.
+String? _expiryFlag(String? isoDate) {
+  if (isoDate == null || isoDate.isEmpty) return null;
+  final date = DateTime.tryParse(isoDate);
+  if (date == null) return null;
+  final days = date.difference(DateTime.now()).inDays;
+  if (days < 0) return 'expired';
+  if (days <= 30) return 'soon';
+  return null;
+}
+
+/// A compact, modern card: name + tinted category pill + tag, a status
+/// badge, a thin divider, then a tight figures row — Location / Work orders
+/// — with a warranty/AMC flag line only when there's one to show. One look
+/// across Billing and Assets rather than two card styles in the same app.
 class _AssetCard extends StatelessWidget {
   final Asset asset;
   final VoidCallback onTap;
@@ -589,111 +578,145 @@ class _AssetCard extends StatelessWidget {
     _ => AppTheme.muted,
   };
 
-  IconData get _statusIcon => switch (asset.status) {
-    'IN_USE' => Icons.check_circle_rounded,
-    'UNDER_REPAIR' => Icons.build_rounded,
-    'TRANSFERRED' => Icons.swap_horiz_rounded,
-    _ => Icons.remove_circle_rounded,
-  };
+  String _location(Asset a) {
+    if (a.roomNumber != null) return 'Room ${a.roomNumber}';
+    return [if (a.floor.isNotEmpty) 'Floor ${a.floor}', a.department, a.locationNote]
+        .where((s) => s.isNotEmpty)
+        .join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
-    final location = [if (asset.floor.isNotEmpty) 'Floor ${asset.floor}', asset.locationNote].where((s) => s.isNotEmpty).join(' · ');
+    final location = _location(asset);
+    final wFlag = _expiryFlag(asset.warrantyExpiry);
+    final aFlag = _expiryFlag(asset.amcExpiry);
+    final badFlag = (wFlag == 'expired' || aFlag == 'expired') ? 'expired' : (wFlag ?? aFlag);
+    final flagNames = badFlag == 'expired'
+        ? [if (wFlag == 'expired') 'Warranty', if (aFlag == 'expired') 'AMC']
+        : [if (wFlag == 'soon') 'Warranty', if (aFlag == 'soon') 'AMC'];
 
-    // A colour bar down the left edge — the status reads at a glance even
-    // before the eye lands on the chip, mirrors _RegisterCard in
-    // RegisterScreen (the guest register this list borrows its look from).
-    return GestureDetector(
-      onTap: onTap,
-      child: NeuCard(
-        radius: AppTheme.rMedium,
-        shadow: AppTheme.extruded,
-        padding: EdgeInsets.zero,
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                width: 4,
-                decoration: BoxDecoration(
-                  color: _statusColor,
-                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(AppTheme.rMedium)),
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.extruded,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          highlightColor: AppTheme.accent.withValues(alpha: 0.04),
+          splashColor: AppTheme.accent.withValues(alpha: 0.08),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s4, AppTheme.s8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            asset.quantity != null ? '${asset.name} × ${asset.quantity}' : asset.name,
+                            style: Theme.of(context).textTheme.titleSmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.sidebarBrandWash,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    asset.categoryName,
+                                    style: const TextStyle(color: AppTheme.sidebarBrandInk, fontSize: 10, fontWeight: FontWeight.w800),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              if (asset.assetTag != null) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  asset.assetTag!,
+                                  style: const TextStyle(color: AppTheme.muted, fontSize: 10.5),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.only(left: AppTheme.s8),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(color: _statusColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999)),
+                      child: Text(
+                        kAssetStatusLabel[asset.status] ?? asset.status,
+                        style: TextStyle(color: _statusColor, fontSize: 10.5, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    _AssetRowMenu(
+                      onViewDetails: onViewDetails,
+                      onEdit: onEdit,
+                      onReportIssue: onReportIssue,
+                      onDelete: onDelete,
+                    ),
+                  ],
                 ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s4, AppTheme.s8),
+                const SizedBox(height: AppTheme.s8),
+                Container(height: 1, color: AppTheme.border),
+                const SizedBox(height: AppTheme.s8),
+                Padding(
+                  padding: const EdgeInsets.only(right: AppTheme.s8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Expanded(
-                            child: Text(
-                              asset.name,
-                              style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 13.5, letterSpacing: -0.1),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(color: _statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(_statusIcon, size: 10, color: _statusColor),
-                                const SizedBox(width: 3),
-                                Text(
-                                  kAssetStatusLabel[asset.status] ?? asset.status,
-                                  style: TextStyle(color: _statusColor, fontSize: 9.5, fontWeight: FontWeight.w700),
-                                ),
-                              ],
-                            ),
-                          ),
-                          _AssetRowMenu(
-                            onViewDetails: onViewDetails,
-                            onEdit: onEdit,
-                            onReportIssue: onReportIssue,
-                            onDelete: onDelete,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        [asset.categoryName, if (asset.assetTag != null) asset.assetTag!].join(' · '),
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: AppTheme.s8),
-                      Container(height: 1, color: AppTheme.border),
-                      const SizedBox(height: AppTheme.s8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
+                          Flexible(
                             flex: 3,
                             child: _Field(label: 'Location', value: location.isEmpty ? '—' : location),
                           ),
-                          const SizedBox(width: AppTheme.s8),
-                          Expanded(
-                            flex: 2,
-                            child: _Field(
-                              label: 'Work orders',
-                              value: asset.openWorkOrders > 0 ? '${asset.openWorkOrders} open' : 'None open',
-                              accent: asset.openWorkOrders > 0,
-                              alignEnd: true,
-                            ),
+                          const SizedBox(width: AppTheme.s16),
+                          _Field(
+                            label: 'Work orders',
+                            value: asset.openWorkOrders > 0 ? '${asset.openWorkOrders} open' : 'None open',
+                            accent: asset.openWorkOrders > 0,
+                            alignEnd: true,
                           ),
                         ],
                       ),
+                      if (badFlag != null) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        Text(
+                          '${flagNames.join(' & ')} ${badFlag == 'expired' ? 'expired' : 'expiring soon'}',
+                          style: TextStyle(
+                            color: badFlag == 'expired' ? AppTheme.danger : AppTheme.checkout,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -701,6 +724,7 @@ class _AssetCard extends StatelessWidget {
   }
 }
 
+/// A labelled fact, same construction as _Figure in billing_screen.dart.
 class _Field extends StatelessWidget {
   final String label;
   final String value;
@@ -713,8 +737,14 @@ class _Field extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+        Text(
+          label,
+          style: const TextStyle(color: AppTheme.muted, fontSize: 10.5, fontWeight: FontWeight.w600),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         const SizedBox(height: 1),
         Text(
           value,
@@ -723,7 +753,7 @@ class _Field extends StatelessWidget {
           textAlign: alignEnd ? TextAlign.end : TextAlign.start,
           style: TextStyle(
             color: accent ? AppTheme.danger : AppTheme.heading,
-            fontSize: accent ? 12 : 11.5,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -750,21 +780,16 @@ class _AssetRowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<VoidCallback>(
-      tooltip: 'More actions',
-      padding: EdgeInsets.zero,
-      icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
-      onSelected: (action) => action(),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rSmall), side: const BorderSide(color: AppTheme.border)),
-      itemBuilder: (context) => [
-        PopupMenuItem(value: onViewDetails, child: const Text('View details')),
-        PopupMenuItem(value: onEdit, child: const Text('Edit asset')),
-        PopupMenuItem(value: onReportIssue, child: const Text('Report issue')),
-        PopupMenuItem(
-          value: onDelete,
-          child: const Text('Delete asset', style: TextStyle(color: AppTheme.danger)),
-        ),
+    return NeuActionMenu<VoidCallback>(
+      iconSize: 20,
+      actions: [
+        NeuMenuAction(onViewDetails, Icons.visibility_outlined, 'View details'),
+        NeuMenuAction(onEdit, Icons.edit_outlined, 'Edit asset'),
+        NeuMenuAction(onReportIssue, Icons.report_problem_outlined, 'Report issue'),
+        NeuMenuAction(onDelete, Icons.delete_outline_rounded, 'Delete asset', danger: true),
       ],
+      onSelected: (action) => action(),
     );
   }
 }
+

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
 const { uploadDir } = require('../config/uploadRoot');
+const { compressUploadedImages } = require('./imageCompression');
 
 // Room photos aren't sensitive like a guest's ID proof, so they're served
 // straight from a public static mount (see app.js) instead of an
@@ -39,7 +40,7 @@ const upload = multer({
 });
 
 function roomImageUpload(req, res, next) {
-  upload.array('images', MAX_IMAGES)(req, res, (err) => {
+  upload.array('images', MAX_IMAGES)(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(new ApiError('Each photo must be 5MB or smaller.', 400));
@@ -50,6 +51,7 @@ function roomImageUpload(req, res, next) {
       return next(new ApiError('Could not upload the photos.', 400));
     }
     if (err) return next(err);
+    await compressUploadedImages(req, { maxDimension: 1920, quality: 78 });
     next();
   });
 }

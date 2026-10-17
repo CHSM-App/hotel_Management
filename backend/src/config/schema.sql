@@ -33,12 +33,11 @@ CREATE TABLE dbo.users (
     id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
     lodge_id            BIGINT NULL REFERENCES dbo.lodges(id),
     name                NVARCHAR(200) NOT NULL,
-    email               NVARCHAR(255) NULL UNIQUE,
-    phone               NVARCHAR(20) NOT NULL UNIQUE,
+    email               NVARCHAR(255) NULL,
+    phone               NVARCHAR(20) NOT NULL,
     password_hash       NVARCHAR(255) NOT NULL,
     role                NVARCHAR(20) NOT NULL DEFAULT 'OWNER'
         CONSTRAINT ck_users_role CHECK (role IN ('SUPERADMIN', 'OWNER', 'RECEPTION', 'KITCHEN')),
-    must_reset_password BIT NOT NULL DEFAULT 1,
     is_active           BIT NOT NULL DEFAULT 1,
     created_at          DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     CONSTRAINT ck_users_lodge_scope CHECK (
@@ -742,6 +741,61 @@ CREATE UNIQUE INDEX uq_receipt_shares_token ON dbo.receipt_shares(token);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_receipt_shares_receipt' AND object_id = OBJECT_ID('dbo.receipt_shares'))
 CREATE INDEX ix_receipt_shares_receipt ON dbo.receipt_shares(receipt_id, id DESC);
 
+-- The guest side of "how was your stay" (or, since 141, "how was your event")
+-- — a page this app hosts itself (see migration 137), not a link the owner
+-- has to go find and paste in. One row is both the WhatsApp message's
+-- credential (token) and the answer to "has this already been asked" — the
+-- sweep behind it only considers a booking or function with no row here
+-- yet, and inserts before attempting the send, so a retry can never
+-- double-ask. rating/comment/submitted_at stay NULL until the guest or
+-- organiser actually fills the page in.
+IF OBJECT_ID('dbo.feedback_requests', 'U') IS NULL
+CREATE TABLE dbo.feedback_requests (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    booking_id     BIGINT NOT NULL REFERENCES dbo.bookings(id),
+    token          NVARCHAR(32) NOT NULL,
+    requested_at   DATETIMEOFFSET NOT NULL CONSTRAINT df_feedback_requests_requested DEFAULT SYSDATETIMEOFFSET(),
+    rating         TINYINT NULL CONSTRAINT ck_feedback_requests_rating CHECK (rating BETWEEN 1 AND 5),
+    comment        NVARCHAR(1000) NULL,
+    submitted_at   DATETIMEOFFSET NULL,
+    CONSTRAINT uq_feedback_requests_booking UNIQUE (booking_id)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_feedback_requests_token' AND object_id = OBJECT_ID('dbo.feedback_requests'))
+CREATE UNIQUE INDEX uq_feedback_requests_token ON dbo.feedback_requests(token);
+
+-- A request against a stay or a function, never both and never neither (141)
+-- — same "stay or function" split dbo.advance_receipts and dbo.invoices
+-- already took. A plain UNIQUE constraint allows only one NULL in SQL
+-- Server, so once booking_id started going NULL for every event's row, that
+-- dedup had to move to a pair of filtered unique indexes instead.
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.feedback_requests') AND name = 'booking_id' AND is_nullable = 0
+)
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = 'uq_feedback_requests_booking' AND parent_object_id = OBJECT_ID('dbo.feedback_requests'))
+        ALTER TABLE dbo.feedback_requests DROP CONSTRAINT uq_feedback_requests_booking;
+
+    ALTER TABLE dbo.feedback_requests ALTER COLUMN booking_id BIGINT NULL;
+
+    CREATE UNIQUE INDEX uq_feedback_requests_booking_active ON dbo.feedback_requests(booking_id)
+        WHERE booking_id IS NOT NULL;
+END;
+
+IF COL_LENGTH('dbo.feedback_requests', 'event_booking_id') IS NULL
+    EXEC('ALTER TABLE dbo.feedback_requests ADD event_booking_id BIGINT NULL REFERENCES dbo.event_bookings(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_feedback_requests_parent')
+    EXEC('ALTER TABLE dbo.feedback_requests ADD CONSTRAINT ck_feedback_requests_parent CHECK (
+        (CASE WHEN booking_id IS NULL THEN 0 ELSE 1 END)
+      + (CASE WHEN event_booking_id IS NULL THEN 0 ELSE 1 END) = 1)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_feedback_requests_event_active' AND object_id = OBJECT_ID('dbo.feedback_requests'))
+    EXEC('CREATE UNIQUE INDEX uq_feedback_requests_event_active ON dbo.feedback_requests(event_booking_id)
+          WHERE event_booking_id IS NOT NULL');
+
 -- Roles and their permission sets. A row with lodge_id IS NULL is a built-in
 -- default shared by every lodge; a row with lodge_id set belongs to that lodge
 -- and, when its role_key matches a built-in, overrides it. That's what lets an
@@ -1071,7 +1125,12 @@ WHERE lodge_id IS NULL AND role_key = 'KITCHEN';
 -- uses: emails stay unique among rows that have one, and any number of rows may
 -- have none. The original constraint is auto-named, so it's looked up rather
 -- than dropped by name.
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_users_email' AND object_id = OBJECT_ID('dbo.users'))
+--
+-- Both email and phone (below) were originally unique across the whole table,
+-- which blocked the same person from staffing two different lodges. Staff
+-- only need to be unique within their own lodge, so both indexes are scoped
+-- to (lodge_id, ...) and skip SUPERADMIN rows (lodge_id IS NULL).
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_users_lodge_email' AND object_id = OBJECT_ID('dbo.users'))
 BEGIN
     DECLARE @emailConstraint SYSNAME = (
         SELECT TOP 1 kc.name
@@ -1083,8 +1142,35 @@ BEGIN
     IF @emailConstraint IS NOT NULL
         EXEC('ALTER TABLE dbo.users DROP CONSTRAINT ' + @emailConstraint);
 
-    EXEC('CREATE UNIQUE INDEX uq_users_email ON dbo.users(email) WHERE email IS NOT NULL');
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_users_email' AND object_id = OBJECT_ID('dbo.users'))
+        DROP INDEX uq_users_email ON dbo.users;
+
+    EXEC('CREATE UNIQUE INDEX uq_users_lodge_email ON dbo.users(lodge_id, email) WHERE lodge_id IS NOT NULL AND email IS NOT NULL');
 END
+
+-- Same story for phone: it shipped as a bare table-level UNIQUE constraint,
+-- so one phone number could only ever staff one lodge in the system.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_users_lodge_phone' AND object_id = OBJECT_ID('dbo.users'))
+BEGIN
+    DECLARE @phoneConstraint SYSNAME = (
+        SELECT TOP 1 kc.name
+        FROM sys.key_constraints kc
+        JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+        JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+        WHERE kc.parent_object_id = OBJECT_ID('dbo.users') AND kc.type = 'UQ' AND c.name = 'phone'
+    );
+    IF @phoneConstraint IS NOT NULL
+        EXEC('ALTER TABLE dbo.users DROP CONSTRAINT ' + @phoneConstraint);
+
+    EXEC('CREATE UNIQUE INDEX uq_users_lodge_phone ON dbo.users(lodge_id, phone) WHERE lodge_id IS NOT NULL');
+END
+
+-- A staff edit that left the email field blank used to write '' rather than
+-- NULL. The filtered index above only excludes NULL, so a second staff member
+-- edited the same way collided with the first on email = '' and crashed the
+-- save with a raw constraint-violation error. Clears the leftover '' rows back
+-- to NULL now that the write path is fixed.
+UPDATE dbo.users SET email = NULL WHERE email = '';
 
 -- ---------------------------------------------------------------------------
 -- Single-link ordering: PIN brute-force defence
@@ -1158,7 +1244,7 @@ CREATE TABLE dbo.otp_store (
     phone        NVARCHAR(20) NOT NULL,
     otp_hash     NVARCHAR(255) NOT NULL,
     purpose      NVARCHAR(30) NOT NULL
-        CONSTRAINT ck_otp_store_purpose CHECK (purpose IN ('password_change')),
+        CONSTRAINT ck_otp_store_purpose CHECK (purpose IN ('password_change', 'forgot_password')),
     attempts     INT NOT NULL DEFAULT 0,
     expires_at   DATETIMEOFFSET NOT NULL,
     used         BIT NOT NULL DEFAULT 0,
@@ -1721,6 +1807,13 @@ IF COL_LENGTH('dbo.bookings', 'cancellation_charge_payment_method') IS NULL
             CONSTRAINT ck_bookings_charge_method
             CHECK (cancellation_charge_payment_method IN (''CASH'', ''UPI'', ''CARD''))');
 
+-- When the "your stay is coming up" WhatsApp reminder went out for this
+-- booking (136) — NULL means "not sent yet". Set once, the first (and only)
+-- time sendDueStayReminders fires for this booking, so the daily sweep never
+-- sends the same guest the same reminder twice.
+IF COL_LENGTH('dbo.bookings', 'reminder_sent_at') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD reminder_sent_at DATETIMEOFFSET NULL');
+
 -- ---------------------------------------------------------------------------
 -- The advance-receipt number series
 -- ---------------------------------------------------------------------------
@@ -1873,7 +1966,7 @@ CREATE TABLE dbo.event_addons (
 );
 
 -- One function, from the first call to the settled bill. Time is a real
--- range (a wedding runs 6 pm to 1 am). TENTATIVE and CONFIRMED block the venue.
+-- range (a wedding runs 6 pm to 1 am). Only CONFIRMED blocks the venue.
 IF OBJECT_ID('dbo.event_bookings', 'U') IS NULL
 CREATE TABLE dbo.event_bookings (
     id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -1918,10 +2011,9 @@ CREATE TABLE dbo.event_bookings (
     rooms_from          DATE NULL,
     rooms_to            DATE NULL,
     rooms_notes         NVARCHAR(500) NULL,
-    status              NVARCHAR(10) NOT NULL CONSTRAINT df_event_bookings_status DEFAULT 'ENQUIRY'
+    status              NVARCHAR(10) NOT NULL CONSTRAINT df_event_bookings_status DEFAULT 'DRAFT'
         CONSTRAINT ck_event_bookings_status
-        CHECK (status IN ('ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED', 'CANCELLED', 'EXPIRED')),
-    hold_expires_at     DATETIMEOFFSET NULL,
+        CHECK (status IN ('DRAFT', 'CONFIRMED', 'SETTLED', 'CANCELLED')),
     cancel_reason       NVARCHAR(200) NULL,
     refund_amount       DECIMAL(10,2) NULL,
     created_by          BIGINT NULL REFERENCES dbo.users(id),
@@ -1950,11 +2042,25 @@ IF COL_LENGTH('dbo.event_bookings', 'cancellation_charge') IS NULL
 IF COL_LENGTH('dbo.event_bookings', 'cancelled_at') IS NULL
     EXEC('ALTER TABLE dbo.event_bookings ADD cancelled_at DATETIMEOFFSET NULL');
 
+-- "Mark as Completed" (128): the desk says the function is over, which hands
+-- the venue to housekeeping at once rather than at the booked end time. Not a
+-- status — NULL just means the booked end_at decides, as before.
+IF COL_LENGTH('dbo.event_bookings', 'completed_at') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD completed_at DATETIMEOFFSET NULL');
+IF COL_LENGTH('dbo.event_bookings', 'completed_by') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD completed_by BIGINT NULL REFERENCES dbo.users(id)');
+
 -- How the refund went back (091) — the same gap 056 closed for bookings.
 IF COL_LENGTH('dbo.event_bookings', 'refund_payment_method') IS NULL
     EXEC('ALTER TABLE dbo.event_bookings ADD refund_payment_method NVARCHAR(20) NULL
             CONSTRAINT ck_event_bookings_refund_method
             CHECK (refund_payment_method IN (''CASH'', ''UPI'', ''CARD''))');
+
+-- When the "your event is coming up" WhatsApp reminder went out (140) — the
+-- same dedup NULL-means-not-sent-yet column bookings.reminder_sent_at (136)
+-- gave the stay reminder sweep.
+IF COL_LENGTH('dbo.event_bookings', 'reminder_sent_at') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD reminder_sent_at DATETIMEOFFSET NULL');
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_venue_time' AND object_id = OBJECT_ID('dbo.event_bookings'))
     CREATE INDEX ix_event_bookings_venue_time ON dbo.event_bookings(venue_id, start_at, end_at) INCLUDE (status);
@@ -2551,6 +2657,12 @@ CREATE TABLE dbo.expenses (
     -- purchase, a work order close, or a coverage/AMC renewal — see
     -- migration 078. NULL for anything typed by hand in the Expenses tab.
     asset_id                BIGINT NULL REFERENCES dbo.assets(id),
+    -- laundry_order_id/linen_movement_id (same "origin marker" pattern as
+    -- asset_id, for what an outside laundry was paid) are added further down
+    -- this file via ALTER TABLE, not inline here — dbo.laundry_orders and
+    -- dbo.linen_movements are both created later in this script, so an
+    -- inline REFERENCES to either would fail on a fresh database. See the
+    -- comment by service_usages.laundry_order_id for the same deferral.
     created_at              DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
     updated_at              DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
 );
@@ -2924,6 +3036,241 @@ IF COL_LENGTH('dbo.lodge_services', 'is_laundry') IS NULL
 IF COL_LENGTH('dbo.service_usages', 'laundry_order_id') IS NULL
     EXEC('ALTER TABLE dbo.service_usages ADD laundry_order_id BIGINT NULL REFERENCES dbo.laundry_orders(id)');
 
+-- dbo.expenses.laundry_order_id/linen_movement_id (see migration 135) — added
+-- here, not as inline columns on dbo.expenses above, for the same reason
+-- service_usages.laundry_order_id is deferred to this point: dbo.expenses is
+-- created earlier in this file than dbo.laundry_orders/dbo.linen_movements,
+-- so an inline REFERENCES to either would fail on a fresh database.
+IF COL_LENGTH('dbo.expenses', 'laundry_order_id') IS NULL
+    EXEC('ALTER TABLE dbo.expenses ADD laundry_order_id BIGINT NULL REFERENCES dbo.laundry_orders(id)');
+
+IF COL_LENGTH('dbo.expenses', 'linen_movement_id') IS NULL
+    EXEC('ALTER TABLE dbo.expenses ADD linen_movement_id BIGINT NULL REFERENCES dbo.linen_movements(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_expenses_laundry_order' AND object_id = OBJECT_ID('dbo.expenses'))
+CREATE INDEX ix_expenses_laundry_order ON dbo.expenses(laundry_order_id) WHERE laundry_order_id IS NOT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_expenses_linen_movement' AND object_id = OBJECT_ID('dbo.expenses'))
+CREATE INDEX ix_expenses_linen_movement ON dbo.expenses(linen_movement_id) WHERE linen_movement_id IS NOT NULL;
+
 IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'HOUSEKEEPING')
 INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
     (NULL, 'HOUSEKEEPING', 'Housekeeping', 'Cleans rooms, tracks linen and takes guest laundry.', 1, '["housekeeping.manage"]');
+
+-- Laundry add-on (migration 119): hotel linen and guest laundry, switched on
+-- separately from Housekeeping. Properties and roles that had Housekeeping keep
+-- laundry, once, together with the column.
+IF COL_LENGTH('dbo.lodges', 'has_laundry') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.lodges ADD has_laundry BIT NOT NULL CONSTRAINT df_lodges_has_laundry DEFAULT 0');
+    EXEC('UPDATE dbo.lodges SET has_laundry = 1 WHERE has_housekeeping = 1');
+    UPDATE dbo.roles
+    SET permissions = REPLACE(permissions, '"housekeeping.manage"', '"housekeeping.manage","laundry.manage"')
+    WHERE permissions LIKE '%"housekeeping.manage"%' AND permissions NOT LIKE '%"laundry.manage"%';
+END
+
+-- Migration 129: Laundry is a deliberate add per property now, not handed to
+-- Housekeeping by default. Only the shared default (lodge_id IS NULL) is
+-- touched — a lodge with its own saved Housekeeping permissions is untouched.
+UPDATE dbo.roles
+SET permissions = REPLACE(permissions, '"housekeeping.manage","laundry.manage"', '"housekeeping.manage"')
+WHERE lodge_id IS NULL
+  AND role_key = 'HOUSEKEEPING'
+  AND permissions LIKE '%"housekeeping.manage","laundry.manage"%';
+
+IF COL_LENGTH('dbo.linen_movements', 'washed_by') IS NULL
+    EXEC('ALTER TABLE dbo.linen_movements ADD washed_by NVARCHAR(100) NULL');
+
+-- Hotel linen is registered in Asset Inventory and read from there by Laundry
+-- (migration 125): a flagged category, a count on the asset, and the asset a
+-- laundry linen row stands for.
+IF COL_LENGTH('dbo.asset_categories', 'is_linen') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.asset_categories ADD is_linen BIT NOT NULL CONSTRAINT df_asset_categories_is_linen DEFAULT 0');
+    EXEC('UPDATE dbo.asset_categories SET is_linen = 1 WHERE LOWER(LTRIM(RTRIM(name))) = ''hotel linen''');
+END
+
+IF COL_LENGTH('dbo.assets', 'quantity') IS NULL
+    EXEC('ALTER TABLE dbo.assets ADD quantity INT NULL CONSTRAINT ck_assets_quantity CHECK (quantity IS NULL OR quantity >= 0)');
+
+IF COL_LENGTH('dbo.linen_items', 'asset_id') IS NULL
+    EXEC('ALTER TABLE dbo.linen_items ADD asset_id BIGINT NULL REFERENCES dbo.assets(id)');
+
+-- Event venues on the Housekeeping board (migration 127): the same state a
+-- room has, and a clean or a linen change that can be for a venue.
+IF OBJECT_ID('dbo.housekeeping_venues', 'U') IS NULL
+CREATE TABLE dbo.housekeeping_venues (
+    venue_id            BIGINT NOT NULL PRIMARY KEY REFERENCES dbo.event_venues(id),
+    lodge_id            BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    last_cleaned_at     DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    needs_cleaning      BIT NOT NULL DEFAULT 0,
+    cleaning_started_at DATETIMEOFFSET NULL,
+    cleaning_by         BIGINT NULL REFERENCES dbo.users(id),
+    out_of_order        BIT NOT NULL DEFAULT 0,
+    out_of_order_note   NVARCHAR(300) NULL
+);
+
+IF COL_LENGTH('dbo.housekeeping_log', 'venue_id') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.housekeeping_log ADD venue_id BIGINT NULL REFERENCES dbo.event_venues(id)');
+    EXEC('ALTER TABLE dbo.housekeeping_log ALTER COLUMN room_id BIGINT NULL');
+END
+
+IF COL_LENGTH('dbo.linen_movements', 'venue_id') IS NULL
+    EXEC('ALTER TABLE dbo.linen_movements ADD venue_id BIGINT NULL REFERENCES dbo.event_venues(id)');
+
+-- The linen category is called by a word staff use (migration 126).
+UPDATE c
+SET c.name = N'Bedsheets & Towels'
+FROM dbo.asset_categories c
+WHERE c.is_linen = 1 AND LOWER(LTRIM(RTRIM(c.name))) = 'hotel linen'
+  AND NOT EXISTS (SELECT 1 FROM dbo.asset_categories o WHERE o.lodge_id = c.lodge_id AND o.name = N'Bedsheets & Towels');
+
+-- Guest laundry comes back from the wash before it is handed over (migration 124).
+IF COL_LENGTH('dbo.laundry_orders', 'vendor_phone') IS NULL
+    EXEC('ALTER TABLE dbo.laundry_orders ADD
+            vendor_phone    NVARCHAR(20) NULL,
+            washed_back_at  DATETIMEOFFSET NULL');
+
+-- Who washes a guest laundry order and what a vendor charges for it (migration 123).
+IF COL_LENGTH('dbo.laundry_orders', 'washed_by') IS NULL
+    EXEC('ALTER TABLE dbo.laundry_orders ADD
+            washed_by   NVARCHAR(100) NULL,
+            wash_charge DECIMAL(10,2) NULL
+              CONSTRAINT ck_laundry_orders_wash_charge CHECK (wash_charge IS NULL OR wash_charge >= 0)');
+
+-- What an outside laundry charged for a batch (migration 122). Written on the
+-- batch's first movement row only; sum it, never average it.
+IF COL_LENGTH('dbo.linen_movements', 'wash_charge') IS NULL
+    EXEC('ALTER TABLE dbo.linen_movements ADD wash_charge DECIMAL(10,2) NULL
+            CONSTRAINT ck_linen_movements_wash_charge CHECK (wash_charge IS NULL OR wash_charge >= 0)');
+
+-- Linen handover (migration 121): linen changed in a room waits until the
+-- laundry marks it received.
+IF COL_LENGTH('dbo.linen_movements', 'handover_at') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.linen_movements ADD
+            handover_at DATETIMEOFFSET NULL,
+            handover_by BIGINT NULL REFERENCES dbo.users(id),
+            log_id      BIGINT NULL REFERENCES dbo.housekeeping_log(id)');
+    EXEC('UPDATE dbo.linen_movements SET handover_at = created_at WHERE kind = ''CHANGED''');
+END
+
+-- Housekeeping issues (migration 120): a problem or found item reported when a
+-- room is finished stays open until the desk closes it.
+IF COL_LENGTH('dbo.housekeeping_log', 'issue_resolved_at') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.housekeeping_log ADD
+            issue_resolved_at DATETIMEOFFSET NULL,
+            issue_resolved_by BIGINT NULL REFERENCES dbo.users(id),
+            issue_resolution  NVARCHAR(300) NULL,
+            found_closed_at   DATETIMEOFFSET NULL,
+            found_closed_by   BIGINT NULL REFERENCES dbo.users(id),
+            found_resolution  NVARCHAR(300) NULL,
+            blocked_room      BIT NOT NULL CONSTRAINT df_housekeeping_log_blocked DEFAULT 0');
+    EXEC('UPDATE dbo.housekeeping_log SET issue_resolved_at = done_at
+          WHERE issues IS NOT NULL AND done_at < DATEADD(DAY, -7, SYSDATETIMEOFFSET())');
+    EXEC('UPDATE dbo.housekeeping_log SET found_closed_at = done_at
+          WHERE lost_found IS NOT NULL AND done_at < DATEADD(DAY, -7, SYSDATETIMEOFFSET())');
+END
+
+IF NOT EXISTS (SELECT 1 FROM dbo.roles WHERE lodge_id IS NULL AND role_key = 'LAUNDRY')
+INSERT INTO dbo.roles (lodge_id, role_key, name, description, is_system, permissions) VALUES
+    (NULL, 'LAUNDRY', 'Laundry', 'Sends hotel linen for washing, receives it back and takes guest laundry.', 1, '["laundry.manage"]');
+
+-- One record per real person (migration 130), not per stay or per booking.
+-- Matched by phone within a lodge. Room-side and event-side activity are kept
+-- as separate column pairs, same shape as invoices/advance_receipts already
+-- keeping booking_id and event_booking_id side by side.
+IF OBJECT_ID('dbo.customers', 'U') IS NULL
+CREATE TABLE dbo.customers (
+    id                 BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id           BIGINT NOT NULL REFERENCES dbo.lodges(id),
+
+    phone              NVARCHAR(20) NOT NULL,
+    name               NVARCHAR(200) NOT NULL,
+    email              NVARCHAR(255) NULL,
+
+    id_proof_type      NVARCHAR(30) NULL,
+    id_proof_number    NVARCHAR(50) NULL,
+    id_proof_document  NVARCHAR(255) NULL,
+
+    notes              NVARCHAR(1000) NULL,
+
+    loyalty_points     INT NOT NULL CONSTRAINT df_customers_loyalty_points DEFAULT 0,
+    marketing_opt_in   BIT NOT NULL CONSTRAINT df_customers_marketing_opt_in DEFAULT 0,
+    tags               NVARCHAR(500) NULL,
+
+    total_stays        INT NOT NULL CONSTRAINT df_customers_total_stays DEFAULT 0,
+    total_room_spend   DECIMAL(12,2) NOT NULL CONSTRAINT df_customers_total_room_spend DEFAULT 0,
+    last_stay_date     DATE NULL,
+
+    total_events       INT NOT NULL CONSTRAINT df_customers_total_events DEFAULT 0,
+    total_event_spend  DECIMAL(12,2) NOT NULL CONSTRAINT df_customers_total_event_spend DEFAULT 0,
+    last_event_date    DATE NULL,
+
+    created_at         DATETIMEOFFSET NOT NULL CONSTRAINT df_customers_created_at DEFAULT SYSDATETIMEOFFSET(),
+    updated_at         DATETIMEOFFSET NOT NULL CONSTRAINT df_customers_updated_at DEFAULT SYSDATETIMEOFFSET(),
+
+    CONSTRAINT uq_customers_lodge_phone UNIQUE (lodge_id, phone)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_customers_lodge_name' AND object_id = OBJECT_ID('dbo.customers'))
+    CREATE INDEX ix_customers_lodge_name ON dbo.customers(lodge_id, name);
+
+-- Links bookings and event bookings back to the customer they belong to
+-- (migration 131). Independent, nullable columns, not mutually exclusive on
+-- the customer side: one customer can have rows in both.
+IF COL_LENGTH('dbo.bookings', 'customer_id') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD customer_id BIGINT NULL REFERENCES dbo.customers(id)');
+
+IF COL_LENGTH('dbo.booking_guests', 'customer_id') IS NULL
+    EXEC('ALTER TABLE dbo.booking_guests ADD customer_id BIGINT NULL REFERENCES dbo.customers(id)');
+
+IF COL_LENGTH('dbo.event_bookings', 'customer_id') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD customer_id BIGINT NULL REFERENCES dbo.customers(id)');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_bookings_customer' AND object_id = OBJECT_ID('dbo.bookings'))
+    CREATE INDEX ix_bookings_customer ON dbo.bookings(customer_id) WHERE customer_id IS NOT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_guests_customer' AND object_id = OBJECT_ID('dbo.booking_guests'))
+    CREATE INDEX ix_booking_guests_customer ON dbo.booking_guests(customer_id) WHERE customer_id IS NOT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_customer' AND object_id = OBJECT_ID('dbo.event_bookings'))
+    CREATE INDEX ix_event_bookings_customer ON dbo.event_bookings(customer_id) WHERE customer_id IS NOT NULL;
+
+-- date_of_birth (138): optional, entered by hand on the profile — NULL means
+-- "not on file", not "no birthday". last_birthday_wished_at is the sweep's
+-- dedup (birthdayWishes.service.js): NULL or not already this calendar year
+-- is what lets a customer be wished again next year without a special case.
+IF COL_LENGTH('dbo.customers', 'date_of_birth') IS NULL
+    EXEC('ALTER TABLE dbo.customers ADD date_of_birth DATE NULL');
+
+IF COL_LENGTH('dbo.customers', 'last_birthday_wished_at') IS NULL
+    EXEC('ALTER TABLE dbo.customers ADD last_birthday_wished_at DATE NULL');
+
+-- customers.manage granted to whichever role already holds guests.view
+-- (migration 132) — adding a permission to the catalog doesn't retroactively
+-- put it on any role's stored permissions array.
+UPDATE dbo.roles
+SET permissions = REPLACE(permissions, '"guests.view"', '"guests.view","customers.manage"')
+WHERE permissions LIKE '%"guests.view"%' AND permissions NOT LIKE '%"customers.manage"%';
+
+-- A photo of the service — private pool, gaming area, spa — shown on its card
+-- in Services & prices (migration 133). Filename only, under
+-- uploads/service-images, the same way a dish photo is referenced.
+IF COL_LENGTH('dbo.lodge_services', 'image_filename') IS NULL
+    EXEC('ALTER TABLE dbo.lodge_services ADD image_filename NVARCHAR(255) NULL');
+
+-- last_seen (139): set on every sign-in and session renewal (auth.service.js's
+-- loginWithRoles and refresh) so the superadmin panel can show when a login
+-- was last actually used. NULL means "never signed in".
+IF COL_LENGTH('dbo.users', 'last_seen') IS NULL
+    EXEC('ALTER TABLE dbo.users ADD last_seen DATETIMEOFFSET NULL');
+
+-- hero_image_path (145): the public page's hero background, set by an owner
+-- or Vengurla Tech staff. NULL falls back to the first room/venue photo, as
+-- the page always has. Relative to the uploads root, not a URL, matching
+-- logo_path.
+IF COL_LENGTH('dbo.lodges', 'hero_image_path') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD hero_image_path NVARCHAR(500) NULL');

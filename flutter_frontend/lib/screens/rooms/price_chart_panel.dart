@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/category.dart';
@@ -77,34 +78,34 @@ class _Section extends StatelessWidget {
   Widget build(BuildContext context) {
     return NeuCard(
       radius: AppTheme.rLarge,
-      padding: const EdgeInsets.all(AppTheme.s16),
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 28,
+                height: 28,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, Color(0xFF434FC1)],
+                    colors: [AppTheme.accent, Color(0xFF10499A)],
                   ),
                   borderRadius: BorderRadius.circular(AppTheme.rSmall),
                   boxShadow: const [
                     BoxShadow(
-                      color: Color(0x2A5A67D8),
+                      color: Color(0x2A1457AD),
                       offset: Offset(0, 2),
                       blurRadius: 5,
                     ),
                   ],
                 ),
-                child: Icon(icon, size: 16, color: Colors.white),
+                child: Icon(icon, size: 14, color: Colors.white),
               ),
-              const SizedBox(width: AppTheme.s12),
+              const SizedBox(width: AppTheme.s8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,12 +116,12 @@ class _Section extends StatelessWidget {
                       style: const TextStyle(
                         color: AppTheme.heading,
                         fontWeight: FontWeight.w700,
-                        fontSize: 15,
+                        fontSize: 14,
                       ),
                     ),
                     Text(
                       hint,
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 10.5),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -128,7 +129,7 @@ class _Section extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           child,
         ],
       ),
@@ -162,8 +163,8 @@ class _Row extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: AppTheme.bg,
         borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -172,16 +173,16 @@ class _Row extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 26,
+            height: 26,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: AppTheme.accent.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AppTheme.rSmall - 2),
             ),
-            child: Icon(icon, size: 15, color: AppTheme.accent),
+            child: Icon(icon, size: 13, color: AppTheme.accent),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,7 +193,9 @@ class _Row extends StatelessWidget {
                     Flexible(
                       child: Text(
                         name,
-                        style: Theme.of(context).textTheme.titleSmall,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontSize: 13,
+                            ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -218,13 +221,13 @@ class _Row extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Text(
             value,
             style: const TextStyle(
               color: AppTheme.heading,
               fontWeight: FontWeight.w600,
-              fontSize: 12.5,
+              fontSize: 12,
             ),
           ),
           NeuRowMenu(onEdit: onEdit, onDelete: onDelete),
@@ -250,7 +253,7 @@ class _AddToggleRow extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppTheme.rSmall),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: AppTheme.accent.withValues(alpha: 0.06),
@@ -429,7 +432,13 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
           Row(
             children: [
               Expanded(
-                child: NeuField(controller: _name, label: '', hint: 'Deluxe', forceCapitalizeWords: true),
+                child: NeuField(
+                  controller: _name,
+                  label: '',
+                  hint: 'Deluxe',
+                  forceCapitalizeWords: true,
+                  dense: true,
+                ),
               ),
               const SizedBox(width: AppTheme.s8),
               Expanded(
@@ -438,6 +447,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
                   label: '',
                   hint: 'Base price ₹',
                   keyboardType: TextInputType.number,
+                  dense: true,
                 ),
               ),
             ],
@@ -448,6 +458,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
             label: '',
             hint: 'Tape chart order (optional)',
             keyboardType: TextInputType.number,
+            dense: true,
           ),
           const SizedBox(height: AppTheme.s8),
           Row(
@@ -455,7 +466,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
               Expanded(
                 child: NeuButton(
                   onPressed: submitting ? null : _cancelEdit,
-                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
                   child: const Text('Cancel'),
                 ),
               ),
@@ -465,7 +476,7 @@ class _CategoriesSectionState extends ConsumerState<_CategoriesSection> {
                 child: NeuButton(
                   primary: true,
                   onPressed: submitting ? null : _submit,
-                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
                   child: Text(_editingId != null ? 'Save' : 'Add'),
                 ),
               ),
@@ -574,7 +585,15 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
           ],
           Row(
             children: [
-              Expanded(child: NeuField(controller: _name, label: '', hint: 'AC', forceCapitalizeWords: true)),
+              Expanded(
+                child: NeuField(
+                  controller: _name,
+                  label: '',
+                  hint: 'AC',
+                  forceCapitalizeWords: true,
+                  dense: true,
+                ),
+              ),
               const SizedBox(width: AppTheme.s8),
               Expanded(
                 child: NeuField(
@@ -582,6 +601,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
                   label: '',
                   hint: 'Amount ₹/night',
                   keyboardType: TextInputType.number,
+                  dense: true,
                 ),
               ),
             ],
@@ -592,7 +612,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
               Expanded(
                 child: NeuButton(
                   onPressed: submitting ? null : _cancelEdit,
-                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
                   child: const Text('Cancel'),
                 ),
               ),
@@ -602,7 +622,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
                 child: NeuButton(
                   primary: true,
                   onPressed: submitting ? null : _submit,
-                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
                   child: Text(_editingId != null ? 'Save' : 'Add'),
                 ),
               ),
@@ -672,7 +692,7 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
     final firstDate = start ? earliest : _startDate;
     var initialDate = start ? _startDate : _endDate;
     if (initialDate.isBefore(firstDate)) initialDate = firstDate;
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       initialDate: initialDate,
       firstDate: firstDate,
@@ -771,7 +791,13 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
             Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
             const SizedBox(height: AppTheme.s8),
           ],
-          NeuField(controller: _name, label: '', hint: 'Diwali', forceCapitalizeWords: true),
+          NeuField(
+            controller: _name,
+            label: '',
+            hint: 'Diwali',
+            forceCapitalizeWords: true,
+            dense: true,
+          ),
           const SizedBox(height: AppTheme.s8),
           Row(
             children: [
@@ -779,6 +805,10 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
                 child: GestureDetector(
                   onTap: () => _pickDate(start: true),
                   child: NeuPressed(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s12,
+                      vertical: AppTheme.s8,
+                    ),
                     child: Text(_iso(_startDate), style: const TextStyle(color: AppTheme.text, fontSize: 13)),
                   ),
                 ),
@@ -788,6 +818,10 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
                 child: GestureDetector(
                   onTap: () => _pickDate(start: false),
                   child: NeuPressed(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s12,
+                      vertical: AppTheme.s8,
+                    ),
                     child: Text(_iso(_endDate), style: const TextStyle(color: AppTheme.text, fontSize: 13)),
                   ),
                 ),
@@ -800,6 +834,7 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
             label: '',
             hint: '+% adjustment',
             keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+            dense: true,
           ),
           const SizedBox(height: AppTheme.s8),
           Row(
@@ -807,7 +842,7 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
               Expanded(
                 child: NeuButton(
                   onPressed: submitting ? null : _cancelEdit,
-                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
                   child: const Text('Cancel'),
                 ),
               ),
@@ -817,7 +852,7 @@ class _SeasonsSectionState extends ConsumerState<_SeasonsSection> {
                 child: NeuButton(
                   primary: true,
                   onPressed: submitting ? null : _submit,
-                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                  padding: const EdgeInsets.symmetric(vertical: AppTheme.s8),
                   child: Text(_editingId != null ? 'Save' : 'Add'),
                 ),
               ),

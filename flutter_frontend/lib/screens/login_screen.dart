@@ -16,7 +16,6 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _identifier = TextEditingController();
   final _password = TextEditingController();
-  bool _showPassword = false;
 
   // Swaps in for the sign-in form itself, the same way the web login's
   // "Forgot password?" link swaps its card — one form on screen at a time,
@@ -26,6 +25,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _forgotPassword = TextEditingController();
   final _forgotConfirm = TextEditingController();
   bool _showForgotPasswords = false;
+  bool _showPassword = false;
   bool _forgotSubmitting = false;
   bool _forgotDone = false;
   String? _forgotError;
@@ -117,7 +117,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF5A67D8), Color(0xFF7C6FE0)],
+                colors: [Color(0xFF1457AD), Color(0xFF7C6FE0)],
               ),
             ),
           ),
@@ -195,6 +195,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           controller: _password,
           label: 'Password',
           obscure: !_showPassword,
+          suffix: _EyeToggle(
+            shown: _showPassword,
+            onTap: () => setState(() => _showPassword = !_showPassword),
+          ),
           labelAction: TextButton(
             onPressed: _openForgot,
             style: TextButton.styleFrom(
@@ -206,10 +210,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               'Forgot password?',
               style: TextStyle(color: AppTheme.accent, fontSize: 12.5),
             ),
-          ),
-          suffix: _EyeToggle(
-            shown: _showPassword,
-            onTap: () => setState(() => _showPassword = !_showPassword),
           ),
         ),
 

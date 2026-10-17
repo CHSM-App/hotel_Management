@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 
 import '../models/category.dart';
+import '../models/checkout_policy.dart';
+import '../models/quote.dart';
 import '../models/room.dart';
 import '../models/season.dart';
 import '../models/switchable_charge_listing.dart';
@@ -53,4 +55,23 @@ abstract class RoomsRepository {
     required num adjustmentPercent,
   });
   Future<void> deleteSeason(int id);
+
+  // Price simulator
+  Future<PriceSimulation> simulatePrice({
+    required int roomId,
+    required String date,
+    required String toDate,
+    String? chargeIds,
+  });
+
+  // Checkout policy
+  Future<CheckoutPolicy> checkoutPolicy();
+  Future<CheckoutPolicy> updateCheckoutPolicy({
+    required String checkOutTime,
+    String? checkInTime,
+    required int lateGraceMinutes,
+    required num lateHalfDayPercent,
+    required int lateFullDayAfterMinutes,
+    required num lateFullDayPercent,
+  });
 }

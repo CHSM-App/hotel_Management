@@ -36,8 +36,34 @@ module.exports = {
     done(res);
   }),
 
+  listVenues: handle(async (req, res) => res.json({ venues: await service.listVenues(lodgeOf(req)) })),
+  startVenueCleaning: handle(async (req, res) => (await service.startVenueCleaning(lodgeOf(req), userOf(req), idOf(req)), done(res))),
+  releaseVenue: handle(async (req, res) => (await service.releaseVenue(lodgeOf(req), idOf(req)), done(res))),
+  finishVenueCleaning: handle(async (req, res) => {
+    await service.finishVenueCleaning(lodgeOf(req), userOf(req), idOf(req), parse(schemas.finishCleaningSchema, req.body));
+    done(res);
+  }),
+  markVenueDirty: handle(async (req, res) => (await service.markVenueDirty(lodgeOf(req), idOf(req)), done(res))),
+  setVenueOutOfOrder: handle(async (req, res) => {
+    await service.setVenueOutOfOrder(lodgeOf(req), idOf(req), parse(schemas.outOfOrderSchema, req.body));
+    done(res);
+  }),
+
+  listIssues: handle(async (req, res) => res.json({ issues: await service.listIssues(lodgeOf(req), req.query.scope) })),
+  openIssueSummary: handle(async (req, res) => res.json(await service.openIssueSummary(lodgeOf(req)))),
+  closeIssue: handle(async (req, res) =>
+    res.json(await service.closeIssue(lodgeOf(req), userOf(req), idOf(req), parse(schemas.closeIssueSchema, req.body)))
+  ),
+
   listLinen: handle(async (req, res) =>
-    res.json({ items: await service.listLinen(lodgeOf(req)), movements: await service.listLinenMovements(lodgeOf(req)) })
+    res.json({
+      items: await service.listLinen(lodgeOf(req)),
+      // True where linen is registered in Asset Inventory and only read here.
+      managedInAssets: await service.linenManagedInAssets(lodgeOf(req)),
+      movements: await service.listLinenMovements(lodgeOf(req)),
+      handovers: await service.listHandovers(lodgeOf(req)),
+      lastWashedBy: await service.lastWashedBy(lodgeOf(req)),
+    })
   ),
   createLinenItem: handle(async (req, res) => {
     await service.createLinenItem(lodgeOf(req), parse(schemas.linenItemSchema, req.body));
@@ -55,6 +81,10 @@ module.exports = {
     await service.receiveFromLaundry(lodgeOf(req), userOf(req), parse(schemas.receiveSchema, req.body));
     done(res);
   }),
+  receiveHandovers: handle(async (req, res) => {
+    await service.receiveHandovers(lodgeOf(req), userOf(req), parse(schemas.receiveHandoverSchema, req.body).movementIds);
+    done(res);
+  }),
   recordLoss: handle(async (req, res) => {
     await service.recordLoss(lodgeOf(req), userOf(req), parse(schemas.lossSchema, req.body));
     done(res);
@@ -69,6 +99,6 @@ module.exports = {
     res.status(201).json({ order: await service.createLaundryOrder(lodgeOf(req), userOf(req), parse(schemas.laundryOrderSchema, req.body)) })
   ),
   setLaundryStatus: handle(async (req, res) =>
-    res.json({ order: await service.setLaundryStatus(lodgeOf(req), userOf(req), idOf(req), parse(schemas.laundryStatusSchema, req.body).status) })
+    res.json({ order: await service.setLaundryStatus(lodgeOf(req), userOf(req), idOf(req), parse(schemas.laundryStatusSchema, req.body)) })
   ),
 };

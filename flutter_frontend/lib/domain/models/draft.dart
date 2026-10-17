@@ -137,7 +137,16 @@ class ExtraDraft {
   int quantity;
   String agreedTotal;
 
-  ExtraDraft({this.quantity = 1, this.agreedTotal = ''});
+  /// Whether the desk has actually typed into this extra's price box this
+  /// session — [agreedTotal] alone can't tell a box left blank on purpose
+  /// apart from one nobody has touched yet, since both read as "".
+  bool agreedTotalTouched;
+
+  ExtraDraft({
+    this.quantity = 1,
+    this.agreedTotal = '',
+    this.agreedTotalTouched = false,
+  });
 }
 
 /// Mirrors VEHICLE_TYPES in bookings.schema.js.

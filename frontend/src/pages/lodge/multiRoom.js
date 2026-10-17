@@ -90,17 +90,20 @@ export function combineQuote(response, roomNumbers) {
   const [first, ...rest] = response.rooms;
   const nightDates = new Set();
   for (const room of response.rooms) for (const n of room.nights) nightDates.add(n.date);
-  return {
-    charges: [
+  const charges = [
       // Each line says how many nights it covers: rooms on their own dates stay for
       // different lengths, so the stay's night count is wrong for most of them.
-      ...first.charges.map((c) => ({ ...c, nights: first.nights.length })),
+      ...first.charges.map((c) => ({
+        ...c,
+        label: `Room ${roomNumbers[0] ?? ''} · ${c.label}`.replace('Room  ·', 'Room ·'),
+        nights: first.nights.length,
+      })),
       // Each further room's lines keep their ids so the form can edit them, and
       // say which room they belong to (1 is the first further room).
       ...rest.flatMap((room, i) =>
         room.charges.map((c) => ({
           label: `Room ${roomNumbers[i + 1] ?? ''} · ${c.label}`.replace('Room  ·', 'Room ·'),
-          amount: c.amount,
+            amount: c.amount,
           isBase: Boolean(c.isBase),
           chargeId: c.chargeId,
           quantity: c.quantity,
@@ -108,7 +111,9 @@ export function combineQuote(response, roomNumbers) {
           nights: room.nights.length,
         }))
       ),
-    ],
+  ];
+  return {
+    charges,
     nights: Array.from(nightDates).map((date) => ({ date })),
     grossTotal: response.grossTotal,
     discountAmount: response.discountAmount,
@@ -196,3 +201,19 @@ export function toggleRoomChoice(form, room) {
 export function pickedRoomIds(form) {
   return [form.roomId, ...(form.extraRooms ?? []).map((r) => r.roomId)].filter(Boolean).map(String);
 }
+
+// A booking of several rooms stores each room's lines as "Room 101 · Standard
+// ₹1,200" (see mergeRoomNights). Split back into one block per room — the first
+// line of a room is its nightly rate, the rest are its extras. Null for a
+// single-room bill, or an older one whose lines carry no room.
+export function roomSections(roomCharges = []) {
+  const rooms = new Map();
+  for (const line of roomCharges) {
+    const m = /^Room (.+?) · (.*)$/.exec(line.label);
+    if (!m) return null;
+    if (!rooms.has(m[1])) rooms.set(m[1], []);
+    rooms.get(m[1]).push({ ...line, label: m[2] });
+  }
+  return rooms.size > 1 ? Array.from(rooms, ([room, lines]) => ({ room, base: lines[0], extras: lines.slice(1) })) : null;
+}
+

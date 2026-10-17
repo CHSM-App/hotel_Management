@@ -290,6 +290,14 @@ const createBookingSchema = z
     // above stays required and stays the first tender, so the booking row and
     // the register keep a single method to show; these say what really arrived.
     advanceLines: paymentLinesField(),
+    // Whether the guest's WhatsApp confirmation goes out with this save. The
+    // app offers "Save" and "Save & send WhatsApp" as separate buttons; a
+    // caller that says nothing keeps the old behaviour of always sending.
+    // Multipart bodies carry it as the string 'true'/'false'.
+    sendWhatsApp: z
+      .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
+      .optional()
+      .default(true),
     // The nightly rate reception agreed for this stay, where it is not the
     // category's own. Positive or absent — a zero or negative rate is a
     // mis-key, and the pricing engine ignores one rather than selling a room

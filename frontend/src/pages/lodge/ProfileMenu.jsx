@@ -9,6 +9,48 @@ function roleLabel(role) {
   return role.charAt(0) + role.slice(1).toLowerCase();
 }
 
+// A small local icon set for the dropdown only — it's five glyphs, not
+// worth importing OwnerDashboard's shared Icon component for.
+function menuIcon(path) {
+  return function MenuIcon() {
+    return (
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {path}
+      </svg>
+    );
+  };
+}
+
+const PhoneIcon = menuIcon(
+  <path d="M15.05 5a7 7 0 0 1 6 6M15.05 1a11 11 0 0 1 10 10M9.5 13.5c1.5 1.5 2.83 1.98 3.5 2.17a1.5 1.5 0 0 0 1.47-.39l.77-.77a1 1 0 0 1 1.2-.17 12 12 0 0 1 2.7 2 1 1 0 0 1 .06 1.37c-.44.51-1 .99-1.7 1.3-1.86.82-5.5.98-9.56-3.08S2.1 6.76 2.92 4.9c.31-.7.79-1.26 1.3-1.7a1 1 0 0 1 1.37.06 12 12 0 0 1 2 2.7 1 1 0 0 1-.17 1.2l-.77.77a1.5 1.5 0 0 0-.39 1.47c.19.67.67 2 2.17 3.5Z" />
+);
+const MailIcon = menuIcon(
+  <>
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    <path d="m2.5 5.5 9.1 7.1a1.6 1.6 0 0 0 1.95 0l9.1-7.1" />
+  </>
+);
+const HotelIcon = menuIcon(
+  <>
+    <rect x="4" y="3" width="16" height="18" rx="1.5" />
+    <path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1M10 21v-4h4v4" />
+  </>
+);
+const LockIcon = menuIcon(
+  <>
+    <rect x="4" y="11" width="16" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </>
+);
+const SignOutIcon = menuIcon(
+  <>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <path d="m16 17 5-5-5-5" />
+    <path d="M21 12H9" />
+  </>
+);
+const ChevronIcon = menuIcon(<path d="m9 18 6-6-6-6" />);
+
 const initialPasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '', otp: '' };
 
 export default function ProfileMenu({ user, lodge, onLodgeChange, onSignOut }) {
@@ -180,12 +222,29 @@ export default function ProfileMenu({ user, lodge, onLodgeChange, onSignOut }) {
         </svg>
       </button>
 
-      {open && (
-        <div className="profile-menu__dropdown">
+      {/* Always mounted rather than conditionally rendered — unmounting on
+          close is what was skipping the close animation straight to
+          nothing. The --open modifier (plus inert while closed, so a
+          hidden-but-still-in-the-DOM form can't be tabbed or read into)
+          drives the fade/scale transition in ProfileMenu.css either way. */}
+      <div
+        className={`profile-menu__dropdown${open ? ' profile-menu__dropdown--open' : ''}`}
+        inert={open ? undefined : ''}
+      >
           {(user.email || user.phone) && (
             <div className="profile-menu__contact">
-              {user.phone && <div>{user.phone}</div>}
-              {user.email && <div>{user.email}</div>}
+              {user.phone && (
+                <div className="profile-menu__contact-row">
+                  <PhoneIcon />
+                  {user.phone}
+                </div>
+              )}
+              {user.email && (
+                <div className="profile-menu__contact-row">
+                  <MailIcon />
+                  {user.email}
+                </div>
+              )}
             </div>
           )}
 
@@ -200,7 +259,9 @@ export default function ProfileMenu({ user, lodge, onLodgeChange, onSignOut }) {
                   closeMenu();
                 }}
               >
-                Hotel profile
+                <HotelIcon />
+                <span className="profile-menu__action-label">Hotel profile</span>
+                <ChevronIcon />
               </button>
             </>
           )}
@@ -220,7 +281,9 @@ export default function ProfileMenu({ user, lodge, onLodgeChange, onSignOut }) {
                 setSuccess(false);
               }}
             >
-              Change password
+              <LockIcon />
+              <span className="profile-menu__action-label">Change password</span>
+              <ChevronIcon />
             </button>
           ) : (
             <form
@@ -339,10 +402,10 @@ export default function ProfileMenu({ user, lodge, onLodgeChange, onSignOut }) {
           <div className="profile-menu__divider" />
 
           <button type="button" className="profile-menu__action profile-menu__action--danger" onClick={onSignOut}>
-            Sign out
+            <SignOutIcon />
+            <span className="profile-menu__action-label">Sign out</span>
           </button>
-        </div>
-      )}
+      </div>
 
       {showHotelProfile && lodge && (
         <HotelProfileModal

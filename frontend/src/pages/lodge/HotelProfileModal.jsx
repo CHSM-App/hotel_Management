@@ -67,8 +67,11 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
   const [linkCopied, setLinkCopied] = useState('');
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState('');
+  const [heroBusy, setHeroBusy] = useState(false);
+  const [heroError, setHeroError] = useState('');
   const errorRef = useRef(null);
   const logoInputRef = useRef(null);
+  const heroInputRef = useRef(null);
 
   const handleLogoPick = async (e) => {
     const file = e.target.files?.[0];
@@ -98,6 +101,37 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
       setLogoError(err instanceof ApiError ? err.message : 'Could not remove the logo.');
     } finally {
       setLogoBusy(false);
+    }
+  };
+
+  const handleHeroImagePick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setHeroError('');
+    setHeroBusy(true);
+    try {
+      const formData = new FormData();
+      formData.append('heroImage', file);
+      const me = await apiPutForm('/me/lodge/hero-image', formData, { token });
+      onSaved(me.lodge);
+    } catch (err) {
+      setHeroError(err instanceof ApiError ? err.message : 'Could not upload the hero image.');
+    } finally {
+      setHeroBusy(false);
+    }
+  };
+
+  const handleHeroImageRemove = async () => {
+    setHeroError('');
+    setHeroBusy(true);
+    try {
+      const me = await apiDelete('/me/lodge/hero-image', { token });
+      onSaved(me.lodge);
+    } catch (err) {
+      setHeroError(err instanceof ApiError ? err.message : 'Could not remove the hero image.');
+    } finally {
+      setHeroBusy(false);
     }
   };
 
@@ -266,6 +300,47 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
                   </button>
                   {lodge.logoUrl && (
                     <button type="button" className="btn-view" onClick={handleLogoRemove} disabled={logoBusy}>
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="hotel-profile__logo-section">
+                <div className="hotel-profile__logo-section-head">
+                  <span>Public page hero background</span>
+                  <span className="hotel-profile__logo-hint">
+                    {lodge.heroImageUrl
+                      ? 'Shown at the top of your public page.'
+                      : 'Not set — the public page uses your first room photo instead.'}
+                    {' '}
+                    Best as a wide landscape photo, around 1920×1080px (16:9) — it fills the
+                    full width and height of the opening screen, so a narrow or portrait photo
+                    will be cropped more.
+                  </span>
+                </div>
+                {lodge.heroImageUrl && (
+                  <img className="hotel-profile__hero-preview" src={`${API_BASE}${lodge.heroImageUrl}`} alt="" />
+                )}
+                {heroError && <div className="form-banner form-banner--error">{heroError}</div>}
+                <div className="hotel-profile__logo-actions">
+                  <input
+                    ref={heroInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={handleHeroImagePick}
+                    hidden
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => heroInputRef.current?.click()}
+                    disabled={heroBusy}
+                  >
+                    {heroBusy ? 'Uploading…' : lodge.heroImageUrl ? 'Replace hero image' : 'Upload hero image'}
+                  </button>
+                  {lodge.heroImageUrl && (
+                    <button type="button" className="btn-view" onClick={handleHeroImageRemove} disabled={heroBusy}>
                       Remove
                     </button>
                   )}

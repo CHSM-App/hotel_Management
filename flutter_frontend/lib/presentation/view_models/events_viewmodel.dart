@@ -302,11 +302,9 @@ class EventsViewModel extends StateNotifier<EventsState> {
     }
   }
 
-  Future<EventBooking?> hold(int id, {int holdHours = 48}) => _transition(() => usecase.hold(id, holdHours: holdHours));
-
   Future<EventBooking?> confirm(int id) => _transition(() => usecase.confirm(id));
 
-  Future<EventBooking?> release(int id) => _transition(() => usecase.release(id));
+  Future<EventBooking?> complete(int id) => _transition(() => usecase.complete(id));
 
   Future<EventBooking?> cancel(int id, {required String reason, num? refundAmount, String? refundPaymentMethod}) =>
       _transition(() => usecase.cancel(id, reason: reason, refundAmount: refundAmount, refundPaymentMethod: refundPaymentMethod));

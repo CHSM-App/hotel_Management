@@ -75,6 +75,24 @@ function suggestCycleCharge(extraNights, lastNightRate) {
   };
 }
 
+// The HOUR_24 equivalent of cycleNights: a night for every 24-hour block from
+// arrival the stay actually crossed, minimum one, grace applied at every
+// boundary the same way.
+function hourlyNights({ actualCheckInAt, at, graceMinutes = 0 }) {
+  const arrived = new Date(actualCheckInAt);
+  const left = at instanceof Date ? at : new Date(at);
+  if (Number.isNaN(arrived.getTime()) || Number.isNaN(left.getTime())) return 1;
+
+  let boundary = new Date(arrived.getTime() + 24 * 60 * 60 * 1000);
+  const grace = Math.max(0, Number(graceMinutes) || 0) * 60000;
+  let nights = 1;
+  while (left.getTime() > boundary.getTime() + grace && nights < 400) {
+    nights += 1;
+    boundary = addDays(boundary, 1);
+  }
+  return nights;
+}
+
 function nightsBetween(checkInDate, checkOutDate) {
   const start = new Date(`${checkInDate}T00:00:00Z`);
   const end = new Date(`${checkOutDate}T00:00:00Z`);
@@ -148,6 +166,7 @@ function lateLabel(minutesLate) {
 module.exports = {
   checkoutDeadline,
   cycleNights,
+  hourlyNights,
   suggestCycleCharge,
   atLocalTime,
   isoDateInLodgeZone,

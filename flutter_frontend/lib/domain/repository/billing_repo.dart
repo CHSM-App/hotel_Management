@@ -1,9 +1,14 @@
 import 'dart:typed_data';
 
+import '../models/event_booking.dart';
 import '../models/invoice.dart';
+import '../models/lodge_service.dart' show ServiceUsage;
 
 abstract class BillingRepository {
   Future<List<BillableStay>> queue();
+
+  /// Functions that are over (or marked complete) and have no bill yet.
+  Future<List<EventBooking>> queueEvents();
 
   Future<BillPreview> preview(
     int bookingId, {
@@ -57,7 +62,11 @@ abstract class BillingRepository {
   Future<Invoice> invoice(int id);
 
   /// What a function's bill will say.
-  Future<EventBillPreview> previewEventBill(int eventId);
+  Future<EventBillPreview> previewEventBill(
+    int eventId, {
+    num discountAmount,
+    String? discountReason,
+  });
 
   /// Cut the bill for a function.
   Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body);
@@ -67,4 +76,21 @@ abstract class BillingRepository {
 
   /// Sets where one series continues from.
   Future<BillSeries> updateBillingSeries(String series, int nextNumber);
+
+  /// Completed, unbilled services (laundry, pool, gaming ...) waiting on
+  /// their own document or on a guest's room bill.
+  Future<List<ServiceUsage>> billableServiceUsages();
+
+  /// What a standalone service bill will say.
+  Future<ServiceBillPreview> previewServiceBill(List<int> usageIds);
+
+  /// Bill the selected uses on their own document.
+  Future<Invoice> issueServiceInvoice(
+    List<int> usageIds,
+    Map<String, dynamic> body,
+  );
+
+  /// Charges the selected, completed services to a guest's room bill instead
+  /// of billing them on their own.
+  Future<void> addServicesToRoom(List<int> usageIds, int bookingId);
 }

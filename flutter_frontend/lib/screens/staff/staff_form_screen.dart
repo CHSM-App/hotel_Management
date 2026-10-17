@@ -121,110 +121,171 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     final submitting = ref.watch(staffViewModelProvider).submitting;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit staff' : 'Add staff')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
           children: [
-            NeuCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_error != null) ...[
-                    _ErrorBanner(_error!),
-                    const SizedBox(height: AppTheme.s16),
-                  ],
-                  Text(
-                    _isEdit
-                        ? "Their details and what they can reach. Changing the role changes it immediately."
-                        : 'They sign in with their phone number and the temporary password you set here.',
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x331457AD),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
                   ),
-                  const SizedBox(height: AppTheme.s16),
-
-                  const SectionLabel('Identity', number: 1),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _name,
-                    label: 'Name',
-                    required: true,
-                    errorText: _nameError,
-                    focusNode: _nameFocus,
-                    onChanged: (_) => setState(() {}),
-                    forceCapitalizeWords: true,
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _phone,
-                    label: 'Phone',
-                    required: true,
-                    keyboardType: TextInputType.phone,
-                    maxLength: 10,
-                    errorText: _phoneError,
-                    focusNode: _phoneFocus,
-                    hint: '9876543210',
-                    onChanged: (_) => setState(() {}),
-                  ),
-
-                  const SectionDivider(),
-                  const SectionLabel('Access', number: 2),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _email,
-                    label: 'Email (optional)',
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  RequiredLabel('Role'),
-                  const SizedBox(height: AppTheme.s4),
-                  OptionDropdown(
-                    values: [for (final r in roles) r.roleKey],
-                    labels: {for (final r in roles) r.roleKey: r.name},
-                    selected: _roleKey,
-                    hint: 'Choose a role',
-                    hasError: _roleError != null,
-                    onSelect: (v) => setState(() => _roleKey = v),
-                  ),
-                  if (_roleError != null) ...[
-                    const SizedBox(height: AppTheme.s4),
-                    Text(_roleError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
-                  ],
-
-                  if (!_isEdit) ...[
-                    const SectionDivider(),
-                    const SectionLabel('Temporary password', number: 3),
-                    const SizedBox(height: AppTheme.s12),
-                    NeuField(
-                      controller: _tempPassword,
-                      label: 'Temporary password',
-                      required: true,
-                      hint: 'At least 8 characters',
-                      errorText: _passwordError,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: AppTheme.s8),
-                    const Text(
-                      "Share this with them — they'll be asked to set their own after signing in.",
-                      style: TextStyle(color: AppTheme.muted, fontSize: 12),
-                    ),
-                  ],
                 ],
               ),
+              child: Icon(
+                _isEdit ? Icons.edit_rounded : Icons.person_add_alt_1_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
-            const SizedBox(height: AppTheme.s24),
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: submitting ? null : _save,
-              child: submitting
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('Save'),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _isEdit ? 'Edit staff' : 'Add staff',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
             ),
           ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
+              children: [
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s12 + 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_error != null) ...[
+                        _ErrorBanner(_error!),
+                        const SizedBox(height: AppTheme.s12),
+                      ],
+                      Text(
+                        _isEdit
+                            ? "Their details and what they can reach. Changing the role changes it immediately."
+                            : 'They sign in with their phone number and the temporary password you set here.',
+                        style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+
+                      const SectionLabel('Identity', number: 1, icon: Icons.badge_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        dense: true,
+                        controller: _name,
+                        label: 'Name',
+                        required: true,
+                        errorText: _nameError,
+                        focusNode: _nameFocus,
+                        onChanged: (_) => setState(() {}),
+                        forceCapitalizeWords: true,
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(
+                        dense: true,
+                        controller: _phone,
+                        label: 'Phone',
+                        required: true,
+                        keyboardType: TextInputType.phone,
+                        maxLength: 10,
+                        errorText: _phoneError,
+                        focusNode: _phoneFocus,
+                        hint: '9876543210',
+                        onChanged: (_) => setState(() {}),
+                      ),
+
+                      const SectionDivider(),
+                      const SectionLabel('Access', number: 2, icon: Icons.vpn_key_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        dense: true,
+                        controller: _email,
+                        label: 'Email (optional)',
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      RequiredLabel('Role'),
+                      const SizedBox(height: AppTheme.s4),
+                      OptionDropdown(
+                        values: [for (final r in roles) r.roleKey],
+                        labels: {for (final r in roles) r.roleKey: r.name},
+                        selected: _roleKey,
+                        hint: 'Choose a role',
+                        hasError: _roleError != null,
+                        onSelect: (v) => setState(() => _roleKey = v),
+                      ),
+                      if (_roleError != null) ...[
+                        const SizedBox(height: AppTheme.s4),
+                        Text(_roleError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                      ],
+
+                      if (!_isEdit) ...[
+                        const SectionDivider(),
+                        const SectionLabel('Temporary password', number: 3, icon: Icons.lock_rounded),
+                        const SizedBox(height: AppTheme.s12),
+                        NeuField(
+                          dense: true,
+                          controller: _tempPassword,
+                          label: 'Temporary password',
+                          required: true,
+                          hint: 'At least 8 characters',
+                          errorText: _passwordError,
+                          onChanged: (_) => setState(() {}),
+                        ),
+                        const SizedBox(height: AppTheme.s8),
+                        const Text(
+                          "Share this with them — they'll be asked to set their own after signing in.",
+                          style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppTheme.s16),
+                NeuButton(
+                  primary: true,
+                  expand: true,
+                  onPressed: submitting ? null : _save,
+                  child: submitting
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

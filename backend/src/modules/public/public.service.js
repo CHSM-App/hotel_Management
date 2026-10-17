@@ -13,7 +13,7 @@ async function getLodgeBySlug(slug) {
     .query(`
       SELECT id, name, slug, phone, whatsapp_number, address, city, state,
              has_rooms, serves_food, food_room_service, food_table_service, has_events,
-             checkin_mode, latitude, longitude, logo_path
+             has_other_services, checkin_mode, latitude, longitude, logo_path, hero_image_path
       FROM dbo.lodges
       WHERE slug = @slug AND is_active = 1
     `);
@@ -37,6 +37,7 @@ async function getLodgeBySlug(slug) {
     foodRoomService: !!row.food_room_service,
     foodTableService: !!row.food_table_service,
     hasEvents: !!row.has_events,
+    hasOtherServices: !!row.has_other_services,
     // How a stay is counted — 24 hours from arrival, by the night, or a
     // fixed cycle — and the pin for a directions link. The exact clock times
     // stay off the page; the desk quotes those when a booking is made.
@@ -44,6 +45,9 @@ async function getLodgeBySlug(slug) {
     latitude: row.latitude == null ? null : Number(row.latitude),
     longitude: row.longitude == null ? null : Number(row.longitude),
     logoUrl: row.logo_path ? `/hotel-logos/${row.logo_path}` : null,
+    // Set by an owner or Vengurla Tech staff; the page falls back to the
+    // first room/venue photo when this is null.
+    heroImageUrl: row.hero_image_path ? `/lodge-hero-images/${row.hero_image_path}` : null,
   };
 }
 
@@ -307,6 +311,33 @@ async function listPublicRoomAddons(lodgeId) {
     id: row.id,
     name: row.name,
     chargePerNight: Number(row.charge_per_night),
+  }));
+}
+
+// The extras sold per use rather than per night or per function — a private
+// pool, a games room — same idea as a venue add-on but with no booking behind
+// it: a guest just shows up and pays for the use. Laundry is excluded: it has
+// its own guest-facing flow and isn't something a visitor browsing the page
+// would "enquire" about the way a pool slot or a round of pool table is.
+async function listPublicServices(lodgeId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT id, name, unit_label, price, image_filename
+      FROM dbo.lodge_services
+      WHERE lodge_id = @lodgeId AND is_active = 1 AND is_laundry = 0
+      ORDER BY name ASC
+    `);
+  return result.recordset.map((row) => ({
+    id: row.id,
+    name: row.name,
+    unitLabel: row.unit_label,
+    price: Number(row.price),
+    // A bare filename the browser resolves against the /service-images mount,
+    // the same pattern as a dish or room photo.
+    image: row.image_filename ?? null,
   }));
 }
 
@@ -822,12 +853,108 @@ async function getPublicOrderStatus(token) {
   };
 }
 
+// Shortens a guest's name for public display on the lodge's own page —
+// first name plus a last-initial, same idea as a review site: enough for a
+// reader to feel it's a real person, not enough to identify them to anyone
+// who doesn't already know they stayed here.
+function publicGuestName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'Guest';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+}
+
+// The most recent submitted reviews with something actually written, shown
+// on the lodge's own public page (getLodgePageHandler) — a rating alone
+// reads as a stray number out of context there; a comment is what makes it
+// a review. Every rating is shown as submitted, good or not: curating out
+// anything below some threshold would make the page say something false.
+async function listPublicReviews(lodgeId, limit = 6) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('limit', sql.Int, limit)
+    .query(`
+      SELECT TOP (@limit) fr.id, fr.rating, fr.comment, fr.submitted_at,
+             COALESCE(b.guest_name, eb.organiser_name) AS guest_name
+      FROM dbo.feedback_requests fr
+      LEFT JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.event_bookings eb ON eb.id = fr.event_booking_id
+      WHERE fr.lodge_id = @lodgeId AND fr.submitted_at IS NOT NULL
+        AND fr.comment IS NOT NULL AND LTRIM(RTRIM(fr.comment)) <> ''
+      ORDER BY fr.submitted_at DESC
+    `);
+  return result.recordset.map((row) => ({
+    id: row.id,
+    guestName: publicGuestName(row.guest_name),
+    rating: row.rating,
+    comment: row.comment,
+    submittedAt: row.submitted_at,
+  }));
+}
+
+// The guest's end of the post-checkout feedback link — see
+// feedbackRequests.service.js for how the token is issued. No authentication,
+// same reasoning as every other token-keyed route in this file: the token is
+// the whole of the credential.
+async function getFeedbackContext(token) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('token', sql.NVarChar(32), token)
+    .query(`
+      SELECT COALESCE(b.guest_name, eb.organiser_name) AS guest_name, l.name AS lodge_name, fr.submitted_at
+      FROM dbo.feedback_requests fr
+      LEFT JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.event_bookings eb ON eb.id = fr.event_booking_id
+      JOIN dbo.lodges l ON l.id = fr.lodge_id
+      WHERE fr.token = @token
+    `);
+  const row = result.recordset[0];
+  if (!row) {
+    throw new ApiError('This feedback link is no longer available.', 404);
+  }
+  return {
+    guestName: row.guest_name,
+    hotelName: row.lodge_name,
+    alreadySubmitted: Boolean(row.submitted_at),
+  };
+}
+
+// One submission per link, enforced by checking submitted_at rather than a
+// separate lockout table — there's no secret here to brute-force (the token
+// already is one), so the only real constraint is "don't let a second visit
+// overwrite the first answer".
+async function submitFeedback(token, { rating, comment }) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('token', sql.NVarChar(32), token)
+    .input('rating', sql.TinyInt, rating)
+    .input('comment', sql.NVarChar(1000), comment || null)
+    .query(`
+      UPDATE dbo.feedback_requests
+      SET rating = @rating, comment = @comment, submitted_at = SYSDATETIMEOFFSET()
+      OUTPUT inserted.id
+      WHERE token = @token AND submitted_at IS NULL
+    `);
+  if (result.recordset.length === 0) {
+    // Covers both "no such token" and "already answered" with one message —
+    // telling them apart would confirm to anyone guessing tokens which
+    // guesses were close, same reasoning as billShare.service.js's bill link.
+    throw new ApiError('This feedback link has already been used or is no longer available.', 409);
+  }
+  return { status: 'submitted' };
+}
+
 module.exports = {
   getLodgeBySlug,
   listPublicRoomTypes,
   listPublicVenues,
   listPublicAddons,
   listPublicRoomAddons,
+  listPublicServices,
   getPublicMenu,
   getLodgeOrderingContext,
   getTableOrderingContext,
@@ -840,4 +967,7 @@ module.exports = {
   placeTableOrder,
   getPublicOrderStatus,
   clearPinLockout,
+  getFeedbackContext,
+  submitFeedback,
+  listPublicReviews,
 };

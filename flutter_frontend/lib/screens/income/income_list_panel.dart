@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/income.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../bookings/id_proof_viewer_screen.dart';
 import '../theme.dart';
@@ -53,7 +55,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
     final firstDate = isFrom ? earliest : (DateTime.tryParse(_fromDate ?? '') ?? earliest);
     var initialDate = current != null ? (DateTime.tryParse(current) ?? now) : now;
     if (initialDate.isBefore(firstDate)) initialDate = firstDate;
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: firstDate,
       lastDate: DateTime(now.year + 1),
@@ -96,11 +98,14 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
+          // In table view the scroll is the rows', a level below the
+          // table's horizontal scroller.
+          notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
           onRefresh: () => ref.read(incomeViewModelProvider.notifier).loadIncome(),
           color: AppTheme.accent,
-          child: ListView(
+          child: TablePageBody(
+            table: _view == 'table',
             padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
-            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -112,7 +117,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                       decoration: BoxDecoration(
                         color: AppTheme.card,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppTheme.border),
+                        border: Border.all(color: AppTheme.shadowDark, width: 1.3),
                         boxShadow: AppTheme.subtle,
                       ),
                       child: Row(
@@ -249,11 +254,10 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
   }
 }
 
-/// A single pill spanning From → To, styled to match the search bar right
-/// above it (same height, rounded-999 card, border and soft shadow) instead
-/// of looking like a bolted-on filter — a small accent-tinted calendar badge
-/// per side, a divider down the middle, and an inline clear "x" once a side
-/// is picked.
+/// From and To as two independent pills, styled to match the search bar
+/// right above them (same height, rounded-999 card, border and soft shadow)
+/// — a small accent-tinted calendar badge, the label or picked date, and an
+/// inline clear "x" once a side is picked.
 class _DateRangeBar extends StatelessWidget {
   final String fromLabel;
   final String toLabel;
@@ -277,37 +281,26 @@ class _DateRangeBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.border),
-        boxShadow: AppTheme.subtle,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _DateSegment(
-              label: fromLabel,
-              active: fromActive,
-              onTap: onTapFrom,
-              onClear: onClearFrom,
-              leftRounded: true,
-            ),
+    return Row(
+      children: [
+        Expanded(
+          child: _DateSegment(
+            label: fromLabel,
+            active: fromActive,
+            onTap: onTapFrom,
+            onClear: onClearFrom,
           ),
-          Container(width: 1, height: 26, color: AppTheme.border),
-          Expanded(
-            child: _DateSegment(
-              label: toLabel,
-              active: toActive,
-              onTap: onTapTo,
-              onClear: onClearTo,
-              leftRounded: false,
-            ),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Expanded(
+          child: _DateSegment(
+            label: toLabel,
+            active: toActive,
+            onTap: onTapTo,
+            onClear: onClearTo,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -317,61 +310,71 @@ class _DateSegment extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
   final VoidCallback? onClear;
-  final bool leftRounded;
 
   const _DateSegment({
     required this.label,
     required this.active,
     required this.onTap,
-    required this.leftRounded,
     this.onClear,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.horizontal(
-        left: leftRounded ? const Radius.circular(999) : Radius.zero,
-        right: leftRounded ? Radius.zero : const Radius.circular(999),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-        child: Row(
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: active ? AppTheme.accent : AppTheme.accent.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.event_rounded, size: 13, color: active ? Colors.white : AppTheme.accent),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        highlightColor: AppTheme.accent.withValues(alpha: 0.05),
+        splashColor: AppTheme.accent.withValues(alpha: 0.08),
+        child: Container(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: active ? AppTheme.accent.withValues(alpha: 0.4) : AppTheme.shadowDark,
+              width: 1.3,
             ),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: active ? AppTheme.heading : AppTheme.muted,
-                  fontSize: 13,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+            boxShadow: AppTheme.subtle,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active ? AppTheme.accent : AppTheme.accent.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.event_rounded, size: 13, color: active ? Colors.white : AppTheme.accent),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: active ? AppTheme.heading : AppTheme.muted,
+                    fontSize: 13,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  ),
                 ),
               ),
-            ),
-            if (onClear != null)
-              GestureDetector(
-                onTap: onClear,
-                behavior: HitTestBehavior.opaque,
-                child: const Padding(
-                  padding: EdgeInsets.only(left: 4),
-                  child: Icon(Icons.close_rounded, size: 14, color: AppTheme.muted),
+              if (onClear != null)
+                GestureDetector(
+                  onTap: onClear,
+                  behavior: HitTestBehavior.opaque,
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: Icon(Icons.close_rounded, size: 14, color: AppTheme.muted),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -575,14 +578,12 @@ class _IncomeTableState extends State<_IncomeTable> {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.bg,
                     border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
@@ -625,7 +626,8 @@ class _IncomeTableState extends State<_IncomeTable> {
                     ],
                   ),
                 ),
-                for (var i = 0; i < rows.length; i++) _IncomeTableRow(income: rows[i], shaded: i.isOdd, parent: widget),
+              rows: [
+                      for (var i = 0; i < rows.length; i++) _IncomeTableRow(income: rows[i], shaded: i.isOdd, parent: widget),
               ],
             ),
           ),
@@ -707,20 +709,19 @@ class _IncomeTableRow extends StatelessWidget {
               ),
             SizedBox(
               width: 36,
-              child: PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.muted),
+              child: NeuActionMenu<String>(
+                iconSize: 18,
+                actions: const [
+                  NeuMenuAction('view', Icons.visibility_outlined, 'View details'),
+                  NeuMenuAction('edit', Icons.edit_outlined, 'Edit income'),
+                  NeuMenuAction('delete', Icons.delete_outline_rounded, 'Delete income', danger: true),
+                ],
                 onSelected: (v) => switch (v) {
                   'view' => parent.onView(income),
                   'edit' => parent.onEdit(income),
                   'delete' => parent.onDelete(income),
                   _ => null,
                 },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'view', child: Text('View details')),
-                  PopupMenuItem(value: 'edit', child: Text('Edit income')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete income', style: TextStyle(color: AppTheme.danger))),
-                ],
               ),
             ),
           ],
@@ -858,20 +859,14 @@ class _IncomeRowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<VoidCallback>(
-      tooltip: 'More actions',
-      padding: EdgeInsets.zero,
-      icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
-      onSelected: (action) => action(),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rSmall), side: const BorderSide(color: AppTheme.border)),
-      itemBuilder: (context) => [
-        PopupMenuItem(value: onEdit, child: const Text('Edit income')),
-        if (showViewReceipt) PopupMenuItem(value: onViewReceipt, child: const Text('View receipt')),
-        PopupMenuItem(
-          value: onDelete,
-          child: const Text('Delete income', style: TextStyle(color: AppTheme.danger)),
-        ),
+    return NeuActionMenu<VoidCallback>(
+      iconSize: 20,
+      actions: [
+        NeuMenuAction(onEdit, Icons.edit_outlined, 'Edit income'),
+        if (showViewReceipt) NeuMenuAction(onViewReceipt, Icons.receipt_outlined, 'View receipt'),
+        NeuMenuAction(onDelete, Icons.delete_outline_rounded, 'Delete income', danger: true),
       ],
+      onSelected: (action) => action(),
     );
   }
 }

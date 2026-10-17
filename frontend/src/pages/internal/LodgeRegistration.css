@@ -7,9 +7,13 @@
    here. */
 .reg-shell {
   min-height: 100svh;
-  background:
-    radial-gradient(ellipse 70% 40% at 50% 0%, rgba(30, 58, 95, 0.07), transparent 70%),
-    var(--paper);
+  background: var(--paper);
+
+  /* Dark panel tone for .reg-summary and the tinted focus ring, derived from
+     the shared brand tokens rather than a second private palette — this page
+     now runs the same violet brand as the rest of the app. */
+  --brand-navy: var(--brand-ink);
+  --brand-focus: rgba(0, 176, 255, 0.16);
 }
 
 /* Topbar ------------------------------------------------------------------ */
@@ -21,7 +25,7 @@
   gap: 16px;
   flex-wrap: wrap;
   padding: 18px 40px;
-  background: linear-gradient(135deg, var(--brand-ink), var(--brand) 62%, #24486f);
+  background: var(--brand);
   color: #ffffff;
   position: relative;
 }
@@ -85,7 +89,7 @@
   display: inline-block;
   padding: 4px 12px;
   border-radius: 999px;
-  background: #f7ecec;
+  background: #FDF3D9;
   color: var(--accent-ink);
   font-size: 11px;
   font-weight: 700;
@@ -144,7 +148,7 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+  background: var(--brand);
   color: #ffffff;
   font-size: 13px;
   font-weight: 700;
@@ -201,7 +205,7 @@
 .reg-shell .field select:focus {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.13);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 .reg-shell .field:last-child,
@@ -268,7 +272,7 @@
 
 .reg-type:focus-within {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.18);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 .reg-type__check {
@@ -512,7 +516,7 @@
 }
 
 .reg-switch input:focus-visible + .reg-switch__track {
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.25);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 /* Temporary password ------------------------------------------------------ */
@@ -564,10 +568,12 @@
 }
 
 /* Dark, because it is the promise being made rather than another question —
-   and because it has to stay legible while the eye is down in the form. */
+   and because it has to stay legible while the eye is down in the form. Solid
+   deep navy, not a gradient, to match the flat panel the rest of this theme
+   uses. */
 .reg-summary {
   border-radius: var(--radius-card);
-  background: linear-gradient(160deg, var(--brand-ink), #1b3352 55%, #21405f);
+  background: var(--brand-navy);
   color: #dce7f1;
   padding: 22px;
   box-shadow: var(--shadow-elevated);
@@ -760,8 +766,8 @@
    usually well past the top by the time Create is pressed. Runs once on
    mount, so it doesn't restart on every re-render while the banner is up. */
 @keyframes reg-banner-flash {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(193, 18, 31, 0); }
-  20%, 60% { box-shadow: 0 0 0 4px rgba(193, 18, 31, 0.3); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 67, 53, 0); }
+  20%, 60% { box-shadow: 0 0 0 4px rgba(234, 67, 53, 0.3); }
 }
 
 .reg-shell .form-banner--flash {

@@ -4,10 +4,14 @@ import '../../domain/usecase/assets_usecase.dart';
 import '../../domain/usecase/auth_usecase.dart';
 import '../../domain/usecase/booking_usecase.dart';
 import '../../domain/usecase/billing_usecase.dart';
+import '../../domain/usecase/customers_usecase.dart';
 import '../../domain/usecase/events_usecase.dart';
 import '../../domain/usecase/expenses_usecase.dart';
 import '../../domain/usecase/food_setup_usecase.dart';
+import '../../domain/usecase/housekeeping_usecase.dart';
 import '../../domain/usecase/income_usecase.dart';
+import '../../domain/usecase/laundry_usecase.dart';
+import '../../domain/usecase/lodge_services_usecase.dart';
 import '../../domain/usecase/orders_usecase.dart';
 import '../../domain/usecase/reports_usecase.dart';
 import '../../domain/usecase/rooms_usecase.dart';
@@ -61,4 +65,20 @@ final incomeUsecaseProvider = Provider<IncomeUsecase>(
 
 final staffUsecaseProvider = Provider<StaffUsecase>(
   (ref) => StaffUsecase(ref.watch(staffRepositoryProvider)),
+);
+
+final customersUsecaseProvider = Provider<CustomersUsecase>(
+  (ref) => CustomersUsecase(ref.watch(customersRepositoryProvider)),
+);
+
+final laundryUsecaseProvider = Provider<LaundryUsecase>(
+  (ref) => LaundryUsecase(ref.watch(laundryRepositoryProvider)),
+);
+
+final housekeepingUsecaseProvider = Provider<HousekeepingUsecase>(
+  (ref) => HousekeepingUsecase(ref.watch(housekeepingRepositoryProvider)),
+);
+
+final lodgeServicesUsecaseProvider = Provider<LodgeServicesUsecase>(
+  (ref) => LodgeServicesUsecase(ref.watch(lodgeServicesRepositoryProvider)),
 );

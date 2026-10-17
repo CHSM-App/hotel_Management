@@ -3,6 +3,7 @@ import { apiGet, ApiError } from '../../lib/api';
 import { formatPrice } from './priceFormat';
 import { selectionOf, toggleSelection, withQuantity } from './chargeSelections';
 import PageLoader from '../../components/PageLoader';
+import QtyStepper from '../../components/QtyStepper';
 
 const addDays = (iso, days) => {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -101,22 +102,22 @@ export default function ExtraRoomCard({
     // Nothing to fetch off a dormitory room; the bed grid below is only drawn for one.
     if (!selected?.isDormitory || !validRange) return undefined;
     let current = true;
+    const bookingIdParam = editingBookingId ? `&bookingId=${editingBookingId}` : '';
     apiGet(
-      `/bookings/available-beds?roomId=${selected.id}&checkInDate=${dates.checkInDate}&checkOutDate=${dates.checkOutDate}`,
+      `/bookings/available-beds?roomId=${selected.id}&checkInDate=${dates.checkInDate}&checkOutDate=${dates.checkOutDate}${bookingIdParam}`,
       { token }
     )
       .then((data) => {
         if (!current) return;
         setBeds(data);
         setBedsError('');
-        // A bed picked against earlier dates may have gone. Not done while
-        // editing, where the booking's own beds read as taken.
-        if (!editingBookingId) {
-          const stillFree = room.bedIds.filter((id) =>
-            data.beds.some((b) => String(b.id) === String(id) && !b.isTaken)
-          );
-          if (stillFree.length !== room.bedIds.length) onChange({ bedIds: stillFree });
-        }
+        // A bed picked against earlier dates may have gone. The booking's own
+        // beds are already excluded from isTaken server-side (bookingIdParam
+        // above), so this only strips beds genuinely lost to someone else.
+        const stillFree = room.bedIds.filter((id) =>
+          data.beds.some((b) => String(b.id) === String(id) && !b.isTaken)
+        );
+        if (stillFree.length !== room.bedIds.length) onChange({ bedIds: stillFree });
       })
       .catch((err) => {
         if (!current) return;
@@ -127,7 +128,7 @@ export default function ExtraRoomCard({
       current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id, selected?.isDormitory, dates.checkInDate, dates.checkOutDate]);
+  }, [selected?.id, selected?.isDormitory, dates.checkInDate, dates.checkOutDate, editingBookingId]);
 
   const toggleBed = (bedId) => {
     const on = room.bedIds.some((id) => String(id) === String(bedId));
@@ -264,7 +265,7 @@ export default function ExtraRoomCard({
                     onClick={() => toggleBed(bed.id)}
                   >
                     <span className="booking-form__bed-label">{bed.bedLabel}</span>
-                    <span className="booking-form__bed-state">{bed.isTaken && !on ? 'Taken' : 'Free'}</span>
+                    <span className="booking-form__bed-state">{on ? 'Selected' : bed.isTaken ? 'Taken' : 'Free'}</span>
                   </button>
                 );
               })}
@@ -276,7 +277,7 @@ export default function ExtraRoomCard({
       {selected && !selected.isDormitory && selected.switchableCharges.length > 0 && (
         <div className="field">
           <label>Extras</label>
-          <div className="checkbox-grid">
+          <div className="checkbox-grid checkbox-grid--fit">
             {selected.switchableCharges.map((charge) => {
               const selection = selectionOf(room.switchableCharges, charge.id);
               return (
@@ -288,16 +289,11 @@ export default function ExtraRoomCard({
                   />
                   {charge.name} ({formatPrice(charge.chargePerNight)}/night)
                   {selection && charge.isCounter && (
-                    <input
-                      className="checkbox-chip__qty"
-                      type="number"
-                      min="1"
-                      step="1"
-                      inputMode="numeric"
-                      aria-label={`How many ${charge.name}`}
+                    <QtyStepper
+                      label={charge.name}
                       value={selection.quantity}
-                      onChange={(e) =>
-                        onChange({ switchableCharges: withQuantity(room.switchableCharges, charge.id, e.target.value) })
+                      onChange={(quantity) =>
+                        onChange({ switchableCharges: withQuantity(room.switchableCharges, charge.id, quantity) })
                       }
                     />
                   )}

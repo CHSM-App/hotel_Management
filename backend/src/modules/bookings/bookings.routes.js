@@ -16,8 +16,11 @@ const {
   checkInHandler,
   updateBookingHandler,
   getLateCheckoutHandler,
+  listCheckoutAlertsHandler,
+  listCheckinAlertsHandler,
   checkOutHandler,
   cancelBookingHandler,
+  sendBookingWhatsAppHandler,
   listDraftsHandler,
   getDraftHandler,
   createDraftHandler,
@@ -47,6 +50,9 @@ router.get('/available-rooms', authenticate, staff, listAvailableRoomsHandler);
 router.get('/available-beds', authenticate, staff, listAvailableBedsHandler);
 router.get('/price-quote', authenticate, staff, priceQuoteHandler);
 router.get('/tape-chart', authenticate, staff, getTapeChartHandler);
+// Ahead of /:id for the same reason as /drafts above.
+router.get('/checkout-alerts', authenticate, staff, listCheckoutAlertsHandler);
+router.get('/checkin-alerts', authenticate, staff, listCheckinAlertsHandler);
 router.get('/:id', authenticate, staff, getBookingHandler);
 router.get('/:id/available-rooms', authenticate, staff, listAvailableRoomsForBookingHandler);
 router.get('/:id/late-checkout', authenticate, staff, getLateCheckoutHandler);
@@ -61,5 +67,6 @@ router.patch('/:id/check-out', authenticate, staff, checkOutHandler);
 router.patch('/:id/rooms/:roomId/check-in', authenticate, staff, idProofUpload, checkInHandler);
 router.patch('/:id/rooms/:roomId/check-out', authenticate, staff, checkOutHandler);
 router.patch('/:id/cancel', authenticate, staff, cancelBookingHandler);
+router.post('/:id/send-whatsapp', authenticate, staff, sendBookingWhatsAppHandler);
 
 module.exports = router;

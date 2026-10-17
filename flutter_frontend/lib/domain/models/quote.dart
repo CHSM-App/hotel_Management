@@ -68,12 +68,23 @@ class QuoteLine {
   final int? chargeId;
   final int? quantity;
 
+  /// Zero-based position in a multi-room quote; null for a single-room quote.
+  final int? roomIndex;
+
+  /// How many of the stay's nights this line applied to — only
+  /// /pricing/simulate's lines carry it, so a quotation can print each
+  /// line's own rate per night (amount / nights) even when a season line
+  /// didn't run the whole stay.
+  final int? nights;
+
   const QuoteLine({
     required this.label,
     required this.amount,
     this.isBase = false,
     this.chargeId,
     this.quantity,
+    this.roomIndex,
+    this.nights,
   });
 
   factory QuoteLine.fromJson(Map<String, dynamic> json) => QuoteLine(
@@ -83,6 +94,8 @@ class QuoteLine {
     // switchable_charges.id is a BIGINT and arrives as a string.
     chargeId: asIntOrNull(json['chargeId']),
     quantity: asIntOrNull(json['quantity']),
+    roomIndex: asIntOrNull(json['roomIndex']),
+    nights: asIntOrNull(json['nights']),
   );
 
   bool get isExtra => chargeId != null;
@@ -168,5 +181,41 @@ class RoomQuote {
     grossTotal: asNum(json['grossTotal']),
     discountAmount: asNum(json['discountAmount']),
     totalPrice: asNum(json['totalPrice']),
+  );
+}
+
+/// GET /pricing/simulate — a line-by-line breakdown for one room and a
+/// stay, with no booking attached. Mirrors PriceSimulatorPanel.jsx; [lines]
+/// and [nights] reuse [QuoteLine]/[QuoteNight] since the server shapes them
+/// the same way price-quote does.
+class PriceSimulation {
+  final String roomNumber;
+  final int nightCount;
+  final List<QuoteLine> lines;
+  final List<QuoteNight> nights;
+  final num total;
+
+  const PriceSimulation({
+    this.roomNumber = '',
+    this.nightCount = 0,
+    this.lines = const [],
+    this.nights = const [],
+    this.total = 0,
+  });
+
+  factory PriceSimulation.fromJson(Map<String, dynamic> json) => PriceSimulation(
+    roomNumber: json['roomNumber']?.toString() ?? '',
+    nightCount: asInt(json['nightCount']),
+    lines:
+        (json['lines'] as List?)
+            ?.map((e) => QuoteLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    nights:
+        (json['nights'] as List?)
+            ?.map((e) => QuoteNight.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    total: asNum(json['total']),
   );
 }

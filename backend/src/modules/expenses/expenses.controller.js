@@ -108,6 +108,15 @@ async function updateVendorHandler(req, res, next) {
   }
 }
 
+async function deleteVendorHandler(req, res, next) {
+  try {
+    await vendorsService.deleteVendor(req.user.lodgeId, 'expense', Number(req.params.id));
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Expenses
 // ---------------------------------------------------------------------------
@@ -318,6 +327,7 @@ module.exports = {
   listVendorsHandler,
   createVendorHandler,
   updateVendorHandler,
+  deleteVendorHandler,
   listExpensesHandler,
   getExpenseHandler,
   createExpenseHandler,

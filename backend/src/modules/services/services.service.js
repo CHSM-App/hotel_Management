@@ -1,8 +1,14 @@
+const fs = require('fs');
+const path = require('path');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const { UPLOAD_DIR: SERVICE_IMAGE_DIR } = require('../../middleware/serviceImageUpload');
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// A service photo the property uploaded, or nothing. The filename alone
+// travels — the browser builds the URL against the /service-images static
+// mount, the same way it does for a dish or a room photo.
 function mapService(row) {
   return {
     id: row.id,
@@ -12,7 +18,16 @@ function mapService(row) {
     gstRatePercent: Number(row.gst_rate_percent),
     isActive: !!row.is_active,
     isLaundry: !!row.is_laundry,
+    image: row.image_filename ?? null,
   };
+}
+
+// A service photo no longer referenced by any row. Deleted best-effort: an
+// orphaned file wastes a few hundred kilobytes, while a failed unlink that
+// took the whole request down would lose the edit the user actually asked for.
+function removeServiceImage(filename) {
+  if (!filename) return;
+  fs.unlink(path.join(SERVICE_IMAGE_DIR, path.basename(filename)), () => {});
 }
 
 async function listServices(lodgeId, { includeInactive = false } = {}) {
@@ -21,7 +36,7 @@ async function listServices(lodgeId, { includeInactive = false } = {}) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, unit_label, price, gst_rate_percent, is_active, is_laundry
+      SELECT id, name, unit_label, price, gst_rate_percent, is_active, is_laundry, image_filename
       FROM dbo.lodge_services
       WHERE lodge_id = @lodgeId ${includeInactive ? '' : 'AND is_active = 1'}
       ORDER BY name
@@ -39,11 +54,12 @@ async function createService(lodgeId, input) {
     .input('price', sql.Decimal(10, 2), input.price)
     .input('gst', sql.Decimal(5, 2), input.gstRatePercent)
     .input('isLaundry', sql.Bit, input.isLaundry ? 1 : 0)
+    .input('imageFilename', sql.NVarChar, input.imageFilename ?? null)
     .query(`
-      INSERT INTO dbo.lodge_services (lodge_id, name, unit_label, price, gst_rate_percent, is_laundry)
+      INSERT INTO dbo.lodge_services (lodge_id, name, unit_label, price, gst_rate_percent, is_laundry, image_filename)
       OUTPUT inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent,
-             inserted.is_active, inserted.is_laundry
-      VALUES (@lodgeId, @name, @unit, @price, @gst, @isLaundry)
+             inserted.is_active, inserted.is_laundry, inserted.image_filename
+      VALUES (@lodgeId, @name, @unit, @price, @gst, @isLaundry, @imageFilename)
     `);
   return mapService(result.recordset[0]);
 }
@@ -65,21 +81,33 @@ async function updateService(lodgeId, id, input) {
   add('gst_rate_percent', 'gst', sql.Decimal(5, 2), input.gstRatePercent);
   add('is_active', 'active', sql.Bit, input.isActive);
   add('is_laundry', 'isLaundry', sql.Bit, input.isLaundry === undefined ? undefined : input.isLaundry ? 1 : 0);
+  // The photo has three fates on a save: a new file replaces it, "remove"
+  // clears it, and sending neither leaves whatever is on file alone — the
+  // common case, since most edits are just a price change.
+  if (input.imageFilename) add('image_filename', 'image', sql.NVarChar, input.imageFilename);
+  else if (input.removeImage) add('image_filename', 'image', sql.NVarChar, null);
   if (sets.length === 0) throw new ApiError('Nothing to update.', 400);
   const result = await request.query(`
     UPDATE dbo.lodge_services SET ${sets.join(', ')}
-    OUTPUT inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent,
-           inserted.is_active, inserted.is_laundry
+    OUTPUT deleted.image_filename AS old_image_filename,
+           inserted.id, inserted.name, inserted.unit_label, inserted.price, inserted.gst_rate_percent,
+           inserted.is_active, inserted.is_laundry, inserted.image_filename
     WHERE id = @id AND lodge_id = @lodgeId
   `);
   if (result.recordset.length === 0) throw new ApiError('Service not found.', 404);
-  return mapService(result.recordset[0]);
+  const row = result.recordset[0];
+  // Only once the row has stopped pointing at it. The other order would leave
+  // the catalogue naming a file that had already gone if the update then failed.
+  if (row.old_image_filename && row.old_image_filename !== row.image_filename) {
+    removeServiceImage(row.old_image_filename);
+  }
+  return mapService(row);
 }
 
 const USAGE_SELECT = `
   SELECT u.id, u.service_id, u.service_name, u.unit_label, u.unit_price, u.gst_rate_percent, u.quantity,
-         u.line_total, u.room_id, u.booking_id, u.guest_name, u.guest_phone, u.note, u.status,
-         u.on_room_bill, u.invoice_id, u.started_at, u.completed_at, r.room_number
+         u.headcount, u.line_total, u.room_id, u.booking_id, u.guest_name, u.guest_phone, u.note, u.status,
+         u.on_room_bill, u.invoice_id, u.started_at, u.completed_at, u.laundry_order_id, r.room_number
   FROM dbo.service_usages u
   LEFT JOIN dbo.rooms r ON r.id = u.room_id
 `;
@@ -93,6 +121,7 @@ function mapUsage(row) {
     unitPrice: Number(row.unit_price),
     gstRatePercent: Number(row.gst_rate_percent),
     quantity: Number(row.quantity),
+    headcount: Number(row.headcount),
     lineTotal: Number(row.line_total),
     roomId: row.room_id,
     roomNumber: row.room_number ?? null,
@@ -103,6 +132,7 @@ function mapUsage(row) {
     status: row.status,
     onRoomBill: !!row.on_room_bill,
     billed: row.invoice_id != null,
+    laundryOrderId: row.laundry_order_id ?? null,
     startedAt: row.started_at,
     completedAt: row.completed_at,
   };
@@ -111,19 +141,24 @@ function mapUsage(row) {
 // status: 'active' (in use), 'unbilled' (completed, not yet on a bill) or
 // 'all' (the last 200). Unbilled includes uses already put on a room bill so
 // the desk can see where they went.
+//
+// Guest laundry writes to this same table so it can be billed alongside other
+// services, but it already has its own history under Housekeeping -> Guest
+// laundry. Every status except 'tobill' (what Billing's "Services to bill"
+// reads) excludes it so it isn't listed twice.
 async function listUsages(lodgeId, status = 'all') {
   const pool = await getPool();
   const where =
     status === 'active'
-      ? "u.status = 'IN_USE'"
+      ? "u.status = 'IN_USE' AND u.laundry_order_id IS NULL"
       : status === 'unbilled'
-        ? "u.status = 'COMPLETED' AND u.invoice_id IS NULL"
+        ? "u.status = 'COMPLETED' AND u.invoice_id IS NULL AND u.laundry_order_id IS NULL"
         : // What Billing's "Services to bill" lists: ready, and not riding on a
           // stay's open room bill (see SERVICE_NOT_ON_STAY_BILL in billing.service).
           status === 'tobill'
           ? `u.status = 'COMPLETED' AND u.invoice_id IS NULL AND (u.on_room_bill = 0 OR EXISTS (
                SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = u.booking_id AND bi.status = 'ISSUED'))`
-          : '1 = 1';
+          : 'u.laundry_order_id IS NULL';
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -156,7 +191,7 @@ async function startUsage(lodgeId, userId, input) {
     guestPhone = guestPhone || stay.recordset[0].guest_phone;
   }
 
-  const lineTotal = round2(Number(service.price) * input.quantity);
+  const lineTotal = round2(Number(service.price) * input.quantity * input.headcount);
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -166,6 +201,7 @@ async function startUsage(lodgeId, userId, input) {
     .input('price', sql.Decimal(10, 2), service.price)
     .input('gst', sql.Decimal(5, 2), service.gst_rate_percent)
     .input('qty', sql.Decimal(8, 2), input.quantity)
+    .input('headcount', sql.Int, input.headcount)
     .input('total', sql.Decimal(10, 2), lineTotal)
     .input('roomId', sql.BigInt, roomId)
     .input('bookingId', sql.BigInt, input.bookingId ?? null)
@@ -175,13 +211,85 @@ async function startUsage(lodgeId, userId, input) {
     .input('userId', sql.BigInt, userId ?? null)
     .query(`
       INSERT INTO dbo.service_usages
-        (lodge_id, service_id, service_name, unit_label, unit_price, gst_rate_percent, quantity, line_total,
+        (lodge_id, service_id, service_name, unit_label, unit_price, gst_rate_percent, quantity, headcount, line_total,
          room_id, booking_id, guest_name, guest_phone, note, created_by)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @serviceId, @name, @unit, @price, @gst, @qty, @total,
+      VALUES (@lodgeId, @serviceId, @name, @unit, @price, @gst, @qty, @headcount, @total,
               @roomId, @bookingId, @guestName, @guestPhone, @note, @userId)
     `);
   return getUsage(lodgeId, result.recordset[0].id);
+}
+
+// A desk correction to a use still open — wrong headcount typed, a walk-in
+// turned out to be a staying guest, a few more hours added. Once it's on an
+// invoice the amount is already printed somewhere, so editing stops there;
+// cancel and start again instead. The service, unit, price and GST rate stay
+// exactly as snapshotted — only how much of it, and for whom, can change.
+async function updateUsage(lodgeId, id, input) {
+  const pool = await getPool();
+  const existing = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('id', sql.BigInt, id)
+    .query('SELECT * FROM dbo.service_usages WHERE id = @id AND lodge_id = @lodgeId');
+  const row = existing.recordset[0];
+  if (!row) throw new ApiError('Service use not found.', 404);
+  if (row.status === 'CANCELLED') throw new ApiError('A cancelled use cannot be edited.', 409);
+  if (row.invoice_id != null) throw new ApiError('This use has already been billed and cannot be edited.', 409);
+
+  const quantity = input.quantity ?? Number(row.quantity);
+  const headcount = input.headcount ?? Number(row.headcount);
+
+  let roomId = row.room_id;
+  let bookingId = row.booking_id;
+  let guestName = input.guestName ?? row.guest_name;
+  let guestPhone = input.guestPhone ?? row.guest_phone;
+  // The edit form always resends whatever booking is currently on the use,
+  // touched or not, so "present" alone can't mean "the picker changed" —
+  // re-checking CHECKED_IN on a booking that was never actually touched
+  // would fail an otherwise-unrelated edit the moment that guest checks out.
+  // Only a bookingId that differs from what's already stored is resolved.
+  const nextBookingId = input.bookingId !== undefined ? input.bookingId : row.booking_id;
+  if (nextBookingId !== row.booking_id) {
+    bookingId = nextBookingId;
+    if (bookingId) {
+      const stay = await pool
+        .request()
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('id', sql.BigInt, bookingId)
+        .query("SELECT room_id, guest_name, guest_phone FROM dbo.bookings WHERE id = @id AND lodge_id = @lodgeId AND status = 'CHECKED_IN'");
+      if (stay.recordset.length === 0) throw new ApiError('That guest is not checked in.', 409);
+      roomId = stay.recordset[0].room_id;
+      guestName = input.guestName || stay.recordset[0].guest_name;
+      guestPhone = input.guestPhone || stay.recordset[0].guest_phone;
+    } else {
+      roomId = null;
+    }
+  }
+
+  const lineTotal = round2(Number(row.unit_price) * quantity * headcount);
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('id', sql.BigInt, id)
+    .input('qty', sql.Decimal(8, 2), quantity)
+    .input('headcount', sql.Int, headcount)
+    .input('total', sql.Decimal(10, 2), lineTotal)
+    .input('roomId', sql.BigInt, roomId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('guestName', sql.NVarChar, guestName || null)
+    .input('guestPhone', sql.NVarChar, guestPhone || null)
+    .input('note', sql.NVarChar, input.note !== undefined ? input.note || null : row.note)
+    .query(`
+      UPDATE dbo.service_usages
+      SET quantity = @qty, headcount = @headcount, line_total = @total, room_id = @roomId,
+          booking_id = @bookingId, guest_name = @guestName, guest_phone = @guestPhone, note = @note
+      WHERE id = @id AND lodge_id = @lodgeId AND status <> 'CANCELLED' AND invoice_id IS NULL
+    `);
+  if (result.rowsAffected[0] === 0) {
+    throw new ApiError('This use was billed or cancelled while editing — refresh and try again.', 409);
+  }
+  return getUsage(lodgeId, id);
 }
 
 async function getUsage(lodgeId, id) {
@@ -207,16 +315,19 @@ async function completeUsage(lodgeId, id) {
   return getUsage(lodgeId, id);
 }
 
-// Allowed until a bill carries it; a billed use is corrected by voiding the bill.
+// Only while it's still running. Once completed it's a use that actually
+// happened — a stay someone had, a round someone played — and the way to
+// correct that is to not bill it or to void the bill, not to erase that it
+// occurred.
 async function cancelUsage(lodgeId, id) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('id', sql.BigInt, id)
-    .query("UPDATE dbo.service_usages SET status = 'CANCELLED' WHERE id = @id AND lodge_id = @lodgeId AND status IN ('IN_USE', 'COMPLETED') AND invoice_id IS NULL");
+    .query("UPDATE dbo.service_usages SET status = 'CANCELLED' WHERE id = @id AND lodge_id = @lodgeId AND status = 'IN_USE'");
   if (result.rowsAffected[0] === 0) throw new ApiError('This service cannot be cancelled.', 409);
   return getUsage(lodgeId, id);
 }
 
-module.exports = { listServices, createService, updateService, listUsages, startUsage, completeUsage, cancelUsage };
+module.exports = { listServices, createService, updateService, listUsages, startUsage, updateUsage, completeUsage, cancelUsage };

@@ -265,7 +265,10 @@ export default function StaffAndRoles() {
     setRoleForm({
       name: role.name,
       description: role.description || '',
-      permissions: [...role.permissions],
+      // A built-in can carry a permission for a section this property has
+      // switched off (Housekeeping holds Laundry by default). It has no
+      // checkbox here, and the server refuses it, so it is left out of the save.
+      permissions: catalog.length > 0 ? role.permissions.filter((p) => catalog.some((c) => c.key === p)) : [...role.permissions],
     });
     setRoleError('');
     setRoleInvalid('');
@@ -526,9 +529,6 @@ export default function StaffAndRoles() {
                           <span className={`badge ${u.isActive ? 'badge--on' : 'badge--off'}`}>
                             {u.isActive ? 'Active' : 'Disabled'}
                           </span>
-                          {u.mustResetPassword && (
-                            <div className="staff-roles__sub">Temporary password</div>
-                          )}
                         </td>
                         <td>
                           <div className="staff-roles__row-actions">

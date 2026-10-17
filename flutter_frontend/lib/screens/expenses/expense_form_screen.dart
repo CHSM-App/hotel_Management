@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
+import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -198,7 +199,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Future<void> _pickDateInto(TextEditingController controller) async {
     final now = DateTime.now();
     final initial = DateTime.tryParse(controller.text) ?? now;
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       firstDate: DateTime(now.year - 5),
       lastDate: now,
@@ -306,25 +307,79 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(expensesViewModelProvider);
     return Scaffold(
+      backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: !_viewMode
-            ? Text(_isEdit ? 'Edit expense' : (_isLogging ? 'Log this month' : 'Log an expense'))
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(widget.expense!.title, overflow: TextOverflow.ellipsis),
-                  Text(
-                    [widget.expense!.categoryName, widget.expense!.vendorName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                    style: Theme.of(context).textTheme.bodySmall,
+        backgroundColor: AppTheme.bg,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        titleSpacing: AppTheme.s4,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
+            ),
+          ),
+        ),
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x331457AD),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
                   ),
                 ],
               ),
+              child: Icon(
+                _isEdit ? Icons.edit_rounded : Icons.receipt_long_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: !_viewMode
+                  ? Text(
+                      _isEdit ? 'Edit expense' : (_isLogging ? 'Log this month' : 'Log an expense'),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(widget.expense!.title, overflow: TextOverflow.ellipsis),
+                        Text(
+                          [widget.expense!.categoryName, widget.expense!.vendorName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
-          children: [
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s16, AppTheme.s16, AppTheme.s32),
+              children: [
             if (_viewMode) ...[
               // Read-only summary — a row tap lands here first, not in the
               // editable form. "Edit details" below switches this same
@@ -336,47 +391,92 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 const SizedBox(height: AppTheme.s12),
               ],
               _ExpenseHeroCard(expense: widget.expense!),
-              const SizedBox(height: AppTheme.s12),
-              NeuCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _ViewRow('Category', widget.expense!.categoryName),
-                    if ((widget.expense!.vendorName ?? '').isNotEmpty) _ViewRow('Vendor', widget.expense!.vendorName!),
-                    _ViewRow('Date', formatIsoDate(widget.expense!.expenseDate)),
-                    if (widget.expense!.description.isNotEmpty) _ViewRow('Notes', widget.expense!.description),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(width: 110, child: Text('Receipt', style: TextStyle(color: AppTheme.muted, fontSize: 12.5))),
-                          Expanded(
-                            child: widget.expense!.hasBillDocument
-                                ? GestureDetector(
-                                    onTap: () => _viewBill(context),
-                                    child: const Text('View receipt', style: TextStyle(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w600)),
-                                  )
-                                : const Text('Not uploaded', style: TextStyle(color: AppTheme.text, fontSize: 13)),
-                          ),
-                        ],
-                      ),
+              const SizedBox(height: AppTheme.s8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _FactTile(
+                      icon: Icons.event_rounded,
+                      label: 'Date',
+                      value: formatIsoDate(widget.expense!.expenseDate),
                     ),
-                  ],
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  Expanded(
+                    child: _FactTile(
+                      icon: Icons.account_balance_wallet_rounded,
+                      label: widget.expense!.paymentStatus == 'PENDING' ? 'Status' : 'Paid via',
+                      value: widget.expense!.paymentStatus == 'PENDING'
+                          ? (kPaymentStatusLabel[widget.expense!.paymentStatus] ?? 'Pending')
+                          : (kPaymentMethodLabel[widget.expense!.paymentMethod] ?? widget.expense!.paymentMethod),
+                    ),
+                  ),
+                ],
+              ),
+              if (widget.expense!.description.isNotEmpty) ...[
+                const SizedBox(height: AppTheme.s8),
+                NeuCard(
+                  padding: const EdgeInsets.all(AppTheme.s12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.notes_rounded, size: 16, color: AppTheme.muted),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        child: Text(widget.expense!.description, style: const TextStyle(color: AppTheme.text, fontSize: 13, height: 1.35)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppTheme.s8),
+              InkWell(
+                onTap: widget.expense!.hasBillDocument ? () => _viewBill(context) : null,
+                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: widget.expense!.hasBillDocument ? AppTheme.accent.withValues(alpha: 0.06) : AppTheme.card,
+                    borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                    border: Border.all(color: widget.expense!.hasBillDocument ? AppTheme.accent.withValues(alpha: 0.3) : AppTheme.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.receipt_long_rounded,
+                        size: 18,
+                        color: widget.expense!.hasBillDocument ? AppTheme.accent : AppTheme.muted,
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        child: Text(
+                          widget.expense!.hasBillDocument ? 'View receipt' : 'No receipt uploaded',
+                          style: TextStyle(
+                            color: widget.expense!.hasBillDocument ? AppTheme.accent : AppTheme.muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (widget.expense!.hasBillDocument) const Icon(Icons.chevron_right_rounded, size: 18, color: AppTheme.accent),
+                    ],
+                  ),
                 ),
               ),
-            ] else
+            ] else ...[
+              if (_error != null) ...[
+                _ErrorBanner(_error!),
+                const SizedBox(height: AppTheme.s12),
+              ],
               NeuCard(
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_error != null) ...[
-                      _ErrorBanner(_error!),
-                      const SizedBox(height: AppTheme.s16),
-                    ],
-                    const SectionLabel('What was this for', number: 1),
+                    const SectionLabel('What was this for', number: 1, icon: Icons.receipt_rounded),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       key: _titleFieldKey,
                       controller: _title,
                       label: 'Title',
@@ -401,16 +501,21 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                       ),
                     const SizedBox(height: AppTheme.s12),
                     VendorComboField(controller: _vendor, vendors: state.vendors, label: 'Vendor'),
-
-                    const SectionDivider(),
-                    const SectionLabel('Amount & payment', number: 2),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
+              NeuCard(
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SectionLabel('Amount & payment', number: 2, icon: Icons.payments_rounded),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
-                      key: _amountFieldKey,
+                    _AmountField(
+                      fieldKey: _amountFieldKey,
                       controller: _amount,
-                      label: 'Amount',
-                      keyboardType: TextInputType.number,
-                      required: true,
                       errorText: _amountError,
                       focusNode: _amountFocus,
                       onChanged: (_) => setState(() {}),
@@ -443,16 +548,16 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                         ),
                         if (kPaymentReferenceLabel[_paymentMethod] != null) ...[
                           const SizedBox(height: AppTheme.s12),
-                          NeuField(controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
+                          NeuField(dense: true, controller: _referenceNumber, label: kPaymentReferenceLabel[_paymentMethod]!),
                         ],
                       ],
                       if (_paymentStatus == 'PARTIAL') ...[
                         const SizedBox(height: AppTheme.s12),
-                        NeuField(controller: _amountPaid, label: 'Amount paid so far', keyboardType: TextInputType.number),
+                        NeuField(dense: true, controller: _amountPaid, label: 'Amount paid so far', keyboardType: TextInputType.number),
                       ],
                     ],
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(
+                    NeuField(dense: true, 
                       key: _dateFieldKey,
                       controller: _expenseDate,
                       label: 'Date',
@@ -461,37 +566,31 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                       required: true,
                       errorText: _dateError,
                     ),
-
-                    const SectionDivider(),
-                    const SectionLabel('Notes & receipt', number: 3),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppTheme.s12),
+              NeuCard(
+                radius: AppTheme.rLarge,
+                shadow: AppTheme.elevated,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SectionLabel('Notes & receipt', number: 3, icon: Icons.attachment_rounded),
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: _description, label: 'Notes', maxLength: 400),
-                    const SizedBox(height: AppTheme.s16),
-                    Text('Receipt / bill (image or PDF)', style: Theme.of(context).textTheme.bodySmall),
-                    const SizedBox(height: AppTheme.s8),
-                    Row(
-                      children: [
-                        if (_billPhoto != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                            child: Image.file(File(_billPhoto!.path), width: 56, height: 56, fit: BoxFit.cover),
-                          )
-                        else if (_isEdit && widget.expense!.hasBillDocument)
-                          Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(AppTheme.rSmall), border: Border.all(color: AppTheme.border)),
-                            child: const Icon(Icons.receipt_long_rounded, color: AppTheme.muted),
-                          ),
-                        const SizedBox(width: AppTheme.s8),
-                        NeuButton(onPressed: _pickBillPhoto, child: Text(_billPhoto == null ? 'Add photo' : 'Replace photo')),
-                      ],
+                    NeuField(dense: true, controller: _description, label: 'Notes', maxLength: 400),
+                    const SizedBox(height: AppTheme.s12),
+                    _ReceiptPicker(
+                      billPhoto: _billPhoto,
+                      hasExistingBill: _isEdit && widget.expense!.hasBillDocument,
+                      onPick: _pickBillPhoto,
                     ),
                   ],
                 ),
               ),
+            ],
             if (_isEdit) ...[
-              const SizedBox(height: AppTheme.s16),
+              const SizedBox(height: AppTheme.s12),
               _PaymentsSection(
                 amount: num.tryParse(_amount.text.trim()) ?? 0,
                 amountPaid: _currentAmountPaid,
@@ -510,7 +609,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 onAddPayment: _addPayment,
               ),
             ],
-            const SizedBox(height: AppTheme.s24),
+            const SizedBox(height: AppTheme.s16),
             if (_viewMode)
               Row(
                 children: [
@@ -541,7 +640,9 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                     ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : Text(_isEdit ? 'Save changes' : (_isLogging ? 'Log this occurrence' : 'Log expense')),
               ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -598,23 +699,159 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   }
 }
 
-/// One label/value pair in the read-only summary — same compact row shape
-/// as AssetDetailScreen's `_FactsCard._fact`, so an expense's detail screen
-/// reads as the same "facts card" as an asset's.
-class _ViewRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _ViewRow(this.label, this.value);
+/// The Amount field, given a bit more visual weight than a plain [NeuField]
+/// since it's the one number everything else on this form is justifying —
+/// same field well, with a ₹ badge standing in for a currency prefix
+/// [NeuField] itself doesn't support.
+class _AmountField extends StatelessWidget {
+  final Key fieldKey;
+  final TextEditingController controller;
+  final String? errorText;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+
+  const _AmountField({
+    required this.fieldKey,
+    required this.controller,
+    required this.errorText,
+    required this.focusNode,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppTheme.accent.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          ),
+          child: const Text('₹', style: TextStyle(color: AppTheme.accent, fontSize: 20, fontWeight: FontWeight.w800)),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Expanded(
+          child: NeuField(dense: true, 
+            key: fieldKey,
+            controller: controller,
+            label: 'Amount',
+            keyboardType: TextInputType.number,
+            required: true,
+            errorText: errorText,
+            focusNode: focusNode,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The receipt/bill upload zone — a dashed-feel drop target instead of a
+/// bare thumbnail-and-button row, so the one optional attachment on this
+/// form reads as its own inviting target rather than an afterthought beside
+/// a small button.
+class _ReceiptPicker extends StatelessWidget {
+  final XFile? billPhoto;
+  final bool hasExistingBill;
+  final VoidCallback onPick;
+
+  const _ReceiptPicker({required this.billPhoto, required this.hasExistingBill, required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPreview = billPhoto != null || hasExistingBill;
+    return InkWell(
+      onTap: onPick,
+      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+      child: Container(
+        padding: const EdgeInsets.all(AppTheme.s12),
+        decoration: BoxDecoration(
+          color: AppTheme.accent.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(AppTheme.rMedium),
+          border: Border.all(color: AppTheme.accent.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            if (billPhoto != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                child: Image.file(File(billPhoto!.path), width: 44, height: 44, fit: BoxFit.cover),
+              )
+            else
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+                child: Icon(
+                  hasExistingBill ? Icons.receipt_long_rounded : Icons.add_a_photo_outlined,
+                  color: AppTheme.accent,
+                  size: 20,
+                ),
+              ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    hasPreview ? (billPhoto != null ? 'Receipt attached' : 'Receipt on file') : 'Add the receipt / bill',
+                    style: const TextStyle(color: AppTheme.heading, fontSize: 13.5, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasPreview ? 'Tap to replace it' : 'Photo or PDF, tap to choose',
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppTheme.muted, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A compact icon/label/value tile — two sit side by side under the hero
+/// card (Date, Paid via/Status) instead of a stacked label/value list, so
+/// the read-only view scans as a quick glance rather than a form to read.
+class _FactTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _FactTile({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 110, child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5))),
-          Expanded(child: Text(value, style: const TextStyle(color: AppTheme.text, fontSize: 13))),
+          Icon(icon, size: 15, color: AppTheme.muted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10.5, fontWeight: FontWeight.w600)),
+                Text(value, style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -647,56 +884,67 @@ class _ExpenseHeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _categoryColor(expense.categoryName);
     final statusLabel = kPaymentStatusLabel[expense.paymentStatus];
-    return NeuCard(
-      child: Row(
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color.withValues(alpha: 0.14), color.withValues(alpha: 0.04)],
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AppTheme.rMedium)),
-            child: Icon(Icons.receipt_long_rounded, size: 22, color: color),
-          ),
-          const SizedBox(width: AppTheme.s12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(formatPrice(expense.amount), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 24)),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        expense.paymentStatus == 'PENDING'
-                            ? formatIsoDate(expense.expenseDate)
-                            : '${formatIsoDate(expense.expenseDate)} · ${kPaymentMethodLabel[expense.paymentMethod] ?? expense.paymentMethod}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+                child: Icon(Icons.receipt_long_rounded, size: 16, color: color),
+              ),
+              if (statusLabel != null) ...[
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: TextStyle(
+                      color: expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
                     ),
-                    if (statusLabel != null) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: (expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          statusLabel,
-                          style: TextStyle(
-                            color: expense.paymentStatus == 'PENDING' ? AppTheme.danger : AppTheme.checkout,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ],
-            ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(formatPrice(expense.amount), style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 20)),
+          const SizedBox(height: 1),
+          Text(expense.title, style: const TextStyle(color: AppTheme.text, fontSize: 12.5, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
+                child: Text(expense.categoryName, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800)),
+              ),
+              if ((expense.vendorName ?? '').isNotEmpty)
+                Text(expense.vendorName!, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+            ],
           ),
         ],
       ),
@@ -811,7 +1059,18 @@ class _PaymentsSection extends StatelessWidget {
                 children: [
                   Text("Add a payment against what's left", style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: NeuField(dense: true, controller: newAmount, label: 'Amount', keyboardType: TextInputType.number),
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        child: NeuField(dense: true, controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: AppTheme.s12),
                   OptionDropdown(
                     values: kPaymentMethods,
@@ -819,19 +1078,29 @@ class _PaymentsSection extends StatelessWidget {
                     selected: newMethod,
                     onSelect: onMethodChanged,
                   ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: newDate, label: 'Date', readOnly: true, onTap: onPickDate),
                   if (kPaymentReferenceLabel[newMethod] != null) ...[
                     const SizedBox(height: AppTheme.s12),
-                    NeuField(controller: newReference, label: kPaymentReferenceLabel[newMethod]!),
+                    NeuField(dense: true, controller: newReference, label: kPaymentReferenceLabel[newMethod]!),
                   ],
                   const SizedBox(height: AppTheme.s12),
                   NeuButton(
                     expand: true,
+                    soft: true,
                     onPressed: addingPayment ? null : onAddPayment,
                     child: addingPayment
-                        ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Add payment'),
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.sidebarBrandInk),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_rounded, size: 18, color: AppTheme.sidebarBrandInk),
+                              SizedBox(width: 4),
+                              Text('Add another payment'),
+                            ],
+                          ),
                   ),
                 ],
               ),

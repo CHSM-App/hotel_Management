@@ -53,6 +53,11 @@
   background: color-mix(in srgb, var(--brand) 12%, var(--surface));
 }
 
+.toast--warning {
+  border-left-color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 12%, var(--surface));
+}
+
 .toast__message {
   flex: 1;
   /* A provider's failure text can be long and has no spaces to break at when

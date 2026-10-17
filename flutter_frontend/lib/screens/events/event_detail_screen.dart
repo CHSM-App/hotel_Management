@@ -11,14 +11,15 @@ import '../../widgets/payment_row.dart';
 import '../billing/advance_receipt_screen.dart';
 import '../billing/invoice_preview_screen.dart';
 import '../billing/issue_event_bill_screen.dart';
+import '../housekeeping/housekeeping_parts.dart';
 import '../theme.dart';
 import 'event_form_screen.dart';
 
-const _timeline = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'];
+const _timeline = ['DRAFT', 'CONFIRMED', 'SETTLED'];
 
 /// A function's own page — mirrors EventDetail.jsx: the quote, head count,
 /// extras noted on the day, the function sheet's notes, advances taken, and
-/// the actions that move it through hold / confirm / settle / cancel.
+/// the actions that move it through confirm / settle / cancel.
 class EventDetailScreen extends ConsumerStatefulWidget {
   final int eventId;
 
@@ -38,7 +39,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   final _cancelReason = TextEditingController();
   final _refundAmount = TextEditingController();
   String? _refundMethod;
-  final _holdHours = TextEditingController(text: '48');
 
   @override
   void initState() {
@@ -50,7 +50,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   void dispose() {
     _cancelReason.dispose();
     _refundAmount.dispose();
-    _holdHours.dispose();
     super.dispose();
   }
 
@@ -102,9 +101,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       _Timeline(status: ev.status),
                     ],
                     if (ev.status == 'CANCELLED') _ClosedBanner(text: 'Cancelled${ev.cancelReason != null ? ': ${ev.cancelReason}' : ''}${(ev.refundAmount ?? 0) > 0 ? ' · Refunded ${formatPrice(ev.refundAmount)}${ev.refundPaymentMethod != null ? ' via ${kPaymentMethods[ev.refundPaymentMethod] ?? ev.refundPaymentMethod}' : ''}' : ''}'),
-                    if (ev.status == 'EXPIRED') const _ClosedBanner(text: 'The hold on this date lapsed.'),
-                    if (ev.status == 'TENTATIVE' && ev.holdExpiresAt != null)
-                      _ClosedBanner(text: 'Hold expires ${formatDateTime(ev.holdExpiresAt)}', color: AppTheme.draft),
+                    if (ev.completedAt != null && !ev.isClosed) _ClosedBanner(text: 'Completed · ${formatDateTime(ev.completedAt)}', color: AppTheme.checkedIn),
                     if (_actionError != null) ...[
                       const SizedBox(height: AppTheme.s8),
                       Text(_actionError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
@@ -126,7 +123,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     _AdvancesCard(
                       event: ev,
                       receipts: _receipts,
-                      canTake: ['ENQUIRY', 'TENTATIVE', 'CONFIRMED'].contains(ev.status),
+                      canTake: ['DRAFT', 'CONFIRMED'].contains(ev.status),
                       onTaken: _load,
                     ),
                     const SizedBox(height: AppTheme.s16),
@@ -169,10 +166,24 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     else
                       _Actions(
                         event: ev,
-                        holdHours: _holdHours,
-                        onHold: () => _run(() => ref.read(eventsViewModelProvider.notifier).hold(ev.id, holdHours: int.tryParse(_holdHours.text.trim()) ?? 48)),
-                        onRelease: () => _run(() => ref.read(eventsViewModelProvider.notifier).release(ev.id)),
                         onConfirm: () => _run(() => ref.read(eventsViewModelProvider.notifier).confirm(ev.id)),
+                        onComplete: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              backgroundColor: AppTheme.bg,
+                              title: const Text('Mark as completed?', style: TextStyle(color: AppTheme.heading)),
+                              content: const Text('The venue will be sent to housekeeping for cleaning.', style: TextStyle(color: AppTheme.text, fontSize: 12.5)),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Not yet')),
+                                TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Mark as Completed')),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true) {
+                            await _run(() => ref.read(eventsViewModelProvider.notifier).complete(ev.id));
+                          }
+                        },
                         onEdit: () async {
                           final updated = await Navigator.of(context).push<EventBooking>(
                             MaterialPageRoute(builder: (_) => EventFormScreen(event: ev)),
@@ -216,10 +227,10 @@ class _Header extends StatelessWidget {
   const _Header({required this.event});
 
   Color get _statusColor => switch (event.status) {
-    'ENQUIRY' => const Color(0xFF5A8FD0),
-    'TENTATIVE' => AppTheme.draft,
+    'DRAFT' => AppTheme.draft,
     'CONFIRMED' => const Color(0xFFC0392B),
     'SETTLED' => AppTheme.muted,
+    'CANCELLED' => AppTheme.danger,
     _ => AppTheme.border,
   };
 
@@ -246,6 +257,28 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
+          Builder(builder: (context) {
+            // Where the function is in time — not the status, which is about
+            // the money. Mirrors eventPhase/phaseTagClass in eventFormat.js.
+            final phase = eventPhase(event);
+            if (phase == null) return const SizedBox.shrink();
+            final color = switch (phase) {
+              'IN_PROGRESS' => AppTheme.checkedIn,
+              'COMPLETED' => AppTheme.muted,
+              _ => AppTheme.edit,
+            };
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
+                  child: Text(kEventPhaseLabel[phase] ?? phase, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            );
+          }),
           Text(kEventTypeLabel[event.eventType] ?? event.eventType, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
           const SizedBox(height: 6),
           Text('${formatDateTime(event.startAt)} · ${event.venueName}${event.venueCapacity != null ? ' (up to ${event.venueCapacity})' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 13)),
@@ -507,25 +540,32 @@ class _ExtrasCardState extends ConsumerState<_ExtrasCard> {
     final extras = widget.event.addons.where((a) => a.isExtra).toList();
     final unpriced = extras.where((a) => a.needsPricing).length;
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Extras on the day', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14)),
           if (unpriced > 0) ...[
             const SizedBox(height: 4),
-            Text('$unpriced extra${unpriced == 1 ? '' : 's'} still need a price before the bill can be issued.', style: const TextStyle(color: AppTheme.draft, fontSize: 12)),
+            Text('$unpriced extra${unpriced == 1 ? '' : 's'} still need a price before the bill can be issued.', style: const TextStyle(color: AppTheme.draft, fontSize: 11.5, fontWeight: FontWeight.w600)),
           ],
           const SizedBox(height: 6),
           if (extras.isEmpty) const Text('Nothing added on the day yet.', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
           for (final line in extras)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.bg,
+                borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              ),
               child: Row(
                 children: [
-                  Expanded(child: Text('${line.label}${line.quantity > 1 ? ' × ${line.quantity}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 12))),
+                  Expanded(child: Text('${line.label}${line.quantity > 1 ? ' × ${line.quantity}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 12.5, fontWeight: FontWeight.w500))),
                   if (line.needsPricing && widget.open) ...[
                     SizedBox(
-                      width: 70,
+                      width: 64,
+                      height: 30,
                       child: TextField(
                         keyboardType: TextInputType.number,
                         style: const TextStyle(fontSize: 12),
@@ -533,27 +573,41 @@ class _ExtrasCardState extends ConsumerState<_ExtrasCard> {
                         onChanged: (v) => _pricing[line.id ?? 0] = v,
                       ),
                     ),
-                    TextButton(onPressed: _busy ? null : () => _price(line), child: const Text('Set', style: TextStyle(fontSize: 12))),
+                    const SizedBox(width: 2),
+                    CompactActionButton(label: 'Set', color: AppTheme.accent, primary: true, onTap: _busy ? null : () => _price(line)),
                   ] else
-                    Text(line.needsPricing ? 'price to set' : formatPrice(line.agreedAmount ?? 0), style: const TextStyle(color: AppTheme.text, fontSize: 12)),
+                    Text(line.needsPricing ? 'price to set' : formatPrice(line.agreedAmount ?? 0), style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w700)),
                   if (widget.open)
-                    IconButton(icon: const Icon(Icons.close_rounded, size: 16), color: AppTheme.danger, onPressed: _busy ? null : () => _remove(line)),
+                    InkWell(
+                      onTap: _busy ? null : () => _remove(line),
+                      borderRadius: BorderRadius.circular(999),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(Icons.close_rounded, size: 15, color: AppTheme.danger),
+                      ),
+                    ),
                 ],
               ),
             ),
           if (widget.open) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 2),
             Row(
               children: [
-                Expanded(child: NeuField(controller: _label, label: '', hint: 'Extra asked for', forceCapitalizeWords: true)),
+                Expanded(child: NeuField(controller: _label, label: '', hint: 'Extra asked for', forceCapitalizeWords: true, dense: true)),
                 const SizedBox(width: 6),
-                SizedBox(width: 46, child: NeuField(controller: _quantity, label: '', keyboardType: TextInputType.number)),
+                SizedBox(width: 44, child: NeuField(controller: _quantity, label: '', keyboardType: TextInputType.number, dense: true)),
                 const SizedBox(width: 6),
-                SizedBox(width: 70, child: NeuField(controller: _amount, label: '', hint: '₹', keyboardType: TextInputType.number)),
+                SizedBox(width: 64, child: NeuField(controller: _amount, label: '', hint: '₹', keyboardType: TextInputType.number, dense: true)),
               ],
             ),
-            const SizedBox(height: 6),
-            NeuButton(expand: true, onPressed: _busy ? null : _add, child: const Text('Add extra')),
+            const SizedBox(height: 8),
+            NeuButton(
+              soft: true,
+              expand: true,
+              minHeight: 38,
+              onPressed: _busy ? null : _add,
+              child: const Text('+ Add extra', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
           ],
         ],
       ),
@@ -594,6 +648,7 @@ class _NotesCardState extends State<_NotesCard> {
       ('scheduleNotes', 'Schedule', _schedule, widget.event.scheduleNotes),
     ];
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -601,12 +656,16 @@ class _NotesCardState extends State<_NotesCard> {
             children: [
               const Expanded(child: Text('Function sheet', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14))),
               if (!_editing)
-                TextButton(onPressed: () => setState(() => _editing = true), child: const Text('Edit'))
+                CompactActionButton(label: 'Edit', color: AppTheme.accent, onTap: () => setState(() => _editing = true))
               else
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextButton(
-                      onPressed: _busy
+                    CompactActionButton(
+                      label: _busy ? 'Saving…' : 'Save',
+                      color: AppTheme.accent,
+                      primary: true,
+                      onTap: _busy
                           ? null
                           : () async {
                               setState(() => _busy = true);
@@ -622,24 +681,25 @@ class _NotesCardState extends State<_NotesCard> {
                                 });
                               }
                             },
-                      child: const Text('Save'),
                     ),
-                    TextButton(onPressed: _busy ? null : () => setState(() => _editing = false), child: const Text('Cancel')),
+                    const SizedBox(width: 6),
+                    CompactActionButton(label: 'Cancel', color: AppTheme.muted, onTap: _busy ? null : () => setState(() => _editing = false)),
                   ],
                 ),
             ],
           ),
           for (final s in sections)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.only(top: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(s.$2, style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+                  Text(s.$2, style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.2)),
+                  const SizedBox(height: 2),
                   if (_editing)
-                    NeuField(controller: s.$3, label: '')
+                    NeuField(controller: s.$3, label: '', dense: true)
                   else
-                    Text(s.$4?.isNotEmpty == true ? s.$4! : 'Nothing noted.', style: const TextStyle(color: AppTheme.text, fontSize: 12)),
+                    Text(s.$4?.isNotEmpty == true ? s.$4! : 'Nothing noted.', style: const TextStyle(color: AppTheme.text, fontSize: 12.5)),
                 ],
               ),
             ),
@@ -667,6 +727,7 @@ class _AdvancesCardState extends State<_AdvancesCard> {
   @override
   Widget build(BuildContext context) {
     return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -674,8 +735,11 @@ class _AdvancesCardState extends State<_AdvancesCard> {
             children: [
               const Expanded(child: Text('Advances', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14))),
               if (widget.canTake && !_taking)
-                TextButton(
-                  onPressed: () async {
+                CompactActionButton(
+                  label: 'Take advance',
+                  color: AppTheme.accent,
+                  primary: true,
+                  onTap: () async {
                     if (widget.receipts.isEmpty) {
                       setState(() => _taking = true);
                       return;
@@ -684,16 +748,22 @@ class _AdvancesCardState extends State<_AdvancesCard> {
                     // latest receipt, which itself offers "Take another".
                     await _openReceipt(widget.receipts.first);
                   },
-                  child: const Text('Take advance / print receipt'),
                 ),
             ],
           ),
+          const SizedBox(height: 4),
           if (widget.receipts.isEmpty) const Text('No advance taken yet.', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
           for (final r in widget.receipts)
             InkWell(
               onTap: () => _openReceipt(r),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 4),
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 7),
+                decoration: BoxDecoration(
+                  color: AppTheme.bg,
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -703,8 +773,8 @@ class _AdvancesCardState extends State<_AdvancesCard> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Text('${formatPrice(r.amountReceived)}${r.paymentMethod != null ? ' · ${r.paymentMethod}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 12)),
-                    const SizedBox(width: 4),
+                    Text('${formatPrice(r.amountReceived)}${r.paymentMethod != null ? ' · ${r.paymentMethod}' : ''}', style: const TextStyle(color: AppTheme.heading, fontSize: 12, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 2),
                     const Icon(Icons.chevron_right_rounded, size: 16, color: AppTheme.muted),
                   ],
                 ),
@@ -712,7 +782,7 @@ class _AdvancesCardState extends State<_AdvancesCard> {
             ),
           if (widget.event.invoice != null)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: 2),
               child: Text('Invoice ${widget.event.invoice!.invoiceNumber ?? ''} · ${formatPrice(widget.event.invoice!.totalAmount)}', style: const TextStyle(color: AppTheme.text, fontSize: 12)),
             ),
           if (_taking)
@@ -805,14 +875,20 @@ class _TakeAdvanceFormState extends ConsumerState<_TakeAdvanceForm> {
               ),
             ),
           if (_lines.length < 5)
-            NeuButton(expand: true, onPressed: () => setState(() => _lines.add(PaymentDraft())), child: const Text('+ Add another payment')),
+            NeuButton(
+              soft: true,
+              expand: true,
+              minHeight: 38,
+              onPressed: () => setState(() => _lines.add(PaymentDraft())),
+              child: const Text('+ Add another payment', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
           if (_error != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12))),
           const SizedBox(height: AppTheme.s8),
           Row(
             children: [
-              Expanded(child: NeuButton(onPressed: _busy ? null : widget.onCancel, child: const Text('Cancel'))),
+              Expanded(child: NeuButton(minHeight: 40, onPressed: _busy ? null : widget.onCancel, child: const Text('Cancel'))),
               const SizedBox(width: AppTheme.s8),
-              Expanded(child: NeuButton(primary: true, onPressed: _busy ? null : _submit, child: Text(_busy ? 'Recording…' : 'Record'))),
+              Expanded(child: NeuButton(minHeight: 40, primary: true, onPressed: _busy ? null : _submit, child: Text(_busy ? 'Recording…' : 'Record'))),
             ],
           ),
         ],
@@ -890,10 +966,8 @@ class _CancelCard extends StatelessWidget {
 
 class _Actions extends StatelessWidget {
   final EventBooking event;
-  final TextEditingController holdHours;
-  final VoidCallback onHold;
-  final VoidCallback onRelease;
   final VoidCallback onConfirm;
+  final VoidCallback onComplete;
   final VoidCallback onEdit;
   final VoidCallback onCancel;
   final VoidCallback onSettle;
@@ -901,10 +975,8 @@ class _Actions extends StatelessWidget {
 
   const _Actions({
     required this.event,
-    required this.holdHours,
-    required this.onHold,
-    required this.onRelease,
     required this.onConfirm,
+    required this.onComplete,
     required this.onEdit,
     required this.onCancel,
     required this.onSettle,
@@ -915,24 +987,17 @@ class _Actions extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = event.status;
     final closed = event.isClosed;
-    final canEdit = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'EXPIRED'].contains(status);
+    final canEdit = ['DRAFT', 'CONFIRMED'].contains(status);
 
     return Wrap(
       spacing: AppTheme.s8,
       runSpacing: AppTheme.s8,
       children: [
-        if (status == 'ENQUIRY' || status == 'EXPIRED') ...[
-          SizedBox(
-            width: 70,
-            child: NeuField(controller: holdHours, label: '', keyboardType: TextInputType.number),
-          ),
-          NeuButton(onPressed: onHold, child: Text(status == 'EXPIRED' ? 'Hold again' : 'Hold date')),
-        ],
-        if (status == 'TENTATIVE') NeuButton(onPressed: onRelease, child: const Text('Release hold')),
-        if (['ENQUIRY', 'TENTATIVE', 'EXPIRED'].contains(status)) NeuButton(primary: true, onPressed: onConfirm, child: const Text('Confirm')),
+        if (status == 'DRAFT') NeuButton(primary: true, onPressed: onConfirm, child: const Text('Confirm')),
         if (status == 'CONFIRMED') NeuButton(primary: true, onPressed: onSettle, child: const Text('Settle & bill')),
         if (status == 'SETTLED') NeuButton(primary: true, onPressed: onViewBill, child: const Text('View bill')),
-        if (canEdit && status != 'EXPIRED') NeuButton(onPressed: onEdit, child: const Text('Edit')),
+        if (event.canComplete) NeuButton(color: AppTheme.checkedIn, primary: true, onPressed: onComplete, child: const Text('Mark as Completed')),
+        if (canEdit) NeuButton(onPressed: onEdit, child: const Text('Edit')),
         if (!closed && status != 'SETTLED') NeuButton(color: AppTheme.danger, primary: true, onPressed: onCancel, child: const Text('Cancel event')),
       ],
     );

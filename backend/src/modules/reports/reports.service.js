@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../../config/connection');
 const { netOfDiscount } = require('../billing/billing.service');
 const assetsService = require('../assets/assets.service');
+const housekeepingService = require('../housekeeping/housekeeping.service');
 const { depreciationForAssets, fyStart, fyEnd } = require('../assets/depreciation');
 
 function round2(n) {
@@ -240,8 +241,16 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
       AND CAST(b.cancelled_at AS DATE) BETWEEN @fromDate AND @toDate
   `);
 
+  // The extra columns past balance_collected are only here so each row's
+  // balance can be split room/food the same way billFigures does for a bill's
+  // own total — a ROOM_FOOD stay pays one combined balance, and this report
+  // is the room register, not the restaurant's.
   const balances = await period(pool.request()).query(`
-    SELECT i.id, i.balance_collected, i.balance_payment_method, ${stayPeriodCase}
+    SELECT i.id, i.balance_collected, i.balance_payment_method, ${stayPeriodCase},
+           i.room_subtotal, i.food_subtotal, i.service_subtotal,
+           i.cgst_amount, i.sgst_amount, i.food_cgst_amount, i.food_sgst_amount,
+           i.service_cgst_amount, i.service_sgst_amount, i.discount_amount,
+           i.round_off, i.total_amount
     FROM dbo.invoices i
     JOIN dbo.bookings b ON b.id = i.booking_id
     WHERE i.lodge_id = @lodgeId
@@ -321,13 +330,30 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
   }
 
   let balanceCollected = 0;
+  // The food share of balance_collected on a ROOM_FOOD invoice — reported
+  // separately (see getBookingsReport's foodBalanceCollected) rather than
+  // folded into this register, which is room-only throughout.
+  let foodBalanceCollected = 0;
   for (const row of balances.recordset) {
     const amount = Number(row.balance_collected);
-    balanceCollected = round2(balanceCollected + amount);
-    for (const part of splitAcross(amount, balanceLines.get(String(row.id)), row.balance_payment_method)) {
+    // The advance was always room money (taken before any room-service food
+    // existed to bill), so it's the room side that's already partly paid —
+    // food is still owed in full. The balance therefore settles food first,
+    // up to what food actually cost, and whatever is left over is room's.
+    // This isn't a guess at which literal rupee paid for which dish; it's
+    // the split that makes balanceDue land on exactly 0 for a settled bill,
+    // which a proportional share of the whole bill cannot guarantee once an
+    // advance is in the mix.
+    const figures = billFigures(row);
+    const foodBilled = round2(figures.foodTaxable + figures.foodCgst + figures.foodSgst);
+    const foodPart = round2(Math.min(amount, foodBilled));
+    const roomPart = round2(amount - foodPart);
+    balanceCollected = round2(balanceCollected + roomPart);
+    foodBalanceCollected = round2(foodBalanceCollected + foodPart);
+    for (const part of splitAcross(roomPart, balanceLines.get(String(row.id)), row.balance_payment_method)) {
       add(part.method, 'balance', part.amount);
     }
-    file(row, 'balance', amount);
+    file(row, 'balance', roomPart);
   }
 
   // Summed on its own rather than through add()/file(): the charge was
@@ -344,6 +370,10 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
     advanceCount,
     balanceCollected,
     balanceCount: balances.recordset.length,
+    // The food share this register leaves out of balanceCollected/
+    // totalCollected above — surfaced so the bookings summary can point to
+    // it (and the Restaurant report can show it) rather than it just vanishing.
+    foodBalanceCollected,
     // Cancellation charges are income of the period too — money the house
     // kept when a stay fell through — but they ride outside the advance and
     // balance halves, so byPaymentMode still foots against those two alone.
@@ -720,7 +750,18 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       roomSide.billed = round2(figures.billedAmount - roomSide.foodBilled);
     }
     const advanceAmount = row.advance_amount != null ? Number(row.advance_amount) : 0;
-    const balanceCollected = billed ? Number(row.balance_collected ?? 0) : null;
+    // The advance was always room money (taken before any room-service food
+    // existed to bill), so it's the room side that already carries a
+    // payment — food is still owed in full. The one balance payment that
+    // settles both therefore reads as food first, up to what food actually
+    // cost, and whatever is left over is room's. That isn't a claim about
+    // which literal rupee paid for which dish; it's the split that makes
+    // balanceDue land on exactly 0 for a settled bill, every figure below
+    // reads room-only and foots against the others, same as billedAmount
+    // above — a proportional share of the whole bill can't promise either.
+    const balanceCollectedRaw = billed ? Number(row.balance_collected ?? 0) : null;
+    const foodBalanceCollected = billed ? round2(Math.min(balanceCollectedRaw, roomSide.foodBilled)) : null;
+    const balanceCollected = billed ? round2(balanceCollectedRaw - foodBalanceCollected) : null;
     return {
       id: row.id,
       guestName: row.guest_name,
@@ -783,15 +824,23 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       // shows the booking's figure and the bill's separately.
       advancePaid: billed ? Number(row.advance_paid ?? 0) : null,
       balanceCollected,
+      // The food share left out of balanceCollected above — same memo role
+      // foodBilledAmount plays for billedAmount.
+      foodBalanceCollected,
       balancePaymentMethod: row.balance_payment_method || null,
+      // Against the room-only balance, same reason billedAmount above is
+      // room-only: this report's figures are meant to foot against each
+      // other within the room side, not restate the bill's full payment.
       balanceTenders: billed
         ? mergeTenders(
             splitAcross(balanceCollected, tenders.balance.get(String(row.id)), row.balance_payment_method)
           )
         : [],
-      // Left unpaid after the bill's own deductions — 0 on a settled bill.
+      // Left unpaid on the room side — 0 on a stay whose bill is settled.
+      // Against roomSide.billed/balanceCollected rather than the bill's full
+      // figures, so it reads consistently with everything else in this row.
       balanceDue: billed
-        ? round2(figures.billedAmount - Number(row.advance_paid ?? 0) - balanceCollected)
+        ? round2(roomSide.billed - Number(row.advance_paid ?? 0) - balanceCollected)
         : null,
       createdAt: row.created_at,
     };
@@ -877,6 +926,10 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   summary.balanceCollected = collections.balanceCollected;
   summary.cancellationChargesKept = collections.cancellationChargesKept;
   summary.totalCollected = collections.totalCollected;
+  // The food share of balanceCollected, left out of the room-only figures
+  // above — shown as an aside here, same as foodBilledAmount, and it's what
+  // the Restaurant report's room-service card reads.
+  summary.foodBalanceCollected = collections.foodBalanceCollected;
 
   return {
     fromDate,
@@ -911,7 +964,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
   };
 }
 
-const EVENT_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED', 'CANCELLED', 'EXPIRED'];
+const EVENT_STATUSES = ['DRAFT', 'CONFIRMED', 'SETTLED', 'CANCELLED'];
 
 function emptyEventTotals() {
   return { count: 0, venueCharge: 0, cateringAmount: 0, addonsTotal: 0, discountAmount: 0, totalAmount: 0, advanceAmount: 0, balanceDue: 0 };
@@ -1017,7 +1070,6 @@ async function getEventsReport(lodgeId, fromDate, toDate) {
       cancelled.chargesKept = round2(cancelled.chargesKept + (ev.cancellationCharge ?? 0));
       continue;
     }
-    if (ev.status === 'EXPIRED') continue;
 
     addEventTotals(totals, ev);
     if (!byEventType[ev.eventType]) byEventType[ev.eventType] = emptyEventTotals();
@@ -1053,13 +1105,17 @@ async function getEventsReport(lodgeId, fromDate, toDate) {
 // sold nor waiting to be billed.
 async function getServicesReport(lodgeId, fromDate, toDate) {
   const pool = await getPool();
+  const lodgeResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT name FROM dbo.lodges WHERE id = @lodgeId');
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('fromDate', sql.Date, fromDate)
     .input('toDate', sql.Date, toDate)
     .query(`
-      SELECT u.id, u.service_name, u.unit_label, u.unit_price, u.quantity, u.line_total, u.gst_rate_percent,
+      SELECT u.id, u.service_name, u.unit_label, u.unit_price, u.quantity, u.headcount, u.line_total, u.gst_rate_percent,
              u.guest_name, u.status, u.on_room_bill, u.started_at, u.completed_at,
              r.room_number, i.invoice_number, i.status AS invoice_status
       FROM dbo.service_usages u
@@ -1076,6 +1132,7 @@ async function getServicesReport(lodgeId, fromDate, toDate) {
     unitLabel: row.unit_label,
     unitPrice: Number(row.unit_price),
     quantity: Number(row.quantity),
+    headcount: Number(row.headcount),
     lineTotal: Number(row.line_total),
     gstRatePercent: Number(row.gst_rate_percent),
     guestName: row.guest_name || null,
@@ -1117,9 +1174,149 @@ async function getServicesReport(lodgeId, fromDate, toDate) {
   return {
     fromDate,
     toDate,
+    generatedAt: new Date().toISOString(),
+    lodgeName: lodgeResult.recordset[0]?.name || '',
     totals,
     byService: [...byService.values()].sort((a, b) => b.value - a.value),
     usages,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Laundry — hotel linen through the wash, and guests' laundry orders
+// ---------------------------------------------------------------------------
+
+// Counts, not money. A linen movement belongs to the period by the day it was
+// recorded; a guest order by the day the clothes were taken in. What a guest
+// order earned is already in the Other services report and on its bill, so the
+// value here is for information and must not be added to any sales total.
+async function getLaundryReport(lodgeId, fromDate, toDate) {
+  const pool = await getPool();
+  const request = () =>
+    pool.request().input('lodgeId', sql.BigInt, lodgeId).input('fromDate', sql.Date, fromDate).input('toDate', sql.Date, toDate);
+
+  const lodgeResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT name FROM dbo.lodges WHERE id = @lodgeId');
+
+  const [moves, orderRows, stock] = await Promise.all([
+    request().query(`
+      SELECT m.linen_item_id, m.kind, m.source, LTRIM(RTRIM(ISNULL(m.washed_by, ''))) AS washed_by, SUM(m.quantity) AS quantity,
+             SUM(ISNULL(m.wash_charge, 0)) AS charge
+      FROM dbo.linen_movements m
+      WHERE m.lodge_id = @lodgeId AND CAST(m.created_at AS DATE) BETWEEN @fromDate AND @toDate
+      GROUP BY m.linen_item_id, m.kind, m.source, LTRIM(RTRIM(ISNULL(m.washed_by, '')))
+    `),
+    request().query(`
+      SELECT o.id, o.tag_number, o.status, o.guest_name, o.received_at, o.delivered_at, o.washed_by, o.wash_charge, r.room_number,
+             ISNULL(SUM(i.quantity), 0) AS pieces, ISNULL(SUM(i.unit_price * i.quantity), 0) AS total
+      FROM dbo.laundry_orders o
+      LEFT JOIN dbo.laundry_order_items i ON i.order_id = o.id
+      LEFT JOIN dbo.rooms r ON r.id = o.room_id
+      WHERE o.lodge_id = @lodgeId AND CAST(o.received_at AS DATE) BETWEEN @fromDate AND @toDate
+      GROUP BY o.id, o.tag_number, o.status, o.guest_name, o.received_at, o.delivered_at, o.washed_by, o.wash_charge, r.room_number
+      ORDER BY o.received_at ASC
+    `),
+    housekeepingService.listLinen(lodgeId),
+  ]);
+
+  const blank = () => ({ changed: 0, sent: 0, received: 0, lost: 0, damaged: 0 });
+  const FIELD = { CHANGED: 'changed', SENT: 'sent', RECEIVED: 'received', LOST: 'lost', DAMAGED: 'damaged' };
+  const itemCounts = new Map();
+  const washers = new Map();
+  const totals = blank();
+  for (const row of moves.recordset) {
+    const field = FIELD[row.kind];
+    const quantity = Number(row.quantity);
+    const item = itemCounts.get(String(row.linen_item_id)) ?? blank();
+    item[field] += quantity;
+    itemCounts.set(String(row.linen_item_id), item);
+    totals[field] += quantity;
+
+    // Only what went through the wash belongs to a washer: a towel lost from a
+    // room is nobody's shortfall but the lodge's.
+    const washed = row.kind === 'SENT' || row.kind === 'RECEIVED' || row.source === 'LAUNDRY';
+    if (!washed) continue;
+    const key = row.washed_by.toLowerCase();
+    const washer = washers.get(key) ?? { washedBy: row.washed_by, sent: 0, received: 0, lost: 0, damaged: 0, charge: 0 };
+    washer[field] += quantity;
+    // What the washer charged, where it was entered. Money, not a count.
+    washer.charge = round2(washer.charge + Number(row.charge ?? 0));
+    washers.set(key, washer);
+  }
+
+  const byItem = stock
+    .filter((i) => i.isActive || itemCounts.has(String(i.id)))
+    .map((i) => ({ name: i.name, ...(itemCounts.get(String(i.id)) ?? blank()), owned: i.owned, inWashNow: i.inLaundry }));
+
+  const byWasher = [...washers.values()]
+    .map((w) => ({ ...w, notBack: Math.max(0, w.sent - w.received - w.lost - w.damaged) }))
+    .sort((a, b) => b.sent - a.sent);
+
+  const orders = orderRows.recordset.map((row) => ({
+    id: row.id,
+    tagNumber: row.tag_number,
+    status: row.status,
+    guestName: row.guest_name || null,
+    roomNumber: row.room_number || null,
+    receivedAt: row.received_at,
+    deliveredAt: row.delivered_at || null,
+    pieces: Number(row.pieces),
+    total: round2(Number(row.total)),
+    washedBy: row.washed_by || null,
+    washCharge: row.wash_charge == null ? null : Number(row.wash_charge),
+  }));
+  // vendorCharge is what outside laundries charged the lodge for these orders:
+  // a cost, never part of what guests were billed. handedOverVendorCharge
+  // mirrors handedOverValue/openValue's own split — profit only makes sense
+  // over orders where both the guest charge and the vendor cost are settled,
+  // not an order that's still open and may not even have a vendor price yet.
+  const guest = {
+    takenIn: orders.length,
+    handedOver: 0,
+    cancelled: 0,
+    open: 0,
+    pieces: 0,
+    handedOverValue: 0,
+    openValue: 0,
+    vendorCharge: 0,
+    handedOverVendorCharge: 0,
+  };
+  for (const o of orders) {
+    if (o.status === 'CANCELLED') {
+      guest.cancelled += 1;
+      continue;
+    }
+    guest.pieces += o.pieces;
+    guest.vendorCharge = round2(guest.vendorCharge + (o.washCharge ?? 0));
+    if (o.status === 'DELIVERED') {
+      guest.handedOver += 1;
+      guest.handedOverValue = round2(guest.handedOverValue + o.total);
+      guest.handedOverVendorCharge = round2(guest.handedOverVendorCharge + (o.washCharge ?? 0));
+    } else {
+      guest.open += 1;
+      guest.openValue = round2(guest.openValue + o.total);
+    }
+  }
+  guest.profit = round2(guest.handedOverValue - guest.handedOverVendorCharge);
+
+  const ordersWithProfit = orders.map((o) => ({
+    ...o,
+    profit: o.status === 'CANCELLED' ? null : round2(o.total - (o.washCharge ?? 0)),
+  }));
+
+  return {
+    fromDate,
+    toDate,
+    generatedAt: new Date().toISOString(),
+    lodgeName: lodgeResult.recordset[0]?.name || '',
+    linen: {
+      totals: { ...totals, inWashNow: stock.reduce((n, i) => n + i.inLaundry, 0) },
+      byItem,
+      byWasher,
+    },
+    guest: { totals: guest, orders: ordersWithProfit },
   };
 }
 
@@ -1144,7 +1341,12 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
     .input('fromDate', sql.Date, fromDate)
     .input('toDate', sql.Date, toDate)
     .query(`
-      SELECT o.id, o.order_number, o.order_date, o.source, o.guest_name, o.guest_phone,
+      SELECT o.id, o.order_number, o.order_date, o.source,
+             -- A room order taken at the counter carries its guest's identity
+             -- on the booking, not typed again onto the order itself — same
+             -- fallback listOrders/getOrder use for the live queue and billing.
+             COALESCE(o.guest_name, bk.guest_name) AS guest_name,
+             COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
              o.status, o.subtotal, o.placed_at, o.delivered_at, o.cancelled_at, o.cancel_reason,
              r.room_number, t.label AS table_label,
              i.invoice_number, i.document_type, i.status AS invoice_status,
@@ -1152,6 +1354,7 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
       FROM dbo.food_orders o
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
+      LEFT JOIN dbo.bookings bk ON bk.id = o.booking_id
       -- The bill whatever its state: a voided one must still be reported, as voided.
       LEFT JOIN dbo.invoices i ON i.id = o.invoice_id
       WHERE o.lodge_id = @lodgeId AND o.order_date BETWEEN @fromDate AND @toDate
@@ -1578,7 +1781,7 @@ async function getAnalyticsOverview(lodgeId, fromDate, toDate, compareMode = 'pr
              e.total_amount, e.advance_amount, v.name AS venue_name
       FROM dbo.event_bookings e
       JOIN dbo.event_venues v ON v.id = e.venue_id
-      WHERE e.lodge_id = @lodgeId AND e.status IN ('CONFIRMED', 'TENTATIVE')
+      WHERE e.lodge_id = @lodgeId AND e.status = 'CONFIRMED'
         AND e.start_at >= SYSDATETIMEOFFSET()
       ORDER BY e.start_at ASC
     `);
@@ -1605,7 +1808,7 @@ async function getAnalyticsOverview(lodgeId, fromDate, toDate, compareMode = 'pr
       FROM dbo.event_bookings e
       JOIN dbo.event_venues v ON v.id = e.venue_id
       WHERE e.lodge_id = @lodgeId AND e.start_at >= @fromDate AND e.start_at < @toDate
-        AND e.status NOT IN ('CANCELLED', 'EXPIRED')
+        AND e.status <> 'CANCELLED'
       GROUP BY v.id, v.name
       ORDER BY cnt DESC
     `);
@@ -2159,6 +2362,52 @@ async function getProfitLossHistory(lodgeId, granularity = 'year') {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Guest feedback — the post-checkout "how was your stay" responses
+// ---------------------------------------------------------------------------
+
+// Submitted responses in the period, by submitted_at — the date a guest
+// actually answered, not the date the sweep happened to ask (requested_at).
+// A row with no submitted_at yet is an unanswered ask, not feedback, so it
+// has nothing to say to this report.
+async function getFeedbackReport(lodgeId, fromDate, toDate) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT fr.id, fr.rating, fr.comment, fr.requested_at, fr.submitted_at,
+             COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
+             -- A stay has a booked checkout date; a function has no such
+             -- column, so the day it was marked complete stands in for it —
+             -- same fallback shape billShare.service.js's stayDates uses.
+             COALESCE(b.check_out_date, CAST(eb.completed_at AS DATE)) AS check_out_date
+      FROM dbo.feedback_requests fr
+      LEFT JOIN dbo.bookings b ON b.id = fr.booking_id
+      LEFT JOIN dbo.event_bookings eb ON eb.id = fr.event_booking_id
+      WHERE fr.lodge_id = @lodgeId AND fr.submitted_at IS NOT NULL
+        AND CAST(fr.submitted_at AS DATE) BETWEEN @fromDate AND @toDate
+      ORDER BY fr.submitted_at DESC
+    `);
+
+  const responses = result.recordset.map((row) => ({
+    id: row.id,
+    guestName: row.guest_name,
+    checkOutDate: row.check_out_date,
+    rating: row.rating,
+    comment: row.comment || '',
+    requestedAt: row.requested_at,
+    submittedAt: row.submitted_at,
+  }));
+
+  const averageRating =
+    responses.length > 0 ? round2(responses.reduce((sum, r) => sum + r.rating, 0) / responses.length) : null;
+
+  return { fromDate, toDate, totals: { count: responses.length, averageRating }, responses };
+}
+
 module.exports = {
   getOccupancyReport,
   getGstSummary,
@@ -2166,6 +2415,8 @@ module.exports = {
   getEventsReport,
   getFoodOrdersReport,
   getServicesReport,
+  getLaundryReport,
+  getFeedbackReport,
   getAnalyticsOverview,
   getRoomsAnalytics,
   getProfitLossReport,

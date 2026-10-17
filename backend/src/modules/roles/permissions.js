@@ -22,6 +22,12 @@ const PERMISSIONS = [
     description: 'Browse past and present guests, and open their ID proofs.',
   },
   {
+    key: 'customers.manage',
+    label: 'Customer list',
+    description: 'View the customer list, open a profile, and add or edit customers by hand.',
+    capability: ['hasRooms', 'hasEvents'],
+  },
+  {
     key: 'rooms.manage',
     label: 'Rooms & rates',
     description: 'Add rooms, categories, seasonal pricing and booking extras.',
@@ -88,8 +94,14 @@ const PERMISSIONS = [
   {
     key: 'housekeeping.manage',
     label: 'Housekeeping',
-    description: 'Clean rooms, track hotel linen and take guests’ laundry. No access to bills or payments.',
+    description: 'The room cleaning board: start and finish rooms, mark a room for cleaning or close it for repair. No access to bills or payments.',
     capability: 'hasHousekeeping',
+  },
+  {
+    key: 'laundry.manage',
+    label: 'Laundry',
+    description: 'Send hotel linen for washing, receive it back, and take guests’ laundry. No access to bills or payments.',
+    capability: 'hasLaundry',
   },
   {
     key: 'profitLoss.view',
@@ -103,7 +115,7 @@ const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
 
 // Built-in role keys. These always exist (seeded with lodge_id NULL) and can be
 // re-scoped per lodge, but never renamed or deleted.
-const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN', 'ACCOUNTANT', 'HOUSEKEEPING'];
+const SYSTEM_ROLE_KEYS = ['OWNER', 'RECEPTION', 'KITCHEN', 'CAPTAIN', 'ACCOUNTANT', 'HOUSEKEEPING', 'LAUNDRY'];
 
 // What a property has to be for a built-in role to mean anything. A rooms-only
 // lodge has no kitchen, so a Kitchen role there is a login that can reach one
@@ -125,22 +137,33 @@ const SYSTEM_ROLE_CAPABILITY = {
   KITCHEN: 'servesFood',
   CAPTAIN: 'servesFood',
   HOUSEKEEPING: 'hasHousekeeping',
+  LAUNDRY: 'hasLaundry',
 };
 
 function isValidPermission(key) {
   return PERMISSION_KEYS.includes(key);
 }
 
+// A capability gate passes if the property has any one of the keys named —
+// 'customers.manage' is offered to a rooms-only lodge, an events-only lodge,
+// or both, the same "any one is enough" shape FEATURES uses on the frontend
+// (propertyProfile.js's hasCapability). Most permissions still name just one.
+function hasAnyCapability(capability, capabilities) {
+  if (!capability) return true;
+  const keys = Array.isArray(capability) ? capability : [capability];
+  return keys.some((key) => Boolean(capabilities?.[key]));
+}
+
 // The permissions worth offering a property of this shape. Filtering here
 // rather than in the UI means a rooms-only lodge can't be handed 'orders.manage'
 // by a crafted request either.
 function permissionsFor(capabilities) {
-  return PERMISSIONS.filter((p) => !p.capability || Boolean(capabilities?.[p.capability]));
+  return PERMISSIONS.filter((p) => hasAnyCapability(p.capability, capabilities));
 }
 
 function permissionAvailableFor(key, capabilities) {
   const permission = PERMISSIONS.find((p) => p.key === key);
-  return Boolean(permission) && (!permission.capability || Boolean(capabilities?.[permission.capability]));
+  return Boolean(permission) && hasAnyCapability(permission.capability, capabilities);
 }
 
 function roleAvailableFor(roleKey, capabilities) {

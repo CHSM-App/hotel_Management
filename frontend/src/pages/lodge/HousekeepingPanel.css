@@ -113,6 +113,63 @@
   color: var(--text-muted);
 }
 
+/* The status strips (rooms, issues, guest laundry, linen history): the same
+   underlined strip as .subtabs in RoomsAndRates.css, with a count beside each. */
+.hk-tabs--status {
+  gap: 4px;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hk-tabs--status .hk-tab {
+  min-height: 0;
+  padding: 8px 2px;
+  margin-right: 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+
+.hk-tabs--status .hk-tab:hover {
+  color: var(--text);
+}
+
+.hk-tabs--status .hk-tab[aria-selected='true'] {
+  color: var(--brand-ink);
+  background: none;
+  border-bottom-color: var(--brand);
+}
+
+.hk-tabs--status .hk-tab:focus-visible {
+  outline-offset: -2px;
+}
+
+.hk-tabs--status .hk-tab__n {
+  min-width: 22px;
+  padding: 1px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  background: var(--neu-sunken);
+  border-radius: 999px;
+}
+
+.hk-tabs--status .hk-tab[aria-selected='true'] .hk-tab__n {
+  color: var(--brand-ink);
+  background: var(--brand-wash);
+}
+
+/* A button that shares the strip (Download Excel) is not a tab. */
+.hk-tabs--status .hk-action {
+  align-self: center;
+  margin-bottom: 6px;
+}
+
 .hk-help {
   margin: 10px 2px 0;
   font-size: 13px;
@@ -129,28 +186,42 @@
 .hk-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .hk-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 14px;
+  padding: 12px 12px 12px 14px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  transition: border-color 140ms ease;
 }
 
-.hk-card__icon {
+.hk-card:hover {
+  border-color: var(--field-border-hover);
+}
+
+/* The room number is what staff look for, so it is the tile, in the colour of
+   the room's state. */
+.hk-card__room {
   display: grid;
   flex: none;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
+  min-width: 52px;
+  height: 52px;
+  padding: 0 10px;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
   color: var(--hk-tone);
   background: var(--hk-tint);
+  border-radius: 10px;
 }
 
 .hk-card__body {
@@ -158,27 +229,20 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .hk-card__line {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 8px;
-}
-
-.hk-card__room {
-  font-family: var(--serif);
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.1;
-  color: var(--ink);
+  align-items: center;
+  gap: 4px 8px;
 }
 
 .hk-card__cat {
-  font-size: 12.5px;
-  color: var(--text-muted);
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .hk-arrival {
@@ -199,17 +263,25 @@
 }
 
 .hk-status {
-  padding: 2px 9px;
-  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
   font-weight: 600;
   white-space: nowrap;
   color: var(--hk-tone, var(--text));
-  background: var(--hk-tint, var(--neu-sunken));
-  border-radius: 999px;
+}
+
+.hk-status::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .hk-card__detail {
-  color: var(--text);
+  color: var(--text-muted);
 }
 
 .hk-card__side {
@@ -228,6 +300,578 @@
 .hk-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* Cards or table: a small two-way switch at the end of the tab strip. */
+.hk-view {
+  display: inline-flex;
+  flex: none;
+  padding: 3px;
+  background: var(--neu-sunken);
+  border-radius: 10px;
+}
+
+.hk-view button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 32px;
+  padding: 0;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.hk-view button[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+}
+
+/* The same rooms as a table: one row each, the action at the end. */
+.hk-rooms {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.hk-rooms th,
+.hk-rooms td {
+  padding: 8px 14px;
+  font-size: 13.5px;
+  font-weight: 400;
+  text-align: left;
+  vertical-align: middle;
+  color: var(--text);
+}
+
+.hk-rooms thead th {
+  height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--neu-sunken);
+  border-bottom: 1px solid var(--border);
+}
+
+.hk-rooms thead th:first-child {
+  border-top-left-radius: 11px;
+}
+
+.hk-rooms thead th:last-child {
+  border-top-right-radius: 11px;
+}
+
+.hk-rooms tbody tr {
+  height: 56px;
+}
+
+.hk-rooms tbody tr + tr > * {
+  border-top: 1px solid var(--border);
+}
+
+.hk-rooms tbody tr:hover > * {
+  background: color-mix(in srgb, var(--neu-sunken) 50%, transparent);
+}
+
+.hk-rooms tbody tr:last-child > :first-child {
+  border-bottom-left-radius: 11px;
+}
+
+.hk-rooms tbody tr:last-child > :last-child {
+  border-bottom-right-radius: 11px;
+}
+
+.hk-rooms .hk-rooms__room {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.hk-rooms__detail {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--text-muted);
+}
+
+.hk-rooms__sub {
+  display: none;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.hk-rooms .hk-rooms__actions {
+  width: 1%;
+  padding-right: 8px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.hk-rooms__actions .hk-card__side {
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .hk-rooms th,
+  .hk-rooms td {
+    padding: 8px 10px;
+  }
+
+  .hk-rooms .hk-rooms__wide {
+    display: none;
+  }
+
+  .hk-rooms__sub {
+    display: block;
+  }
+}
+
+/* The Finish popup: two titled blocks, linen first, then what to report. */
+.hk-finish__section + .hk-finish__section {
+  margin-top: 20px;
+}
+
+.hk-finish__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hk-finish__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hk-finish__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.hk-finish__meta--on {
+  font-weight: 600;
+  color: var(--brand-ink);
+}
+
+.hk-finish__list {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.hk-finish__list .hk-row {
+  padding: 8px 8px 8px 14px;
+}
+
+.hk-finish__list .hk-row:last-child {
+  border-bottom: none;
+}
+
+.hk-finish__name--on {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-finish__section .field:last-child {
+  margin-bottom: 0;
+}
+
+/* Laundry → Hotel linen. Four steps across the top, each with its count and the
+   one thing to do there; then the detail in titled panels underneath. */
+.hk-linen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1040px;
+}
+
+.hk-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hk-step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.hk-step__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hk-step__n {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--hk-tone);
+  background: var(--hk-tint);
+  border-radius: 50%;
+}
+
+.hk-step__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hk-step__count {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.hk-step__count strong {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/* Grows, so the buttons line up along the bottom whatever each card says. */
+.hk-step__detail {
+  flex: 1;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.hk-step__btn {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.hk-panel {
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.hk-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-bottom: 10px;
+}
+
+.hk-panel__head h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hk-panel__sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.hk-panel .hk-handover__list {
+  margin-top: 0;
+}
+
+.hk-step__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* One block per cleaner with linen to hand over. */
+.hk-staff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hk-staff {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.hk-staff__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 10px 12px;
+  background: var(--neu-sunken);
+  border-radius: 11px 11px 0 0;
+}
+
+.hk-staff__avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--brand-ink);
+  background: var(--brand-wash);
+  border-radius: 50%;
+}
+
+.hk-staff__name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hk-staff__rooms {
+  padding: 2px 12px;
+}
+
+.hk-staff__rooms .hk-handover__room {
+  min-width: 40px;
+  height: 34px;
+  font-size: 14px;
+}
+
+.hk-history summary {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.hk-history .hk-activity {
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .hk-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .hk-steps {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Laundry: linen changed in rooms, waiting to be received from housekeeping. */
+.hk-handover {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.hk-handover__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hk-handover__head h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hk-handover__list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hk-handover__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.hk-handover__row + .hk-handover__row {
+  border-top: 1px solid var(--border);
+}
+
+.hk-handover__room {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: 44px;
+  height: 40px;
+  padding: 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--neu-sunken);
+  border-radius: 10px;
+}
+
+.hk-handover__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hk-handover__items {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Room status at the top of the check-in form (CheckInRoomStatus). */
+.hk-ci {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.hk-ci__title {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.hk-ci__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.hk-ci__room {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hk-ci__note {
+  color: var(--text-muted);
+}
+
+/* The tick that takes a room out of use, under the problem it is for. */
+.hk-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--danger-bg);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.hk-check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--danger);
+}
+
+.hk-check small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+/* Issues: the count beside the tab, and a report's own words on its card. */
+.hk-count {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 999px;
+}
+
+.hk-issue__text {
+  overflow-wrap: anywhere;
+}
+
+/* Open / Closed on the left, the cards / table switch on the right. */
+.hk-issues__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+/* On the room board the header block already spaces what follows. */
+.hk-head .hk-issues__bar {
+  margin-bottom: 0;
+}
+
+.hk-issues__bar .hk-tabs {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.hk-rooms .hk-issue__text {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-issue__tag {
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.hk-arrival--ooo {
+  color: var(--danger);
+  background: var(--danger-bg);
 }
 
 /* The rarely-needed actions live behind one menu, so a row has one obvious
@@ -407,7 +1051,30 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  overflow: hidden;
+}
+
+/* The corners are rounded on the cells, not by clipping the table: a clip
+   would also cut off a row's "⋯" menu, which opens past the table's edge. */
+.hk-matrix thead th:first-child {
+  border-top-left-radius: calc(var(--radius-card) - 1px);
+}
+
+.hk-matrix thead th:last-child {
+  border-top-right-radius: calc(var(--radius-card) - 1px);
+}
+
+.hk-matrix tfoot tr:last-child > :first-child {
+  border-bottom-left-radius: calc(var(--radius-card) - 1px);
+}
+
+.hk-matrix tfoot tr:last-child > :last-child {
+  border-bottom-right-radius: calc(var(--radius-card) - 1px);
+}
+
+/* The number cells are set in the serif; a menu inside one is not a number. */
+.hk-matrix .hk-menu__list button {
+  font-family: var(--sans);
+  font-weight: 500;
 }
 
 .hk-matrix th,
@@ -480,6 +1147,31 @@ th.hk-matrix__item {
 
 td.hk-matrix__low {
   color: var(--danger);
+}
+
+.hk-matrix tbody td.hk-matrix__zero {
+  font-weight: 400;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* A long list (more than eight items): tighter rows, and the owned count
+   beside the name instead of under it. */
+.hk-matrix--dense tbody tr {
+  height: 42px;
+}
+
+.hk-matrix--dense tbody td {
+  font-size: 16px;
+}
+
+.hk-matrix--dense .hk-matrix__name,
+.hk-matrix--dense .hk-matrix__owned {
+  display: inline;
+}
+
+.hk-matrix--dense .hk-matrix__owned::before {
+  content: ' · ';
 }
 
 .hk-matrix tfoot tr {
@@ -1045,6 +1737,7 @@ td.hk-matrix__low {
 /* ------------------------------------------------------ focus and motion */
 
 .hk-tab:focus-visible,
+.hk-view button:focus-visible,
 .hk-more:focus-visible,
 .hk-menu__list button:focus-visible,
 .hk-link:focus-visible,
@@ -1068,8 +1761,19 @@ td.hk-matrix__low {
     font-size: 18px;
   }
 
+  .hk-card__room {
+    min-width: 46px;
+    height: 46px;
+    font-size: 16px;
+  }
+
   .hk-bar {
     flex-basis: 100%;
+    order: 3;
+  }
+
+  .hk-view {
+    margin-left: auto;
   }
 }
 
@@ -1112,4 +1816,712 @@ td.hk-matrix__low {
 
 .hk-activity .hk-section-head .hk-tabs {
   width: 100%;
+}
+
+/* ------------------------------------------------------------------ tables
+   Every table in Housekeeping and Laundry wears the Kitchen queue's dress
+   (.history-sheet in OrdersPanel.css): a raised sheet, a lavender header with
+   small brand-coloured capitals, ruled and faintly striped rows, pill statuses
+   and compact buttons. Written once here, over the per-table rules above, so
+   the three tables cannot drift apart again. The corners are rounded on the
+   cells rather than clipped: a row's "⋯" menu has to open past the edge. */
+
+.hk-board .hk-rooms,
+.hk-board .hk-matrix,
+.hk-board .hk-sheet-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  box-shadow: var(--shadow-card);
+}
+
+.hk-board .hk-rooms,
+.hk-board .hk-matrix,
+.hk-board .hk-sheet {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.hk-board .hk-sheet-wrap {
+  max-height: 65vh;
+}
+
+.hk-board .hk-rooms thead th,
+.hk-board .hk-matrix thead th,
+.hk-board .hk-sheet th {
+  height: auto;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--brand);
+  background: var(--brand-wash);
+  border: none;
+  border-bottom: 2px solid var(--brand-wash-edge);
+}
+
+.hk-board .hk-rooms tbody tr,
+.hk-board .hk-matrix tbody tr {
+  height: auto;
+}
+
+.hk-board .hk-rooms tbody tr > *,
+.hk-board .hk-matrix tbody tr > *,
+.hk-board .hk-sheet tbody td {
+  padding: 10px 14px;
+  vertical-align: middle;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.hk-board .hk-rooms tbody tr > :last-child,
+.hk-board .hk-matrix tbody tr > :last-child,
+.hk-board .hk-sheet tbody td:last-child {
+  border-right: none;
+}
+
+.hk-board .hk-rooms tbody tr:last-child > *,
+.hk-board .hk-sheet tbody tr:last-child > td {
+  border-bottom: none;
+}
+
+.hk-board .hk-rooms tbody tr:nth-child(even) > *,
+.hk-board .hk-matrix tbody tr:nth-child(even) > *,
+.hk-board .hk-sheet tbody tr:nth-child(even) > td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.hk-board .hk-rooms tbody tr:hover > *,
+.hk-board .hk-matrix tbody tr:hover > *,
+.hk-board .hk-sheet tbody tr:hover > td {
+  background: rgba(91, 66, 218, 0.06);
+}
+
+.hk-board .hk-sheet tbody tr {
+  background: none;
+}
+
+.hk-board .hk-rooms thead th:first-child,
+.hk-board .hk-matrix thead th:first-child {
+  border-top-left-radius: calc(var(--radius-tile) - 1px);
+}
+
+.hk-board .hk-rooms thead th:last-child,
+.hk-board .hk-matrix thead th:last-child {
+  border-top-right-radius: calc(var(--radius-tile) - 1px);
+}
+
+.hk-board .hk-rooms tbody tr:last-child > :first-child,
+.hk-board .hk-matrix tfoot tr:last-child > :first-child {
+  border-bottom-left-radius: calc(var(--radius-tile) - 1px);
+}
+
+.hk-board .hk-rooms tbody tr:last-child > :last-child,
+.hk-board .hk-matrix tfoot tr:last-child > :last-child {
+  border-bottom-right-radius: calc(var(--radius-tile) - 1px);
+}
+
+/* The room number, like the queue's order number. */
+.hk-board .hk-rooms .hk-rooms__room {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+/* Counts read as figures in a sheet, not as headlines. */
+.hk-board .hk-matrix tbody td,
+.hk-board .hk-matrix tfoot td {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hk-board .hk-matrix tfoot tr {
+  height: auto;
+}
+
+.hk-board .hk-matrix tfoot th,
+.hk-board .hk-matrix tfoot td {
+  padding: 10px 14px;
+  background: var(--paper);
+  border-top: none;
+}
+
+/* A status is a pill here, as in the queue, rather than a dot and a word. */
+.hk-board .hk-rooms .hk-status {
+  padding: 2px 10px;
+  font-size: 11.5px;
+  background: var(--hk-tint, var(--neu-sunken));
+  border-radius: 999px;
+}
+
+.hk-board .hk-rooms .hk-status::before {
+  content: none;
+}
+
+/* Row buttons are small, so a row stays one line high. */
+.hk-board .hk-rooms .hk-action,
+.hk-board .hk-rooms .hk-btn,
+.hk-board .hk-sheet .hk-action {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.hk-board .hk-rooms .hk-more,
+.hk-board .hk-matrix .hk-more {
+  width: 34px;
+  height: 30px;
+}
+
+@media (max-width: 640px) {
+  .hk-board .hk-rooms thead th,
+  .hk-board .hk-rooms tbody tr > * {
+    padding: 8px 10px;
+  }
+}
+
+/* A 0 still steps back in the restyled sheet. */
+.hk-board .hk-matrix tbody td.hk-matrix__zero {
+  font-weight: 400;
+}
+
+/* Inside a panel the panel is already the raised surface. */
+.hk-board .hk-panel .hk-matrix,
+.hk-board .hk-panel .hk-sheet-wrap {
+  box-shadow: none;
+}
+
+/* The room board's extra facts: floor, guest, last clean. */
+.hk-card__floor {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.hk-card__extra {
+  font-size: 12.5px;
+}
+
+/* A second, quieter line inside a table cell (the floor under the type, the
+   leaving date under the guest). */
+.hk-rooms__under {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.hk-rooms__guest {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-rooms__tag {
+  display: inline-block;
+  margin-left: 8px;
+}
+
+.hk-rooms__none {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* The room board's "Show" menu, on the section's tab strip. */
+.hk-tools-host {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.hk-show {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* The height of the cards / table switch beside it, so the two line up. */
+.hk-show select {
+  height: 38px;
+  padding: 0 30px 0 12px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: none;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.hk-show select:hover {
+  border-color: var(--field-border-hover, var(--brand));
+}
+
+/* Focus is drawn inside the box. The strip scrolls sideways, so a ring outside
+   the box is clipped at the top and bottom and reads as a heavy double frame. */
+.hk-show select:focus,
+.hk-show select:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+@media (max-width: 480px) {
+  .hk-show > span {
+    display: none;
+  }
+}
+
+/* A column heading that sorts the rooms table. It looks like the heading it
+   replaces; the arrow says which column is sorted and which way. */
+.hk-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.hk-sort:hover {
+  color: var(--brand-ink);
+}
+
+.hk-sort:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.hk-sort__icon {
+  font-size: 9px;
+  opacity: 0.45;
+}
+
+th[aria-sort] .hk-sort__icon {
+  opacity: 1;
+}
+
+/* Guest laundry: the Show menu and Download at the right-hand end of the toolbar. */
+.hk-toolbar__end {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-left: auto;
+}
+
+/* Under a numbered step's heading, before its first field. */
+.hk-step-gap {
+  margin-bottom: 10px;
+}
+
+/* Guest laundry → Receive: the order as it was sent, read back before it is
+   marked received. */
+.hk-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0;
+}
+
+.hk-facts dt {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.hk-facts dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hk-receipt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hk-receipt th,
+.hk-receipt td {
+  padding: 7px 0;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+.hk-receipt th:first-child,
+.hk-receipt td:first-child {
+  text-align: left;
+}
+
+.hk-receipt thead th {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.hk-receipt tfoot td {
+  font-weight: 700;
+  color: var(--ink);
+  border-bottom: none;
+}
+
+/* Field errors in the laundry popups: a clear red edge and a quiet line. */
+.hk-board .field input[aria-invalid='true'],
+.modal-form .field input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+/* The Receive popup's garment prices: a small box in the Price column. */
+.hk-receipt__price {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.hk-receipt__price input {
+  width: 84px;
+  min-height: 34px;
+  padding: 0 8px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+}
+
+.hk-receipt__price input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.hk-receipt td {
+  vertical-align: middle;
+}
+
+/* Event venues on the board. A venue has a name where a room has a number, so
+   its tile carries a small label and the name leads the line beside it. */
+.hk-card__room--venue {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* In Laundry's handover list a venue's name takes the room number's tile. */
+.hk-handover__room--venue {
+  min-width: 0;
+  max-width: 160px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------- guest laundry: views */
+
+/* Table or cards, as the Vendors and Income lists offer it. */
+.hk-view-toggle {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.hk-view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0 !important;
+}
+
+/* The order cards. Named lg-* rather than hk-*: .hk-card is the housekeeping
+   room card, and the two must not share rules. */
+.lg-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+/* Left-aligned whatever the board around it does: the cards sit in a grid,
+   and centred text put each card's lines in a different place. */
+.lg-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-raised);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.lg-card:hover {
+  border-color: var(--brand-wash-edge);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.lg-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px 0;
+}
+
+.lg-card__tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lg-card__tag b {
+  font-size: 13px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.lg-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.lg-card__status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.lg-card__status--wash {
+  background: #fff4dc;
+  color: #8a5a00;
+}
+
+.lg-card__status--back {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.lg-card__status--done {
+  background: var(--neu-sunken);
+  color: var(--text-muted);
+}
+
+.lg-card__status--off {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.lg-card__who {
+  padding: 6px 11px 0;
+}
+
+.lg-card__guest {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.lg-card__room {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.lg-card__clothes {
+  margin: 7px 11px 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--neu-sunken);
+}
+
+.lg-card__clothes-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lg-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lg-card__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.lg-card__chip small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.lg-card__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  /* The foot is pushed to the bottom (margin-top: auto); this is the least
+     room left between it and the facts on the tallest card in a row. */
+  margin: 7px 11px 9px;
+  font-size: 12px;
+}
+
+.lg-card__facts dt {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.lg-card__facts dd {
+  margin: 0;
+  color: var(--ink);
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.lg-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding: 7px 11px;
+  border-top: 1px solid var(--border);
+  background: var(--neu-sunken);
+}
+
+.lg-card__amount {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.lg-card__amount small {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lg-card__amount b {
+  font-size: 15px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.lg-card__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lg-card__btn {
+  min-height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--brand);
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.lg-card__btn:hover:not(:disabled) {
+  background: var(--brand-ink);
+  border-color: var(--brand-ink);
+}
+
+.lg-card__btn--quiet {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--danger);
+}
+
+.lg-card__btn--quiet:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--danger);
+}
+
+.lg-card__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lg-card__btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.lg-card__done {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-card,
+  .lg-card__btn {
+    transition: none;
+  }
 }

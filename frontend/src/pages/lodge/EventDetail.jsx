@@ -12,14 +12,17 @@ import {
   EVENT_TYPE_LABEL,
   SLOT_LABEL,
   formatEventDate,
+  formatEventTime,
   formatEventWhen,
-  formatHoldRemaining,
+  eventPhase,
+  eventPhaseLabel,
+  phaseTagClass,
   statusBadgeClass,
 } from './eventFormat';
 import './forms.css';
 import './Events.css';
 
-const TIMELINE = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'];
+const TIMELINE = ['DRAFT', 'CONFIRMED', 'SETTLED'];
 
 function escapeHtml(s) {
   return String(s ?? '')
@@ -354,9 +357,9 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
   const [editing, setEditing] = useState(false);
   const [takingAdvance, setTakingAdvance] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  // "Mark as Completed" asks once before it sends the venue to housekeeping.
+  const [completing, setCompleting] = useState(false);
   const [cancelForm, setCancelForm] = useState({ reason: '', refundAmount: '', refundPaymentMethod: '' });
-  const [holdHours, setHoldHours] = useState('48');
-  const [now, setNow] = useState(() => Date.now());
 
   const reload = useCallback(async () => {
     try {
@@ -377,13 +380,6 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
   useEffect(() => {
     reload();
   }, [reload]);
-
-  // The hold countdown ticks by the minute; nothing else on the modal moves.
-  useEffect(() => {
-    if (event?.status !== 'TENTATIVE') return undefined;
-    const t = setInterval(() => setNow(Date.now()), 60000);
-    return () => clearInterval(t);
-  }, [event?.status]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -492,10 +488,14 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
 
   const status = event.status;
   const pricingLines = event.pricing?.lines || [];
-  const closed = status === 'CANCELLED' || status === 'EXPIRED';
+  const closed = status === 'CANCELLED';
   const currentIdx = TIMELINE.indexOf(status);
-  const canEdit = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'EXPIRED'].includes(status);
-  const canTakeAdvance = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED'].includes(status);
+  // Offered once the function has begun, on one that holds the venue, until it
+  // is used. Billing does not come into it: a function can be over and unbilled.
+  const canComplete =
+    ['CONFIRMED', 'SETTLED'].includes(status) && !event.completedAt && new Date(event.startAt) <= new Date();
+  const canEdit = ['DRAFT', 'CONFIRMED'].includes(status);
+  const canTakeAdvance = ['DRAFT', 'CONFIRMED'].includes(status);
 
   return (
     <>
@@ -508,6 +508,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 <span className="events-modal__badges">
                   <span className="badge badge--accent">{EVENT_TYPE_LABEL[event.eventType] || event.eventType}</span>
                   <span className={statusBadgeClass(status)}>{EVENT_STATUS_LABEL[status] || status}</span>
+                  {eventPhase(event) && <span className={phaseTagClass(eventPhase(event))}>{eventPhaseLabel(event)}</span>}
                 </span>
               </h3>
               <div className="events-modal__sub">
@@ -544,6 +545,12 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
             </div>
           )}
 
+          {event.completedAt && !closed && (
+            <div className="events-detail__completed">
+              Completed · {formatEventDate(event.completedAt)}, {formatEventTime(event.completedAt)}
+            </div>
+          )}
+
           {status === 'CANCELLED' && (
             <div className="events-detail__cancelled">
               Cancelled{event.cancelReason ? `: ${event.cancelReason}` : ''}
@@ -553,14 +560,6 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 }`}
               {Number(event.cancellationCharge) > 0 &&
                 ` · Cancellation charge kept ${formatPrice(event.cancellationCharge)}`}
-            </div>
-          )}
-          {status === 'EXPIRED' && (
-            <div className="events-detail__cancelled">The hold on this date lapsed{event.holdExpiresAt ? ` on ${formatEventDate(event.holdExpiresAt)}` : ''}.</div>
-          )}
-          {status === 'TENTATIVE' && event.holdExpiresAt && (
-            <div className="events-detail__hold" style={{ marginBottom: 12 }}>
-              Hold expires {formatHoldRemaining(event.holdExpiresAt, now)} ({formatEventWhen(event.holdExpiresAt)})
             </div>
           )}
 
@@ -652,7 +651,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
               <h4>
                 Advances
                 {canTakeAdvance && (
-                  <button type="button" className="chart-row__link-btn" onClick={() => setTakingAdvance(true)}>
+                  <button type="button" className="events-detail__action-btn" onClick={() => setTakingAdvance(true)}>
                     Take advance / print receipt
                   </button>
                 )}
@@ -744,33 +743,34 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
             </div>
           )}
 
+          {completing && (
+            <div className="events-cancel">
+              <p className="events-cancel__hint">
+                Mark this function as completed? The venue will be sent to housekeeping for cleaning.
+              </p>
+              <div className="events-cancel__actions">
+                <button type="button" className="btn-secondary" onClick={() => setCompleting(false)} disabled={busy}>
+                  Not yet
+                </button>
+                <button
+                  type="button"
+                  className="btn-accent"
+                  disabled={busy}
+                  onClick={async () => (await transition('complete')) && setCompleting(false)}
+                >
+                  {busy ? 'Saving…' : 'Mark as Completed'}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="events-modal__actions">
             <button type="button" className="btn-secondary" onClick={() => printFunctionSheet(event)}>
               Print function sheet
             </button>
             <span className="events-modal__spacer" />
 
-            {(status === 'ENQUIRY' || status === 'EXPIRED') && (
-              <>
-                <input
-                  type="number"
-                  min="1"
-                  value={holdHours}
-                  onChange={(e) => setHoldHours(e.target.value)}
-                  aria-label="Hold hours"
-                  style={{ width: 70, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}
-                />
-                <button type="button" className="btn-secondary" disabled={busy} onClick={() => transition('hold', { holdHours: Number(holdHours) || 48 })}>
-                  {status === 'EXPIRED' ? 'Hold again' : 'Hold date'}
-                </button>
-              </>
-            )}
-            {status === 'TENTATIVE' && (
-              <button type="button" className="btn-secondary" disabled={busy} onClick={() => transition('release')}>
-                Release hold
-              </button>
-            )}
-            {['ENQUIRY', 'TENTATIVE', 'EXPIRED'].includes(status) && (
+            {status === 'DRAFT' && (
               <button type="button" className="btn-accent" disabled={busy} onClick={() => transition('confirm')}>
                 Confirm
               </button>
@@ -791,7 +791,12 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 View bill
               </button>
             )}
-            {canEdit && status !== 'EXPIRED' && (
+            {canComplete && !completing && !cancelling && (
+              <button type="button" className="btn-secondary" disabled={busy} onClick={() => setCompleting(true)}>
+                Mark as Completed
+              </button>
+            )}
+            {canEdit && (
               <button type="button" className="btn-secondary" disabled={busy} onClick={() => setEditing(true)}>
                 Edit
               </button>

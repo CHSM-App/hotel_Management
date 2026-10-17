@@ -9,9 +9,9 @@ import '../bookings/receipt_download.dart';
 import '../bookings/receipt_share.dart';
 import 'report_pdf_style.dart';
 
-const _kEventStatuses = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED', 'CANCELLED', 'EXPIRED'];
+const _kEventStatuses = ['DRAFT', 'CONFIRMED', 'SETTLED', 'CANCELLED'];
 
-bool _excluded(String status) => status == 'CANCELLED' || status == 'EXPIRED';
+bool _excluded(String status) => status == 'CANCELLED';
 
 /// The events & functions report, as a real (selectable-text) PDF — the
 /// native equivalent of frontend/src/pages/lodge/eventReportFile.js's

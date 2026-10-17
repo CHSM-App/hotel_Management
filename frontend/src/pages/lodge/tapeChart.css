@@ -20,6 +20,10 @@
      old #e4f0e8, which carried enough yellow to read as grubby beige once a
      whole month of them was on screen at once — this is the same idea in a
      fresher green, so an empty chart looks calm rather than dusty. */
+  /* A room housekeeping says is not ready: needs cleaning, being cleaned or
+     under repair. Coffee brown, the one hue the statuses had not used, so it
+     cannot be read as booked red, draft yellow or vacant green. */
+  --tape-notready: #8b5e3c;
   --tape-vacant: #e8f5ec;
   --tape-vacant-edge: #9fcfb2;
   --tape-vacant-well: #bfd8c7;
@@ -60,21 +64,23 @@
      read as one. Nothing is ever printed on these tiles — they are empty
      buttons — so the colour is free to be bright, and being the only warm
      light hue on the chart is what makes a parked room findable at a glance. */
-  --tape-draft: #f2c31d;
+  --tape-draft: var(--accent, #f2c31d);
   /* Pressed and hovered: darker, so the tile still reads as the same yellow
      rather than as a different state colour. */
-  --tape-draft-deep: #d4a70c;
+  --tape-draft-deep: var(--accent-ink, #d4a70c);
 
   /* The search marker. Violet on purpose: every other colour on this chart is
      already spoken for by a booking state, and a highlight drawn in one of them
      would read as "this stay is now checked in" rather than "this stay is what
      you asked for". Violet is the only hue here that means nothing else, so it
-     can be laid over a red, a blue or a slate tile and still say one thing. */
-  --tape-hit: #7c3aed;
-  --tape-hit-soft: rgba(124, 58, 237, 0.18);
+     can be laid over a red, a blue or a slate tile and still say one thing —
+     now the same violet as --secondary elsewhere in the app, rather than a
+     private shade of it. */
+  --tape-hit: var(--secondary, #7c3aed);
+  --tape-hit-soft: rgba(139, 92, 246, 0.18);
   /* The tint behind the result count. Light enough to sit under violet text at
      full contrast, strong enough to read as a filled chip rather than a smudge. */
-  --tape-hit-wash: rgba(124, 58, 237, 0.1);
+  --tape-hit-wash: rgba(139, 92, 246, 0.1);
 
   /* The grid's rhythm. Tiles were 26x22 in a 32px row, which on a desk-width
      window left every night a target too small to click with confidence and
@@ -163,16 +169,67 @@
   color: var(--text-muted);
 }
 
-/* ---------- legend ---------- */
+/* ---------- legend + category row ---------- */
 
-.tape-legend {
+/* The status swatches and the category jump chips, sharing one line. Two
+   groups rather than one undifferentiated run of pills: .tape-row__status
+   wraps if it runs out of room, .tape-row__cats scrolls sideways instead
+   (a property with many categories shouldn't push the status swatches off
+   the row), and the divider between them marks the seam. */
+.tape-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.tape-row__status {
   display: flex;
   align-items: center;
   gap: 7px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
-  font-size: 13px;
-  color: var(--text);
+}
+
+/* var(--border) reads as almost nothing against the row's own background —
+   this needs to read as a seam between two different controls, not a stray
+   pixel, so it is drawn wider, taller than the chips either side of it, and
+   in the muted text colour rather than the hairline border one. */
+.tape-row__divider {
+  width: 2px;
+  align-self: stretch;
+  min-height: 30px;
+  margin: 0 1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  flex-shrink: 0;
+}
+
+.tape-row__cats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 1px;
+}
+
+.tape-row__cats::-webkit-scrollbar {
+  display: none;
+}
+
+/* The window's overall sold figure, pushed to the far end of the colour-key
+   row rather than sitting in its own column — the desk reads it once per
+   glance at the chart, not as something to hunt for. */
+.tape-legend__sold {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 12.5px;
 }
 
 .tape-legend__item {
@@ -232,12 +289,6 @@
   }
 }
 
-.tape-legend__hint {
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: 11.5px;
-}
-
 .tape-legend__swatch {
   width: 11px;
   height: 11px;
@@ -252,6 +303,10 @@
   background: var(--tape-vacant);
   border: 1px solid var(--tape-vacant-edge);
   box-shadow: inset 1px 1px 2px var(--tape-vacant-well);
+}
+
+.tape-legend__swatch--notready {
+  background: var(--tape-notready);
 }
 
 .tape-legend__swatch--booked {
@@ -278,27 +333,6 @@
 }
 
 /* ---------- jump-to-category chips ---------- */
-
-/* Its own line under the legend rather than more chips on the end of it. The
-   legend's chips are captions for the colours in the grid; these are a way of
-   moving around it, and a property with four grades of room would otherwise
-   push the search box and the status chips onto a second line anyway. */
-.tape-cats {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 9px;
-  /* One line, scrolled sideways, on a property with more categories than the
-     strip is wide — wrapping would grow the sticky header a row at a time and
-     eat the chart underneath it. */
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 1px;
-}
-
-.tape-cats::-webkit-scrollbar {
-  display: none;
-}
 
 /* Same chip as the legend's — raised off the surface rather than outlined —
    so the two rows of chips read as one family instead of two different
@@ -770,6 +804,20 @@
   background: var(--tape-weekend);
 }
 
+/* Tonight in a room that is not ready: still for sale, so still a vacant tile
+   to click, but in the not-ready colour. After the weekend rule so a Saturday
+   takes it too. */
+.tape-tile--vacant.tape-tile--notready,
+.tape-tile--vacant.tape-tile--notready:hover {
+  background: var(--tape-notready);
+  border-color: var(--tape-notready);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.22);
+}
+
+.tape-tile--vacant.tape-tile--notready:hover {
+  background: #7a5133;
+}
+
 /* A dormitory night with some but not all beds sold. Kept as a distinct grey
    from the fully vacant tile (rather than shading toward --tape-booked) so it
    never reads as "occupied, don't click" — it is still sellable, just partway
@@ -1091,6 +1139,14 @@
   flex-shrink: 0;
 }
 
+.tape-tooltip__dot--notready {
+  background: #c79a74;
+}
+
+.tape-tooltip__hint--notready {
+  color: #e2bc9a;
+}
+
 .tape-tooltip__dot--booked {
   background: #e4655a;
 }
@@ -1248,11 +1304,6 @@
     flex: 1;
   }
 
-  .tape-legend__hint {
-    margin-left: 0;
-    width: 100%;
-  }
-
   .tape-month-card__head {
     padding: 11px 14px;
   }
@@ -1346,53 +1397,39 @@
    page would be off screen the instant it did its job. Sticking the whole strip
    rather than the search alone also keeps the legend and the month legible
    against a chart scrolled far from its own header. */
+/* No longer sticky — only the merged status/category row below
+   (.tape-row--sticky) stays pinned under the navbar now. This strip
+   (stepper, search) scrolls away with the rest of the page like ordinary
+   content. position: relative is kept so the ::before fade this element no
+   longer needs doesn't anchor to some further ancestor by accident if
+   anything still toggles the --stuck class on it. */
 .tape-controls {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  /* The bleed and matching padding are what let the backdrop below span the
-     panel while the controls stay on the content margin. */
+  position: relative;
   margin-inline: -4px;
   margin-bottom: 10px;
   padding: 6px 4px 2px;
 }
 
-/* Opaque only while stuck, so rows of tiles do not scroll through the text.
-   At the top of the page there is nothing behind it, and a permanent wash would
-   read as a band across the panel for no reason.
-
-   -1px top so the sliver a fractional scroll offset leaves above the element is
-   covered rather than flickering a row of tiles through it. */
-.tape-controls::before {
-  content: '';
-  position: absolute;
-  inset: -1px 0 0;
-  z-index: -1;
+/* --- Sticky status/category row ---------------------------------------------
+   Pinned directly under the navbar on its own — opaque at all times (not
+   just once "stuck") since this row is now the only thing in the strip that
+   stays on screen while the chart scrolls under it. */
+.tape-row--sticky {
+  position: sticky;
+  top: var(--dash-topbar-h, 0);
+  z-index: 20;
+  margin-top: 0;
+  margin-inline: -4px;
+  margin-bottom: 10px;
+  padding: 8px 4px;
   background: var(--neu-base, #eef1f6);
-  /* Fades out at the bottom instead of ending on a hard rule, so the chart
-     passes under it rather than being cut off by it. */
   box-shadow: 0 6px 10px -6px rgba(16, 24, 40, 0.14);
-  opacity: 0;
-  transition: opacity 0.18s ease;
 }
 
-/* Set by the component once the strip has actually left the top of the page. */
-.tape-controls--stuck::before {
-  opacity: 1;
-}
-
-/* Both rows inside the strip are tightened: they used to carry 16px each, which
-   on three rows was most of the wasted depth. */
+/* The toolbar row is tightened: it used to carry 16px, which on three rows
+   was most of the wasted depth. */
 .tape-controls .bookings-panel__toolbar {
   margin-bottom: 8px;
-}
-
-.tape-controls .tape-legend {
-  /* The row now carries the search field as well as the chips, so it sets its
-     own height rather than being a line of 24px pills. */
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 0;
 }
 
 /* The search field, first on the row it shares with the category chips.
@@ -1747,7 +1784,7 @@
    a booking that has to say whether it is reserved, in, or gone. */
 .tape-tile--hit-active {
   z-index: 3;
-  box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(124, 58, 237, 0.35);
+  box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(139, 92, 246, 0.35);
 }
 
 /* A radar ping in the stay's own colour.
@@ -1847,15 +1884,15 @@
 
 @keyframes tape-hit-pulse {
   0% {
-    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 0 rgba(124, 58, 237, 0.5);
+    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 0 rgba(139, 92, 246, 0.5);
   }
 
   70% {
-    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 9px rgba(124, 58, 237, 0);
+    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 9px rgba(139, 92, 246, 0);
   }
 
   100% {
-    box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(124, 58, 237, 0.35);
+    box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(139, 92, 246, 0.35);
   }
 }
 
@@ -1881,4 +1918,85 @@
     height: calc(var(--tape-tile-h) + 6px);
     opacity: 0.85;
   }
+}
+
+/* A several-room booking's card: the pointer can move onto it, and its rooms are
+   buttons. The pseudo-element bridges the gap to the tile so crossing it does
+   not count as leaving. */
+.tape-tooltip--sticky {
+  pointer-events: auto;
+  max-width: 280px;
+}
+
+.tape-tooltip--sticky::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -12px;
+  height: 12px;
+}
+
+.tape-tooltip--sticky.tape-tooltip--below::after {
+  bottom: auto;
+  top: -12px;
+}
+
+.tape-tooltip__rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tape-tooltip__room {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tape-tooltip__room:hover,
+.tape-tooltip__room:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.tape-tooltip__room span {
+  opacity: 0.8;
+  font-size: 11px;
+}
+
+.tape-tooltip__room--here {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* The stay a click on the card just took the chart to: one outline round the
+   whole run of boxes — top and bottom on every box, a side only on the first
+   and last — rather than a ring round each box with seams between them. */
+.tape-tile--flash {
+  --flash: var(--brand, #5b3fd0);
+  position: relative;
+  z-index: 2;
+  box-shadow: inset 0 3px 0 var(--flash), inset 0 -3px 0 var(--flash);
+}
+
+.tape-tile--flash.tape-tile--start {
+  box-shadow: inset 0 3px 0 var(--flash), inset 0 -3px 0 var(--flash), inset 3px 0 0 var(--flash);
+}
+
+.tape-tile--flash.tape-tile--end {
+  box-shadow: inset 0 3px 0 var(--flash), inset 0 -3px 0 var(--flash), inset -3px 0 0 var(--flash);
+}
+
+.tape-tile--flash.tape-tile--start.tape-tile--end {
+  box-shadow: inset 0 0 0 3px var(--flash);
 }

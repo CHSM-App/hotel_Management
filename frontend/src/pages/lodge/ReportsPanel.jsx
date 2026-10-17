@@ -6,6 +6,8 @@ import { BillsReport } from './Billing';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
 import PageLoader from '../../components/PageLoader';
+import ReportDownloadMenu from '../../components/ReportDownloadMenu';
+import ReportPreviewModal from '../../components/ReportPreviewModal';
 import {
   BOOKING_STATUS_LABEL,
   DOCUMENT_TYPE_LABEL,
@@ -27,6 +29,17 @@ import {
   downloadFoodOrdersReportPdf,
 } from './foodOrderReportFile';
 import { downloadGstReportPdf } from './gstReportFile';
+import {
+  downloadLaundryReportExcel,
+  buildLaundryReportPdf,
+  downloadLaundryReportPdf,
+  LAUNDRY_ORDER_STATUS_LABEL,
+} from './laundryReportFile';
+import {
+  downloadServicesReportExcel,
+  buildServicesReportPdf,
+  downloadServicesReportPdf,
+} from './servicesReportFile';
 import AnalyticsOverview from './AnalyticsOverview';
 import RoomsAnalytics from './RoomsAnalytics';
 import FunctionsAnalytics from './FunctionsAnalytics';
@@ -53,8 +66,14 @@ const ALL_TABS = [
   { key: 'bookings', label: 'Room Bookings', capability: 'hasRooms' },
   { key: 'events', label: 'Events & Functions', capability: 'hasEvents' },
   { key: 'food', label: 'Restaurant', capability: 'servesFood' },
-  // Laundry, pool, gaming ... sold from the rooms side.
+  // Pool, gaming ... sold from the rooms side. Guest laundry bills through here too.
   { key: 'services', label: 'Other services', capability: 'hasOtherServices' },
+  // Counts, not sales: linen through the wash, and guest laundry orders.
+  { key: 'laundry', label: 'Laundry', capability: 'hasLaundry' },
+  // Submitted responses to the "how was your stay" / "how was your event"
+  // WhatsApp link — shown for either, since a property can run just one of
+  // the two and still have feedback worth seeing.
+  { key: 'feedback', label: 'Guest Feedback', capabilityAny: ['hasRooms', 'hasEvents'] },
   { key: 'bills', label: 'Bills' },
   { key: 'gst', label: 'Tax & GST' },
   // Needs both permissions, not either — P&L surfaces the same expense
@@ -79,12 +98,10 @@ const EVENT_TYPE_LABEL = {
 };
 
 const EVENT_STATUS_LABEL = {
-  ENQUIRY: 'Enquiry',
-  TENTATIVE: 'Tentative',
+  DRAFT: 'Draft',
   CONFIRMED: 'Confirmed',
   SETTLED: 'Settled',
   CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
 };
 
 const ORDER_STATUS_LABEL = {
@@ -233,6 +250,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
     (t) =>
       (!only || (REPORT_SECTIONS[only] || []).includes(t.key)) &&
       (!t.capability || Boolean(lodge?.[t.capability])) &&
+      (!t.capabilityAny || t.capabilityAny.some((c) => Boolean(lodge?.[c]))) &&
       (!t.permission || permissions.includes(t.permission)) &&
       (!t.requiresAll || t.requiresAll.every((p) => permissions.includes(p)))
   );
@@ -271,6 +289,10 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   const [foodOrdersError, setFoodOrdersError] = useState('');
   const [servicesReport, setServicesReport] = useState(null);
   const [servicesReportError, setServicesReportError] = useState('');
+  const [laundryReport, setLaundryReport] = useState(null);
+  const [laundryReportError, setLaundryReportError] = useState('');
+  const [feedbackReport, setFeedbackReport] = useState(null);
+  const [feedbackReportError, setFeedbackReportError] = useState('');
   const [profitLoss, setProfitLoss] = useState(null);
   const [profitLossError, setProfitLossError] = useState('');
   // The Screener-style multi-year table — full history, not the date-range
@@ -350,9 +372,12 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
 
   // The built PDF, held as an object URL so the browser's own viewer can show
   // it. Previewing the real file rather than an HTML lookalike means what is on
-  // screen and what gets filed are the same bytes.
+  // screen and what gets filed are the same bytes. Cached across opens —
+  // closing the modal doesn't throw the built file away, so reopening it
+  // doesn't rebuild it; only a fresh Preview on a reloaded report does.
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // An object URL pins its blob in memory until it is revoked, so the old one
   // goes whenever it is replaced and when the panel unmounts.
@@ -361,13 +386,14 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   const handlePreview = async () => {
     if (!bookings) return;
     if (previewUrl) {
-      setPreviewUrl('');
+      setPreviewOpen(true);
       return;
     }
     setDownloadError('');
     setPreviewBusy(true);
     try {
       setPreviewUrl(URL.createObjectURL(await buildBookingReportPdf(bookings)));
+      setPreviewOpen(true);
     } catch {
       setDownloadError('Could not build the PDF preview.');
     } finally {
@@ -399,19 +425,21 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   const [eventsDownloadError, setEventsDownloadError] = useState('');
   const [eventsPreviewUrl, setEventsPreviewUrl] = useState('');
   const [eventsPreviewBusy, setEventsPreviewBusy] = useState(false);
+  const [eventsPreviewOpen, setEventsPreviewOpen] = useState(false);
 
   useEffect(() => () => { if (eventsPreviewUrl) URL.revokeObjectURL(eventsPreviewUrl); }, [eventsPreviewUrl]);
 
   const handleEventsPreview = async () => {
     if (!events) return;
     if (eventsPreviewUrl) {
-      setEventsPreviewUrl('');
+      setEventsPreviewOpen(true);
       return;
     }
     setEventsDownloadError('');
     setEventsPreviewBusy(true);
     try {
       setEventsPreviewUrl(URL.createObjectURL(await buildEventsReportPdf(events)));
+      setEventsPreviewOpen(true);
     } catch {
       setEventsDownloadError('Could not build the PDF preview.');
     } finally {
@@ -441,19 +469,21 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   const [foodDownloadError, setFoodDownloadError] = useState('');
   const [foodPreviewUrl, setFoodPreviewUrl] = useState('');
   const [foodPreviewBusy, setFoodPreviewBusy] = useState(false);
+  const [foodPreviewOpen, setFoodPreviewOpen] = useState(false);
 
   useEffect(() => () => { if (foodPreviewUrl) URL.revokeObjectURL(foodPreviewUrl); }, [foodPreviewUrl]);
 
   const handleFoodPreview = async () => {
     if (!foodOrders) return;
     if (foodPreviewUrl) {
-      setFoodPreviewUrl('');
+      setFoodPreviewOpen(true);
       return;
     }
     setFoodDownloadError('');
     setFoodPreviewBusy(true);
     try {
       setFoodPreviewUrl(URL.createObjectURL(await buildFoodOrdersReportPdf(foodOrders)));
+      setFoodPreviewOpen(true);
     } catch {
       setFoodDownloadError('Could not build the PDF preview.');
     } finally {
@@ -475,6 +505,101 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
       setFoodDownloadError(`Could not build the ${format.toUpperCase()} file.`);
     } finally {
       setFoodDownloadBusy('');
+    }
+  };
+
+  // Other services tab's own preview/download pair.
+  const [servicesDownloadBusy, setServicesDownloadBusy] = useState('');
+  const [servicesDownloadError, setServicesDownloadError] = useState('');
+  const [servicesPreviewUrl, setServicesPreviewUrl] = useState('');
+  const [servicesPreviewBusy, setServicesPreviewBusy] = useState(false);
+  const [servicesPreviewOpen, setServicesPreviewOpen] = useState(false);
+
+  useEffect(() => () => { if (servicesPreviewUrl) URL.revokeObjectURL(servicesPreviewUrl); }, [servicesPreviewUrl]);
+
+  const handleServicesPreview = async () => {
+    if (!servicesReport) return;
+    if (servicesPreviewUrl) {
+      setServicesPreviewOpen(true);
+      return;
+    }
+    setServicesDownloadError('');
+    setServicesPreviewBusy(true);
+    try {
+      setServicesPreviewUrl(URL.createObjectURL(await buildServicesReportPdf(servicesReport)));
+      setServicesPreviewOpen(true);
+    } catch {
+      setServicesDownloadError('Could not build the PDF preview.');
+    } finally {
+      setServicesPreviewBusy(false);
+    }
+  };
+
+  const handleServicesDownload = async (format) => {
+    if (!servicesReport) return;
+    setServicesDownloadError('');
+    setServicesDownloadBusy(format);
+    try {
+      if (format === 'excel') {
+        await downloadServicesReportExcel(servicesReport);
+      } else {
+        await downloadServicesReportPdf(servicesReport);
+      }
+    } catch {
+      setServicesDownloadError(`Could not build the ${format.toUpperCase()} file.`);
+    } finally {
+      setServicesDownloadBusy('');
+    }
+  };
+
+  // Laundry tab's own preview/download pair. The guest-laundry section of the
+  // PDF/Excel is included only for a property that actually takes guest
+  // laundry, same gate the on-screen section itself uses.
+  const [laundryDownloadBusy, setLaundryDownloadBusy] = useState('');
+  const [laundryDownloadError, setLaundryDownloadError] = useState('');
+  const [laundryPreviewUrl, setLaundryPreviewUrl] = useState('');
+  const [laundryPreviewBusy, setLaundryPreviewBusy] = useState(false);
+  const [laundryPreviewOpen, setLaundryPreviewOpen] = useState(false);
+
+  useEffect(() => () => { if (laundryPreviewUrl) URL.revokeObjectURL(laundryPreviewUrl); }, [laundryPreviewUrl]);
+
+  const handleLaundryPreview = async () => {
+    if (!laundryReport) return;
+    if (laundryPreviewUrl) {
+      setLaundryPreviewOpen(true);
+      return;
+    }
+    setLaundryDownloadError('');
+    setLaundryPreviewBusy(true);
+    try {
+      setLaundryPreviewUrl(
+        URL.createObjectURL(
+          await buildLaundryReportPdf(laundryReport, { guestLaundry: Boolean(lodge?.hasOtherServices) })
+        )
+      );
+      setLaundryPreviewOpen(true);
+    } catch {
+      setLaundryDownloadError('Could not build the PDF preview.');
+    } finally {
+      setLaundryPreviewBusy(false);
+    }
+  };
+
+  const handleLaundryDownload = async (format) => {
+    if (!laundryReport) return;
+    setLaundryDownloadError('');
+    setLaundryDownloadBusy(format);
+    try {
+      const guestLaundry = Boolean(lodge?.hasOtherServices);
+      if (format === 'excel') {
+        await downloadLaundryReportExcel(laundryReport, { guestLaundry });
+      } else {
+        await downloadLaundryReportPdf(laundryReport, { guestLaundry });
+      }
+    } catch {
+      setLaundryDownloadError(`Could not build the ${format.toUpperCase()} file.`);
+    } finally {
+      setLaundryDownloadBusy('');
     }
   };
 
@@ -566,6 +691,26 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
     apiGet(`/reports/services?fromDate=${fromDate}&toDate=${toDate}`, { token })
       .then((data) => setServicesReport(data))
       .catch((err) => setServicesReportError(err instanceof ApiError ? err.message : 'Could not load the services report.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, activeTab]);
+
+  useEffect(() => {
+    if (!validRange || activeTab !== 'laundry') return;
+    setLaundryReport(null);
+    setLaundryReportError('');
+    apiGet(`/reports/laundry?fromDate=${fromDate}&toDate=${toDate}`, { token })
+      .then((data) => setLaundryReport(data))
+      .catch((err) => setLaundryReportError(err instanceof ApiError ? err.message : 'Could not load the laundry report.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, activeTab]);
+
+  useEffect(() => {
+    if (!validRange || activeTab !== 'feedback') return;
+    setFeedbackReport(null);
+    setFeedbackReportError('');
+    apiGet(`/reports/feedback?fromDate=${fromDate}&toDate=${toDate}`, { token })
+      .then((data) => setFeedbackReport(data))
+      .catch((err) => setFeedbackReportError(err instanceof ApiError ? err.message : 'Could not load the feedback report.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate, activeTab]);
 
@@ -760,58 +905,26 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
 
           {activeTab === 'bookings' && bookings && (
             <div className="reports-panel__compact-actions">
-              <button
-                type="button"
-                className="btn-secondary reports-panel__compact-btn"
-                disabled={previewBusy || Boolean(downloadBusy)}
-                onClick={handlePreview}
-              >
-                {previewBusy ? 'Building…' : previewUrl ? 'Hide preview' : 'Preview'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary reports-panel__compact-btn"
-                disabled={Boolean(downloadBusy)}
-                onClick={() => handleDownload('excel')}
-              >
-                {downloadBusy === 'excel' ? 'Preparing…' : 'Excel'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary reports-panel__compact-btn"
-                disabled={Boolean(downloadBusy)}
-                onClick={() => handleDownload('pdf')}
-              >
-                {downloadBusy === 'pdf' ? 'Preparing…' : 'PDF'}
-              </button>
+              <ReportDownloadMenu
+                onPreview={handlePreview}
+                onExcel={() => handleDownload('excel')}
+                onPdf={() => handleDownload('pdf')}
+                previewBusy={previewBusy}
+                excelBusy={downloadBusy === 'excel'}
+                pdfBusy={downloadBusy === 'pdf'}
+              />
             </div>
           )}
           {activeTab === 'events' && events && (
             <div className="reports-panel__compact-actions">
-              <button
-                type="button"
-                className="btn-secondary reports-panel__compact-btn"
-                disabled={eventsPreviewBusy || Boolean(eventsDownloadBusy)}
-                onClick={handleEventsPreview}
-              >
-                {eventsPreviewBusy ? 'Building…' : eventsPreviewUrl ? 'Hide preview' : 'Preview'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary reports-panel__compact-btn"
-                disabled={Boolean(eventsDownloadBusy)}
-                onClick={() => handleEventsDownload('excel')}
-              >
-                {eventsDownloadBusy === 'excel' ? 'Preparing…' : 'Excel'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary reports-panel__compact-btn"
-                disabled={Boolean(eventsDownloadBusy)}
-                onClick={() => handleEventsDownload('pdf')}
-              >
-                {eventsDownloadBusy === 'pdf' ? 'Preparing…' : 'PDF'}
-              </button>
+              <ReportDownloadMenu
+                onPreview={handleEventsPreview}
+                onExcel={() => handleEventsDownload('excel')}
+                onPdf={() => handleEventsDownload('pdf')}
+                previewBusy={eventsPreviewBusy}
+                excelBusy={eventsDownloadBusy === 'excel'}
+                pdfBusy={eventsDownloadBusy === 'pdf'}
+              />
             </div>
           )}
           {activeTab === 'gst' && gst && (
@@ -830,30 +943,38 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
           )}
           {activeTab === 'food' && foodOrders && (
             <div className="reports-panel__compact-actions">
-              <button
-                type="button"
-                className="btn-secondary reports-panel__compact-btn"
-                disabled={foodPreviewBusy || Boolean(foodDownloadBusy)}
-                onClick={handleFoodPreview}
-              >
-                {foodPreviewBusy ? 'Building…' : foodPreviewUrl ? 'Hide preview' : 'Preview'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary reports-panel__compact-btn"
-                disabled={Boolean(foodDownloadBusy)}
-                onClick={() => handleFoodDownload('excel')}
-              >
-                {foodDownloadBusy === 'excel' ? 'Preparing…' : 'Excel'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary reports-panel__compact-btn"
-                disabled={Boolean(foodDownloadBusy)}
-                onClick={() => handleFoodDownload('pdf')}
-              >
-                {foodDownloadBusy === 'pdf' ? 'Preparing…' : 'PDF'}
-              </button>
+              <ReportDownloadMenu
+                onPreview={handleFoodPreview}
+                onExcel={() => handleFoodDownload('excel')}
+                onPdf={() => handleFoodDownload('pdf')}
+                previewBusy={foodPreviewBusy}
+                excelBusy={foodDownloadBusy === 'excel'}
+                pdfBusy={foodDownloadBusy === 'pdf'}
+              />
+            </div>
+          )}
+          {activeTab === 'services' && servicesReport && (
+            <div className="reports-panel__compact-actions">
+              <ReportDownloadMenu
+                onPreview={handleServicesPreview}
+                onExcel={() => handleServicesDownload('excel')}
+                onPdf={() => handleServicesDownload('pdf')}
+                previewBusy={servicesPreviewBusy}
+                excelBusy={servicesDownloadBusy === 'excel'}
+                pdfBusy={servicesDownloadBusy === 'pdf'}
+              />
+            </div>
+          )}
+          {activeTab === 'laundry' && laundryReport && (
+            <div className="reports-panel__compact-actions">
+              <ReportDownloadMenu
+                onPreview={handleLaundryPreview}
+                onExcel={() => handleLaundryDownload('excel')}
+                onPdf={() => handleLaundryDownload('pdf')}
+                previewBusy={laundryPreviewBusy}
+                excelBusy={laundryDownloadBusy === 'excel'}
+                pdfBusy={laundryDownloadBusy === 'pdf'}
+              />
             </div>
           )}
         </div>
@@ -939,7 +1060,16 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
             <>
               <RoomsAnalytics fromDate={fromDate} toDate={toDate} validRange={validRange} bookings={bookings} />
 
-              <p className="reports-panel__section-label">This period at a glance</p>
+              {/* Two bases, same split the PDF/Excel export prints as Part 1
+                  and Part 2 — one card grid mixing them read as a single
+                  total that should foot, when it never was one. Labelling
+                  each half what it actually is stops that expectation before
+                  it forms. */}
+              <p className="reports-panel__section-label">Stays checking in this period</p>
+              <p className="reports-panel__hint">
+                Counted by check-in date. Cancelled stays are excluded except for the cancellation charge kept
+                on them, which belongs to the money received below instead.
+              </p>
               <div className="reports-panel__stat-grid">
                 <div className="reports-panel__stat">
                   <span className="reports-panel__stat-label">Bookings</span>
@@ -966,47 +1096,56 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                   <span className="reports-panel__stat-value">
                     {formatPrice(bookings.summary.billedAmount)}
                   </span>
-                  {bookings.summary.foodBilledAmount > 0 && (
-                    <span className="reports-panel__muted">
-                      + {formatPrice(bookings.summary.foodBilledAmount)} food, in Restaurant
-                    </span>
-                  )}
                 </div>
+              </div>
+
+              <p className="reports-panel__section-label">Money received this period</p>
+              <p className="reports-panel__hint">
+                Cash basis — dated by when the payment came in, whichever stay it was for. Not expected to
+                match the figures above.
+              </p>
+              <div className="reports-panel__stat-grid">
                 <div className="reports-panel__stat reports-panel__stat--positive">
-                  <span className="reports-panel__stat-label">Advance collected</span>
+                  <span className="reports-panel__stat-label">Advances received</span>
                   <span className="reports-panel__stat-value">
                     {formatPrice(bookings.summary.collections.advanceCollected)}
                   </span>
                 </div>
+                {/* The other half of what foots to the total below — same
+                    figure the PDF/Excel export prints as "Final payments
+                    received", missing here before even though the money was
+                    always counted into Total collected. */}
                 <div className="reports-panel__stat reports-panel__stat--positive">
-                  <span className="reports-panel__stat-label">Total collected</span>
+                  <span className="reports-panel__stat-label">Final payments received</span>
                   <span className="reports-panel__stat-value">
-                    {formatPrice(bookings.summary.collections.totalCollected)}
+                    {formatPrice(bookings.summary.collections.balanceCollected)}
                   </span>
                 </div>
                 {/* Only when a cancellation actually kept money — a zero here
                     would just make the grid wider on every quiet month. */}
                 {Number(bookings.summary.cancellationChargesKept) > 0 && (
                   <div className="reports-panel__stat reports-panel__stat--warning">
-                    <span className="reports-panel__stat-label">Cancellation charges</span>
+                    <span className="reports-panel__stat-label">Cancellation charges kept</span>
                     <span className="reports-panel__stat-value">
                       {formatPrice(bookings.summary.cancellationChargesKept)}
                     </span>
                   </div>
                 )}
+                <div className="reports-panel__stat reports-panel__stat--accent">
+                  <span className="reports-panel__stat-label">Total received</span>
+                  <span className="reports-panel__stat-value">
+                    {formatPrice(bookings.summary.collections.totalCollected)}
+                  </span>
+                </div>
               </div>
 
-              {(downloadError || previewUrl) && (
-                <div className="dash-card reports-panel__download">
-                  {downloadError && <p className="reports-panel__hint">{downloadError}</p>}
-                  {previewUrl && (
-                    <iframe
-                      className="reports-panel__preview"
-                      src={previewUrl}
-                      title="Booking report preview"
-                    />
-                  )}
-                </div>
+              {downloadError && <p className="reports-panel__hint reports-panel__hint--error">{downloadError}</p>}
+              {previewOpen && previewUrl && (
+                <ReportPreviewModal
+                  title="Booking report preview"
+                  url={previewUrl}
+                  onClose={() => setPreviewOpen(false)}
+                />
               )}
 
               <div className="reports-panel__table-bar">
@@ -1599,17 +1738,15 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                 </div>
               </div>
 
-              {(eventsDownloadError || eventsPreviewUrl) && (
-                <div className="dash-card reports-panel__download">
-                  {eventsDownloadError && <p className="reports-panel__hint">{eventsDownloadError}</p>}
-                  {eventsPreviewUrl && (
-                    <iframe
-                      className="reports-panel__preview"
-                      src={eventsPreviewUrl}
-                      title="Events report preview"
-                    />
-                  )}
-                </div>
+              {eventsDownloadError && (
+                <p className="reports-panel__hint reports-panel__hint--error">{eventsDownloadError}</p>
+              )}
+              {eventsPreviewOpen && eventsPreviewUrl && (
+                <ReportPreviewModal
+                  title="Events report preview"
+                  url={eventsPreviewUrl}
+                  onClose={() => setEventsPreviewOpen(false)}
+                />
               )}
 
               <p className="reports-panel__section-label">Functions &amp; events</p>
@@ -1657,7 +1794,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                             <td>{ev.finalPax ?? ev.guaranteedPax ?? ev.expectedPax}</td>
                             <td>
                               <span
-                                className={`badge ${ev.status === 'CANCELLED' || ev.status === 'EXPIRED' ? 'badge--off' : 'badge--on'}`}
+                                className={`badge ${ev.status === 'CANCELLED' ? 'badge--off' : 'badge--on'}`}
                               >
                                 {EVENT_STATUS_LABEL[ev.status] || ev.status}
                               </span>
@@ -1716,6 +1853,17 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                   </div>
                 )}
               </div>
+
+              {servicesDownloadError && (
+                <p className="reports-panel__hint reports-panel__hint--error">{servicesDownloadError}</p>
+              )}
+              {servicesPreviewOpen && servicesPreviewUrl && (
+                <ReportPreviewModal
+                  title="Other services report preview"
+                  url={servicesPreviewUrl}
+                  onClose={() => setServicesPreviewOpen(false)}
+                />
+              )}
 
               <p className="reports-panel__section-label">By service</p>
               {servicesReport.byService.length === 0 ? (
@@ -1799,6 +1947,286 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
         </>
       )}
 
+      {activeTab === 'laundry' && (
+        <>
+          {laundryReportError && (
+            <div className="dash-card">
+              <div className="dash-state">{laundryReportError}</div>
+            </div>
+          )}
+          {!laundryReportError && validRange && !laundryReport && (
+            <div className="dash-card">
+              <PageLoader inline label="Loading" />
+            </div>
+          )}
+          {!laundryReportError && laundryReport && (
+            <>
+              <p className="reports-panel__section-label">Hotel laundry in this period</p>
+              <div className="reports-panel__stat-grid">
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Sent for washing</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.sent}</span>
+                </div>
+                <div className="reports-panel__stat reports-panel__stat--positive">
+                  <span className="reports-panel__stat-label">Received washed</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.received}</span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Lost</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.lost}</span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Damaged</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.damaged}</span>
+                </div>
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">In wash now</span>
+                  <span className="reports-panel__stat-value">{laundryReport.linen.totals.inWashNow}</span>
+                  <span className="reports-panel__muted">today, not the period</span>
+                </div>
+              </div>
+
+              {laundryDownloadError && (
+                <p className="reports-panel__hint reports-panel__hint--error">{laundryDownloadError}</p>
+              )}
+              {laundryPreviewOpen && laundryPreviewUrl && (
+                <ReportPreviewModal
+                  title="Laundry report preview"
+                  url={laundryPreviewUrl}
+                  onClose={() => setLaundryPreviewOpen(false)}
+                />
+              )}
+
+              <p className="reports-panel__section-label">By linen item</p>
+              <div className="dash-card">
+                {laundryReport.linen.byItem.length === 0 ? (
+                  <div className="dash-state">No linen items yet. Add them under Laundry → Hotel Laundry.</div>
+                ) : (
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Item</th>
+                          <th>Changed in rooms</th>
+                          <th>Sent</th>
+                          <th>Received</th>
+                          <th>Lost</th>
+                          <th>Damaged</th>
+                          <th>Owned now</th>
+                          <th>In wash now</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {laundryReport.linen.byItem.map((i) => (
+                          <tr key={i.name}>
+                            <td>{i.name}</td>
+                            <td>{i.changed}</td>
+                            <td>{i.sent}</td>
+                            <td>{i.received}</td>
+                            <td>{i.lost}</td>
+                            <td>{i.damaged}</td>
+                            <td>{i.owned}</td>
+                            <td>{i.inWashNow}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <p className="reports-panel__section-label">By who washed it</p>
+              <div className="dash-card">
+                {laundryReport.linen.byWasher.length === 0 ? (
+                  <div className="dash-state">Nothing was sent for washing in this period.</div>
+                ) : (
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Washed by</th>
+                          <th>Sent</th>
+                          <th>Received</th>
+                          <th>Lost</th>
+                          <th>Damaged</th>
+                          <th>Not back</th>
+                          <th>Charged</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {laundryReport.linen.byWasher.map((w) => (
+                          <tr key={w.washedBy || '-'}>
+                            <td>{w.washedBy || <span className="reports-panel__muted">Not recorded</span>}</td>
+                            <td>{w.sent}</td>
+                            <td>{w.received}</td>
+                            <td>{w.lost}</td>
+                            <td>{w.damaged}</td>
+                            <td>{w.notBack}</td>
+                            <td>{w.charge > 0 ? formatPrice(w.charge) : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {lodge?.hasOtherServices && (
+                <>
+                  <p className="reports-panel__section-label">Guest laundry taken in this period</p>
+                  <div className="reports-panel__stat-grid">
+                    <div className="reports-panel__stat">
+                      <span className="reports-panel__stat-label">Orders taken in</span>
+                      <span className="reports-panel__stat-value">{laundryReport.guest.totals.takenIn}</span>
+                      {laundryReport.guest.totals.cancelled > 0 && (
+                        <span className="reports-panel__muted">{laundryReport.guest.totals.cancelled} cancelled</span>
+                      )}
+                    </div>
+                    <div className="reports-panel__stat">
+                      <span className="reports-panel__stat-label">Pieces</span>
+                      <span className="reports-panel__stat-value">{laundryReport.guest.totals.pieces}</span>
+                    </div>
+                    <div className="reports-panel__stat reports-panel__stat--positive">
+                      <span className="reports-panel__stat-label">Handed over</span>
+                      <span className="reports-panel__stat-value">{formatPrice(laundryReport.guest.totals.handedOverValue)}</span>
+                      <span className="reports-panel__muted">{laundryReport.guest.totals.handedOver} orders</span>
+                    </div>
+                    <div className="reports-panel__stat">
+                      <span className="reports-panel__stat-label">Still open</span>
+                      <span className="reports-panel__stat-value">{formatPrice(laundryReport.guest.totals.openValue)}</span>
+                      <span className="reports-panel__muted">{laundryReport.guest.totals.open} orders</span>
+                    </div>
+                    {laundryReport.guest.totals.vendorCharge > 0 && (
+                      <div className="reports-panel__stat">
+                        <span className="reports-panel__stat-label">Vendor prices</span>
+                        <span className="reports-panel__stat-value">{formatPrice(laundryReport.guest.totals.vendorCharge)}</span>
+                        <span className="reports-panel__muted">what vendors charged the lodge</span>
+                      </div>
+                    )}
+                    <div className={`reports-panel__stat ${laundryReport.guest.totals.profit >= 0 ? 'reports-panel__stat--positive' : 'reports-panel__stat--warning'}`}>
+                      <span className="reports-panel__stat-label">Profit</span>
+                      <span className="reports-panel__stat-value">{formatPrice(laundryReport.guest.totals.profit)}</span>
+                      <span className="reports-panel__muted">handed over, minus vendor price</span>
+                    </div>
+                  </div>
+                  <p className="reports-panel__muted">
+                    Handed over, Still open and Vendor prices are already counted in Other services and on the bills — shown
+                    here for information only. The vendor price itself is also logged under the Laundry expense category, so
+                    it reduces the lodge&rsquo;s Profit &amp; Loss there, same as any other expense.
+                  </p>
+
+                  {laundryReport.guest.orders.length > 0 && (
+                    <div className="dash-card">
+                      <div className="dash-table-scroll">
+                        <table className="dash-table">
+                          <thead>
+                            <tr>
+                              <th>Tag</th>
+                              <th>Guest</th>
+                              <th>Pieces</th>
+                              <th>Status</th>
+                              <th>Taken in</th>
+                              <th>Handed over</th>
+                              <th>Amount</th>
+                              <th>Profit</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {laundryReport.guest.orders.map((o) => (
+                              <tr key={o.id}>
+                                <td>{o.tagNumber}</td>
+                                <td>
+                                  {o.guestName || '—'}
+                                  <br />
+                                  <span className="reports-panel__muted">{o.roomNumber ? `Room ${o.roomNumber}` : 'Walk-in'}</span>
+                                </td>
+                                <td>{o.pieces}</td>
+                                <td>
+                                  <span className={`badge ${o.status === 'CANCELLED' ? 'badge--off' : 'badge--on'}`}>
+                                    {LAUNDRY_ORDER_STATUS_LABEL[o.status] || o.status}
+                                  </span>
+                                </td>
+                                <td>{formatTimestamp(o.receivedAt)}</td>
+                                <td>{o.deliveredAt ? formatTimestamp(o.deliveredAt) : '—'}</td>
+                                <td>{formatPrice(o.total)}</td>
+                                <td>{o.profit == null ? '—' : formatPrice(o.profit)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {activeTab === 'feedback' && (
+        <>
+          {feedbackReportError && (
+            <div className="dash-card">
+              <div className="dash-state">{feedbackReportError}</div>
+            </div>
+          )}
+          {!feedbackReportError && validRange && !feedbackReport && (
+            <div className="dash-card">
+              <PageLoader inline label="Loading" />
+            </div>
+          )}
+          {!feedbackReportError && feedbackReport && (
+            <>
+              <p className="reports-panel__section-label">Submitted feedback in this period</p>
+              <div className="reports-panel__stat-grid">
+                <div className="reports-panel__stat">
+                  <span className="reports-panel__stat-label">Responses</span>
+                  <span className="reports-panel__stat-value">{feedbackReport.totals.count}</span>
+                </div>
+                <div className={`reports-panel__stat ${feedbackReport.totals.averageRating == null || feedbackReport.totals.averageRating >= 4 ? 'reports-panel__stat--positive' : 'reports-panel__stat--warning'}`}>
+                  <span className="reports-panel__stat-label">Average rating</span>
+                  <span className="reports-panel__stat-value">
+                    {feedbackReport.totals.averageRating == null ? '—' : `${feedbackReport.totals.averageRating} / 5`}
+                  </span>
+                </div>
+              </div>
+
+              {feedbackReport.responses.length === 0 ? (
+                <p className="reports-panel__muted">No feedback has been submitted in this period yet.</p>
+              ) : (
+                <div className="dash-card">
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Guest / Organiser</th>
+                          <th>Stay / Event date</th>
+                          <th>Rating</th>
+                          <th>Comment</th>
+                          <th>Submitted</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {feedbackReport.responses.map((r) => (
+                          <tr key={r.id}>
+                            <td>{r.guestName || '—'}</td>
+                            <td>{formatDateOnly(String(r.checkOutDate).slice(0, 10))}</td>
+                            <td>{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</td>
+                            <td>{r.comment || <span className="reports-panel__muted">No comment</span>}</td>
+                            <td>{formatTimestamp(r.submittedAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
       {activeTab === 'food' && (
         <>
           {foodOrdersError && (
@@ -1839,9 +2267,20 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                   <span className="reports-panel__stat-value">{formatPrice(foodOrders.summary.billedValue)}</span>
                   <span className="reports-panel__muted">
                     {foodOrders.summary.billedCount} {foodOrders.summary.billedCount === 1 ? 'order' : 'orders'}
-                    {foodOrders.summary.onStayBillValue > 0 && ` · ${formatPrice(foodOrders.summary.onStayBillValue)} on room bills`}
                   </span>
                 </div>
+                {/* Food ordered to a room rides on that stay's combined bill
+                    rather than its own — the Room Bookings report excludes
+                    it from the room total, so it needs a home here instead. */}
+                {foodOrders.summary.onStayBillValue > 0 && (
+                  <div className="reports-panel__stat">
+                    <span className="reports-panel__stat-label">Room service</span>
+                    <span className="reports-panel__stat-value">
+                      {formatPrice(foodOrders.summary.onStayBillValue)}
+                    </span>
+                    <span className="reports-panel__muted">on a room's bill</span>
+                  </div>
+                )}
               </div>
 
               <FoodAnalytics
@@ -1851,17 +2290,15 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                 foodOrders={foodOrders}
               />
 
-              {(foodDownloadError || foodPreviewUrl) && (
-                <div className="dash-card reports-panel__download">
-                  {foodDownloadError && <p className="reports-panel__hint">{foodDownloadError}</p>}
-                  {foodPreviewUrl && (
-                    <iframe
-                      className="reports-panel__preview"
-                      src={foodPreviewUrl}
-                      title="Food orders report preview"
-                    />
-                  )}
-                </div>
+              {foodDownloadError && (
+                <p className="reports-panel__hint reports-panel__hint--error">{foodDownloadError}</p>
+              )}
+              {foodPreviewOpen && foodPreviewUrl && (
+                <ReportPreviewModal
+                  title="Food orders report preview"
+                  url={foodPreviewUrl}
+                  onClose={() => setFoodPreviewOpen(false)}
+                />
               )}
 
               <p className="reports-panel__section-label">Food orders</p>

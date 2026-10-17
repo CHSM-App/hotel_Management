@@ -18,12 +18,11 @@ delete process.env.WHATSAPP_BOOKING_TEMPLATE_ID;
 
 const {
   buildStaySample,
-  buildEventSample,
-  formatInstantIST,
+  buildPerRoomSample,
+  sameDatesAcrossRooms,
   directionsFor,
   clean,
   notifyStayBooked,
-  notifyEventBooked,
 } = require('../src/modules/notifications/bookingConfirmation');
 const whatsapp = require('../src/config/whatsapp');
 
@@ -52,46 +51,37 @@ const stay = {
   // Both shapes must read as the same calendar day.
   check_in_date: new Date('2026-09-12T00:00:00Z'),
   check_out_date: '2026-09-14',
+  room_numbers: '204',
+  advance_amount: 2000,
+  total_price: 5000,
 };
 
 // ---------------------------------------------------------------------------
-// The seven variables, in template order
+// The ten variables, in template order
 // ---------------------------------------------------------------------------
 
-test('a stay fills the seven template variables in order', () => {
+test('a stay fills the ten template variables in order', () => {
   const sample = buildStaySample(stay, lodge);
   assert.deepStrictEqual(sample, [
     'Rahul Patil',
     'Sea View Lodge',
-    '#41',
+    '204',
     '12 Sep 2026 12:00 PM',
     '14 Sep 2026 10:30 AM',
+    '2000.00',
+    '5000.00',
+    '3000.00',
     'https://www.google.com/maps/search/?api=1&query=15.861%2C73.632',
     '02366-123456',
   ]);
 });
 
-test('a function fills the same seven, with the venue and IST instants', () => {
-  const sample = buildEventSample(
-    {
-      id: 7,
-      organiserName: 'Sharma',
-      organiserPhone: '9876543210',
-      venueName: 'Lawn',
-      startAt: '2026-09-12T12:30:00.000Z',
-      endAt: '2026-09-12T19:30:00.000Z',
-    },
-    lodge
-  );
-  assert.deepStrictEqual(sample, [
-    'Sharma',
-    'Sea View Lodge (Lawn)',
-    'EV-7',
-    '12 Sep 2026 6:00 PM',
-    '13 Sep 2026 1:00 AM',
-    'https://www.google.com/maps/search/?api=1&query=15.861%2C73.632',
-    '02366-123456',
-  ]);
+test('a multi-room booking sends every room, not just the first', () => {
+  const sample = buildStaySample({ ...stay, room_numbers: '204, 205' }, lodge);
+  // The comma joining the rooms becomes " - ": clean() always turns a real
+  // comma into that, since a comma is the variable separator in the sample
+  // string sent to the provider.
+  assert.strictEqual(sample[2], '204 - 205');
 });
 
 test('no value ever carries a comma — it is the variable separator', () => {
@@ -99,9 +89,6 @@ test('no value ever carries a comma — it is the variable separator', () => {
   // put the town into the phone slot.
   const noPin = { ...lodge, latitude: null, longitude: null, phone: null, name: 'Hotel Sai, Vengurla' };
   for (const value of buildStaySample(stay, noPin)) {
-    assert.ok(!value.includes(','), `comma in "${value}"`);
-  }
-  for (const value of buildEventSample({ id: 1, organiserName: 'A, B', startAt: stay.check_in_date, endAt: stay.check_in_date }, noPin)) {
     assert.ok(!value.includes(','), `comma in "${value}"`);
   }
 });
@@ -132,8 +119,8 @@ test('directions prefer the map pin and fall back to the address', () => {
 });
 
 test('the property phone falls back to its WhatsApp number', () => {
-  assert.strictEqual(buildStaySample(stay, { ...lodge, phone: null })[6], '9876500000');
-  assert.strictEqual(buildStaySample(stay, { ...lodge, phone: null, whatsapp_number: null })[6], '-');
+  assert.strictEqual(buildStaySample(stay, { ...lodge, phone: null })[9], '9876500000');
+  assert.strictEqual(buildStaySample(stay, { ...lodge, phone: null, whatsapp_number: null })[9], '-');
 });
 
 // ---------------------------------------------------------------------------
@@ -152,12 +139,6 @@ test('a CYCLE property quotes its check-in and check-out times', () => {
   assert.strictEqual(sample[4], '14 Sep 2026 11:00 AM');
 });
 
-test('instants are said in IST whatever the server clock is', () => {
-  assert.strictEqual(formatInstantIST('2026-09-12T18:30:00.000Z'), '13 Sep 2026 12:00 AM');
-  assert.strictEqual(formatInstantIST('2026-09-12T06:30:00.000Z'), '12 Sep 2026 12:00 PM');
-  assert.strictEqual(formatInstantIST(new Date('2026-01-01T03:35:00.000Z')), '1 Jan 2026 9:05 AM');
-});
-
 // ---------------------------------------------------------------------------
 // Off unless configured, and never throwing
 // ---------------------------------------------------------------------------
@@ -165,7 +146,6 @@ test('instants are said in IST whatever the server clock is', () => {
 test('with no template configured the notifier skips without touching the database', async () => {
   assert.strictEqual(whatsapp.isBookingTemplateConfigured(), false);
   assert.deepStrictEqual(await notifyStayBooked(1, 1), { status: 'skipped', reason: 'not configured' });
-  assert.deepStrictEqual(await notifyEventBooked(1, { id: 1 }), { status: 'skipped', reason: 'not configured' });
 });
 
 test('sendTemplateMessage refuses a missing template rather than calling the provider', async () => {
@@ -178,19 +158,96 @@ test('sendTemplateMessage refuses a missing template rather than calling the pro
 // Where it fires from
 // ---------------------------------------------------------------------------
 
-test('a new stay and a function taking its venue both fire the confirmation, unawaited', () => {
+test('a new stay fires the confirmation, unawaited', () => {
   const bookings = read('src/modules/bookings/bookings.service.js');
   assert.match(bookings, /void notifications\.notifyStayBooked\(lodgeId, bookingId\)/);
-
-  const events = read('src/modules/events/events.service.js');
-  // On creation only when the status blocks the venue — an enquiry is not
-  // told "confirmed".
-  assert.match(events, /if \(blocks\) void notifications\.notifyEventBooked\(lodgeId, event\)/);
-  // On a transition only when the venue was not already held — a tentative
-  // hold that is then confirmed is not told twice.
-  assert.match(events, /BLOCKING\.includes\(to\) && !BLOCKING\.includes\(current\.status\)/);
 });
 
 test('.env.example documents the template switch', () => {
   assert.match(read('.env.example'), /^WHATSAPP_BOOKING_TEMPLATE_ID=/m);
+});
+
+// ---------------------------------------------------------------------------
+// Money — balance due is computed, not typed in anywhere
+// ---------------------------------------------------------------------------
+
+test('balance due is total minus advance, formatted as plain digits with no currency mark', () => {
+  const sample = buildStaySample({ ...stay, advance_amount: 1234.5, total_price: 9000 }, lodge);
+  assert.strictEqual(sample[5], '1234.50');
+  assert.strictEqual(sample[6], '9000.00');
+  assert.strictEqual(sample[7], '7765.50');
+});
+
+test('a booking with no advance on file reads as zero, not a blank or a dash', () => {
+  const sample = buildStaySample({ ...stay, advance_amount: null }, lodge);
+  assert.strictEqual(sample[5], '0.00');
+  assert.strictEqual(sample[7], sample[6]); // balance due equals the full total
+});
+
+test('loadBooking reads room_numbers/advance_amount/total_price, not the raw column names', () => {
+  const src = read('src/modules/notifications/bookingConfirmation.js');
+  assert.match(src, /booking\.room_numbers/);
+  assert.match(src, /booking\.advance_amount/);
+  assert.match(src, /booking\.total_price/);
+});
+
+// ---------------------------------------------------------------------------
+// Rooms on different date ranges — one message per room instead of one
+// shared {{4}}/{{5}} pair that couldn't honestly speak for all of them
+// ---------------------------------------------------------------------------
+
+const roomA = { room_number: '204', check_in_date: '2026-09-12', check_out_date: '2026-09-14', total_price: 3000 };
+const roomB = { room_number: '205', check_in_date: '2026-09-13', check_out_date: '2026-09-15', total_price: 2000 };
+
+test('sameDatesAcrossRooms is true for one room, or for several sharing a range', () => {
+  assert.strictEqual(sameDatesAcrossRooms([roomA]), true);
+  assert.strictEqual(sameDatesAcrossRooms([roomA, { ...roomA, room_number: '206' }]), true);
+});
+
+test('sameDatesAcrossRooms is false the moment one room disagrees, on either end', () => {
+  assert.strictEqual(sameDatesAcrossRooms([roomA, roomB]), false);
+  assert.strictEqual(sameDatesAcrossRooms([roomA, { ...roomA, room_number: '206', check_out_date: '2026-09-15' }]), false);
+});
+
+test('sameDatesAcrossRooms compares calendar days, not Date-vs-string shape', () => {
+  const asDate = { ...roomA, check_in_date: new Date('2026-09-12T00:00:00Z'), check_out_date: new Date('2026-09-14T00:00:00Z') };
+  assert.strictEqual(sameDatesAcrossRooms([roomA, asDate]), true);
+});
+
+test('buildPerRoomSample names just that room and its own dates', () => {
+  const sample = buildPerRoomSample(roomA, { guest_name: 'Rahul Patil', advance_amount: 1000, total_price: 5000 }, lodge, 2);
+  assert.strictEqual(sample[0], 'Rahul Patil');
+  assert.strictEqual(sample[2], '204');
+  assert.strictEqual(sample[3], '12 Sep 2026 12:00 PM');
+  assert.strictEqual(sample[4], '14 Sep 2026 10:30 AM');
+});
+
+test('buildPerRoomSample splits the one advance payment in proportion to each room\'s own price', () => {
+  // roomA is 3000 of a 5000 total (60%), roomB is 2000 (40%) — a 1000 advance
+  // splits 600/400, and each room's own total_price is reported whole.
+  const booking = { guest_name: 'Rahul Patil', advance_amount: 1000, total_price: 5000 };
+  const sampleA = buildPerRoomSample(roomA, booking, lodge, 2);
+  const sampleB = buildPerRoomSample(roomB, booking, lodge, 2);
+  assert.strictEqual(sampleA[5], '600.00'); // advance paid
+  assert.strictEqual(sampleA[6], '3000.00'); // total
+  assert.strictEqual(sampleA[7], '2400.00'); // balance due
+  assert.strictEqual(sampleB[5], '400.00');
+  assert.strictEqual(sampleB[6], '2000.00');
+  assert.strictEqual(sampleB[7], '1600.00');
+  // The two rooms' advance shares add back up to the one real payment —
+  // nothing invented, nothing dropped.
+  assert.strictEqual(Number(sampleA[5]) + Number(sampleB[5]), 1000);
+});
+
+test('buildPerRoomSample splits evenly rather than dividing by zero when the booking has no price yet', () => {
+  const booking = { guest_name: 'Rahul Patil', advance_amount: 1000, total_price: 0 };
+  const sample = buildPerRoomSample({ ...roomA, total_price: 0 }, booking, lodge, 2);
+  assert.strictEqual(sample[5], '500.00');
+});
+
+test('notifyStayBooked sends one message per room when the rooms disagree on dates, one message otherwise', () => {
+  const src = read('src/modules/notifications/bookingConfirmation.js');
+  const fn = src.slice(src.indexOf('async function notifyStayBooked('));
+  assert.match(fn, /if \(sameDatesAcrossRooms\(rooms\)\)/);
+  assert.match(fn, /buildPerRoomSample\(room, booking, lodge, rooms\.length\)/);
 });

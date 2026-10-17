@@ -82,7 +82,7 @@ export default function AnalyticsOverview({ lodge, bookings, occupancy, gst, eve
   let eventsUnbilled = 0;
   if (lodge?.hasEvents && events) {
     for (const ev of events.events) {
-      if (ev.status === 'CANCELLED' || ev.status === 'EXPIRED') continue;
+      if (ev.status === 'CANCELLED') continue;
       if (ev.invoiceNumber) eventsBilled += Number(ev.totalAmount || 0);
       else eventsUnbilled += Number(ev.totalAmount || 0);
     }

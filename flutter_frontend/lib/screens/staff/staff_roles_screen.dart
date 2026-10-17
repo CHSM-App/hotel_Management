@@ -5,6 +5,7 @@ import '../../domain/models/staff.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/staff_viewmodel.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'role_form_screen.dart';
 import 'staff_form_screen.dart';
@@ -76,76 +77,21 @@ class _Body extends ConsumerWidget {
   }
 }
 
-/// Same sliding-pill segmented control Expenses/Assets/Billing/Rooms &
-/// Rates each carry their own copy of.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
   const _SubTabs({required this.selected, required this.onSelect});
 
-  static const _tabs = {'staff': 'Staff', 'roles': 'Roles & access'};
-
-  static const double _height = 44;
-
   @override
   Widget build(BuildContext context) {
-    final keys = _tabs.keys.toList();
-    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
-
-    Widget segment(String key, String label) {
-      final isSelected = key == selected;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => onSelect(key),
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: _height,
-            child: Center(
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : AppTheme.text,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 13,
-                ),
-                child: Text(label, overflow: TextOverflow.ellipsis),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(-1 + (2 / (keys.length - 1)) * selectedIndex, 0),
-            child: FractionallySizedBox(
-              widthFactor: 1 / keys.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  color: AppTheme.accent,
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                ),
-              ),
-            ),
-          ),
-          Row(children: [for (final e in _tabs.entries) segment(e.key, e.value)]),
-        ],
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: const [
+        PillTab('staff', 'Staff', Icons.badge_rounded),
+        PillTab('roles', 'Roles & access', Icons.admin_panel_settings_rounded),
+      ],
     );
   }
 }
@@ -224,81 +170,131 @@ class _StaffRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final contact = [
+      if (member.email != null && member.email!.isNotEmpty) member.email!,
+      member.phone,
+    ].join(' · ');
+
+    final statusColor = member.isActive ? AppTheme.vacant : AppTheme.muted;
+
     return NeuCard(
-      padding: const EdgeInsets.all(AppTheme.s12),
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8 + 2),
+      onTap: () => showStaffFormScreen(context, member: member),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(color: AppTheme.sidebarBrandWash, shape: BoxShape.circle),
-            child: Text(
-              member.name.isNotEmpty ? member.name[0].toUpperCase() : '?',
-              style: const TextStyle(color: AppTheme.sidebarBrandInk, fontWeight: FontWeight.w700),
-            ),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(color: AppTheme.sidebarBrandWash, shape: BoxShape.circle),
+                child: Text(
+                  member.name.isNotEmpty ? member.name[0].toUpperCase() : '?',
+                  style: const TextStyle(color: AppTheme.sidebarBrandInk, fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+              ),
+              Positioned(
+                right: -1,
+                bottom: -1,
+                child: Container(
+                  width: 11,
+                  height: 11,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.card, width: 2),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(width: AppTheme.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(member.name, style: Theme.of(context).textTheme.titleSmall),
-                if (member.email != null && member.email!.isNotEmpty)
-                  Text(member.email!, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
-                Text(member.phone, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
-                const SizedBox(height: AppTheme.s8),
-                Wrap(
-                  spacing: AppTheme.s8,
-                  runSpacing: AppTheme.s4,
+                Row(
                   children: [
-                    _Badge(text: member.roleName, color: AppTheme.accent),
-                    _Badge(
-                      text: member.isActive ? 'Active' : 'Disabled',
-                      color: member.isActive ? AppTheme.vacant : AppTheme.muted,
+                    Flexible(
+                      child: Text(
+                        member.name,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontSize: 14.5, fontWeight: FontWeight.w700),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    if (member.mustResetPassword)
-                      const _Badge(text: 'Temporary password', color: AppTheme.draft),
+                    const SizedBox(width: 6),
+                    _RolePill(text: member.roleName),
                   ],
                 ),
+                if (contact.isNotEmpty) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    contact,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ],
             ),
           ),
-          PopupMenuButton<String>(
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.more_vert_rounded, size: 20, color: AppTheme.muted),
-            color: AppTheme.card,
-            surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.rMedium),
-              side: const BorderSide(color: AppTheme.border),
-            ),
-            onSelected: (v) {
-              switch (v) {
-                case 'edit':
-                  showStaffFormScreen(context, member: member);
-                case 'reset':
-                  _resetPassword(context, ref);
-                case 'toggle':
-                  _toggleActive(context, ref);
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'edit', child: Text('Edit')),
-              const PopupMenuItem(value: 'reset', child: Text('Reset password')),
-              // The backend refuses the last active owner anyway; hiding the
-              // control here means the only owner never sees a button that
-              // can only ever answer with an error.
-              if (member.roleKey != 'OWNER')
-                PopupMenuItem(
-                  value: 'toggle',
-                  child: Text(member.isActive ? 'Disable' : 'Enable'),
-                ),
-            ],
+          const SizedBox(width: AppTheme.s4),
+          _StaffRowMenu(
+            showEnable: member.roleKey != 'OWNER',
+            isActive: member.isActive,
+            onResetPassword: () => _resetPassword(context, ref),
+            onToggleActive: () => _toggleActive(context, ref),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The staff row's own overflow menu — icon-chip items on a raised
+/// rounded surface, same language as [NeuRowMenu], sized for the two
+/// actions a staff row needs instead of the fixed edit/delete pair.
+class _StaffRowMenu extends StatelessWidget {
+  final bool showEnable;
+  final bool isActive;
+  final VoidCallback onResetPassword;
+  final VoidCallback onToggleActive;
+
+  const _StaffRowMenu({
+    required this.showEnable,
+    required this.isActive,
+    required this.onResetPassword,
+    required this.onToggleActive,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // The backend refuses the last active owner anyway; hiding the control
+    // here means the only owner never sees a button that can only ever
+    // answer with an error.
+    return NeuActionMenu<String>(
+      iconSize: 19,
+      actions: [
+        const NeuMenuAction('reset', Icons.lock_reset_rounded, 'Reset password'),
+        if (showEnable)
+          NeuMenuAction(
+            'toggle',
+            isActive ? Icons.block_rounded : Icons.check_circle_outline_rounded,
+            isActive ? 'Disable' : 'Enable',
+            danger: isActive,
+          ),
+      ],
+      onSelected: (v) => v == 'reset' ? onResetPassword() : onToggleActive(),
     );
   }
 }
@@ -433,18 +429,45 @@ class _RoleCard extends ConsumerWidget {
     }
   }
 
+  Widget _iconAction({
+    required String tooltip,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, size: 16, color: color),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Wrap(
                   crossAxisAlignment: WrapCrossAlignment.center,
                   spacing: AppTheme.s8,
+                  runSpacing: AppTheme.s4,
                   children: [
                     Text(role.name, style: Theme.of(context).textTheme.titleSmall),
                     _Badge(
@@ -455,28 +478,46 @@ class _RoleCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: 'Edit access for ${role.name}',
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                onPressed: () => showRoleFormScreen(context, role: role),
+              const SizedBox(width: AppTheme.s8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _iconAction(
+                    tooltip: 'Edit access for ${role.name}',
+                    icon: Icons.edit_outlined,
+                    color: AppTheme.heading,
+                    onPressed: () => showRoleFormScreen(context, role: role),
+                  ),
+                  if (role.isOverridden) ...[
+                    const SizedBox(width: 6),
+                    _iconAction(
+                      tooltip: 'Reset to default',
+                      icon: Icons.restore_rounded,
+                      color: AppTheme.accent,
+                      onPressed: () => _resetToDefault(context, ref),
+                    ),
+                  ],
+                  if (role.isCustom) ...[
+                    const SizedBox(width: 6),
+                    _iconAction(
+                      tooltip: 'Delete ${role.name}',
+                      icon: Icons.delete_outline_rounded,
+                      color: AppTheme.danger,
+                      onPressed: () => _delete(context, ref),
+                    ),
+                  ],
+                ],
               ),
-              if (role.isOverridden)
-                IconButton(
-                  tooltip: 'Reset to default',
-                  icon: const Icon(Icons.restore_rounded, size: 18),
-                  onPressed: () => _resetToDefault(context, ref),
-                ),
-              if (role.isCustom)
-                IconButton(
-                  tooltip: 'Delete ${role.name}',
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.danger),
-                  onPressed: () => _delete(context, ref),
-                ),
             ],
           ),
           if (role.description != null && role.description!.isNotEmpty) ...[
             const SizedBox(height: AppTheme.s4),
-            Text(role.description!, style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
+            Text(
+              role.description!,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 13),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
           const SizedBox(height: AppTheme.s12),
           if (role.permissions.isEmpty)
@@ -490,6 +531,31 @@ class _RoleCard extends ConsumerWidget {
               ],
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A compact role tag that sits inline next to the staff member's name —
+/// replaces the old full-width "Active" badge row with a single glance.
+class _RolePill extends StatelessWidget {
+  final String text;
+
+  const _RolePill({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppTheme.accent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(color: AppTheme.accent, fontSize: 10.5, fontWeight: FontWeight.w700),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -525,13 +591,28 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s4),
+      padding: const EdgeInsets.fromLTRB(8, 5, 10, 5),
       decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rSmall),
-        border: Border.all(color: AppTheme.border),
+        color: AppTheme.vacant.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(text, style: const TextStyle(color: AppTheme.text, fontSize: 12)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 14,
+            height: 14,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(color: AppTheme.vacant, shape: BoxShape.circle),
+            child: const Icon(Icons.check_rounded, size: 10, color: Colors.white),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(color: AppTheme.heading, fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
     );
   }
 }

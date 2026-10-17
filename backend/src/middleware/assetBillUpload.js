@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { ApiError } = require('./errorHandler');
 const { uploadDir } = require('../config/uploadRoot');
+const { compressUploadedImages } = require('./imageCompression');
 
 // The purchase bill/invoice for an asset. Same shape as idProofUpload.js:
 // outside any statically-served directory, so access goes through the
@@ -34,7 +35,7 @@ const upload = multer({
 });
 
 function assetBillUpload(req, res, next) {
-  upload.single('billDocument')(req, res, (err) => {
+  upload.single('billDocument')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return next(new ApiError('The bill file must be 5MB or smaller.', 400));
@@ -42,6 +43,10 @@ function assetBillUpload(req, res, next) {
       return next(new ApiError('Could not upload the bill.', 400));
     }
     if (err) return next(err);
+    // A PDF bill passes through untouched — only a photographed one is
+    // compressed, at a dimension/quality that keeps the printed amounts
+    // legible rather than the lower setting a gallery photo gets.
+    await compressUploadedImages(req, { maxDimension: 2000, quality: 85 });
     next();
   });
 }

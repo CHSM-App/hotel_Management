@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 
@@ -169,8 +170,21 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     );
   }
 
+  // This page is light, but the shell it was pushed over sets white status-bar
+  // icons for its dark navbar — so the clock, wifi and signal vanished here.
   @override
   Widget build(BuildContext context) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+      ),
+      child: _buildScaffold(context),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context) {
     final booking = _booking;
 
     return Scaffold(
@@ -272,6 +286,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                                 bookingId: widget.bookingId,
                               ),
                             ],
+                            if (booking.serviceUsages.isNotEmpty) ...[
+                              const SizedBox(height: AppTheme.s12),
+                              _ServicesSection(usages: booking.serviceUsages),
+                            ],
                             if (booking.invoice != null) ...[
                               const SizedBox(height: AppTheme.s12),
                               _BillSection(invoice: booking.invoice!),
@@ -348,6 +366,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       // for it.
       if (!booking.hasIssuedInvoice)
         NeuButton(
+          primary: true,
+          color: AppTheme.sidebarBrand,
           expand: true,
           padding: pairedPadding,
           onPressed: _openEdit,
@@ -541,6 +561,7 @@ class _StayRoomSection extends StatelessWidget {
 
     return _Section(
       number: 1,
+      icon: Icons.meeting_room_rounded,
       title: 'Stay & room',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -652,7 +673,7 @@ class _MultiRoomBreakdown extends StatelessWidget {
             padding: const EdgeInsets.all(AppTheme.s12),
             margin: const EdgeInsets.only(bottom: AppTheme.s8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
+              color: AppTheme.bg,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -766,7 +787,7 @@ class _FoodPinBox extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppTheme.s12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -869,6 +890,7 @@ class _GuestSection extends StatelessWidget {
 
     return _Section(
       number: 2,
+      icon: Icons.people_alt_rounded,
       title: 'Guest details',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -880,7 +902,7 @@ class _GuestSection extends StatelessWidget {
               vertical: AppTheme.s12,
             ),
             decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
+              color: AppTheme.bg,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -973,7 +995,7 @@ class _PersonRow extends StatelessWidget {
         vertical: AppTheme.s12,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -1083,6 +1105,7 @@ class _AdvanceSection extends StatelessWidget {
 
     return _Section(
       number: 3,
+      icon: Icons.payments_rounded,
       title: booking.paidInFull ? 'Payment' : 'Advance payment',
       child: booking.advanceAmount == null
           ? Column(
@@ -1167,6 +1190,7 @@ class _VehiclesSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return _Section(
       number: 4,
+      icon: Icons.directions_car_filled_rounded,
       title: 'Vehicles',
       child: booking.vehicles.isEmpty
           ? const _EmptyBox(message: 'None on file.')
@@ -1195,14 +1219,16 @@ class _ChargesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foodOpen = booking.foodOrdersOpen;
+    final servicesOpen = booking.servicesOpen;
     return _Section(
       number: 5,
+      icon: Icons.receipt_long_rounded,
       title: 'Price breakdown',
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(AppTheme.s16),
         decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
+          color: AppTheme.bg,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -1248,6 +1274,28 @@ class _ChargesSection extends StatelessWidget {
                 strong: true,
               ),
             ],
+            // Services used that aren't on a bill yet but are on the room
+            // bill — spa, pool, laundry, whatever the lodge sells beyond the
+            // room and food — same as StayDetails.jsx's own servicesOpen
+            // block.
+            if (servicesOpen.isNotEmpty) ...[
+              const Divider(height: AppTheme.s16),
+              for (final u in servicesOpen)
+                _MoneyLine(
+                  label: u.name,
+                  note:
+                      '${formatPrice(u.unitPrice ?? u.amount / u.quantity)} per ${u.unitLabel} × ${u.quantity}${u.headcount > 1 ? ' × ${u.headcount} people' : ''}'
+                      '${u.gstRatePercent > 0 ? ' · incl. ${u.gstRatePercent}% GST' : ''}',
+                  value: formatPrice(u.amount),
+                ),
+              _MoneyLine(
+                label:
+                    'Services used · ${servicesOpen.length} '
+                    '${servicesOpen.length == 1 ? 'item' : 'items'}',
+                value: formatPrice(booking.servicesOpenTotal),
+                strong: true,
+              ),
+            ],
             if (booking.advanceAmount != null)
               _MoneyLine(
                 label: booking.paidInFull
@@ -1263,15 +1311,15 @@ class _ChargesSection extends StatelessWidget {
               const Divider(height: AppTheme.s16),
               _MoneyLine(
                 label: 'Still to collect',
-                note: foodOpen.isNotEmpty
-                    ? 'Room'
-                          '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
-                          ' + food − advance'
-                    : 'Room'
-                          '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
-                          ' − advance',
+                note: 'Room'
+                    '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
+                    '${foodOpen.isNotEmpty ? ' + food' : ''}'
+                    '${servicesOpen.isNotEmpty ? ' + services' : ''}'
+                    ' − advance',
                 value: formatPrice(
-                  booking.outstandingBeforeTax + booking.foodOpenTotal,
+                  booking.outstandingBeforeTax +
+                      booking.foodOpenTotal +
+                      booking.servicesOpenTotal,
                 ),
                 strong: true,
               ),
@@ -1451,7 +1499,7 @@ class _FoodOrderTicket extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppTheme.s12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -1556,6 +1604,174 @@ class _FoodOrderTicket extends StatelessWidget {
   }
 }
 
+// ── Services used ─────────────────────────────────────────────────────────
+
+/// Every service this stay has used — spa, pool, laundry, whatever the lodge
+/// sells beyond the room and food — billed or not. Mirrors Bookings.jsx's own
+/// RoomServicesSection on the web guest register.
+class _ServicesSection extends StatelessWidget {
+  final List<BookingServiceUsage> usages;
+
+  const _ServicesSection({required this.usages});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = usages.fold<num>(0, (sum, u) => sum + u.amount);
+    final onBill = usages
+        .where((u) => u.onRoomBill && !u.billed)
+        .fold<num>(0, (sum, u) => sum + u.amount);
+
+    return NeuCard(
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.extruded,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.spa_rounded, color: AppTheme.accent, size: 18),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Services used',
+                      style: TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      '${usages.length} service${usages.length == 1 ? '' : 's'} · '
+                      'on the room bill only once added',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s12),
+          for (final u in usages) ...[
+            _ServiceUsageTile(usage: u),
+            const SizedBox(height: AppTheme.s8),
+          ],
+          const Divider(height: AppTheme.s16),
+          _MoneyLine(label: 'Services total', value: formatPrice(total), strong: true),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              '${formatPrice(onBill)} of this is on the room bill'
+              '${onBill == total ? '' : ' · ${formatPrice(total - onBill)} is not'}.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ServiceUsageTile extends StatelessWidget {
+  final BookingServiceUsage usage;
+
+  const _ServiceUsageTile({required this.usage});
+
+  @override
+  Widget build(BuildContext context) {
+    final started = DateTime.tryParse(usage.startedAt ?? '');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: AppTheme.s8,
+        runSpacing: 4,
+        children: [
+          Text(
+            usage.name,
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            '${usage.quantity} ${usage.unitLabel}${usage.headcount > 1 ? ' × ${usage.headcount} people' : ''}'
+            '${started != null ? ' · ${_formatDateTime(started)}' : ''}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          _StatusChip(
+            label: usage.billed
+                ? 'Billed'
+                : usage.status == 'COMPLETED'
+                ? 'Completed'
+                : 'In use',
+            color: usage.billed
+                ? AppTheme.heading
+                : usage.status == 'COMPLETED'
+                ? AppTheme.vacant
+                : AppTheme.accent,
+          ),
+          if (!usage.billed)
+            _StatusChip(
+              label: usage.onRoomBill ? 'On room bill' : 'Not on room bill',
+              color: usage.onRoomBill ? AppTheme.vacant : AppTheme.muted,
+            ),
+          Text(
+            formatPrice(usage.amount),
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatDateTime(DateTime dt) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+  final minute = dt.minute.toString().padLeft(2, '0');
+  final ampm = dt.hour < 12 ? 'AM' : 'PM';
+  return '${dt.day} ${months[dt.month - 1]}, $hour12:$minute $ampm';
+}
+
+class _StatusChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _StatusChip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
 // ── The bill, once one has been issued ──────────────────────────────────────
 
 /// A summary of the printed document first — invoice number, the tax it
@@ -1643,7 +1859,7 @@ class _BillSectionState extends State<_BillSection> {
           width: double.infinity,
           padding: const EdgeInsets.all(AppTheme.s16),
           decoration: BoxDecoration(
-            color: const Color(0xFFF3F4F6),
+            color: AppTheme.bg,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
@@ -1873,14 +2089,23 @@ class _MoneyLine extends StatelessWidget {
 
 // ── Shared shells ─────────────────────────────────────────────────────────
 
-/// A numbered header — the small purple badge and caps title every section
-/// on the web panel opens with — over whatever that section's own body is.
+/// A numbered header — a gradient icon badge, caps title and a muted number
+/// chip every section on the web panel opens with — over whatever that
+/// section's own body is. Mirrors the same icon-badge language the billing
+/// screens' own stay-details and itemised cards use, so the whole app reads
+/// as one design rather than a different header style per screen.
 class _Section extends StatelessWidget {
   final int number;
+  final IconData icon;
   final String title;
   final Widget child;
 
-  const _Section({required this.number, required this.title, required this.child});
+  const _Section({
+    required this.number,
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1894,35 +2119,57 @@ class _Section extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 20,
-                height: 20,
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppTheme.accent.withValues(alpha: 0.18),
+                      AppTheme.sidebarBrand.withValues(alpha: 0.10),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 14, color: AppTheme.accent),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+              Container(
+                width: 18,
+                height: 18,
                 alignment: Alignment.center,
                 decoration: const BoxDecoration(
-                  color: AppTheme.accent,
+                  color: AppTheme.bg,
                   shape: BoxShape.circle,
                 ),
                 child: Text(
                   '$number',
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+                    color: AppTheme.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
                   ),
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              Text(
-                title.toUpperCase(),
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s12),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
+            child: Divider(height: 1),
+          ),
           child,
         ],
       ),
@@ -1942,14 +2189,14 @@ class _FactBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppTheme.s16),
+      padding: const EdgeInsets.all(AppTheme.s12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Wrap(
-        spacing: AppTheme.s24,
-        runSpacing: AppTheme.s16,
+        spacing: AppTheme.s16,
+        runSpacing: AppTheme.s12,
         children: [for (final f in facts) f],
       ),
     );
@@ -2020,7 +2267,7 @@ class _EmptyBox extends StatelessWidget {
         vertical: AppTheme.s16,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: AppTheme.bg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(

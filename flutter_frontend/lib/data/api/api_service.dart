@@ -6,16 +6,21 @@ import 'package:dio/dio.dart';
 import '../../domain/models/asset.dart';
 import '../../domain/models/booking.dart';
 import '../../domain/models/category.dart';
+import '../../domain/models/checkout_policy.dart';
+import '../../domain/models/customer.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/event_booking.dart';
 import '../../domain/models/expense.dart';
 import '../../domain/models/food_order.dart';
 import '../../domain/models/guest_match.dart';
+import '../../domain/models/housekeeping.dart';
 import '../../domain/models/income.dart';
 import '../../domain/models/inventory.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/models/json.dart';
 import '../../domain/models/late_checkout.dart';
+import '../../domain/models/laundry.dart';
+import '../../domain/models/lodge_service.dart';
 import '../../domain/models/me.dart';
 import '../../domain/models/menu.dart';
 import '../../domain/models/quote.dart';
@@ -24,6 +29,7 @@ import '../../domain/models/room.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/session.dart';
 import '../../domain/models/staff.dart';
+import '../../domain/models/staff_alert.dart';
 import '../../domain/models/switchable_charge_listing.dart';
 import '../../domain/models/tape_chart.dart';
 
@@ -114,6 +120,17 @@ class ApiService {
     return Me.fromJson(_map(res.data));
   }
 
+  /// Upload or replace the public page's hero image — field name 'heroImage'.
+  Future<Me> updateMyLodgeHeroImage(FormData form) async {
+    final res = await _dio.put('/me/lodge/hero-image', data: form);
+    return Me.fromJson(_map(res.data));
+  }
+
+  Future<Me> removeMyLodgeHeroImage() async {
+    final res = await _dio.delete('/me/lodge/hero-image');
+    return Me.fromJson(_map(res.data));
+  }
+
   Future<Me> removeMyLodgeLogo() async {
     final res = await _dio.delete('/me/lodge/logo');
     return Me.fromJson(_map(res.data));
@@ -185,6 +202,26 @@ class ApiService {
     return MultiRoomQuote.fromJson(_map(res.data));
   }
 
+  /// The price simulator's own fetch: a line-by-line breakdown for a room
+  /// and a stay with no booking attached — see pricing.routes.js's /simulate.
+  Future<PriceSimulation> simulatePrice({
+    required int roomId,
+    required String date,
+    required String toDate,
+    String? chargeIds,
+  }) async {
+    final res = await _dio.get(
+      '/pricing/simulate',
+      queryParameters: {
+        'roomId': roomId,
+        'date': date,
+        'toDate': toDate,
+        if (chargeIds != null && chargeIds.isNotEmpty) 'chargeIds': chargeIds,
+      },
+    );
+    return PriceSimulation.fromJson(_map(res.data));
+  }
+
   /// The bed picker's own fetch, for a dormitory room and a chosen stay —
   /// which beds are free, and whether the whole room can still be bought out.
   Future<AvailableBeds> availableBeds({
@@ -229,6 +266,26 @@ class ApiService {
   Future<Booking> booking(int id) async {
     final res = await _dio.get('/bookings/$id');
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
+  }
+
+  /// Today's arrivals, due soon or already overdue — feeds the staff alerts
+  /// bell's "Arrivals today" section.
+  Future<List<CheckAlert>> checkinAlerts() async {
+    final res = await _dio.get('/bookings/checkin-alerts');
+    final body = _map(res.data);
+    return (body['alerts'] as List? ?? [])
+        .map((e) => CheckAlert.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Rooms whose check-out is due soon or already overdue — the bell's
+  /// "Check-outs" section.
+  Future<List<CheckAlert>> checkoutAlerts() async {
+    final res = await _dio.get('/bookings/checkout-alerts');
+    final body = _map(res.data);
+    return (body['alerts'] as List? ?? [])
+        .map((e) => CheckAlert.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// Guests this property has had before, matched on a partly-typed name —
@@ -364,6 +421,14 @@ class ApiService {
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
   }
 
+  /// Send the guest their booking confirmation on WhatsApp. Answers with the
+  /// server's outcome: `status` is 'sent', 'failed' (with `error`) or
+  /// 'skipped' (not configured, no number).
+  Future<Map<String, dynamic>> sendBookingWhatsApp(int id) async {
+    final res = await _dio.post('/bookings/$id/send-whatsapp');
+    return Map<String, dynamic>.from(_map(res.data)['whatsapp'] as Map);
+  }
+
   // ===== BOOKING DRAFTS =====
 
   /// Every parked booking on this property — the same list the web drafts
@@ -408,6 +473,14 @@ class ApiService {
     final res = await _dio.get('/billing/queue');
     return (_map(res.data)['bookings'] as List? ?? [])
         .map((e) => BillableStay.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Functions that are over (or marked complete) and have no bill yet.
+  Future<List<EventBooking>> eventBillingQueue() async {
+    final res = await _dio.get('/billing/event-queue');
+    return (_map(res.data)['events'] as List? ?? [])
+        .map((e) => EventBooking.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
@@ -493,6 +566,41 @@ class ApiService {
     final invoice = map['invoice'];
     return Invoice.fromJson(
       invoice is Map<String, dynamic> ? invoice : map,
+    );
+  }
+
+  /// What a standalone service bill will say, for the selected completed
+  /// usages — mirrors Billing.jsx's own `/billing/services/preview?ids=`.
+  Future<ServiceBillPreview> previewServiceBill(List<int> usageIds) async {
+    final res = await _dio.get(
+      '/billing/services/preview',
+      queryParameters: {'ids': usageIds.join(',')},
+    );
+    return ServiceBillPreview.fromJson(_map(res.data));
+  }
+
+  /// Bill the selected completed service usages on their own document.
+  Future<Invoice> issueServiceInvoice(
+    List<int> usageIds,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.post(
+      '/billing/services/invoice',
+      data: {...body, 'usageIds': usageIds},
+    );
+    final map = _map(res.data);
+    final invoice = map['invoice'];
+    return Invoice.fromJson(
+      invoice is Map<String, dynamic> ? invoice : map,
+    );
+  }
+
+  /// Charges the selected, completed services to [bookingId]'s room bill
+  /// instead of billing them on their own.
+  Future<void> addServicesToRoom(List<int> usageIds, int bookingId) async {
+    await _dio.post(
+      '/billing/services/add-to-room',
+      data: {'usageIds': usageIds, 'bookingId': bookingId},
     );
   }
 
@@ -1209,6 +1317,35 @@ class ApiService {
     await _dio.delete('/seasons/$id');
   }
 
+  // ===== CHECKOUT POLICY =====
+
+  Future<CheckoutPolicy> checkoutPolicy() async {
+    final res = await _dio.get('/rooms/checkout-policy');
+    return CheckoutPolicy.fromJson(_map(res.data)['policy'] as Map<String, dynamic>);
+  }
+
+  Future<CheckoutPolicy> updateCheckoutPolicy({
+    required String checkOutTime,
+    String? checkInTime,
+    required int lateGraceMinutes,
+    required num lateHalfDayPercent,
+    required int lateFullDayAfterMinutes,
+    required num lateFullDayPercent,
+  }) async {
+    final res = await _dio.patch(
+      '/rooms/checkout-policy',
+      data: {
+        'checkOutTime': checkOutTime,
+        if (checkInTime != null) 'checkInTime': checkInTime,
+        'lateGraceMinutes': lateGraceMinutes,
+        'lateHalfDayPercent': lateHalfDayPercent,
+        'lateFullDayAfterMinutes': lateFullDayAfterMinutes,
+        'lateFullDayPercent': lateFullDayPercent,
+      },
+    );
+    return CheckoutPolicy.fromJson(_map(res.data)['policy'] as Map<String, dynamic>);
+  }
+
   // ===== REPORTS (reports.view) =====
 
   /// The booking register over a date range — the same figures the web
@@ -1301,6 +1438,32 @@ class ApiService {
       queryParameters: {'fromDate': fromDate, 'toDate': toDate},
     );
     return FoodOrdersReport.fromJson(_map(res.data));
+  }
+
+  /// Other services (pool, gaming, guest laundry ...) over a date range —
+  /// Reports > Other services tab.
+  Future<ServicesReport> servicesReport({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/services',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return ServicesReport.fromJson(_map(res.data));
+  }
+
+  /// Hotel linen through the wash, and guest laundry orders, over a date
+  /// range — Reports > Laundry tab.
+  Future<LaundryReport> laundryReport({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final res = await _dio.get(
+      '/reports/laundry',
+      queryParameters: {'fromDate': fromDate, 'toDate': toDate},
+    );
+    return LaundryReport.fromJson(_map(res.data));
   }
 
   /// One period's Profit & Loss statement — Reports > Profit & Loss tab.
@@ -1507,21 +1670,13 @@ class ApiService {
     return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
   }
 
-  Future<EventBooking> holdEvent(int id, {int holdHours = 48}) async {
-    final res = await _dio.patch(
-      '/events/$id/hold',
-      data: {'holdHours': holdHours},
-    );
-    return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
-  }
-
   Future<EventBooking> confirmEvent(int id) async {
     final res = await _dio.patch('/events/$id/confirm');
     return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
   }
 
-  Future<EventBooking> releaseEvent(int id) async {
-    final res = await _dio.patch('/events/$id/release');
+  Future<EventBooking> completeEvent(int id) async {
+    final res = await _dio.patch('/events/$id/complete');
     return EventBooking.fromJson(_map(res.data)['event'] as Map<String, dynamic>);
   }
 
@@ -1570,8 +1725,20 @@ class ApiService {
   }
 
   /// What a function's bill will say — the detail screen's "Settle & bill".
-  Future<EventBillPreview> previewEventBill(int eventId) async {
-    final res = await _dio.get('/billing/events/$eventId/preview');
+  Future<EventBillPreview> previewEventBill(
+    int eventId, {
+    num discountAmount = 0,
+    String? discountReason,
+  }) async {
+    final res = await _dio.get(
+      '/billing/events/$eventId/preview',
+      queryParameters: {
+        if (discountAmount > 0) ...{
+          'discountAmount': discountAmount,
+          'discountReason': (discountReason ?? '').trim(),
+        },
+      },
+    );
     return EventBillPreview.fromJson(_map(res.data));
   }
 
@@ -2150,6 +2317,232 @@ class ApiService {
 
   Future<void> deleteRole(String roleKey) async {
     await _dio.delete('/roles/$roleKey');
+  }
+
+  // ===== CUSTOMERS (customers.manage) =====
+
+  Future<CustomersResult> customers() async {
+    final res = await _dio.get('/customers');
+    final map = _map(res.data);
+    return CustomersResult(
+      customers: (map['customers'] as List? ?? [])
+          .map((e) => Customer.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      stats: CustomersStats.fromJson(
+        (map['stats'] as Map<String, dynamic>?) ?? const {},
+      ),
+    );
+  }
+
+  Future<CustomerDetail> customer(int id) async {
+    final res = await _dio.get('/customers/$id');
+    return CustomerDetail.fromJson(
+      _map(res.data)['customer'] as Map<String, dynamic>,
+    );
+  }
+
+  /// Answers with the new customer's id — the caller reloads the list itself
+  /// rather than trusting a partial echo back.
+  Future<int> createCustomer(Map<String, dynamic> body) async {
+    final res = await _dio.post('/customers', data: body);
+    return asInt(_map(res.data)['id']);
+  }
+
+  Future<Customer?> updateCustomer(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/customers/$id', data: body);
+    final customer = _map(res.data)['customer'];
+    return customer is Map<String, dynamic> ? Customer.fromJson(customer) : null;
+  }
+
+  /// Registered ahead of /customers/:id on the backend so "feedback" is never
+  /// read as a customer id.
+  Future<CustomerFeedbackResult> customerFeedback() async {
+    final res = await _dio.get('/customers/feedback');
+    return CustomerFeedbackResult.fromJson(_map(res.data));
+  }
+
+  // ===== OTHER SERVICES (rooms.manage / bookings.manage / billing.manage) =====
+
+  Future<List<LodgeService>> lodgeServices({bool includeInactive = false}) async {
+    final res = await _dio.get('/lodge-services', queryParameters: {'includeInactive': includeInactive});
+    return (_map(res.data)['services'] as List? ?? [])
+        .map((e) => LodgeService.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Plain JSON for a status-only change (toggleActive); multipart FormData
+  /// when the form carries a photo — see serviceImageUpload on the server.
+  Future<LodgeService> createLodgeService(dynamic body) async {
+    final res = await _dio.post('/lodge-services', data: body);
+    return LodgeService.fromJson(_map(res.data)['service'] as Map<String, dynamic>);
+  }
+
+  Future<LodgeService> updateLodgeService(int id, dynamic body) async {
+    final res = await _dio.patch('/lodge-services/$id', data: body);
+    return LodgeService.fromJson(_map(res.data)['service'] as Map<String, dynamic>);
+  }
+
+  Future<List<ServiceUsage>> serviceUsages({String status = 'all'}) async {
+    final res = await _dio.get('/lodge-services/usages', queryParameters: {'status': status});
+    return (_map(res.data)['usages'] as List? ?? [])
+        .map((e) => ServiceUsage.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<ServiceUsage> startServiceUsage(Map<String, dynamic> body) async {
+    final res = await _dio.post('/lodge-services/usages', data: body);
+    return ServiceUsage.fromJson(_map(res.data)['usage'] as Map<String, dynamic>);
+  }
+
+  Future<ServiceUsage> updateServiceUsage(int id, Map<String, dynamic> body) async {
+    final res = await _dio.patch('/lodge-services/usages/$id', data: body);
+    return ServiceUsage.fromJson(_map(res.data)['usage'] as Map<String, dynamic>);
+  }
+
+  Future<ServiceUsage> completeServiceUsage(int id) async {
+    final res = await _dio.post('/lodge-services/usages/$id/complete');
+    return ServiceUsage.fromJson(_map(res.data)['usage'] as Map<String, dynamic>);
+  }
+
+  Future<ServiceUsage> cancelServiceUsage(int id) async {
+    final res = await _dio.post('/lodge-services/usages/$id/cancel');
+    return ServiceUsage.fromJson(_map(res.data)['usage'] as Map<String, dynamic>);
+  }
+
+  // ===== HOUSEKEEPING (housekeeping.manage) =====
+
+  Future<List<HousekeepingRoom>> housekeepingRooms() async {
+    final res = await _dio.get('/housekeeping/rooms');
+    return (_map(res.data)['rooms'] as List? ?? [])
+        .map((e) => HousekeepingRoom.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> startCleaning(int roomId) async {
+    await _dio.post('/housekeeping/rooms/$roomId/start');
+  }
+
+  Future<void> releaseRoom(int roomId) async {
+    await _dio.post('/housekeeping/rooms/$roomId/release');
+  }
+
+  Future<void> finishCleaning(int roomId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/rooms/$roomId/done', data: body);
+  }
+
+  Future<void> markRoomDirty(int roomId) async {
+    await _dio.post('/housekeeping/rooms/$roomId/dirty');
+  }
+
+  Future<void> setRoomOutOfOrder(int roomId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/rooms/$roomId/out-of-order', data: body);
+  }
+
+  Future<List<HousekeepingIssue>> housekeepingIssues({String scope = 'all'}) async {
+    final res = await _dio.get('/housekeeping/issues', queryParameters: {'scope': scope});
+    return (_map(res.data)['issues'] as List? ?? [])
+        .map((e) => HousekeepingIssue.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<OpenIssueSummary> openIssueSummary() async {
+    final res = await _dio.get('/housekeeping/issues/count');
+    return OpenIssueSummary.fromJson(_map(res.data));
+  }
+
+  Future<void> closeHousekeepingIssue(int logId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/issues/$logId/close', data: body);
+  }
+
+  // Event venues — the same board, same shape, a hall or lawn instead of a
+  // room. Empty list wherever Events is off.
+  Future<List<HousekeepingRoom>> housekeepingVenues() async {
+    final res = await _dio.get('/housekeeping/venues');
+    return (_map(res.data)['venues'] as List? ?? [])
+        .map((e) => HousekeepingRoom.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> startVenueCleaning(int venueId) async {
+    await _dio.post('/housekeeping/venues/$venueId/start');
+  }
+
+  Future<void> releaseVenue(int venueId) async {
+    await _dio.post('/housekeeping/venues/$venueId/release');
+  }
+
+  Future<void> finishVenueCleaning(int venueId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/venues/$venueId/done', data: body);
+  }
+
+  Future<void> markVenueDirty(int venueId) async {
+    await _dio.post('/housekeeping/venues/$venueId/dirty');
+  }
+
+  Future<void> setVenueOutOfOrder(int venueId, Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/venues/$venueId/out-of-order', data: body);
+  }
+
+  // ===== LAUNDRY (laundry.manage) =====
+
+  Future<LinenBoard> linenBoard() async {
+    final res = await _dio.get('/housekeeping/linen');
+    return LinenBoard.fromJson(_map(res.data));
+  }
+
+  Future<void> createLinenItem(Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/linen/items', data: body);
+  }
+
+  Future<void> updateLinenItem(int id, Map<String, dynamic> body) async {
+    await _dio.patch('/housekeeping/linen/items/$id', data: body);
+  }
+
+  Future<void> receiveLinenHandovers(List<int> movementIds) async {
+    await _dio.post('/housekeeping/linen/handovers/receive', data: {'movementIds': movementIds});
+  }
+
+  Future<void> sendToLaundry(Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/linen/send', data: body);
+  }
+
+  Future<void> receiveFromLaundry(Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/linen/receive', data: body);
+  }
+
+  Future<void> recordLinenLoss(Map<String, dynamic> body) async {
+    await _dio.post('/housekeeping/linen/loss', data: body);
+  }
+
+  Future<List<RecentGarment>> recentGarments() async {
+    final res = await _dio.get('/housekeeping/laundry/garments');
+    return (_map(res.data)['garments'] as List? ?? [])
+        .map((e) => RecentGarment.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<LaundryGuestStay>> laundryInHouseGuests() async {
+    final res = await _dio.get('/housekeeping/laundry/in-house');
+    return (_map(res.data)['guests'] as List? ?? [])
+        .map((e) => LaundryGuestStay.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<LaundryOrder>> laundryOrders({String scope = 'all'}) async {
+    final res = await _dio.get('/housekeeping/laundry/orders', queryParameters: {'scope': scope});
+    return (_map(res.data)['orders'] as List? ?? [])
+        .map((e) => LaundryOrder.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<LaundryOrder> createLaundryOrder(Map<String, dynamic> body) async {
+    final res = await _dio.post('/housekeeping/laundry/orders', data: body);
+    return LaundryOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
+  }
+
+  Future<LaundryOrder> setLaundryStatus(int id, Map<String, dynamic> body) async {
+    final res = await _dio.post('/housekeeping/laundry/orders/$id/status', data: body);
+    return LaundryOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

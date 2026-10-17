@@ -26,7 +26,6 @@ class MeUser {
   final String role;
   final String? roleName;
   final List<String> permissions;
-  final bool mustResetPassword;
 
   const MeUser({
     required this.id,
@@ -36,7 +35,6 @@ class MeUser {
     required this.role,
     this.roleName,
     this.permissions = const [],
-    this.mustResetPassword = false,
   });
 
   factory MeUser.fromJson(Map<String, dynamic> json) => MeUser(
@@ -51,7 +49,6 @@ class MeUser {
     permissions:
         (json['permissions'] as List?)?.map((e) => e.toString()).toList() ??
         const [],
-    mustResetPassword: asBool(json['mustResetPassword']),
   );
 
   bool can(String permission) => permissions.contains(permission);
@@ -95,6 +92,10 @@ class Lodge {
   /// committing to it on every printed document.
   final bool showLogoOnReceipt;
 
+  /// Owner/staff-set hero background of the public page — `/lodge-hero-images/<file>`.
+  /// Null falls back to the first room/venue photo.
+  final String? heroImageUrl;
+
   // ── What this property is ────────────────────────────────────────────────
   final bool hasRooms;
   final bool servesFood;
@@ -103,6 +104,9 @@ class Lodge {
   final bool hasEvents;
   final bool hasAssets;
   final bool hasExpenses;
+  final bool hasOtherServices;
+  final bool hasHousekeeping;
+  final bool hasLaundry;
 
   const Lodge({
     required this.id,
@@ -123,6 +127,7 @@ class Lodge {
     this.isSpecifiedPremises = false,
     this.logoUrl,
     this.showLogoOnReceipt = false,
+    this.heroImageUrl,
     this.hasRooms = false,
     this.servesFood = false,
     this.foodRoomService = false,
@@ -130,6 +135,9 @@ class Lodge {
     this.hasEvents = false,
     this.hasAssets = false,
     this.hasExpenses = false,
+    this.hasOtherServices = false,
+    this.hasHousekeeping = false,
+    this.hasLaundry = false,
   });
 
   factory Lodge.fromJson(Map<String, dynamic> json) => Lodge(
@@ -151,6 +159,7 @@ class Lodge {
     isSpecifiedPremises: asBool(json['isSpecifiedPremises']),
     logoUrl: asStringOrNull(json['logoUrl']),
     showLogoOnReceipt: asBool(json['showLogoOnReceipt']),
+    heroImageUrl: asStringOrNull(json['heroImageUrl']),
     hasRooms: asBool(json['hasRooms']),
     servesFood: asBool(json['servesFood']),
     foodRoomService: asBool(json['foodRoomService']),
@@ -158,6 +167,9 @@ class Lodge {
     hasEvents: asBool(json['hasEvents']),
     hasAssets: asBool(json['hasAssets']),
     hasExpenses: asBool(json['hasExpenses']),
+    hasOtherServices: asBool(json['hasOtherServices']),
+    hasHousekeeping: asBool(json['hasHousekeeping']),
+    hasLaundry: asBool(json['hasLaundry']),
   );
 }
 

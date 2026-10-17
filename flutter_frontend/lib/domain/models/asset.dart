@@ -9,6 +9,9 @@ class AssetCategory {
   final String? depreciationBlock;
   final num? depreciationRatePercent;
   final String depreciationMethod;
+  // The linen category: its assets carry a quantity and feed Laundry —
+  // mirrors is_linen in assets.service.js.
+  final bool isLinen;
 
   const AssetCategory({
     required this.id,
@@ -17,6 +20,7 @@ class AssetCategory {
     this.depreciationBlock,
     this.depreciationRatePercent,
     this.depreciationMethod = 'WDV',
+    this.isLinen = false,
   });
 
   factory AssetCategory.fromJson(Map<String, dynamic> json) => AssetCategory(
@@ -26,7 +30,23 @@ class AssetCategory {
     depreciationBlock: asStringOrNull(json['depreciationBlock']),
     depreciationRatePercent: asNumOrNull(json['depreciationRatePercent']),
     depreciationMethod: asStringOrNull(json['depreciationMethod']) ?? 'WDV',
+    isLinen: asBool(json['isLinen']),
   );
+}
+
+/// The linen category's own name — mirrors LINEN_CATEGORY in
+/// AssetsPanel.jsx. Its assets are a stock (bedsheets, towels), not one
+/// unit each, so they carry a [Asset.quantity] instead.
+const kLinenCategoryName = 'Bedsheets & Towels';
+
+/// Whether a typed/picked category name is the linen one — by its [isLinen]
+/// flag if it is an existing category, or by name for one not created yet.
+/// Mirrors isLinenCategory in AssetsPanel.jsx.
+bool isLinenCategoryName(String name, List<AssetCategory> categories) {
+  final typed = name.trim().toLowerCase();
+  if (typed.isEmpty) return false;
+  if (typed == kLinenCategoryName.toLowerCase()) return true;
+  return categories.any((c) => c.isLinen && c.name.trim().toLowerCase() == typed);
 }
 
 /// Standard Income Tax Act block rates, offered as a picker when assigning a
@@ -113,6 +133,10 @@ class Asset {
   final String? disposalNote;
   final num? recoveryCost;
   final String? disposedBy;
+  // How many of this asset are owned — only set for the linen category,
+  // which is a stock (bedsheets, towels) rather than one unit. Null for
+  // every other asset. Mirrors quantity in assets.service.js.
+  final int? quantity;
 
   const Asset({
     required this.id,
@@ -145,6 +169,7 @@ class Asset {
     this.disposalNote,
     this.recoveryCost,
     this.disposedBy,
+    this.quantity,
   });
 
   factory Asset.fromJson(Map<String, dynamic> json) => Asset(
@@ -178,6 +203,7 @@ class Asset {
     disposalNote: asStringOrNull(json['disposalNote']),
     recoveryCost: asNumOrNull(json['recoveryCost']),
     disposedBy: asStringOrNull(json['disposedBy']),
+    quantity: asIntOrNull(json['quantity']),
   );
 }
 

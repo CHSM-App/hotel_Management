@@ -6,6 +6,7 @@ import '../models/guest_match.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
+import '../models/staff_alert.dart';
 import '../models/tape_chart.dart';
 
 abstract class BookingRepository {
@@ -51,6 +52,12 @@ abstract class BookingRepository {
 
   Future<Booking> booking(int id);
 
+  /// Today's arrivals, due soon or already overdue.
+  Future<List<CheckAlert>> checkinAlerts();
+
+  /// Rooms whose check-out is due soon or already overdue.
+  Future<List<CheckAlert>> checkoutAlerts();
+
   /// Guests this property has had before, matched on a partly-typed name.
   Future<List<GuestMatch>> searchGuests(String query);
 
@@ -88,6 +95,10 @@ abstract class BookingRepository {
   /// Call off a reservation. Only a BOOKED stay can be cancelled. [body]
   /// settles whatever advance was on file.
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]);
+
+  /// Send the guest their booking confirmation on WhatsApp; the map carries
+  /// the server's `status` ('sent' / 'failed' / 'skipped') and any `error`.
+  Future<Map<String, dynamic>> sendWhatsApp(int id);
 
   /// Every parked booking on this property.
   Future<List<BookingDraft>> drafts();

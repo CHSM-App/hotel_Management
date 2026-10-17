@@ -128,6 +128,12 @@ function roomChargeLines(booking) {
       const prev = totals.get(line.label) ?? { label: line.label, amount: 0, nights: 0 };
       prev.amount = round2(prev.amount + Number(line.amount));
       prev.nights += 1;
+      // First and last night the line ran, so a room on its own dates can say
+      // when it checked in and out.
+      if (night.date) {
+        prev.firstDate = prev.firstDate && prev.firstDate < night.date ? prev.firstDate : night.date;
+        prev.lastDate = prev.lastDate && prev.lastDate > night.date ? prev.lastDate : night.date;
+      }
       totals.set(line.label, prev);
     }
   }
@@ -627,23 +633,35 @@ async function loadPricingContext(pool, booking, foodOrders) {
   };
 }
 
-// On a CYCLE property the nights are counted by the clock, so a guest who
-// booked two and left after one has paid for a night the room can be re-let
-// for. The bill still prices every booked night — that is what was sold — but
-// the desk is told how much of it was never used, so it can take that off
-// with the ordinary discount if the owner wants to. Null on every other mode,
-// and on a stay with no arrival or departure on record to count between.
-function earlyCheckoutOf(booking, grossNights) {
-  if (booking.checkin_mode !== 'CYCLE') return null;
-  if (!booking.actual_check_in_at || !booking.actual_check_out_at) return null;
-
-  const plannedNights = grossNights.length;
-  const actualNights = lateCheckout.cycleNights({
+// How many nights a stay actually used, counted the way its mode counts a
+// night: HOUR_24 in 24-hour blocks from arrival, CYCLE and NIGHT_BASED by the
+// clock-time boundary they share (see checkoutDeadline).
+function actualNightsOf(booking) {
+  if (booking.checkin_mode === 'HOUR_24') {
+    return lateCheckout.hourlyNights({
+      actualCheckInAt: booking.actual_check_in_at,
+      at: new Date(booking.actual_check_out_at),
+      graceMinutes: booking.late_grace_minutes,
+    });
+  }
+  return lateCheckout.cycleNights({
     checkOutTime: toClockTime(booking.check_out_time),
     actualCheckInAt: booking.actual_check_in_at,
     at: new Date(booking.actual_check_out_at),
     graceMinutes: booking.late_grace_minutes,
   });
+}
+
+// Whatever the mode, the bill still prices every booked night — that is what
+// was sold — but a guest who left before they ran out is shown how much of
+// the stay was never used, so the desk can take that off with the ordinary
+// discount if the owner wants to. Null on a stay with no arrival or departure
+// on record to count between, or one that ran its full length.
+function earlyCheckoutOf(booking, grossNights) {
+  if (!booking.actual_check_in_at || !booking.actual_check_out_at) return null;
+
+  const plannedNights = grossNights.length;
+  const actualNights = actualNightsOf(booking);
   const unusedNights = Math.max(0, plannedNights - actualNights);
   if (unusedNights === 0) return null;
 
@@ -916,7 +934,7 @@ function serviceSideOf(usages, netSubtotal) {
 const SERVICE_NOT_ON_STAY_BILL = `(on_room_bill = 0 OR EXISTS (
   SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = dbo.service_usages.booking_id AND bi.status = 'ISSUED'))`;
 
-const SERVICE_COLUMNS = `id, service_name, unit_price, gst_rate_percent, quantity, line_total, guest_name, guest_phone, room_id, booking_id`;
+const SERVICE_COLUMNS = `id, service_name, unit_price, gst_rate_percent, quantity, headcount, line_total, guest_name, guest_phone, room_id, booking_id, laundry_order_id`;
 
 function mapServiceUsage(row) {
   return {
@@ -925,11 +943,13 @@ function mapServiceUsage(row) {
     unitPrice: Number(row.unit_price),
     gstRatePercent: Number(row.gst_rate_percent),
     quantity: Number(row.quantity),
+    headcount: Number(row.headcount),
     lineTotal: Number(row.line_total),
     guestName: row.guest_name ?? null,
     guestPhone: row.guest_phone ?? null,
     roomId: row.room_id ?? null,
     bookingId: row.booking_id ?? null,
+    laundryOrderId: row.laundry_order_id ?? null,
   };
 }
 

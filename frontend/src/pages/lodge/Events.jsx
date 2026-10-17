@@ -7,21 +7,28 @@ import { formatPrice } from './priceFormat';
 import EventForm from './EventForm';
 import EventDetail from './EventDetail';
 import PageLoader from '../../components/PageLoader';
+import IconButton from '../../components/IconButton';
+import { EditIcon } from '../../components/ActionIcons';
+import Req from '../../components/RequiredMark';
+import { Modal } from './HousekeepingParts';
 import {
   EVENT_STATUS_COLOR,
   EVENT_STATUS_LABEL,
   EVENT_TYPE_LABEL,
   addDays,
   eventDayKeys,
+  eventPhase,
+  eventPhaseLabel,
   formatDateHead,
   formatEventDate,
+  formatEventTime,
   formatEventWhen,
-  formatHoldRemaining,
   formatMonthBand,
   formatWindowLabel,
   isClosedStatus,
   isWeekend,
   monthRuns,
+  phaseTagClass,
   statusBadgeClass,
   toDateKey,
 } from './eventFormat';
@@ -32,6 +39,8 @@ import './tapeChart.css';
 import '../internal/LodgesDashboard.css';
 import './GuestRegister.css';
 import './InventoryPanel.css';
+import './MenuPanel.css';
+import './RoomsPanel.css';
 import './Events.css';
 
 const TABS = [
@@ -55,7 +64,13 @@ const MAX_WINDOW_DAYS = 180;
 // How close to an edge counts as "at the edge" — a little over three columns.
 const GROW_WITHIN_PX = 90;
 // The order the legend reads in — the walk a booking takes.
-const DIARY_STATUSES = ['ENQUIRY', 'TENTATIVE', 'CONFIRMED', 'SETTLED'];
+const DIARY_STATUSES = ['CONFIRMED', 'SETTLED', 'DRAFT', 'CANCELLED'];
+// The housekeeping statuses that mean a venue is not ready, as on the room chart.
+const NOT_READY = {
+  DIRTY: 'Needs cleaning',
+  CLEANING: 'Being cleaned',
+  OUT_OF_ORDER: 'Under repair',
+};
 
 function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, refreshKey }) {
   const token = getSession()?.token;
@@ -63,9 +78,37 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
   const [windowStart, setWindowStart] = useState(() => addDays(today, -WINDOW_PAST_DAYS));
   const [windowDays, setWindowDays] = useState(WINDOW_DAYS);
   const [events, setEvents] = useState([]);
-  const [holds, setHolds] = useState([]);
   const [error, setError] = useState('');
   const [hover, setHover] = useState(null);
+  // Venues housekeeping says are not ready right now, by venue id. null until
+  // the board answers, and for good where Housekeeping is off and the request
+  // is refused.
+  const [notReady, setNotReady] = useState(null);
+  // The time as of the last answer from the board, for "has this function ended".
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let ignore = false;
+    const load = () =>
+      apiGet('/housekeeping/venues', { token })
+        .then((d) => {
+          if (ignore) return;
+          setNow(Date.now());
+          setNotReady(
+            new Map(
+              d.venues
+                .filter((v) => NOT_READY[v.status])
+                .map((v) => [String(v.id), { label: NOT_READY[v.status], note: v.status === 'OUT_OF_ORDER' ? v.outOfOrderNote || '' : '' }])
+            )
+          );
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 30000);
+    return () => {
+      ignore = true;
+      clearInterval(timer);
+    };
+  }, [token, refreshKey]);
 
   const dates = useMemo(() => Array.from({ length: windowDays }, (_, i) => addDays(windowStart, i)), [windowStart, windowDays]);
   // Always the first page's span, even once the chart has grown from
@@ -77,16 +120,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
     apiGet(`/events?${q}`, { token })
       .then((data) => {
         const list = data.events || [];
-        // Holds lapsing within two days, soonest first. Worked out when the
-        // window loads rather than on every render: a hold that lapses while
-        // the diary sits open is caught by the next fetch.
-        const limit = Date.now() + 48 * 3600 * 1000;
         setEvents(list);
-        setHolds(
-          list
-            .filter((e) => e.status === 'TENTATIVE' && e.holdExpiresAt && new Date(e.holdExpiresAt).getTime() <= limit)
-            .sort((a, b) => new Date(a.holdExpiresAt) - new Date(b.holdExpiresAt))
-        );
         setError('');
       })
       .catch((err) => setError(err.message));
@@ -110,6 +144,55 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
     }
     return map;
   }, [events, showClosed]);
+
+  // Today's functions, asked for on their own: the chart's window can be
+  // stepped months away, and "what is on now" still has to be answered. Asked
+  // again each minute, which is also what moves a function from Upcoming to In
+  // Progress on the chart without a refresh.
+  const [todays, setTodays] = useState([]);
+  useEffect(() => {
+    let ignore = false;
+    const load = () =>
+      apiGet(`/events?${new URLSearchParams({ fromDate: today, toDate: today })}`, { token })
+        .then((d) => {
+          if (ignore) return;
+          setTodays(d.events || []);
+          setNow(Date.now());
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 60000);
+    return () => {
+      ignore = true;
+      clearInterval(timer);
+    };
+  }, [token, today, refreshKey]);
+  const liveNow = todays.filter((e) => eventPhase(e, now) === 'IN_PROGRESS');
+  const nextUp = todays.find((e) => eventPhase(e, now) === 'UPCOMING');
+
+  // The function a not-ready venue is waiting to be cleaned after: the last one
+  // there to be over, by its booked end or by the desk marking it completed. Its
+  // tile keeps its status colour — that is the money — and carries a strip in
+  // the not-ready colour until housekeeping is done. Only one that ended today
+  // or yesterday: a hall closed for repair a week on says nothing about a
+  // function from last week.
+  const awaitingClean = useMemo(() => {
+    const ids = new Set();
+    if (!notReady || notReady.size === 0) return ids;
+    const since = addDays(today, -1);
+    const last = new Map(); // venue → { id, over }
+    for (const ev of events) {
+      if (!['CONFIRMED', 'SETTLED'].includes(ev.status) || !notReady.has(String(ev.venueId))) continue;
+      const end = new Date(ev.endAt).getTime();
+      const done = ev.completedAt ? new Date(ev.completedAt).getTime() : null;
+      const over = done != null && done < end ? done : end;
+      if (over > now || toDateKey(new Date(over)) < since) continue;
+      const seen = last.get(ev.venueId);
+      if (!seen || over > seen.over) last.set(ev.venueId, { id: ev.id, over });
+    }
+    last.forEach((v) => ids.add(v.id));
+    return ids;
+  }, [events, notReady, today, now]);
 
   // A retired venue keeps its row while something is still booked on it.
   const rows = venues.filter((v) => v.isActive || cells.has(v.id));
@@ -208,6 +291,8 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
       const classes = ['tape-tile', 'tape-tile--vacant'];
       if (isWeekend(d)) classes.push('tape-tile--weekend');
       if (d < today) classes.push('tape-tile--past');
+      // A fact about now, so it colours today and no other day.
+      if (d === today && notReady?.has(String(venue.id))) classes.push('tape-tile--notready');
       return (
         <button
           key={d}
@@ -218,7 +303,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
           onFocus={(e) => showHover(e, { venue, date: d, ev: null })}
           onMouseLeave={hide}
           onBlur={hide}
-          aria-label={`${venue.name} vacant on ${formatEventDate(`${d}T00:00:00`)} — start an enquiry`}
+          aria-label={`${venue.name} vacant on ${formatEventDate(`${d}T00:00:00`)} — start a new event`}
         />
       );
     }
@@ -229,6 +314,11 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
           if (first) classes.push('events-tape__seg--start');
           if (last) classes.push('events-tape__seg--end');
           if (hover?.ev?.id === ev.id) classes.push('events-tape__seg--active');
+          if (awaitingClean.has(ev.id)) classes.push('events-tape__seg--notready');
+          // In time, as well as in money. The colour stays the status at full
+          // strength; the function in the hall now carries a dot on today's.
+          const phase = eventPhase(ev, now);
+          if (phase === 'IN_PROGRESS' && d === today) classes.push('events-tape__seg--live');
           return (
             <button
               key={ev.id}
@@ -273,11 +363,48 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
           Show cancelled
         </label>
         <button type="button" className="btn-accent" onClick={() => onNew(null, null)}>
-          + New enquiry
+          + New event
         </button>
       </div>
 
+      {/* What is on now and what is next today, in words, so nobody has to
+          read it off the chart. Nothing on a day with no functions left. */}
+      {(liveNow.length > 0 || nextUp) && (
+        <div className="events-today" role="status">
+          <span className="events-today__label">Today</span>
+          {liveNow.map((ev) => (
+            <button key={ev.id} type="button" className="events-today__item" onClick={() => onOpen(ev.id)}>
+              <span className="events-today__tag events-today__tag--live">In progress</span>
+              <strong>{ev.title}</strong>
+              <span className="events-today__meta">
+                {ev.venueName} · until {formatEventTime(ev.endAt)}
+              </span>
+            </button>
+          ))}
+          {nextUp && (
+            <button type="button" className="events-today__item" onClick={() => onOpen(nextUp.id)}>
+              <span className="events-today__tag">Up next</span>
+              <strong>{nextUp.title}</strong>
+              <span className="events-today__meta">
+                {nextUp.venueName} · {formatEventTime(nextUp.startAt)}
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="tape-legend">
+        <span className="tape-legend__item">
+          <i className="tape-legend__swatch tape-legend__swatch--vacant" />
+          Vacant
+        </span>
+        {/* Only where Housekeeping is on, and so has something to say. */}
+        {notReady && (
+          <span className="tape-legend__item" title="Needs cleaning, being cleaned or under repair today">
+            <i className="tape-legend__swatch tape-legend__swatch--notready" />
+            Not ready
+          </span>
+        )}
         {DIARY_STATUSES.map((s) => (
           <button
             key={s}
@@ -290,11 +417,12 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
             {EVENT_STATUS_LABEL[s]}
           </button>
         ))}
+        {/* The mark a tile can carry, keyed like the colours are. */}
         <span className="tape-legend__item">
-          <i className="tape-legend__swatch tape-legend__swatch--vacant" />
-          Vacant
+          <i className="tape-legend__swatch events-legend__mark events-legend__mark--live" />
+          In progress
         </span>
-        <span className="tape-legend__hint">Click a colour to list those functions · hover a tile to see the function · click to open · click a vacant day to start an enquiry</span>
+        <span className="tape-legend__hint">Click a colour to list those functions · hover a tile to see the function · click to open · click a vacant day to start a new event</span>
       </div>
 
       {error && <div className="form-banner form-banner--error">{error}</div>}
@@ -351,9 +479,14 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
                   <span key={col} className="tape-month__divider" style={{ '--tape-edge-col': col }} />
                 ))}
               </div>
-              {rows.map((venue) => (
+              {rows.map((venue) => {
+                const hk = notReady?.get(String(venue.id));
+                return (
                 <div key={venue.id} className={`tape-month__row${hover?.venue.id === venue.id ? ' tape-month__row--active' : ''}`}>
-                  <div className="tape-month__room">
+                  <div
+                    className={`tape-month__room${hk ? ' tape-month__room--notready' : ''}`}
+                    title={hk ? `${hk.label}${hk.note ? ` · ${hk.note}` : ''}` : undefined}
+                  >
                     <strong>{venue.name}</strong>
                     {venue.capacityPax ? <span>up to {venue.capacityPax}</span> : null}
                   </div>
@@ -362,24 +495,11 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
                     <span key={col} className="tape-month__divider" style={{ '--tape-edge-col': col }} />
                   ))}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </section>
-      )}
-
-      {holds.length > 0 && (
-        <div className="dash-card events-holds">
-          <h4>Holds expiring soon</h4>
-          {holds.map((ev) => (
-            <button key={ev.id} type="button" className="events-holds__row" onClick={() => onOpen(ev.id)}>
-              <span>
-                <strong>{ev.title}</strong> · {ev.venueName} · {ev.organiserName}
-              </span>
-              <span className="events-holds__when">expires {formatHoldRemaining(ev.holdExpiresAt)}</span>
-            </button>
-          ))}
-        </div>
       )}
 
       {hover && (
@@ -389,6 +509,7 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
               <span className="tape-tooltip__top">
                 <span className="tape-tooltip__dot" style={{ background: EVENT_STATUS_COLOR[hover.ev.status] }} />
                 {EVENT_STATUS_LABEL[hover.ev.status]}
+                {awaitingClean.has(hover.ev.id) ? ' · venue not ready' : ''}
               </span>
               <strong>{hover.ev.title}</strong>
               <span className="tape-tooltip__meta">
@@ -398,22 +519,39 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
               <span className="tape-tooltip__meta">
                 {hover.ev.organiserName} · {hover.ev.organiserPhone} · {hover.ev.expectedPax} guests
               </span>
-              {hover.ev.status === 'TENTATIVE' && hover.ev.holdExpiresAt && (
-                <span className="tape-tooltip__hint">Hold expires {formatHoldRemaining(hover.ev.holdExpiresAt)}</span>
-              )}
               {isClosedStatus(hover.ev.status) && (
-                <span className="tape-tooltip__hint">{hover.ev.status === 'CANCELLED' ? 'Cancelled' : 'Hold lapsed'} — kept for the record</span>
+                <span className="tape-tooltip__hint">Cancelled — kept for the record</span>
+              )}
+              {eventPhase(hover.ev, now) && (
+                <span className="tape-tooltip__meta">
+                  {hover.ev.completedAt ? `Completed ${formatEventTime(hover.ev.completedAt)}` : eventPhaseLabel(hover.ev, now)}
+                </span>
+              )}
+              {/* The hall is not ready: said on the function it is waiting to be
+                  cleaned after, and on any function there today. */}
+              {(hover.date === today || awaitingClean.has(hover.ev.id)) && !isClosedStatus(hover.ev.status) && notReady?.get(String(hover.venue.id)) && (
+                <span className="tape-tooltip__hint tape-tooltip__hint--notready">
+                  Venue: {notReady.get(String(hover.venue.id)).label.toLowerCase()}
+                </span>
               )}
             </>
           ) : (
             <>
-              <span className="tape-tooltip__top">
-                <span className="tape-tooltip__dot tape-tooltip__dot--vacant" />
-                Vacant
-              </span>
+              {(() => {
+                const hk = hover.date === today ? notReady?.get(String(hover.venue.id)) : null;
+                return (
+                  <>
+                    <span className="tape-tooltip__top">
+                      <span className={`tape-tooltip__dot tape-tooltip__dot--${hk ? 'notready' : 'vacant'}`} />
+                      {hk ? `Vacant · ${hk.label.toLowerCase()}` : 'Vacant'}
+                    </span>
+                    {hk?.note && <span className="tape-tooltip__meta">{hk.note}</span>}
+                  </>
+                );
+              })()}
               <strong>{hover.venue.name}</strong>
               <span className="tape-tooltip__dates">{formatEventDate(`${hover.date}T00:00:00`)}</span>
-              <span className="tape-tooltip__hint">{hover.past ? 'Past date — bookings are closed' : 'Click to start an enquiry'}</span>
+              <span className="tape-tooltip__hint">{hover.past ? 'Past date — bookings are closed' : 'Click to start a new event'}</span>
             </>
           )}
         </div>
@@ -473,15 +611,13 @@ const EVENT_PRESETS = [
   { key: 'next', label: 'Next 30 days', range: () => ({ from: todayKey(), to: addDays(todayKey(), 30) }) },
 ];
 
-// Dots reuse the booking register's swatches: amber is held, red is sold,
-// slate is finished, blue is an open enquiry.
+// Dots reuse the booking register's swatches: amber is a draft, red is sold,
+// slate is finished.
 const EVENT_STATUS_SWATCH = {
-  ENQUIRY: 'checked-in',
-  TENTATIVE: 'draft',
+  DRAFT: 'draft',
   CONFIRMED: 'booked',
   SETTLED: 'checked-out',
   CANCELLED: 'cancelled',
-  EXPIRED: 'cancelled',
 };
 
 function EventStatTile({ label, value, note, active, hint, onClick, className = '' }) {
@@ -567,7 +703,7 @@ function EventList({ venues, onOpen, refreshKey }) {
     for (const e of events || []) c[e.status] = (c[e.status] || 0) + 1;
     return c;
   }, [events]);
-  const live = (events || []).filter((e) => !['CANCELLED', 'EXPIRED'].includes(e.status));
+  const live = (events || []).filter((e) => e.status !== 'CANCELLED');
   const stats = {
     functions: live.length,
     guests: live.reduce((n, e) => n + Number(e.finalPax ?? e.expectedPax ?? 0), 0),
@@ -825,13 +961,14 @@ function EventList({ venues, onOpen, refreshKey }) {
                     <td className={`events-list__num${ev.advanceAmount ? '' : ' events-sheet__zero'}`}>{formatPrice(ev.advanceAmount || 0)}</td>
                     <td
                       className={`events-list__num${
-                        Number(ev.balanceDue) > 0 && !['SETTLED', 'CANCELLED', 'EXPIRED'].includes(ev.status) ? ' events-sheet__due' : ''
+                        Number(ev.balanceDue) > 0 && !['SETTLED', 'CANCELLED'].includes(ev.status) ? ' events-sheet__due' : ''
                       }`}
                     >
                       {formatPrice(ev.balanceDue)}
                     </td>
                     <td>
                       <span className={statusBadgeClass(ev.status)}>{EVENT_STATUS_LABEL[ev.status] || ev.status}</span>
+                      {eventPhase(ev) && <span className={phaseTagClass(eventPhase(ev))}>{eventPhaseLabel(ev)}</span>}
                     </td>
                   </tr>
                 ))}
@@ -949,27 +1086,63 @@ function PhotoStrip({ existing = [], files = [], urlFor, onRemoveFile, onDeleteE
   );
 }
 
-// One card for venues and one for add-ons: same list, same add row, same
-// edit-in-place — only the columns differ, so the shape is shared. `photos`
-// is what the venue card has and the add-on card does not: when given, the
-// draft and the edit carry an imageFiles queue, the rows show a thumbnail,
-// and onAdd/onSave receive the files with the fields.
-function CatalogueCard({ title, hint, items, columns, onAdd, onSave, onToggle, rowClass, photos = null }) {
-  const blank = () => ({
-    ...Object.fromEntries(columns.map((c) => [c.key, c.type === 'checkbox' ? false : ''])),
-    ...(photos ? { imageFiles: [] } : {}),
-  });
-  const [draft, setDraft] = useState(blank);
-  const [editingId, setEditingId] = useState(null);
-  const [edit, setEdit] = useState({});
+// Add-ons, in the price chart's shape: the list, then a button that opens a
+// popup. The same popup edits one.
+function AddonsTab({ addons, reloadCatalogue }) {
+  const token = getSession()?.token;
+  const [form, setForm] = useState(null); // { id, name, defaultAmount, isPerUnit }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const setField = (key, value) => {
+    setForm((d) => ({ ...d, [key]: value }));
+    setFieldErrors((errs) => (errs[key] ? { ...errs, [key]: '' } : errs));
+  };
 
-  const run = async (fn) => {
+  const open = (a) => {
+    setFormError('');
+    setFieldErrors({});
+    setForm(
+      a
+        ? { id: a.id, name: a.name, defaultAmount: a.defaultAmount ?? '', isPerUnit: Boolean(a.isPerUnit) }
+        : { id: null, name: '', defaultAmount: '', isPerUnit: false }
+    );
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const errs = {};
+    if (!String(form.name).trim()) errs.name = 'Add-on name is required';
+    if (!(Number(form.defaultAmount) > 0)) errs.defaultAmount = 'Price is required';
+    setFieldErrors(errs);
+    const first = ['name', 'defaultAmount'].find((key) => errs[key]);
+    if (first) {
+      setFormError('');
+      document.getElementById({ name: 'addonName', defaultAmount: 'addonPrice' }[first])?.focus();
+      return;
+    }
+    const body = { name: String(form.name).trim(), defaultAmount: Number(form.defaultAmount) || 0, isPerUnit: Boolean(form.isPerUnit) };
+    setBusy(true);
+    setFormError('');
+    try {
+      if (form.id) await apiPatch(`/events/addons/${form.id}`, body, { token });
+      else await apiPost('/events/addons', body, { token });
+      await reloadCatalogue();
+      setForm(null);
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (a) => {
     setBusy(true);
     setError('');
     try {
-      await fn();
+      await apiPatch(`/events/addons/${a.id}`, { isActive: !a.isActive }, { token });
+      await reloadCatalogue();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -977,169 +1150,146 @@ function CatalogueCard({ title, hint, items, columns, onAdd, onSave, onToggle, r
     }
   };
 
-  // Adds to a queue without going past the cap, counting what the venue
-  // already has when this is an edit.
-  const queueFiles = (setState, savedCount) => (fileList) => {
-    setState((d) => {
-      const room = photos.max - savedCount - (d.imageFiles || []).length;
-      if (room <= 0) return d;
-      return { ...d, imageFiles: [...(d.imageFiles || []), ...fileList.slice(0, room)] };
-    });
-  };
-  const dropFile = (setState) => (index) =>
-    setState((d) => ({ ...d, imageFiles: (d.imageFiles || []).filter((_, i) => i !== index) }));
-
-  const input = (col, value, set) =>
-    col.type === 'checkbox' ? (
-      <label className="events__toggle" key={col.key}>
-        <input type="checkbox" checked={Boolean(value)} onChange={(e) => set(col.key, e.target.checked)} />
-        {col.label}
-      </label>
-    ) : (
-      <input
-        key={col.key}
-        type={col.type || 'text'}
-        min={col.type === 'number' ? 0 : undefined}
-        placeholder={col.label}
-        value={value ?? ''}
-        onChange={(e) => set(col.key, e.target.value)}
-      />
-    );
-
   return (
-    <div className="dash-card chart-section">
-      <div className="chart-section__header">
-        <h3>{title}</h3>
-        <span className="chart-section__hint">{hint}</span>
-      </div>
-      {error && <div className="form-banner form-banner--error">{error}</div>}
-      <div className="chart-list">
-        {items.length === 0 && <div className="events-detail__empty">Nothing set up yet.</div>}
-        {items.map((it) => (
-          <div key={it.id} className="chart-row">
-            {editingId === it.id ? (
-              <div className="events-setup__edit-row">
-                {columns.map((c) => input(c, edit[c.key], (k, v) => setEdit((d) => ({ ...d, [k]: v }))))}
-                {photos && (
-                  <PhotoButton
-                    total={(it.images || []).length + (edit.imageFiles || []).length}
-                    max={photos.max}
-                    accept={photos.accept}
-                    disabled={busy}
-                    onAddFiles={queueFiles(setEdit, (it.images || []).length)}
-                  />
-                )}
+    <div className="events-setup">
+      <div className="dash-card chart-section">
+        <div className="chart-section__header">
+          <h3>Add-ons</h3>
+          <span className="chart-section__hint">Extras quoted on top of venue and plates — DJ, decor, mandap. Priced per day.</span>
+        </div>
+        {error && <div className="form-banner form-banner--error">{error}</div>}
+        <div className="chart-list">
+          {addons.length === 0 && <div className="events-detail__empty">Nothing set up yet.</div>}
+          {addons.map((a) => (
+            <div key={a.id} className="chart-row">
+              <span className="chart-row__name">
+                {a.name}
+                {!a.isActive && <span className="badge badge--off chart-row__badge">Inactive</span>}
+              </span>
+              <span className="chart-row__value">
+                {formatPrice(a.defaultAmount)}
+                {a.isPerUnit ? ' per unit/day' : '/day'}
                 <span className="chart-row__actions">
-                  <button
-                    type="button"
-                    className="chart-row__link-btn"
-                    disabled={busy}
-                    onClick={() =>
-                      run(async () => {
-                        await onSave(it.id, edit);
-                        setEditingId(null);
-                      })
-                    }
-                  >
-                    Save
-                  </button>
-                  <button type="button" className="chart-row__link-btn" onClick={() => setEditingId(null)} disabled={busy}>
-                    Cancel
+                  <IconButton label={`Edit ${a.name}`} icon={<EditIcon />} onClick={() => open(a)} />
+                  <button type="button" className="chart-row__link-btn" disabled={busy} onClick={() => toggleActive(a)}>
+                    {a.isActive ? 'Deactivate' : 'Activate'}
                   </button>
                 </span>
-                {photos && (
-                  <PhotoStrip
-                    existing={it.images || []}
-                    files={edit.imageFiles || []}
-                    urlFor={photos.urlFor}
-                    disabled={busy}
-                    onRemoveFile={dropFile(setEdit)}
-                    onDeleteExisting={(imageId) => run(() => photos.onDelete(it.id, imageId))}
-                  />
-                )}
-              </div>
-            ) : (
-              <>
-                <span className="chart-row__name">
-                  {photos && it.images?.length > 0 && (
-                    <span className="events-setup__thumb">
-                      <img src={photos.urlFor(it.images[0].filename)} alt="" />
-                      {it.images.length > 1 && <span className="events-setup__thumb-count">+{it.images.length - 1}</span>}
-                    </span>
-                  )}
-                  {it.name}
-                  {!it.isActive && <span className="badge badge--off chart-row__badge">inactive</span>}
-                </span>
-                <span className="chart-row__value">
-                  {rowClass(it)}
-                  <span className="chart-row__actions">
-                    <button
-                      type="button"
-                      className="chart-row__link-btn"
-                      onClick={() => {
-                        setEdit({
-                          ...Object.fromEntries(columns.map((c) => [c.key, it[c.key] ?? (c.type === 'checkbox' ? false : '')])),
-                          ...(photos ? { imageFiles: [] } : {}),
-                        });
-                        setEditingId(it.id);
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button type="button" className="chart-row__link-btn" disabled={busy} onClick={() => run(() => onToggle(it))}>
-                      {it.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </span>
-                </span>
-              </>
-            )}
-          </div>
-        ))}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="chart-section__add">
+          <button type="button" className="btn-accent" onClick={() => open(null)}>
+            + Add New Add-on
+          </button>
+        </div>
       </div>
-      <div
-        className={`inline-add-form__row${columns.some((c) => c.type === 'checkbox') ? ' inline-add-form__row--addons' : ''}${
-          photos ? ' inline-add-form__row--photos' : ''
-        }`}
-      >
-        {columns.map((c) => input(c, draft[c.key], (k, v) => setDraft((d) => ({ ...d, [k]: v }))))}
-        {photos && (
-          <PhotoButton
-            total={(draft.imageFiles || []).length}
-            max={photos.max}
-            accept={photos.accept}
-            disabled={busy}
-            onAddFiles={queueFiles(setDraft, 0)}
-          />
-        )}
-        <button
-          type="button"
-          className="btn-accent"
-          disabled={busy || !String(draft.name || '').trim()}
-          onClick={() =>
-            run(async () => {
-              await onAdd(draft);
-              setDraft(blank());
-            })
+
+      {form && (
+        <Modal
+          title={form.id ? 'Edit add-on' : 'Add new add-on'}
+          sub="An extra quoted on top of the venue, such as DJ, decor or mandap."
+          busy={busy}
+          onClose={() => setForm(null)}
+          footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={() => setForm(null)} disabled={busy}>
+                Cancel
+              </button>
+              <button type="submit" form="addonForm" className="btn-accent" disabled={busy}>
+                {busy ? 'Saving…' : form.id ? 'Save changes' : 'Add add-on'}
+              </button>
+            </>
           }
         >
-          Add
-        </button>
-      </div>
-      {photos && (
-        <PhotoStrip
-          files={draft.imageFiles || []}
-          urlFor={photos.urlFor}
-          disabled={busy}
-          onRemoveFile={dropFile(setDraft)}
-          onDeleteExisting={() => {}}
-        />
+          <form id="addonForm" className="events-setup-form" onSubmit={submit} noValidate>
+            {formError && <div className="form-banner form-banner--error">{formError}</div>}
+            <div className="field">
+              <label htmlFor="addonName">
+                Add-on name
+                <Req />
+              </label>
+              <input
+                id="addonName"
+                value={form.name}
+                aria-invalid={Boolean(fieldErrors.name) || undefined}
+                // The first letter of each word goes up as it is typed.
+                onChange={(e) => setField('name', e.target.value.replace(/(^|\s)\S/g, (c) => c.toUpperCase()))}
+                placeholder="e.g. DJ, Stage Decor"
+                autoFocus
+              />
+              {fieldErrors.name && <p className="field__error">{fieldErrors.name}</p>}
+            </div>
+            <div className="field">
+              <label htmlFor="addonPrice">
+                {form.isPerUnit ? 'Price per unit, per day (₹)' : 'Price per day (₹)'}
+                <Req />
+              </label>
+              <input
+                id="addonPrice"
+                type="number"
+                min="1"
+                value={form.defaultAmount}
+                aria-invalid={Boolean(fieldErrors.defaultAmount) || undefined}
+                onChange={(e) => setField('defaultAmount', e.target.value)}
+                placeholder="e.g. 5000"
+              />
+              {fieldErrors.defaultAmount && <p className="field__error">{fieldErrors.defaultAmount}</p>}
+            </div>
+            <label className="inline-add-form__check">
+              <input type="checkbox" checked={form.isPerUnit} onChange={(e) => setField('isPerUnit', e.target.checked)} />
+              <span>
+                Charge per unit
+                <small>Tick if a function can take more than one (like chairs); the price is multiplied by the quantity quoted.</small>
+              </span>
+            </label>
+          </form>
+        </Modal>
       )}
     </div>
   );
 }
 
-function Setup({ venues, addons, reloadCatalogue }) {
+// Venues, laid out like the Rooms tab in Rooms & rates: a toolbar, a grid of
+// cards (photo, status, rent, capacity) and one popup that both adds a
+// venue and edits one. The cards borrow the room card's own classes so the two
+// screens cannot drift apart.
+function VenuesTab({ venues, reloadCatalogue }) {
   const token = getSession()?.token;
+  const [search, setSearch] = useState('');
+  const [form, setForm] = useState(null); // { id, name, capacityPax, baseCharge, imageFiles }
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
+  // What is wrong with each field, shown under it. A field's message goes as
+  // soon as that field is typed in again.
+  const [fieldErrors, setFieldErrors] = useState({});
+  const setField = (key, value) => {
+    setForm((d) => ({ ...d, [key]: value }));
+    setFieldErrors((errs) => (errs[key] ? { ...errs, [key]: '' } : errs));
+  };
+
+  const urlFor = (filename) => `${API_BASE}/venue-images/${filename}`;
+
+  const needle = search.trim().toLowerCase();
+  const shown = venues.filter(
+    (v) => !needle || v.name.toLowerCase().includes(needle) || (v.isActive ? 'active' : 'inactive').startsWith(needle)
+  );
+
+  const openAdd = () => {
+    setFormError('');
+    setFieldErrors({});
+    setForm({ id: null, name: '', capacityPax: '', baseCharge: '', imageFiles: [] });
+  };
+  const openEdit = (v) => {
+    setFormError('');
+    setFieldErrors({});
+    setForm({ id: v.id, name: v.name, capacityPax: v.capacityPax ?? '', baseCharge: v.baseCharge ?? '', imageFiles: [] });
+  };
+  // Read from the list rather than copied into the form, so a photo removed
+  // while the popup is open is gone from it as soon as the list reloads.
+  const savedImages = (form?.id && venues.find((v) => v.id === form.id)?.images) || [];
 
   // Multipart rather than JSON, because the photos travel with the fields —
   // the same request shape the room form sends. A blank capacity is sent
@@ -1152,79 +1302,273 @@ function Setup({ venues, addons, reloadCatalogue }) {
     (d.imageFiles || []).forEach((file) => fd.append('images', file));
     return fd;
   };
-  const addonBody = (d) => ({
-    name: String(d.name).trim(),
-    defaultAmount: Number(d.defaultAmount) || 0,
-    isPerUnit: Boolean(d.isPerUnit),
-  });
+
+  const submit = async (e) => {
+    e.preventDefault();
+    // Every field is checked, so one press shows everything that needs fixing.
+    const errs = {};
+    if (!String(form.name).trim()) errs.name = 'Venue name is required';
+    if (!(Number(form.capacityPax) > 0)) errs.capacityPax = 'Capacity is required';
+    if (!(Number(form.baseCharge) > 0)) errs.baseCharge = 'Rent is required';
+    setFieldErrors(errs);
+    const first = ['name', 'capacityPax', 'baseCharge'].find((key) => errs[key]);
+    if (first) {
+      setFormError('');
+      document.getElementById({ name: 'venueName', capacityPax: 'venueCapacity', baseCharge: 'venueCharge' }[first])?.focus();
+      return;
+    }
+    setBusy(true);
+    setFormError('');
+    try {
+      if (form.id) await apiPatchForm(`/events/venues/${form.id}`, venueForm(form), { token });
+      else await apiPostForm('/events/venues', venueForm(form), { token });
+      await reloadCatalogue();
+      setForm(null);
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (v) => {
+    if (!window.confirm(v.isActive ? `Deactivate ${v.name}? It can no longer be booked for new functions.` : `Activate ${v.name}?`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await apiPatch(`/events/venues/${v.id}`, { isActive: !v.isActive }, { token });
+      await reloadCatalogue();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteImage = async (imageId) => {
+    setBusy(true);
+    setFormError('');
+    try {
+      await apiDelete(`/events/venues/${form.id}/images/${imageId}`, { token });
+      await reloadCatalogue();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Adds to the queue without going past the cap, counting the saved photos.
+  const queueFiles = (fileList) =>
+    setForm((d) => {
+      const room = MAX_VENUE_IMAGES - savedImages.length - d.imageFiles.length;
+      return room <= 0 ? d : { ...d, imageFiles: [...d.imageFiles, ...fileList.slice(0, room)] };
+    });
 
   return (
-    <div className="events-setup">
-      <CatalogueCard
-        title="Venues"
-        hint="Halls and lawns that can be booked for a function."
-        items={venues}
-        columns={[
-          { key: 'name', label: 'Name' },
-          { key: 'capacityPax', label: 'Capacity', type: 'number' },
-          { key: 'baseCharge', label: 'Hire charge (per day)', type: 'number' },
-        ]}
-        rowClass={(v) => (
-          <span>
-            {v.capacityPax ? `${v.capacityPax} pax · ` : ''}
-            {formatPrice(v.baseCharge)}
-          </span>
-        )}
-        photos={{
-          max: MAX_VENUE_IMAGES,
-          accept: VENUE_IMAGE_ACCEPT,
-          urlFor: (filename) => `${API_BASE}/venue-images/${filename}`,
-          onDelete: async (venueId, imageId) => {
-            await apiDelete(`/events/venues/${venueId}/images/${imageId}`, { token });
-            await reloadCatalogue();
-          },
-        }}
-        onAdd={async (d) => {
-          await apiPostForm('/events/venues', venueForm(d), { token });
-          await reloadCatalogue();
-        }}
-        onSave={async (id, d) => {
-          await apiPatchForm(`/events/venues/${id}`, venueForm(d), { token });
-          await reloadCatalogue();
-        }}
-        onToggle={async (v) => {
-          await apiPatch(`/events/venues/${v.id}`, { isActive: !v.isActive }, { token });
-          await reloadCatalogue();
-        }}
-      />
-      <CatalogueCard
-        title="Add-ons"
-        hint="Extras quoted on top of venue and plates — DJ, decor, mandap. Priced per day."
-        items={addons}
-        columns={[
-          { key: 'name', label: 'Name' },
-          { key: 'defaultAmount', label: 'Price (per day)', type: 'number' },
-          { key: 'isPerUnit', label: 'Per unit', type: 'checkbox' },
-        ]}
-        rowClass={(a) => (
-          <span>
-            {formatPrice(a.defaultAmount)}
-            {a.isPerUnit ? ' each' : ''}
-          </span>
-        )}
-        onAdd={async (d) => {
-          await apiPost('/events/addons', addonBody(d), { token });
-          await reloadCatalogue();
-        }}
-        onSave={async (id, d) => {
-          await apiPatch(`/events/addons/${id}`, addonBody(d), { token });
-          await reloadCatalogue();
-        }}
-        onToggle={async (a) => {
-          await apiPatch(`/events/addons/${a.id}`, { isActive: !a.isActive }, { token });
-          await reloadCatalogue();
-        }}
-      />
+    <div className="rooms-panel">
+      <div className="rooms-panel__toolbar">
+        <span className="rooms-panel__count">
+          {needle
+            ? `${shown.length} of ${venues.length} venue${venues.length === 1 ? '' : 's'}`
+            : `${venues.length} venue${venues.length === 1 ? '' : 's'}`}
+        </span>
+        <input
+          type="search"
+          className="rooms-panel__search"
+          placeholder="Search venues, status…"
+          aria-label="Search venues, status"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <button type="button" className="btn-accent" onClick={openAdd}>
+          + Add venue
+        </button>
+      </div>
+
+      {error && <div className="form-banner form-banner--error">{error}</div>}
+
+      {venues.length === 0 && (
+        <div className="dash-card">
+          <div className="dash-state">No venues yet. Add your first hall or lawn to start taking function bookings.</div>
+        </div>
+      )}
+      {venues.length > 0 && shown.length === 0 && (
+        <div className="dash-card">
+          <div className="dash-state">No venues match "{search.trim()}".</div>
+        </div>
+      )}
+
+      {shown.length > 0 && (
+        <div className="room-grid">
+          {shown.map((v) => {
+            const cover = v.images?.[0];
+            return (
+              <div className="room-card venue-card" key={v.id}>
+                <div className={`room-card__cover${cover ? '' : ' room-card__cover--empty'}`}>
+                  {cover ? (
+                    <img
+                      src={urlFor(cover.filename)}
+                      alt={v.name}
+                      className="room-card__cover-img"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="room-card__cover-placeholder">{v.name}</div>
+                  )}
+                  <button
+                    type="button"
+                    className={`room-card__status badge ${v.isActive ? 'badge--on' : 'badge--off'}`}
+                    disabled={busy}
+                    onClick={() => toggleActive(v)}
+                    title={`Click to ${v.isActive ? 'deactivate' : 'activate'} ${v.name}`}
+                    aria-label={`${v.name} is ${v.isActive ? 'active' : 'inactive'}. Click to ${v.isActive ? 'deactivate' : 'activate'}.`}
+                  >
+                    {v.isActive ? 'Active' : 'Inactive'}
+                  </button>
+                  {v.images?.length > 1 && <span className="room-card__photo-count">+{v.images.length - 1}</span>}
+                </div>
+
+                <div className="room-card__body">
+                  <div className="room-card__top">
+                    {/* The photoless band above already carries the name. */}
+                    {cover && <span className="room-card__number">{v.name}</span>}
+                    <span className="room-card__rate">
+                      {formatPrice(v.baseCharge)}
+                      <span className="room-card__rate-unit"> /day</span>
+                    </span>
+                  </div>
+                  <div className="room-card__category">Venue rent</div>
+                  {v.capacityPax ? (
+                    <div className="room-card__chips">
+                      <span className="room-card__chip room-card__chip--occupancy">Up to {v.capacityPax} guests</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="room-card__actions">
+                  <IconButton label={`Edit ${v.name}`} icon={<EditIcon />} onClick={() => openEdit(v)} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {form && (
+        <Modal
+          title={form.id ? `Edit venue · ${form.name}` : 'Add venue'}
+          sub="A hall or lawn that can be booked for a function."
+          busy={busy}
+          onClose={() => setForm(null)}
+          footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={() => setForm(null)} disabled={busy}>
+                Cancel
+              </button>
+              <button type="submit" form="venueForm" className="btn-accent" disabled={busy}>
+                {busy ? 'Saving…' : form.id ? 'Save changes' : 'Add venue'}
+              </button>
+            </>
+          }
+        >
+          <form id="venueForm" className="events-setup-form" onSubmit={submit} noValidate>
+            {formError && <div className="form-banner form-banner--error">{formError}</div>}
+            <div className="field">
+              <label htmlFor="venueName">
+                Venue name
+                <Req />
+              </label>
+              <input
+                id="venueName"
+                value={form.name}
+                aria-invalid={Boolean(fieldErrors.name) || undefined}
+                // The first letter of each word goes up as it is typed.
+                onChange={(e) => setField('name', e.target.value.replace(/(^|\s)\S/g, (c) => c.toUpperCase()))}
+                placeholder="e.g. Banquet Hall, Garden Lawn"
+                autoFocus
+              />
+              {fieldErrors.name && <p className="field__error">{fieldErrors.name}</p>}
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="venueCapacity">
+                  Capacity (guests)
+                  <Req />
+                </label>
+                <input
+                  id="venueCapacity"
+                  type="number"
+                  min="1"
+                  value={form.capacityPax}
+                  aria-invalid={Boolean(fieldErrors.capacityPax) || undefined}
+                  onChange={(e) => setField('capacityPax', e.target.value)}
+                  placeholder="e.g. 300"
+                />
+                {fieldErrors.capacityPax && <p className="field__error">{fieldErrors.capacityPax}</p>}
+              </div>
+              <div className="field">
+                <label htmlFor="venueCharge">
+                  Rent per day (₹)
+                  <Req />
+                </label>
+                <input
+                  id="venueCharge"
+                  type="number"
+                  min="1"
+                  value={form.baseCharge}
+                  aria-invalid={Boolean(fieldErrors.baseCharge) || undefined}
+                  onChange={(e) => setField('baseCharge', e.target.value)}
+                  placeholder="e.g. 25000"
+                />
+                {fieldErrors.baseCharge && <p className="field__error">{fieldErrors.baseCharge}</p>}
+              </div>
+            </div>
+            <div className="field">
+              <label>Photos</label>
+              <PhotoButton
+                total={savedImages.length + form.imageFiles.length}
+                max={MAX_VENUE_IMAGES}
+                accept={VENUE_IMAGE_ACCEPT}
+                disabled={busy}
+                onAddFiles={queueFiles}
+              />
+              <PhotoStrip
+                existing={savedImages}
+                files={form.imageFiles}
+                urlFor={urlFor}
+                disabled={busy}
+                onRemoveFile={(index) => setForm((d) => ({ ...d, imageFiles: d.imageFiles.filter((_, i) => i !== index) }))}
+                onDeleteExisting={deleteImage}
+              />
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// Venues and add-ons each get a tab of their own: a venue is a place with
+// photos and a capacity, an add-on is a line on a quote, and one long page of
+// both made each harder to find.
+function Setup({ venues, addons, reloadCatalogue }) {
+  const [tab, setTab] = useState('venues');
+
+  return (
+    <div>
+      <div className="subtabs">
+        <button type="button" className="subtabs__item" aria-current={tab === 'venues' ? 'page' : undefined} onClick={() => setTab('venues')}>
+          Venues
+        </button>
+        <button type="button" className="subtabs__item" aria-current={tab === 'addons' ? 'page' : undefined} onClick={() => setTab('addons')}>
+          Add-ons
+        </button>
+      </div>
+
+      {tab === 'venues' && <VenuesTab venues={venues} reloadCatalogue={reloadCatalogue} />}
+      {tab === 'addons' && <AddonsTab addons={addons} reloadCatalogue={reloadCatalogue} />}
     </div>
   );
 }

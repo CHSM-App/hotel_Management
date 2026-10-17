@@ -62,10 +62,12 @@ export default function LoginSplash({ lodge, onDone }) {
                 onError={() => setLogoState('failed')}
               />
             ) : lodge ? (
-              <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="24" cy="26" r="11" />
-                <circle cx="24" cy="26" r="6" />
-                <path d="M6 10v10a3 3 0 0 0 3 3v15M9 10v9M12 10v10a3 3 0 0 1-3 3M42 10c-3 2-4 7-4 12h4v16" />
+              <svg viewBox="0 0 48 48" width="44" height="44" fill="currentColor" stroke="none" aria-hidden="true">
+                <rect x="4" y="13" width="5" height="19" rx="2" />
+                <rect x="10.5" y="16" width="10" height="8" rx="3" />
+                <rect x="10.5" y="24" width="33.5" height="6" rx="2.5" />
+                <rect x="11" y="30" width="3" height="6" rx="1" />
+                <rect x="41" y="30" width="3" height="6" rx="1" />
               </svg>
             ) : null}
           </div>

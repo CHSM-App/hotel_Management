@@ -37,8 +37,8 @@
 
 .locpick__btn:focus-visible {
   outline: none;
-  border-color: var(--brand, #5B3FD9);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.13);
+  border-color: var(--focus, #00B0FF);
+  box-shadow: 0 0 0 3px rgba(0, 176, 255, 0.13);
 }
 
 .locpick__btn:disabled {
@@ -49,7 +49,7 @@
 .locpick__link {
   font-size: 13px;
   font-weight: 600;
-  color: var(--brand, #5B3FD9);
+  color: var(--link, #0077B6);
   text-decoration: none;
 }
 
@@ -81,8 +81,8 @@
 }
 
 .locpick__map:focus-within {
-  border-color: var(--brand, #5B3FD9);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.13);
+  border-color: var(--focus, #00B0FF);
+  box-shadow: 0 0 0 3px rgba(0, 176, 255, 0.13);
 }
 
 .locpick__map--disabled {

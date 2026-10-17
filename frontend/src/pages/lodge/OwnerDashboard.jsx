@@ -8,13 +8,24 @@ import { FEATURES, SIDEBAR_GROUP_ORDER } from '../../lib/propertyProfile';
 import RoomsAndRates from './RoomsAndRates';
 import ServicesPanel from './ServicesPanel';
 import HousekeepingPanel from './HousekeepingPanel';
+import LaundryPanel from './LaundryPanel';
+import { useOpenIssues } from './useOpenIssues';
+import { useCheckoutAlerts } from './useCheckoutAlerts';
+import { useCheckinAlerts } from './useCheckinAlerts';
+import { useWorkOrderAlerts } from './useWorkOrderAlerts';
+import { useCoverageAlerts } from './useCoverageAlerts';
+import { usePendingOrderAlerts } from './usePendingOrderAlerts';
+import { useReportsReminder } from './useReportsReminder';
+import StaffAlertsBell from '../../components/StaffAlertsBell';
 import Bookings from './Bookings';
 import Billing from './Billing';
 import GuestRegister from './GuestRegister';
+import Customers from './Customers';
 import ReportsPanel from './ReportsPanel';
 import { REPORT_SECTIONS, reportSectionOf } from '../../lib/reportSections';
 import StaffAndRoles from './StaffAndRoles';
 import FoodSetup from './FoodSetup';
+import BillNumberingPanel from './BillNumberingPanel';
 import FoodSection from './FoodSection';
 import Events from './Events';
 import AssetsPanel from './AssetsPanel';
@@ -104,6 +115,13 @@ const ICON_PATHS = {
       <path d="M3 6h18M3 12h18M3 18h18" />
     </>
   ),
+  dots: (
+    <>
+      <circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none" />
+    </>
+  ),
   search: (
     <>
       <circle cx="11" cy="11" r="7" />
@@ -135,9 +153,105 @@ const ICON_PATHS = {
       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </>
   ),
+  // Added so every sidebar section gets its own icon — several features used
+  // to share one glyph (three "wrench" rows, three "users" rows, and so on),
+  // which left the rail looking repetitive rather than naming each section.
+  idcard: (
+    <>
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <circle cx="9" cy="12" r="2.2" />
+      <path d="M6.3 16.3c.5-1.4 1.5-2.1 2.7-2.1s2.2.7 2.7 2.1" />
+      <path d="M15 10h5M15 13h5M15 16h3" />
+    </>
+  ),
+  ticket: (
+    <>
+      <path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4Z" />
+      <path d="M10 8v1.2M10 11.4v1.2M10 14.6v1.2M10 17.8v-1.2" />
+    </>
+  ),
+  clipboardList: (
+    <>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <rect x="9" y="2" width="6" height="4" rx="1" />
+      <path d="M8 11h8M8 14h8M8 17h5" />
+    </>
+  ),
+  sliders: (
+    <>
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <circle cx="15" cy="6" r="2" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <circle cx="9" cy="12" r="2" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+      <circle cx="16" cy="18" r="2" />
+    </>
+  ),
+  sparkles: (
+    <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.9 5.9l2.5 2.5M15.6 15.6l2.5 2.5M18.1 5.9l-2.5 2.5M8.4 15.6l-2.5 2.5" />
+  ),
+  droplet: <path d="M12 2.5s7 7.1 7 12a7 7 0 1 1-14 0c0-4.9 7-12 7-12Z" />,
+  grid: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </>
+  ),
+  qrcode: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <path d="M14 14h3v3h-3zM19 17h2v4h-4v-2" />
+    </>
+  ),
+  archive: (
+    <>
+      <rect x="3" y="4" width="18" height="5" rx="1.5" />
+      <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" />
+      <path d="M10 13h4" />
+    </>
+  ),
+  trendingUp: (
+    <>
+      <path d="M3 17l6-6 4 4 7-8" />
+      <path d="M15 7h5v5" />
+    </>
+  ),
+  pieChart: (
+    <>
+      <path d="M12 2a10 10 0 1 0 10 10H12Z" />
+      <path d="M12 2a10 10 0 0 1 10 10" />
+    </>
+  ),
+  landmark: (
+    <>
+      <path d="M3 10 12 4l9 6" />
+      <path d="M4 10h16v2H4z" />
+      <path d="M5 12v7M9 12v7M15 12v7M19 12v7" />
+      <path d="M3 21h18" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+      <path d="m3 12 9 5 9-5" />
+      <path d="m3 17 9 5 9-5" />
+    </>
+  ),
+  hash: (
+    <>
+      <line x1="4" y1="9" x2="20" y2="9" />
+      <line x1="4" y1="15" x2="20" y2="15" />
+      <line x1="10" y1="3" x2="8" y2="21" />
+      <line x1="16" y1="3" x2="14" y2="21" />
+    </>
+  ),
 };
 
-function Icon({ name, size = 18 }) {
+export function Icon({ name, size = 18 }) {
   return (
     <svg
       width={size}
@@ -188,6 +302,15 @@ export default function OwnerDashboard() {
   useEffect(() => {
     if (me?.lodge) setBrandLogo(logoUrl ? `${API_BASE}${logoUrl}` : null);
   }, [me?.lodge, logoUrl]);
+  // A logoUrl that 404s (stale path, file removed outside the app) used to
+  // render the browser's own broken-image glyph in the topbar badge — this
+  // falls back to the mark icon instead, the same as a lodge with no logo at
+  // all. Reset whenever the URL itself changes, so a fixed upload gets a
+  // fresh attempt rather than staying stuck on the last failure.
+  const [logoFailed, setLogoFailed] = useState(false);
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [logoUrl]);
   const endSplash = () => {
     setSplash(false);
     try {
@@ -351,10 +474,19 @@ export default function OwnerDashboard() {
   const [confirmSignOut, setConfirmSignOut] = useState(false);
 
   // Topbar state. The rail is open by default because on a desk monitor it is
-  // always visible; the hamburger only has an effect below the breakpoint,
-  // where the CSS hides a closed rail.
+  // always visible; on a phone the same flag instead decides whether the
+  // off-canvas drawer is showing at all.
   const isPhone = () => window.matchMedia('(max-width: 800px)').matches;
   const [navOpen, setNavOpen] = useState(() => !isPhone());
+  // Desktop's own toggle: the rail never fully hides above the phone
+  // breakpoint, it just narrows to icons-only. Separate from navOpen because
+  // the two mean different things — navOpen is "is the drawer on screen at
+  // all" (phone), railExpanded is "full labels, or just icons" (desktop).
+  const [railExpanded, setRailExpanded] = useState(true);
+  const toggleRail = () => {
+    if (isPhone()) setNavOpen((open) => !open);
+    else setRailExpanded((expanded) => !expanded);
+  };
 
   const handleSignOut = () => {
     clearSession();
@@ -400,6 +532,53 @@ export default function OwnerDashboard() {
     features: visibleFeatures.filter((f) => f.group === group),
   })).filter((g) => g.features.length > 0);
 
+  // Problems housekeeping has reported and nobody has closed: a count on the
+  // sidebar, an alert at the desk when a new one comes in, and the full rows
+  // for the nav bell's housekeeping section (see useOpenIssues — one poll
+  // now feeds both).
+  const canSeeHousekeeping = visibleFeatures.some((f) => f.key === 'housekeeping');
+  const { count: issueCount, issues: housekeepingIssues } = useOpenIssues(session?.token, canSeeHousekeeping);
+
+  // Each alert category checks its own permission — a role sees only the
+  // sections it can actually act on, not every category bundled behind one
+  // gate. Rooms whose check-in or check-out time is due soon or already
+  // overdue; open maintenance work orders and assets whose cover is lapsing;
+  // table orders the kitchen hasn't accepted; and once a month, a reminder
+  // that the reports are ready.
+  const canManageBookings = permissions.includes('bookings.manage');
+  const canManageAssets = permissions.includes('assets.manage') || permissions.includes('reports.view');
+  // Whoever can act on a stray guest order — the kitchen (orders.manage) or
+  // the captain who walks it over (orders.take) — should hear about one
+  // that's gone stale, not just the kitchen.
+  const canManageOrders = permissions.includes('orders.manage') || permissions.includes('orders.take');
+  const canViewReports = permissions.includes('reports.view');
+
+  const checkoutAlerts = useCheckoutAlerts(session?.token, canManageBookings);
+  const checkinAlerts = useCheckinAlerts(session?.token, canManageBookings);
+  const workOrderAlerts = useWorkOrderAlerts(session?.token, canManageAssets);
+  const coverageAlerts = useCoverageAlerts(session?.token, canManageAssets);
+  const pendingOrderAlerts = usePendingOrderAlerts(session?.token, canManageOrders);
+  const reportsReminder = useReportsReminder(canViewReports);
+
+  const housekeepingAlerts = housekeepingIssues.map((i) => ({
+    id: `housekeeping-${i.logId}-${i.kind}`,
+    category: 'housekeeping',
+    message: `${i.space === 'VENUE' ? i.roomNumber : `Room ${i.roomNumber}`}: ${i.kind === 'FOUND' ? 'Item found' : 'Problem reported'} — ${i.text}`,
+    urgent: false,
+  }));
+
+  const staffAlerts = [
+    ...checkinAlerts,
+    ...checkoutAlerts,
+    ...pendingOrderAlerts,
+    ...workOrderAlerts,
+    ...coverageAlerts,
+    ...housekeepingAlerts,
+    ...reportsReminder,
+  ];
+  const canSeeStaffAlerts =
+    canManageBookings || canManageAssets || canManageOrders || canViewReports || canSeeHousekeeping;
+
   return (
     <div className="dash-shell">
       {splash && <LoginSplash lodge={me?.lodge} onDone={endSplash} />}
@@ -418,14 +597,56 @@ export default function OwnerDashboard() {
         {/* The brand block sits over the rail rather than in the bar's flow:
             it is the sidebar's header, and lining it up with the rail below is
             what stops the bar reading as one undivided strip. */}
+        {/* One toggle, both breakpoints: on a phone it shows/hides the
+            off-canvas drawer, on a desk monitor it narrows the rail to
+            icons-only instead of hiding it (the rail is always-on real
+            estate there). Visible at every width now, rather than only
+            appearing below the phone breakpoint — a desk monitor with eight
+            sections' worth of permanent nav still benefits from being able
+            to reclaim that width. */}
+        <button
+          type="button"
+          className="dash-topbar__menu"
+          title={navOpen && railExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-label={navOpen && railExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-expanded={isPhone() ? navOpen : railExpanded}
+          onClick={toggleRail}
+        >
+          <Icon name="menu" size={20} />
+        </button>
+
         <div className="dash-brand">
-          {me?.lodge.logoUrl ? (
+          {me?.lodge.logoUrl && !logoFailed ? (
             <span className="dash-brand__badge dash-brand__badge--logo" aria-hidden="true">
-              <img src={`${API_BASE}${me.lodge.logoUrl}`} alt="" />
+              <img
+                src={`${API_BASE}${me.lodge.logoUrl}`}
+                alt=""
+                onError={() => setLogoFailed(true)}
+              />
             </span>
           ) : (
-            <span className="dash-brand__badge" aria-hidden="true">
-              <Icon name="building" size={20} />
+            <span className="dash-brand__badge dash-brand__badge--mark" aria-hidden="true">
+              {/* A hotel mark, not a generic office building — a crown over a
+                  small block with windows and a door reads as "hospitality"
+                  at a glance the way the outline building icon didn't.
+                  Filled rather than stroked, so it needed its own markup
+                  instead of the shared Icon component (which is stroke-only).
+                  Blue on the white tile (currentColor, so it follows
+                  .dash-brand__badge--mark's own colour), with the windows
+                  and door as white cut-outs matching the tile itself. */}
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+                <path
+                  d="M4.3 9.6 7.4 12.5 9.2 8.3 12 10.6 14.8 8.3 16.6 12.5 19.7 9.6 18.6 16.2H5.4Z"
+                  fill="currentColor"
+                />
+                <circle cx="4.3" cy="8.2" r="1.15" fill="currentColor" />
+                <circle cx="12" cy="7.1" r="1.15" fill="currentColor" />
+                <circle cx="19.7" cy="8.2" r="1.15" fill="currentColor" />
+                <rect x="5.4" y="15.4" width="13.2" height="7.6" rx="1.2" fill="currentColor" />
+                <rect x="7.3" y="17.2" width="2.1" height="2.1" rx="0.4" fill="#ffffff" />
+                <rect x="14.6" y="17.2" width="2.1" height="2.1" rx="0.4" fill="#ffffff" />
+                <rect x="10.7" y="19" width="2.6" height="3" rx="0.5" fill="#ffffff" />
+              </svg>
             </span>
           )}
           <span className="dash-brand__text">
@@ -436,21 +657,18 @@ export default function OwnerDashboard() {
             <span className="dash-brand__name" title={me?.lodge.name || undefined}>
               {me?.lodge.name || 'Hotel Management'}
             </span>
+            {/* The property's own location rather than a static product
+                label — actually distinguishes one hotel from another for an
+                owner who manages more than one, instead of repeating
+                "Lodge Management System" under every account. Omitted
+                entirely rather than shown blank when neither is on file. */}
+            {(me?.lodge.city || me?.lodge.state) && (
+              <span className="dash-brand__tagline">
+                {[me.lodge.city, me.lodge.state].filter(Boolean).join(', ')}
+              </span>
+            )}
           </span>
         </div>
-
-        {/* Collapses the rail on narrow windows, where 240px of permanent nav
-            costs more than it gives. Above the breakpoint the rail never
-            hides, so the control has nothing to say and stays out of the bar. */}
-        <button
-          type="button"
-          className="dash-topbar__menu"
-          aria-label={navOpen ? 'Hide sections' : 'Show sections'}
-          aria-expanded={navOpen}
-          onClick={() => setNavOpen((open) => !open)}
-        >
-          <Icon name="menu" size={20} />
-        </button>
 
         {/* No section uses the topbar box anymore (Rooms moved to its own
             inline search) but the gap stays, so the profile chip doesn't
@@ -474,6 +692,7 @@ export default function OwnerDashboard() {
               {linkCopied === 'copied' ? 'Copied!' : linkCopied === 'failed' ? 'Press Ctrl+C' : 'Copy public link'}
             </button>
           ) : null}
+          {canSeeStaffAlerts && <StaffAlertsBell alerts={staffAlerts} />}
           {me?.user ? (
             <ProfileMenu
               user={me.user}
@@ -501,7 +720,7 @@ export default function OwnerDashboard() {
       <div className="dash-body">
         {navOpen && <div className="dash-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />}
         <nav
-          className={`dash-sidebar${navOpen ? '' : ' dash-sidebar--collapsed'}`}
+          className={`dash-sidebar${navOpen ? '' : ' dash-sidebar--collapsed'}${railExpanded ? '' : ' dash-sidebar--icon-only'}`}
           aria-label="Dashboard sections"
         >
           {/* Only this region scrolls when the section list runs past the
@@ -518,6 +737,16 @@ export default function OwnerDashboard() {
                   onClick={() => toggleGroup(group)}
                 >
                   {group}
+                  {/* A closed group hides the count on its Housekeeping row, so the
+                      heading carries it until the group is opened again. */}
+                  {!groupOpen(group) && issueCount > 0 && features.some((f) => f.key === 'housekeeping') && (
+                    <span
+                      className="dash-sidebar__count dash-sidebar__count--group"
+                      aria-label={`${issueCount} open ${issueCount === 1 ? 'issue' : 'issues'}`}
+                    >
+                      {issueCount}
+                    </span>
+                  )}
                   <span className="dash-sidebar__chevron" aria-hidden="true">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                       <path
@@ -533,7 +762,12 @@ export default function OwnerDashboard() {
                 <div
                   className="dash-sidebar__collapse"
                   data-open={groupOpen(group)}
-                  inert={groupOpen(group) ? undefined : ''}
+                  // Icon-only mode forces every group open in CSS regardless
+                  // of groupOpen's own JS state (see .dash-sidebar--icon-only
+                  // in OwnerDashboard.css) — inert has to agree, or a group
+                  // the user never explicitly opened would render its icons
+                  // visible but unclickable and unfocusable underneath them.
+                  inert={!isPhone() && !railExpanded ? undefined : groupOpen(group) ? undefined : ''}
                 >
                 <ul className="dash-sidebar__list">
                   {features.map((feature) => (
@@ -541,6 +775,7 @@ export default function OwnerDashboard() {
                       <button
                         type="button"
                         className="dash-sidebar__item"
+                        title={feature.title}
                         aria-current={activeFeature?.key === feature.key ? 'page' : undefined}
                         onClick={() => {
                           if (isPhone()) setNavOpen(false);
@@ -566,8 +801,13 @@ export default function OwnerDashboard() {
                         }}
                       >
                         <Icon name={feature.icon} />
-                        {feature.title}
+                        <span className="dash-sidebar__item-label">{feature.title}</span>
                         {feature.soon && <span className="dash-sidebar__soon">Soon</span>}
+                        {feature.key === 'housekeeping' && issueCount > 0 && (
+                          <span className="dash-sidebar__count" aria-label={`${issueCount} open ${issueCount === 1 ? 'issue' : 'issues'}`}>
+                            {issueCount}
+                          </span>
+                        )}
                       </button>
                     </li>
                   ))}
@@ -586,10 +826,11 @@ export default function OwnerDashboard() {
                   <button
                     type="button"
                     className="dash-sidebar__item"
+                    title="User guide"
                     onClick={() => navigate('/guide')}
                   >
                     <Icon name="help" />
-                    User guide
+                    <span className="dash-sidebar__item-label">User guide</span>
                   </button>
                 </li>
               </ul>
@@ -604,10 +845,11 @@ export default function OwnerDashboard() {
             <button
               type="button"
               className="dash-sidebar__signout"
+              title="Sign out"
               onClick={() => setConfirmSignOut(true)}
             >
-              <Icon name="signout" />
-              Sign out
+              <Icon name="signout" size={15} />
+              <span className="dash-sidebar__item-label">Sign out</span>
             </button>
           </div>
         </nav>
@@ -627,20 +869,15 @@ export default function OwnerDashboard() {
 
           {!error && me && (
             <>
-              {me.user.mustResetPassword && (
-                <div className="reset-banner">
-                  You&apos;re signed in with the temporary password Vengurla Tech set up. Open your
-                  profile menu (top right) and choose &quot;Change password&quot; to set your own.
-                </div>
-              )}
-
               {activeFeature && activeFeature.key === 'rooms' && (
                 <RoomsAndRates />
               )}
 
-              {activeFeature && activeFeature.key === 'otherServices' && <ServicesPanel />}
+              {activeFeature && activeFeature.key === 'otherServices' && <ServicesPanel lodge={me.lodge} />}
 
-              {activeFeature && activeFeature.key === 'housekeeping' && <HousekeepingPanel lodge={me.lodge} />}
+              {activeFeature && activeFeature.key === 'housekeeping' && <HousekeepingPanel lodge={me.lodge} issueCount={issueCount} />}
+
+              {activeFeature && activeFeature.key === 'laundry' && <LaundryPanel lodge={me.lodge} />}
 
               {activeFeature && activeFeature.key === 'bookings' && (
                 <Bookings
@@ -745,6 +982,8 @@ export default function OwnerDashboard() {
                 <GuestRegister onOpenDraft={openDraftInChart} onBillStay={(bookingId) => setBillNowBookingId(bookingId ?? null)} onOpenSection={showSection} />
               )}
 
+              {activeFeature && activeFeature.key === 'customers' && <Customers />}
+
               {activeFeature && activeFeature.key.startsWith('report-') && (
                 <ReportsPanel
                   key={activeFeature.key}
@@ -755,6 +994,8 @@ export default function OwnerDashboard() {
               )}
 
               {activeFeature && activeFeature.key === 'staff' && <StaffAndRoles />}
+
+              {activeFeature && activeFeature.key === 'billNumbering' && <BillNumberingPanel />}
 
               {activeFeature && activeFeature.key === 'food' && (
                 <FoodSection
@@ -785,7 +1026,7 @@ export default function OwnerDashboard() {
 
               {activeFeature &&
                 !activeFeature.key.startsWith('report-') &&
-                !['rooms', 'otherServices', 'housekeeping', 'bookings', 'billing', 'eventBilling', 'guests', 'staff', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
+                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'staff', 'billNumbering', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

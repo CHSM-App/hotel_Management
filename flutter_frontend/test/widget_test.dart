@@ -162,12 +162,10 @@ void main() {
         'role': 'OWNER',
         'name': 'Suresh Naik',
         'lodgeId': '1',
-        'mustResetPassword': false,
       });
 
       expect(session.lodgeId, 1, reason: 'lodges.id is a BIGINT: "1", not 1');
       expect(session.role, 'OWNER');
-      expect(session.mustResetPassword, isFalse);
     });
 
     test('a numeric lodgeId still works', () {

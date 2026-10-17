@@ -6,6 +6,7 @@ const { logger } = require('../../config/logger');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR } = require('../../middleware/billShareUpload');
 const whatsapp = require('../../config/whatsapp');
+const { publicBaseUrl } = require('../../config/publicBaseUrl');
 
 // Handing a bill to a guest on WhatsApp, from the server rather than from the
 // desk's own phone.
@@ -26,7 +27,7 @@ const whatsapp = require('../../config/whatsapp');
 // acceptance, not delivery to the handset, so a send recorded here as SENT is
 // "handed to the provider" — not "seen". Nothing in this file claims more.
 
-// The template's seven variables, in order:
+// The stay template's seven variables, in order:
 //
 //   {{1}} name (guest)     {{5}} checkin_date
 //   {{2}} hotel_name       {{6}} checkout_date
@@ -36,7 +37,22 @@ const whatsapp = require('../../config/whatsapp');
 // "Dear {{1}}, [hotel_name] {{2}}, Thank you for staying with us! Your bill
 //  for Booking No. {{3}} is ready. Total Amount: {{4}} / Stay: {{5}} to {{6}}
 //  / View / Download Bill: {{7}}"
+//
+// An event booking's final bill gets its own template (EVENT_BILL_TEMPLATE_ID)
+// rather than this one — venue and a single event date, not a check-in/
+// check-out pair, same reasoning as the booking-confirmation split. Its own
+// seven variables, in order, are built by buildEventBillSample below:
+//
+//   {{1}} name (organiser) {{5}} event_date
+//   {{2}} hotel_name       {{6}} total_amount
+//   {{3}} bill_no          {{7}} link to the PDF
+//   {{4}} venue
+//
+// shareInvoiceOnWhatsApp picks between the two by what loadInvoice found on
+// the invoice — an event_booking_id or a booking_id — not by anything the
+// desk chooses on screen; the same "Share on WhatsApp" press works either way.
 const BILL_CAMPAIGN = 'bill_share';
+const EVENT_BILL_CAMPAIGN = 'event_bill_share';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -81,23 +97,10 @@ function stayDates(invoice) {
 // already served its purpose.
 const LINK_TTL_DAYS = 30;
 
-// The link the guest taps. It has to be an address reachable from a phone on
-// mobile data — not the LAN address the desk's browser uses — so it is
-// configured rather than derived from the request: behind a proxy, Host is
-// whatever the proxy was asked for, and a bill link built from it can point
-// somewhere the guest cannot reach.
-//
-// PUBLIC_BASE_URL is therefore required for this feature and only this one.
-function publicBaseUrl() {
-  const base = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
-  if (!base) {
-    throw new ApiError(
-      'Sharing a bill on WhatsApp needs PUBLIC_BASE_URL set to the address guests reach this site at.',
-      503
-    );
-  }
-  return base;
-}
+// The link the guest taps — see config/publicBaseUrl.js for why it's
+// configured rather than derived from the request. Shared with
+// feedbackRequests.service.js now, so there's exactly one PUBLIC_BASE_URL
+// check in the codebase, not one per feature that needs a guest-facing link.
 
 // The provider packs template variables into one comma-separated string, so a
 // comma inside a value shifts every later variable along by one — the amount
@@ -134,6 +137,28 @@ function buildBillSample(invoice, link) {
   ].join(',');
 }
 
+// An invoice is for an event rather than a room stay when loadInvoice found
+// an event_booking_id behind it — event_start_at is only ever populated by
+// that LEFT JOIN, never by the room-stay one.
+function isEventInvoice(invoice) {
+  return invoice.event_start_at != null;
+}
+
+// The same seven slots as buildBillSample, in the event template's own
+// order — venue and a single event date rather than a check-in/check-out
+// pair. See the header comment above for the full variable list.
+function buildEventBillSample(invoice, link) {
+  return [
+    clean(invoice.guest_name || 'Guest'),
+    clean(invoice.lodge_name),
+    clean(invoice.invoice_number),
+    clean(invoice.venue_name),
+    clean(formatInstantIST(invoice.event_start_at)),
+    clean(amountForTemplate(invoice.total_amount)),
+    link,
+  ].join(',');
+}
+
 // The bill being shared, with only the fields the message needs. Read back
 // rather than trusted from the request: what the guest is told the bill says
 // must be what the database says it says.
@@ -153,12 +178,14 @@ async function loadInvoice(lodgeId, invoiceId) {
              COALESCE(b.guest_phone, eb.organiser_phone, i.customer_phone) AS guest_phone,
              l.name AS lodge_name,
              b.check_in_date, b.check_out_date,
-             eb.start_at AS event_start_at, eb.end_at AS event_end_at
+             eb.start_at AS event_start_at, eb.end_at AS event_end_at,
+             v.name AS venue_name
       FROM dbo.invoices i
       -- LEFT on both, as everywhere else: a restaurant bill has no stay and a
       -- function's bill has no room.
       LEFT JOIN dbo.bookings b ON b.id = i.booking_id
       LEFT JOIN dbo.event_bookings eb ON eb.id = i.event_booking_id
+      LEFT JOIN dbo.event_venues v ON v.id = eb.venue_id
       JOIN dbo.lodges l ON l.id = i.lodge_id
       WHERE i.id = @invoiceId AND i.lodge_id = @lodgeId
     `);
@@ -212,15 +239,21 @@ async function shareInvoiceOnWhatsApp(lodgeId, userId, invoiceId, { file, phone 
   if (!file) throw new ApiError('The bill PDF is missing.', 400);
 
   try {
-    if (!whatsapp.isBillTemplateConfigured()) {
-      throw new ApiError('WhatsApp sending is not set up for this property yet.', 503);
-    }
-
     const invoice = await loadInvoice(lodgeId, invoiceId);
     // A voided bill is not a bill. Sending one would put a document the
     // property has cancelled into a guest's hands with nothing marking it.
     if (invoice.status !== 'ISSUED') {
       throw new ApiError('This bill has been voided and cannot be shared.', 400);
+    }
+
+    // Which template this invoice goes out under is decided here, from the
+    // invoice itself — the desk presses the same "Share on WhatsApp" button
+    // either way. Checked only now, not before loadInvoice, because which of
+    // the two templates even applies isn't known until the invoice is read.
+    const isEvent = isEventInvoice(invoice);
+    const templateConfigured = isEvent ? whatsapp.isEventBillTemplateConfigured() : whatsapp.isBillTemplateConfigured();
+    if (!templateConfigured) {
+      throw new ApiError('WhatsApp sending is not set up for this property yet.', 503);
     }
 
     // The number the desk typed wins over the one on file — a guest asking for
@@ -242,11 +275,13 @@ async function shareInvoiceOnWhatsApp(lodgeId, userId, invoiceId, { file, phone 
     // The row is written before the send, so a bill that goes out is always
     // reachable at the link it was sent with. Writing it after would leave a
     // window where the guest taps a link the database has never heard of.
-    const sample = buildBillSample(invoice, link);
+    const sample = isEvent ? buildEventBillSample(invoice, link) : buildBillSample(invoice, link);
+    const templateId = isEvent ? whatsapp.EVENT_BILL_TEMPLATE_ID : whatsapp.BILL_TEMPLATE_ID;
+    const campaign = isEvent ? EVENT_BILL_CAMPAIGN : BILL_CAMPAIGN;
 
     let sent;
     try {
-      sent = await whatsapp.sendTemplateMessage(target, whatsapp.BILL_TEMPLATE_ID, sample, BILL_CAMPAIGN);
+      sent = await whatsapp.sendTemplateMessage(target, templateId, sample, campaign);
     } catch (err) {
       // Recorded as an attempt, not swallowed. The desk is told, and the log
       // and the table both keep the provider's reason.
@@ -364,11 +399,17 @@ async function listShares(lodgeId, invoiceId) {
   }));
 }
 
-// Whether the screen should offer WhatsApp at all. Two separate reasons it
-// might not work, and the desk can act on neither, so this reports only that
-// it is unavailable — the operator reads the log or the env for why.
+// Whether the screen should offer WhatsApp at all. True if either the stay
+// or the event bill template is approved — which one a given invoice
+// actually needs isn't known until it's read, so this reports the general
+// capability, not a per-invoice answer. Two separate reasons it might not
+// work, and the desk can act on neither, so this reports only that it is
+// unavailable — the operator reads the log or the env for why.
 function whatsAppAvailable() {
-  return whatsapp.isBillTemplateConfigured() && Boolean((process.env.PUBLIC_BASE_URL || '').trim());
+  return (
+    (whatsapp.isBillTemplateConfigured() || whatsapp.isEventBillTemplateConfigured()) &&
+    Boolean((process.env.PUBLIC_BASE_URL || '').trim())
+  );
 }
 
 module.exports = {
@@ -377,6 +418,8 @@ module.exports = {
   listShares,
   whatsAppAvailable,
   buildBillSample,
+  buildEventBillSample,
+  isEventInvoice,
   clean,
   amountForTemplate,
   LINK_TTL_DAYS,

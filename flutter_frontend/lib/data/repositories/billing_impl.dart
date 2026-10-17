@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
+import '../../domain/models/event_booking.dart';
 import '../../domain/models/invoice.dart';
+import '../../domain/models/lodge_service.dart' show ServiceUsage;
 import '../../domain/repository/billing_repo.dart';
 import '../api/api_service.dart';
 
@@ -18,6 +20,9 @@ class BillingImpl implements BillingRepository {
 
   @override
   Future<List<BillableStay>> queue() => api.billingQueue();
+
+  @override
+  Future<List<EventBooking>> queueEvents() => api.eventBillingQueue();
 
   @override
   Future<BillPreview> preview(
@@ -90,8 +95,15 @@ class BillingImpl implements BillingRepository {
   Future<Invoice> invoice(int id) => api.invoice(id);
 
   @override
-  Future<EventBillPreview> previewEventBill(int eventId) =>
-      api.previewEventBill(eventId);
+  Future<EventBillPreview> previewEventBill(
+    int eventId, {
+    num discountAmount = 0,
+    String? discountReason,
+  }) => api.previewEventBill(
+    eventId,
+    discountAmount: discountAmount,
+    discountReason: discountReason,
+  );
 
   @override
   Future<Invoice> issueEventInvoice(int eventId, Map<String, dynamic> body) =>
@@ -103,4 +115,22 @@ class BillingImpl implements BillingRepository {
   @override
   Future<BillSeries> updateBillingSeries(String series, int nextNumber) =>
       api.updateBillingSeries(series, nextNumber);
+
+  @override
+  Future<List<ServiceUsage>> billableServiceUsages() =>
+      api.serviceUsages(status: 'tobill');
+
+  @override
+  Future<ServiceBillPreview> previewServiceBill(List<int> usageIds) =>
+      api.previewServiceBill(usageIds);
+
+  @override
+  Future<Invoice> issueServiceInvoice(
+    List<int> usageIds,
+    Map<String, dynamic> body,
+  ) => api.issueServiceInvoice(usageIds, body);
+
+  @override
+  Future<void> addServicesToRoom(List<int> usageIds, int bookingId) =>
+      api.addServicesToRoom(usageIds, bookingId);
 }

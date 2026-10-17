@@ -140,6 +140,11 @@ class FoodOrder {
   /// guest is ready to pay: it then shows up in Billing's "Food to bill".
   final bool readyToBill;
 
+  /// Already moved onto its stay's room bill — settled there at checkout,
+  /// same as OrdersPanel.jsx's own `onRoomBill`. Once set neither "Issue
+  /// bill" nor "Add to room" applies any more.
+  final bool onRoomBill;
+
   final int? invoiceId;
 
   /// The bill number once one has been issued — shown under the status
@@ -174,6 +179,7 @@ class FoodOrder {
     this.handledBy,
     this.billed = false,
     this.readyToBill = false,
+    this.onRoomBill = false,
     this.invoiceId,
     this.invoiceNumber,
     this.nextStatuses = const [],
@@ -203,6 +209,7 @@ class FoodOrder {
     handledBy: asStringOrNull(json['handledBy']),
     billed: json['billed'] == true,
     readyToBill: json['readyToBill'] == true,
+    onRoomBill: json['onRoomBill'] == true,
     invoiceId: asIntOrNull(json['invoiceId']),
     invoiceNumber: asStringOrNull(json['invoiceNumber']),
     nextStatuses: (json['nextStatuses'] as List? ?? const [])
@@ -215,19 +222,16 @@ class FoodOrder {
 
   /// A fully delivered, unbilled order the captain can send to Billing's
   /// "Food to bill" queue.
-  bool get canMarkReadyToBill => status == 'DELIVERED' && !billed && !readyToBill;
+  bool get canMarkReadyToBill =>
+      status == 'DELIVERED' && !billed && !readyToBill && !onRoomBill;
 
   /// Delivered and not yet billed — the base condition both "Ready to bill"
   /// and "Issue bill" share. Unlike [canMarkReadyToBill] this stays true once
   /// [readyToBill] is set: a login that can issue the bill directly may still
-  /// do so for an order a captain already sent to the queue.
-  bool get isDeliveredUnbilled => status == 'DELIVERED' && !billed;
-
-  /// A room order still tied to a live booking bills through the stay's own
-  /// room bill at checkout, not as a standalone food invoice — same
-  /// exception OrdersPanel.jsx's own `canIssue` carves out
-  /// (`order.source !== 'ROOM' || !order.bookingId`).
-  bool get billableAsFoodTab => source != 'ROOM' || bookingId == null;
+  /// do so for an order a captain already sent to the queue. Same as
+  /// OrdersPanel.jsx's own `canIssue`, this goes false once the order is
+  /// already settled onto a room bill.
+  bool get isDeliveredUnbilled => status == 'DELIVERED' && !billed && !onRoomBill;
 
   /// The opaque key Billing's own food queue addresses this ticket's tab by
   /// — `table-5`, `counter-88`, `room-12`, `room-booking-7` — so "Issue bill"

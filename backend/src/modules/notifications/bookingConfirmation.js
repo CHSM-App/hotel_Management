@@ -3,22 +3,41 @@ const { logger } = require('../../config/logger');
 const whatsapp = require('../../config/whatsapp');
 const { toClockTime } = require('../rooms/checkoutPolicy.service');
 
-// The WhatsApp confirmation a guest gets when their booking is written down.
+// The WhatsApp confirmation a guest gets when their stay booking is written
+// down. Function bookings get their own template/module now — see
+// notifications/eventConfirmation.js — once a function's own wording (venue,
+// a single date, a start-end time range) stopped fitting this one's shape
+// (room number, separate check-in/check-out instants). The template's ten
+// variables, in order:
 //
-// One approved template serves both a stay and a function, because the
-// message says the same thing about either: who, where, which booking, when
-// it starts, when it ends, how to get there, whom to call. The template's
-// seven variables, in order:
+//   {{1}} customer         {{6}} advance_paid
+//   {{2}} property_name    {{7}} total_amount
+//   {{3}} room_no          {{8}} balance_due
+//   {{4}} checkin_time     {{9}} directions
+//   {{5}} checkout_time    {{10}} phone
 //
-//   {{1}} customer        {{5}} checkout_time
-//   {{2}} rest_name       {{6}} location
-//   {{3}} booking_id      {{7}} phone
-//   {{4}} checkin_time
+// "Dear {{1}}, Thank you for choosing us! Your booking for {{2}} is
+//  confirmed. Room No: {{3}} / Check-in: {{4}} / Check-out: {{5}} /
+//  Advance Paid: ₹{{6}} / Total Amount: ₹{{7}} / Balance Due: ₹{{8}} /
+//  Directions: {{9}} / Contact: {{10}} ..."
 //
-// "Dear {{1}}, Thank you for choosing Us. Your booking for {{2}} is
-//  confirmed. Booking ID: {{3}} / Check-in Date & Time: {{4}} /
-//  Check-out Date & Time: {{5}} / Property Directions: {{6}} /
-//  Property Phone Number: {{7}} ..."
+// One booking can hold rooms on different date ranges — dbo.booking_rooms
+// carries its own check_in_date/check_out_date per room, and
+// dbo.bookings.check_in_date/check_out_date (see syncBookingFromRooms in
+// bookings.service.js) is only the envelope: earliest check-in to latest
+// check-out across all of them. A single {{4}}/{{5}} pair can only ever
+// honestly speak for rooms that actually share one date range, so:
+//
+//   - every active room has the same check-in AND check-out  -> one message,
+//     {{3}} names every room (the existing STRING_AGG'd room_numbers), {{4}}/
+//     {{5}} are that one shared range, {{6}}-{{8}} are the booking's own
+//     totals — unchanged from before this split existed.
+//   - the rooms disagree on dates -> one message per room instead, each
+//     naming just that room and its own dates. Advance Paid and Balance Due
+//     are not stored per room (only total_price is, on booking_rooms), so
+//     the booking's one advance payment is split across the per-room
+//     messages in proportion to each room's own share of the booking total —
+//     see buildPerRoomSample.
 //
 // Best-effort, by design. The booking is already committed when this runs,
 // and a provider outage must not turn into "the booking failed" at the desk —
@@ -65,15 +84,6 @@ function formatClock(hhmm) {
   return `${hour12}:${String(min).padStart(2, '0')} ${suffix}`;
 }
 
-// An instant, said in IST — every property on this system is in India, and a
-// function booked for "6 PM" must read 6 PM regardless of the server's clock.
-function formatInstantIST(value) {
-  const shifted = new Date(new Date(value).getTime() + IST_OFFSET_MS);
-  const date = formatDate({ y: shifted.getUTCFullYear(), m: shifted.getUTCMonth() + 1, d: shifted.getUTCDate() });
-  const clock = `${String(shifted.getUTCHours()).padStart(2, '0')}:${String(shifted.getUTCMinutes()).padStart(2, '0')}`;
-  return `${date} ${formatClock(clock)}`;
-}
-
 // Where to send the guest. The pin wins when the property has one — a Maps
 // link opens turn-by-turn from wherever the guest is, which a typed address
 // cannot. The comma between the coordinates is URL-encoded so it survives the
@@ -116,37 +126,67 @@ function lodgeContact(lodge) {
   return lodge.phone || lodge.whatsapp_number || '-';
 }
 
-// The seven template values for a stay, in template order. Pure, so it can be
-// checked without a database; booking is the dbo.bookings row, lodge the
+// Plain digits, no currency mark — the template's own text already carries
+// the ₹ sign in front of each of these three slots, same convention
+// cancellationNotice.js's refundModeAmount uses.
+function money(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+// The ten template values for a stay, in template order. Pure, so it can be
+// checked without a database; booking is the dbo.bookings row (plus
+// room_numbers, advance_amount, total_price — see loadBooking), lodge the
 // dbo.lodges row.
 function buildStaySample(booking, lodge) {
   const times = stayTimes(booking, lodge);
+  const advance = Number(booking.advance_amount || 0);
+  const total = Number(booking.total_price || 0);
   return [
     booking.guest_name,
     lodge.name,
-    `#${booking.id}`,
+    booking.room_numbers,
     times.checkIn,
     times.checkOut,
+    money(advance),
+    money(total),
+    money(total - advance),
     directionsFor(lodge),
     lodgeContact(lodge),
   ].map(clean);
 }
 
-// The same seven for a function. `event` is the API shape getEventBooking
-// returns (camelCase, ISO instants), which is what the events service holds
-// at the moment it fires this. The venue name rides with the property name so
-// a lodge with a hall and a lawn tells the organiser which one they have.
-function buildEventSample(event, lodge) {
-  const where = event.venueName ? `${lodge.name} (${event.venueName})` : lodge.name;
+// The same ten values for one room out of a booking whose rooms don't all
+// share a date range. `room` is one row from loadBookingRooms (room_number,
+// check_in_date, check_out_date, total_price); `booking` only for its
+// advance_amount/total_price, used to work out this room's share of the
+// one advance payment the guest actually made — there's no per-room advance
+// column to read instead. A booking with no price on it yet (total_price 0,
+// which priceBooking never actually allows through createBooking but costs
+// nothing to guard anyway) splits the advance evenly instead of dividing by
+// zero.
+function buildPerRoomSample(room, booking, lodge, roomCount) {
+  const times = stayTimes(room, lodge);
+  const bookingTotal = Number(booking.total_price || 0);
+  const bookingAdvance = Number(booking.advance_amount || 0);
+  const roomTotal = Number(room.total_price || 0);
+  const share = bookingTotal > 0 ? roomTotal / bookingTotal : 1 / roomCount;
+  const roomAdvance = round2(bookingAdvance * share);
   return [
-    event.organiserName,
-    where,
-    `EV-${event.id}`,
-    formatInstantIST(event.startAt),
-    formatInstantIST(event.endAt),
+    booking.guest_name,
+    lodge.name,
+    room.room_number,
+    times.checkIn,
+    times.checkOut,
+    money(roomAdvance),
+    money(roomTotal),
+    money(roomTotal - roomAdvance),
     directionsFor(lodge),
     lodgeContact(lodge),
   ].map(clean);
+}
+
+function round2(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
 }
 
 async function loadLodge(lodgeId) {
@@ -170,11 +210,62 @@ async function loadBooking(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT id, guest_name, guest_phone, check_in_date, check_out_date
-      FROM dbo.bookings
-      WHERE id = @bookingId AND lodge_id = @lodgeId
+      SELECT b.id, b.guest_name, b.guest_phone, b.check_in_date, b.check_out_date,
+             b.advance_amount, b.total_price,
+             -- Every room the booking holds, same STRING_AGG shape
+             -- bookings.service.js's own listBookings/mapBooking uses for
+             -- roomNumbers — a fresh booking's rooms are all still 'BOOKED'
+             -- (confirmation fires right after createBooking), but the
+             -- CANCELLED exclusion is kept for consistency with that query.
+             (
+               SELECT STRING_AGG(r.room_number, ', ') WITHIN GROUP (ORDER BY br.id)
+               FROM dbo.booking_rooms br
+               JOIN dbo.rooms r ON r.id = br.room_id
+               WHERE br.booking_id = b.id AND br.status <> 'CANCELLED'
+             ) AS room_numbers
+      FROM dbo.bookings b
+      WHERE b.id = @bookingId AND b.lodge_id = @lodgeId
     `);
   return result.recordset[0] ?? null;
+}
+
+// Every active room the booking actually holds, each with its own date range
+// and its own price — the detail the booking-level roll-up (loadBooking
+// above) deliberately throws away. Ordered by br.id, same as the
+// STRING_AGG, so a single-message room_numbers list and this array name
+// rooms in the same order.
+async function loadBookingRooms(lodgeId, bookingId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT r.room_number, br.check_in_date, br.check_out_date, br.total_price
+      FROM dbo.booking_rooms br
+      JOIN dbo.rooms r ON r.id = br.room_id
+      JOIN dbo.bookings b ON b.id = br.booking_id AND b.lodge_id = @lodgeId
+      WHERE br.booking_id = @bookingId AND br.status <> 'CANCELLED'
+      ORDER BY br.id
+    `);
+  return result.recordset;
+}
+
+// Whether every room actually shares one date range — the only condition
+// under which a single {{4}}/{{5}} pair can honestly speak for all of them.
+// Compared as plain ISO date strings rather than Date objects. so two rows
+// naming the same calendar day always compare equal regardless of which
+// shape mssql happened to hand either one back as.
+function sameDatesAcrossRooms(rooms) {
+  if (rooms.length <= 1) return true;
+  const first = rooms[0];
+  const firstIn = toIsoDate(first.check_in_date);
+  const firstOut = toIsoDate(first.check_out_date);
+  return rooms.every((r) => toIsoDate(r.check_in_date) === firstIn && toIsoDate(r.check_out_date) === firstOut);
+}
+
+function toIsoDate(value) {
+  return typeof value === 'string' ? value.slice(0, 10) : value.toISOString().slice(0, 10);
 }
 
 // Runs the send and reports how it went, never throwing. `kind` and `id`
@@ -205,51 +296,58 @@ function skipped(reason) {
 
 // A stay, freshly saved. Reads the row back rather than trusting the input,
 // so what the guest is told is what the database holds.
+//
+// One message if every room shares a date range — the ordinary case, and
+// the only shape this ever had before rooms could disagree on dates.
+// Otherwise one message per room, each naming just that room and its own
+// check-in/check-out, since a single {{4}}/{{5}} pair can't honestly speak
+// for rooms on different dates. Returns { status: 'sent', rooms: [...] } for
+// the split case rather than the single { status, campaignId } shape, so a
+// caller can tell at a glance which happened.
 async function notifyStayBooked(lodgeId, bookingId) {
   if (!whatsapp.isBookingTemplateConfigured()) return skipped('not configured');
   try {
-    const [booking, lodge] = await Promise.all([loadBooking(lodgeId, bookingId), loadLodge(lodgeId)]);
+    const [booking, lodge, rooms] = await Promise.all([
+      loadBooking(lodgeId, bookingId),
+      loadLodge(lodgeId),
+      loadBookingRooms(lodgeId, bookingId),
+    ]);
     if (!booking || !lodge) return skipped('booking or lodge not found');
-    return await deliver({
-      kind: 'stay',
-      id: bookingId,
-      lodgeId,
-      phone: booking.guest_phone,
-      sample: buildStaySample(booking, lodge),
-    });
+    if (rooms.length === 0) return skipped('no active rooms on this booking');
+
+    if (sameDatesAcrossRooms(rooms)) {
+      return await deliver({
+        kind: 'stay',
+        id: bookingId,
+        lodgeId,
+        phone: booking.guest_phone,
+        sample: buildStaySample(booking, lodge),
+      });
+    }
+
+    const outcomes = [];
+    for (const room of rooms) {
+      const outcome = await deliver({
+        kind: 'stay-room',
+        id: `${bookingId}/${room.room_number}`,
+        lodgeId,
+        phone: booking.guest_phone,
+        sample: buildPerRoomSample(room, booking, lodge, rooms.length),
+      });
+      outcomes.push({ roomNumber: room.room_number, ...outcome });
+    }
+    return { status: 'sent', rooms: outcomes };
   } catch (err) {
     logger.warn({ kind: 'stay', id: bookingId, lodgeId, err }, 'Booking confirmation could not be prepared');
     return { status: 'failed', error: err.message };
   }
 }
 
-// A function that has just taken its venue — created as, or moved to,
-// TENTATIVE or CONFIRMED. The events service passes the booking it already
-// holds, so only the lodge is read here.
-async function notifyEventBooked(lodgeId, event) {
-  if (!whatsapp.isBookingTemplateConfigured()) return skipped('not configured');
-  try {
-    const lodge = await loadLodge(lodgeId);
-    if (!lodge) return skipped('lodge not found');
-    return await deliver({
-      kind: 'event',
-      id: event.id,
-      lodgeId,
-      phone: event.organiserPhone,
-      sample: buildEventSample(event, lodge),
-    });
-  } catch (err) {
-    logger.warn({ kind: 'event', id: event?.id, lodgeId, err }, 'Booking confirmation could not be prepared');
-    return { status: 'failed', error: err.message };
-  }
-}
-
 module.exports = {
   notifyStayBooked,
-  notifyEventBooked,
   buildStaySample,
-  buildEventSample,
-  formatInstantIST,
+  buildPerRoomSample,
+  sameDatesAcrossRooms,
   directionsFor,
   clean,
 };

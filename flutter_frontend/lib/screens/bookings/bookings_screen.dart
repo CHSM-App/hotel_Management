@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../presentation/providers/view_model_provider.dart';
-import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'take_booking_screen.dart';
 import 'tape_chart.dart';
@@ -38,18 +37,33 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
         Positioned(
           right: AppTheme.s16,
           bottom: AppTheme.s16,
-          child: NeuButton(
-            primary: true,
-            padding: const EdgeInsets.all(AppTheme.s16),
-            onPressed: () async {
-              final booked = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(builder: (_) => const TakeBookingScreen()),
-              );
-              if (booked == true) {
-                ref.read(bookingViewModelProvider.notifier).loadChart();
-              }
-            },
-            child: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
+          child: Material(
+            color: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.rLarge),
+            ),
+            child: InkWell(
+              customBorder: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppTheme.rLarge),
+              ),
+              onTap: () async {
+                final booked = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(builder: (_) => const TakeBookingScreen()),
+                );
+                if (booked == true) {
+                  ref.read(bookingViewModelProvider.notifier).loadChart();
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(AppTheme.s16),
+                decoration: BoxDecoration(
+                  gradient: AppTheme.accentGradient,
+                  borderRadius: BorderRadius.circular(AppTheme.rLarge),
+                  boxShadow: AppTheme.floating(AppTheme.accent),
+                ),
+                child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+              ),
+            ),
           ),
         ),
       ],

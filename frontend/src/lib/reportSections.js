@@ -3,7 +3,7 @@
 // strip at all when just one is left.
 export const REPORT_SECTIONS = {
   overview: ['overview'],
-  sales: ['bookings', 'events', 'food', 'services'],
+  sales: ['bookings', 'events', 'food', 'services', 'laundry'],
   finance: ['bills', 'profitLoss', 'expenses', 'income', 'gst'],
   assets: ['assets'],
 };

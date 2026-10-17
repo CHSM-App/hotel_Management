@@ -17,6 +17,7 @@ const bookingsRoutes = require('./modules/bookings/bookings.routes');
 const billingRoutes = require('./modules/billing/billing.routes');
 const reportsRoutes = require('./modules/reports/reports.routes');
 const rolesRoutes = require('./modules/roles/roles.routes');
+const customersRoutes = require('./modules/customers/customers.routes');
 const staffRoutes = require('./modules/staff/staff.routes');
 const menuRoutes = require('./modules/menu/menu.routes');
 const tablesRoutes = require('./modules/tables/tables.routes');
@@ -34,6 +35,8 @@ const { UPLOAD_DIR: ROOM_IMAGE_DIR } = require('./middleware/roomImageUpload');
 const { UPLOAD_DIR: MENU_IMAGE_DIR } = require('./middleware/menuImageUpload');
 const { UPLOAD_DIR: VENUE_IMAGE_DIR } = require('./middleware/venueImageUpload');
 const { UPLOAD_DIR: LOGO_DIR } = require('./middleware/logoUpload');
+const { UPLOAD_DIR: HERO_IMAGE_DIR } = require('./middleware/heroImageUpload');
+const { UPLOAD_DIR: SERVICE_IMAGE_DIR } = require('./middleware/serviceImageUpload');
 
 const app = express();
 
@@ -194,6 +197,8 @@ app.use('/room-images', PUBLIC_IMAGE_CORP, express.static(ROOM_IMAGE_DIR));
 app.use('/menu-images', PUBLIC_IMAGE_CORP, express.static(MENU_IMAGE_DIR));
 app.use('/venue-images', PUBLIC_IMAGE_CORP, express.static(VENUE_IMAGE_DIR));
 app.use('/hotel-logos', PUBLIC_IMAGE_CORP, express.static(LOGO_DIR));
+app.use('/lodge-hero-images', PUBLIC_IMAGE_CORP, express.static(HERO_IMAGE_DIR));
+app.use('/service-images', PUBLIC_IMAGE_CORP, express.static(SERVICE_IMAGE_DIR));
 
 // pdf.js, vendored rather than pulled from a CDN: the CSP above locks
 // scriptSrc to 'self' as the XSS defence for the dashboard, so a <script src>
@@ -266,6 +271,7 @@ const API_ROUTES = [
   ['/billing', billingRoutes],
   ['/reports', reportsRoutes],
   ['/roles', rolesRoutes],
+  ['/customers', customersRoutes],
   ['/staff', staffRoutes],
   ['/menu', menuRoutes],
   ['/tables', tablesRoutes],
@@ -288,7 +294,15 @@ for (const [prefix, router] of API_ROUTES) {
 // static upload mounts and the health probes. They belong in the fallback
 // exclusion list for the same reason — a missing image should 404, not return
 // the SPA shell.
-const NON_ROUTER_API_PREFIXES = ['/room-images', '/menu-images', '/venue-images', '/hotel-logos', '/health'];
+const NON_ROUTER_API_PREFIXES = [
+  '/room-images',
+  '/menu-images',
+  '/venue-images',
+  '/hotel-logos',
+  '/lodge-hero-images',
+  '/service-images',
+  '/health',
+];
 
 // '/internal/lodges' is mounted, but '/internal/anything-else' should also be
 // treated as API rather than handed to the SPA, so the first path segment is

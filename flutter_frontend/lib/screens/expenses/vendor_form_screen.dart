@@ -107,67 +107,126 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
   Widget build(BuildContext context) {
     final submitting = ref.watch(expensesViewModelProvider).submitting;
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit vendor' : 'Add vendor')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+      appBar: AppBar(
+        titleSpacing: AppTheme.s4,
+        title: Row(
           children: [
-            NeuCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_error != null && _backendErrorField != 'name' && _backendErrorField != 'phone') ...[
-                    _ErrorBanner(_error!),
-                    const SizedBox(height: AppTheme.s16),
-                  ],
-
-                  const SectionLabel('Identity', number: 1),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _name,
-                    label: 'Name',
-                    required: true,
-                    errorText: _nameError,
-                    focusNode: _nameFocus,
-                    onChanged: (_) => setState(() {}),
-                    forceCapitalizeWords: true,
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x331457AD),
+                    offset: Offset(0, 3),
+                    blurRadius: 8,
                   ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _contact, label: 'Contact person', forceCapitalizeWords: true),
-
-                  const SectionDivider(),
-                  const SectionLabel('Contact details', number: 2),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _phone,
-                    label: 'Phone',
-                    keyboardType: TextInputType.phone,
-                    errorText: _phoneError,
-                    focusNode: _phoneFocus,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _email, label: 'Email', keyboardType: TextInputType.emailAddress),
-
-                  const SectionDivider(),
-                  const SectionLabel('Notes', number: 3),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _specialty, label: 'Specialty', hint: 'AC repair, catering, linen…'),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(controller: _notes, label: 'Notes'),
                 ],
               ),
+              child: Icon(
+                _isEdit ? Icons.edit_rounded : Icons.store_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
-            const SizedBox(height: AppTheme.s24),
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: submitting ? null : _save,
-              child: submitting
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Save'),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                _isEdit ? 'Edit vendor' : 'Add vendor',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
             ),
           ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
+              children: [
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s12 + 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_error != null && _backendErrorField != 'name' && _backendErrorField != 'phone') ...[
+                        _ErrorBanner(_error!),
+                        const SizedBox(height: AppTheme.s12),
+                      ],
+
+                      const SectionLabel('Identity', number: 1, icon: Icons.badge_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        dense: true,
+                        controller: _name,
+                        label: 'Name',
+                        required: true,
+                        errorText: _nameError,
+                        focusNode: _nameFocus,
+                        onChanged: (_) => setState(() {}),
+                        forceCapitalizeWords: true,
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(dense: true, controller: _contact, label: 'Contact person', forceCapitalizeWords: true),
+
+                      const SectionDivider(),
+                      const SectionLabel('Contact details', number: 2, icon: Icons.call_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        dense: true,
+                        controller: _phone,
+                        label: 'Phone',
+                        keyboardType: TextInputType.phone,
+                        errorText: _phoneError,
+                        focusNode: _phoneFocus,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(dense: true, controller: _email, label: 'Email', keyboardType: TextInputType.emailAddress),
+
+                      const SectionDivider(),
+                      const SectionLabel('Notes', number: 3, icon: Icons.notes_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(dense: true, controller: _specialty, label: 'Specialty', hint: 'AC repair, catering, linen…'),
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(dense: true, controller: _notes, label: 'Notes'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppTheme.s16),
+                NeuButton(
+                  primary: true,
+                  expand: true,
+                  onPressed: submitting ? null : _save,
+                  child: submitting
+                      ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Save'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

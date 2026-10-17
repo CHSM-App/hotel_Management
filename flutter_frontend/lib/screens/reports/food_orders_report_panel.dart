@@ -74,6 +74,15 @@ class _Loaded extends StatelessWidget {
               value: formatPrice(s.billedValue),
               accent: true,
             ),
+            // Food ordered to a room rides on that stay's combined bill
+            // rather than its own — the Room Bookings report excludes it
+            // from the room total, so it needs a home here instead.
+            if (s.onStayBillValue > 0)
+              StatItem(
+                label: 'Room service',
+                value: formatPrice(s.onStayBillValue),
+                note: "on a room's bill",
+              ),
           ],
         ),
         const SizedBox(height: AppTheme.s16),

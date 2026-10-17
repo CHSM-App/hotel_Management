@@ -208,7 +208,7 @@
   font-size: 14px;
   font-weight: 600;
   color: #fff;
-  background: #8b0000;
+  background: var(--danger);
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -262,7 +262,7 @@
   font-weight: 600;
   color: #fff;
   text-decoration: none;
-  background: linear-gradient(135deg, #b91c1c, #9f1239);
+  background: linear-gradient(135deg, var(--danger), color-mix(in srgb, var(--danger) 70%, black));
   border-radius: 8px;
   transition: filter 150ms ease;
 }
@@ -285,82 +285,82 @@
   position: relative;
   overflow: hidden;
   border-color: rgba(124, 92, 255, 0.18);
-  box-shadow: 0 10px 40px -12px rgba(91, 63, 217, 0.25);
+  box-shadow: 0 10px 40px -12px rgba(10, 58, 107, 0.25);
 }
 
 /* Gradient banner holding the title. Negative margins pull it to the card's edges. */
 .policy-card > .policy-eyebrow {
   margin: -40px -44px 0;
   padding: 32px 44px 0;
-  background: linear-gradient(135deg, #5b3fd9 0%, #8b5cf6 55%, #c084fc 100%);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--secondary) 55%, color-mix(in srgb, var(--secondary) 55%, white) 100%);
   color: rgba(255, 255, 255, 0.85);
 }
 
 .policy-card > h1 {
   margin: 0 -44px 0;
   padding: 6px 44px 8px;
-  background: linear-gradient(135deg, #5b3fd9 0%, #8b5cf6 55%, #c084fc 100%);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--secondary) 55%, color-mix(in srgb, var(--secondary) 55%, white) 100%);
   color: #fff;
 }
 
 .policy-card > .policy-updated {
   margin: 0 -44px 8px;
   padding: 0 44px 28px;
-  background: linear-gradient(135deg, #5b3fd9 0%, #8b5cf6 55%, #c084fc 100%);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--secondary) 55%, color-mix(in srgb, var(--secondary) 55%, white) 100%);
   color: rgba(255, 255, 255, 0.8);
   border-bottom: none;
 }
 
 .policy-card h2 {
   padding-left: 12px;
-  border-left: 4px solid #8b5cf6;
-  color: #3b2a9c;
+  border-left: 4px solid var(--secondary);
+  color: var(--brand-ink);
 }
 
 .policy-card h3 {
-  color: #5b3fd9;
+  color: var(--brand);
 }
 
 .policy-card li::marker {
-  color: #8b5cf6;
+  color: var(--secondary);
 }
 
 .policy-card strong {
-  color: #2f2470;
+  color: var(--brand-ink);
 }
 
 .policy-nav {
   border-color: rgba(124, 92, 255, 0.18);
-  box-shadow: 0 8px 28px -12px rgba(91, 63, 217, 0.25);
+  box-shadow: 0 8px 28px -12px rgba(10, 58, 107, 0.25);
 }
 
 .policy-nav__title {
-  color: #5b3fd9;
+  color: var(--brand);
 }
 
 .policy-nav nav a:hover {
   background: linear-gradient(90deg, rgba(139, 92, 246, 0.16), rgba(139, 92, 246, 0.04));
-  color: #3b2a9c;
+  color: var(--brand-ink);
 }
 
 .policy-note {
-  background: linear-gradient(135deg, #eef2ff, #f5f0ff);
-  border-left-color: #8b5cf6;
+  background: linear-gradient(135deg, var(--brand-wash), color-mix(in srgb, var(--brand-wash) 60%, white));
+  border-left-color: var(--secondary);
 }
 
 /* The deletion section is the one action on the page, so it gets its own tint. */
 #account-deletion .policy-form {
-  background: linear-gradient(135deg, #fff5f5 0%, #fdf2f8 100%);
-  border-color: rgba(190, 18, 60, 0.25);
-  box-shadow: 0 8px 24px -14px rgba(190, 18, 60, 0.35);
+  background: linear-gradient(135deg, var(--danger-bg) 0%, color-mix(in srgb, var(--danger-bg) 70%, white) 100%);
+  border-color: rgba(234, 67, 53, 0.25);
+  box-shadow: 0 8px 24px -14px rgba(234, 67, 53, 0.35);
 }
 
 #account-deletion .policy-form h3 {
-  color: #9f1239;
+  color: color-mix(in srgb, var(--danger) 70%, black);
 }
 
 .policy-form__submit {
-  background: linear-gradient(135deg, #b91c1c, #9f1239);
+  background: linear-gradient(135deg, var(--danger), color-mix(in srgb, var(--danger) 70%, black));
 }
 
 @media (max-width: 860px) {

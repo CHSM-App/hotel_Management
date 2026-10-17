@@ -1,3 +1,18 @@
+/* Zoomed out 10% — the same effect as the browser's own Ctrl/Cmd-minus,
+   scoped to just this page. The tape chart is the widest, busiest screen in
+   the app (a room per row, a date per column, months of tiles), and this
+   buys it real breathing room before a wide date range needs its own
+   horizontal scroll. .bookings-panel__modal/__backdrop (position: fixed)
+   live inside this same zoomed box, so they scale down with it too rather
+   than rendering at native size against zoomed-out content — worth a check
+   if a booking dialog ever looks mis-sized after this. */
+.bookings-panel {
+  zoom: 0.9;
+  /* No local brand override — every other owner-side page reads the global
+     violet brand tokens from index.css, and this page now matches them
+     instead of carrying its own navy tint. */
+}
+
 .bookings-panel__toolbar {
   display: flex;
   align-items: center;
@@ -378,13 +393,6 @@
   color: var(--text-muted);
 }
 
-.booking-form__warn {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--danger);
-  margin: 6px 0 0;
-}
-
 /* The priced breakdown reads as a quoted figure, not another form field —
    boxing it separates it from the inputs above without adding height. */
 .booking-form .sim-result {
@@ -545,6 +553,18 @@
 }
 
 .booking-form__party-split {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.booking-form__party-extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 2px;
+}
+
+.booking-form__party-extra-label {
   font-size: 12.5px;
   color: var(--text-muted);
 }
@@ -979,9 +999,11 @@
   padding: 8px 14px;
 }
 
+/* The dashed full-width strip, tinted: on a bare background it read as a label
+   rather than as something to press. */
 .bookings-panel__add-btn {
-  background: none;
-  border: 1px dashed var(--border);
+  background: var(--brand-wash);
+  border: 1px dashed var(--brand-band);
   border-radius: 8px;
   color: var(--brand-ink);
   font-size: 13px;
@@ -989,6 +1011,10 @@
   cursor: pointer;
   padding: 10px 14px;
   width: 100%;
+}
+
+.bookings-panel__add-btn:hover:not(:disabled) {
+  background: var(--brand-wash-edge);
 }
 
 .bookings-panel__add-btn:disabled {
@@ -1360,6 +1386,26 @@
 .bookings-panel__draft-chip:active {
   filter: brightness(0.98);
   box-shadow: inset 0 2px 6px rgba(92, 68, 4, 0.45);
+}
+
+/* New booking sits right beside the draft chip, so it needs a colour of its
+   own rather than the app-wide amber .btn-accent — the two otherwise read as
+   one undifferentiated button. A light navy keeps it legible with white text
+   while staying distinct from the chart's red/blue/slate booking colours. */
+.bookings-panel__toolbar-actions .btn-accent {
+  background: #3b5a8c;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(27, 42, 66, 0.28), 0 10px 22px -8px rgba(27, 42, 66, 0.46);
+}
+
+.bookings-panel__toolbar-actions .btn-accent:hover {
+  background: #324d79;
+  box-shadow: 0 4px 10px rgba(27, 42, 66, 0.32), 0 16px 30px -8px rgba(27, 42, 66, 0.48);
+}
+
+.bookings-panel__toolbar-actions .btn-accent:active {
+  background: #324d79;
+  box-shadow: inset 0 2px 6px rgba(20, 32, 50, 0.45);
 }
 
 .bookings-panel__draft-chip svg {

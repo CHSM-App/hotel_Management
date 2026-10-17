@@ -110,7 +110,7 @@
   margin: 0 0 10px;
   padding: 4px 12px;
   border-radius: 999px;
-  background: #f7ecec;
+  background: color-mix(in srgb, var(--accent) 15%, white);
   color: var(--accent-ink);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -437,13 +437,13 @@
   cursor: pointer;
   /* Brand-tinted rather than the neutral --neu-dark: a grey shadow under a
      navy button looks detached from it. */
-  box-shadow: 5px 5px 12px rgba(20, 39, 68, 0.28), -5px -5px 12px var(--neu-light);
+  box-shadow: 5px 5px 12px rgba(7, 39, 72, 0.28), -5px -5px 12px var(--neu-light);
   transition: background 150ms ease, box-shadow 150ms ease;
 }
 
 .auth-card .btn-primary:hover {
   background: var(--brand-ink);
-  box-shadow: 7px 7px 16px rgba(20, 39, 68, 0.32), -7px -7px 16px var(--neu-light);
+  box-shadow: 7px 7px 16px rgba(7, 39, 72, 0.32), -7px -7px 16px var(--neu-light);
 }
 
 .auth-card .btn-primary:active {
@@ -504,7 +504,7 @@
 }
 
 .form-banner--info {
-  background: #eef4f2;
+  background: var(--brand-wash);
   color: var(--brand-ink);
 }
 
@@ -512,8 +512,8 @@
    catches the eye — same treatment pages/lodge/forms.css gives its banner,
    which these auth pages can't reach since they don't import it. */
 @keyframes form-banner-flash {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(193, 18, 31, 0); }
-  20%, 60% { box-shadow: 0 0 0 4px rgba(193, 18, 31, 0.35); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 67, 53, 0); }
+  20%, 60% { box-shadow: 0 0 0 4px rgba(234, 67, 53, 0.35); }
 }
 
 .form-banner--flash {

@@ -3,107 +3,90 @@
 
 .tabstrip {
   display: flex;
+  align-items: center;
   gap: 8px;
+  /* Headroom for the raised chips' own shadow, so it isn't clipped at the
+     strip's edges the way a flat underline never needed room for. */
+  padding: 5px 2px 11px;
   /* Scrolls sideways rather than wrapping: ten sections on two or three lines
-     would push the list itself off a phone screen. The bar is kept visible —
-     chips running to the edge are easy to miss on a screen with no trackpad
-     gesture, and the bar says outright that there is more to the right. */
+     would push the list itself off a phone screen. */
   overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-  padding: 2px 2px 8px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
 }
 
 .tabstrip::-webkit-scrollbar {
-  height: 8px;
+  display: none;
 }
 
-.tabstrip::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.tabstrip::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--border);
-}
-
-.tabstrip::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-
+/* Each section is its own pill rather than a slot in one continuous track —
+   a track wide enough for ten sections would either crowd them or commit the
+   strip to a width nothing else on the page does, and gapped chips scroll
+   exactly as readably at three sections as at fifteen. */
 .tabstrip__tab {
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  flex-shrink: 0;
-  padding: 9px 14px;
-  border: none;
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--surface);
   box-shadow: var(--shadow-raised);
-  font-family: var(--serif);
-  font-size: 15px;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1;
   color: var(--text);
+  white-space: nowrap;
   cursor: pointer;
-  transition: box-shadow 150ms ease, color 150ms ease;
-  /* Comfortably past the 44px touch target — tapped on a phone in a kitchen,
-     often by someone already holding something. */
-  min-height: 44px;
+  transition: var(--neu-transition);
 }
 
 .tabstrip__tab:hover {
-  color: var(--brand);
   box-shadow: var(--shadow-raised-hover);
+  color: var(--ink);
 }
 
-/* The extrusion can't be trusted to carry focus on its own here — these chips
-   scroll sideways and the shadow gets clipped at the edges — so keep a ring. */
 .tabstrip__tab:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-/* Selected keeps the brand fill: it's the only cue that survives when the
-   strip is scrolled and several chips are half out of view. */
-.tabstrip__tab--on {
-  background: var(--brand);
-  color: #fff;
-  box-shadow: var(--shadow-pressed), 3px 3px 8px var(--neu-dark);
-}
-
+/* Carved rather than filled: the one not picked is something to press, the
+   one that is picked is held down — the same correction the Billing filter
+   chips carry (see .billing-panel__filter in Billing.css) — tinted with the
+   wash the sidebar already uses for "this one's selected" (--brand-wash),
+   so the live tab reads at a glance even mid-scroll. */
+.tabstrip__tab--on,
 .tabstrip__tab--on:hover {
-  color: #fff;
+  background: var(--brand-wash);
+  border-color: var(--brand-wash-edge);
+  box-shadow: var(--shadow-pressed);
+  color: var(--brand-ink);
 }
 
 .tabstrip__tab--dim {
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 .tabstrip__tab--dim .tabstrip__name {
   text-decoration: line-through;
 }
 
-/* --paper now matches the chip it sits on, so the count needs the carve to
-   separate from it. */
 .tabstrip__count {
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--surface);
-  box-shadow: var(--shadow-pressed);
-  font-family: var(--sans);
-  font-size: 12px;
+  background: var(--neu-sunken);
+  font-size: 11.5px;
+  font-weight: 700;
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-/* On the brand-filled chip the carve has nothing to bite into — a grey inset
-   over blue just reads as dirt — so the translucent fill does the work. */
+/* On the tinted chip the sunken grey has nothing to read against — it was
+   tuned for a white one — so the badge flips to a white well of its own. */
 .tabstrip__tab--on .tabstrip__count {
-  background: rgba(255, 255, 255, 0.22);
-  color: #fff;
-  box-shadow: none;
+  background: var(--surface);
+  color: var(--brand-ink);
 }
 
 .tabstrip__flag {
@@ -112,10 +95,6 @@
   border-radius: 50%;
   background: var(--danger);
   flex-shrink: 0;
-}
-
-.tabstrip__tab--on .tabstrip__flag {
-  background: #fff;
 }
 
 @media (max-width: 640px) {

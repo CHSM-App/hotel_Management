@@ -7,6 +7,7 @@ import { toQrDataUrl, assetUrl } from '../../lib/qr';
 import { formatPrice } from './priceFormat';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
+import VendorDirectory from './VendorDirectory';
 import Req from '../../components/RequiredMark';
 import PageLoader from '../../components/PageLoader';
 import {
@@ -17,6 +18,7 @@ import {
 } from './paymentMethods';
 import './forms.css';
 import './InventoryPanel.css';
+import './FinanceTabs.css';
 
 const STATUS_LABEL = {
   IN_USE: 'In use',
@@ -83,6 +85,8 @@ const TABLE_SORT_ACCESSORS = {
 const emptyAssetForm = {
   name: '',
   categoryName: '',
+  // Only asked for under the linen category: how many are owned.
+  quantity: '',
   brand: '',
   model: '',
   serialNumber: '',
@@ -239,7 +243,18 @@ function focusFirstError(errors, fieldIds) {
 // resort's pool pump, a dormitory's bunk frames) is still just a typed name.
 // Covers the equipment named in the PDF plus the categories most hotels reach
 // for first, so the common case needs no typing at all.
+// The category Laundry reads its linen from. An asset under it is a stock of
+// pieces, so it carries a quantity instead of standing for one unit.
+const LINEN_CATEGORY = 'Bedsheets & Towels';
+// By the name it is offered under, or by the flag on a saved category — which
+// is what still marks one a property made under an earlier name.
+const isLinenCategory = (name, categories = []) => {
+  const typed = String(name ?? '').trim().toLowerCase();
+  return typed === LINEN_CATEGORY.toLowerCase() || (categories || []).some((c) => c.isLinen && c.name.trim().toLowerCase() === typed);
+};
+
 const SUGGESTED_CATEGORIES = [
+  LINEN_CATEGORY,
   'Air Conditioner',
   'Lift / Elevator',
   'Bed',
@@ -252,9 +267,19 @@ const SUGGESTED_CATEGORIES = [
   'Electrical',
   'Fire Safety',
   'CCTV / Security',
-  'Laundry Equipment',
   'Housekeeping Equipment',
 ];
+
+// What the Category dropdown offers: every category the property has saved,
+// then the usual ones. The linen category is listed once, under the name it is
+// offered by — a property that saved it under its earlier name ("Hotel linen")
+// does not see both; choosing it still files the asset under that category.
+const categoryOptions = (categories) => {
+  const saved = (categories || [])
+    .filter((c) => !(c.isLinen && c.name.trim().toLowerCase() !== LINEN_CATEGORY.toLowerCase()))
+    .map((c) => c.name);
+  return [...new Set([...saved, ...SUGGESTED_CATEGORIES])].sort((a, b) => a.localeCompare(b));
+};
 
 // A warranty/AMC date reads as "expiring soon" inside 30 days, and "expired"
 // once it's past — the only reminder v1 gives is this badge, computed fresh
@@ -286,7 +311,12 @@ function todayIso() {
 function CategoryField({ id, value, options, onChange }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
+  // "Other" was chosen: the list steps aside and the box is for typing a
+  // category of the owner's own. It is saved with the asset, and from then on
+  // it is in the list like any other.
+  const [other, setOther] = useState(false);
   const boxRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -299,27 +329,46 @@ function CategoryField({ id, value, options, onChange }) {
 
   const needle = value.trim().toLowerCase();
   const matches = needle ? options.filter((name) => name.toLowerCase().includes(needle)) : options;
-  const activeIndex = active < matches.length ? active : -1;
+  // The rows the arrows move through: the matching names, then Other.
+  const rowCount = matches.length + 1;
+  const activeIndex = active < rowCount ? active : -1;
 
   const take = (name) => {
     setOpen(false);
+    setOther(false);
     onChange(name);
+  };
+
+  const takeOther = () => {
+    setOpen(false);
+    setOther(true);
+    onChange('');
+    inputRef.current?.focus();
+  };
+
+  // While a new name is being typed the list stays shut; an empty box opens it
+  // again, for someone who chose Other and then thought better of it.
+  const openList = () => {
+    if (other && value.trim()) return;
+    setOpen(true);
   };
 
   const onKeyDown = (e) => {
     if (e.key === 'ArrowDown' && !open) {
+      setOther(false);
       setOpen(true);
       return;
     }
-    if (!open || matches.length === 0) return;
+    if (!open) return;
 
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const step = e.key === 'ArrowDown' ? 1 : -1;
-      setActive((activeIndex + step + matches.length) % matches.length);
+      setActive((activeIndex + step + rowCount) % rowCount);
     } else if (e.key === 'Enter' && activeIndex >= 0) {
       e.preventDefault();
-      take(matches[activeIndex]);
+      if (activeIndex === matches.length) takeOther();
+      else take(matches[activeIndex]);
     } else if (e.key === 'Escape') {
       setOpen(false);
     }
@@ -329,8 +378,9 @@ function CategoryField({ id, value, options, onChange }) {
     <div className="asset-suggest" ref={boxRef}>
       <input
         id={id}
+        ref={inputRef}
         value={value}
-        placeholder="AC, Lift, Generator…"
+        placeholder={other ? 'Enter the category name' : 'AC, Lift, Generator…'}
         role="combobox"
         aria-expanded={open}
         aria-controls={`${id}-suggestions`}
@@ -340,12 +390,13 @@ function CategoryField({ id, value, options, onChange }) {
         onChange={(e) => {
           onChange(e.target.value);
           setActive(-1);
+          if (other) setOpen(false);
         }}
         onKeyDown={onKeyDown}
-        onFocus={() => setOpen(true)}
-        onClick={() => setOpen(true)}
+        onFocus={() => !other && setOpen(true)}
+        onClick={openList}
       />
-      {open && matches.length > 0 && (
+      {open && (
         <ul className="asset-suggest__list" id={`${id}-suggestions`} role="listbox">
           {matches.map((name, i) => (
             <li key={name} role="option" aria-selected={i === activeIndex} id={`${id}-suggestion-${i}`}>
@@ -362,6 +413,20 @@ function CategoryField({ id, value, options, onChange }) {
               </button>
             </li>
           ))}
+          {/* Always last, whatever has been typed: the way to a category that is not listed. */}
+          <li role="option" aria-selected={activeIndex === matches.length} id={`${id}-suggestion-${matches.length}`}>
+            <button
+              type="button"
+              className={`asset-suggest__option${activeIndex === matches.length ? ' asset-suggest__option--active' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                takeOther();
+              }}
+              onMouseEnter={() => setActive(matches.length)}
+            >
+              Other
+            </button>
+          </li>
         </ul>
       )}
     </div>
@@ -741,6 +806,7 @@ export default function AssetsPanel({ onViewReport }) {
   const [depreciationForm, setDepreciationForm] = useState({ depreciationBlock: '', depreciationRatePercent: '', depreciationMethod: 'WDV' });
   const [depreciationSubmitting, setDepreciationSubmitting] = useState(false);
   const [depreciationError, setDepreciationError] = useState('');
+  const [depreciationSort, setDepreciationSort] = useState({ key: null, dir: 'asc' });
 
   const [showCoverageForm, setShowCoverageForm] = useState(false);
   const [coverageForm, setCoverageForm] = useState(emptyCoverageForm);
@@ -899,11 +965,81 @@ export default function AssetsPanel({ onViewReport }) {
     });
   };
 
+  const toggleDepreciationSort = (key) => {
+    setDepreciationSort((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return { key: null, dir: 'asc' };
+    });
+  };
+
+  const DEPRECIATION_SORT_ACCESSORS = {
+    category: (cat) => cat.name || '',
+    block: (cat) => cat.depreciationBlock || '',
+    method: (cat) => (cat.depreciationRatePercent != null ? (cat.depreciationMethod === 'SLM' ? 'Straight-line' : 'WDV') : ''),
+    rate: (cat) => cat.depreciationRatePercent,
+  };
+
+  const sortedCategories = useMemo(() => {
+    const list = categories || [];
+    if (!depreciationSort.key) return list;
+    const accessor = DEPRECIATION_SORT_ACCESSORS[depreciationSort.key];
+    if (!accessor) return list;
+    const dir = depreciationSort.dir === 'desc' ? -1 : 1;
+    return [...list].sort((a, b) => {
+      const av = accessor(a);
+      const bv = accessor(b);
+      const aEmpty = av === null || av === undefined || av === '';
+      const bEmpty = bv === null || bv === undefined || bv === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [categories, depreciationSort]);
+
   const visibleWorkOrders = useMemo(() => {
     if (!workOrders) return [];
     if (!woStatusFilter) return workOrders;
     return workOrders.filter((w) => w.status === woStatusFilter);
   }, [workOrders, woStatusFilter]);
+
+  const [woSort, setWoSort] = useState({ key: null, dir: 'asc' });
+
+  const toggleWoSort = (key) => {
+    setWoSort((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return { key: null, dir: 'asc' };
+    });
+  };
+
+  const WO_SORT_ACCESSORS = {
+    asset: (wo) => wo.assetName || '',
+    status: (wo) => WO_STATUS_LABEL[wo.status] || '',
+    description: (wo) => wo.description || '',
+    assigned: (wo) => [wo.assignedToName, wo.vendorName].filter(Boolean).join(' · '),
+    opened: (wo) => (wo.openedAt ? new Date(wo.openedAt).getTime() : null),
+  };
+
+  const sortedWorkOrders = useMemo(() => {
+    if (!woSort.key) return visibleWorkOrders;
+    const accessor = WO_SORT_ACCESSORS[woSort.key];
+    if (!accessor) return visibleWorkOrders;
+    const dir = woSort.dir === 'desc' ? -1 : 1;
+    return [...visibleWorkOrders].sort((a, b) => {
+      const av = accessor(a);
+      const bv = accessor(b);
+      const aEmpty = av === null || av === undefined || av === '';
+      const bEmpty = bv === null || bv === undefined || bv === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [visibleWorkOrders, woSort]);
 
   const openWoCount = (workOrders || []).filter((w) => w.status !== 'CLOSED').length;
 
@@ -929,6 +1065,7 @@ export default function AssetsPanel({ onViewReport }) {
         ? {
             name: asset.name,
             categoryName: asset.categoryName || '',
+            quantity: asset.quantity ?? '',
             brand: asset.brand || '',
             model: asset.model || '',
             serialNumber: asset.serialNumber || '',
@@ -1018,7 +1155,10 @@ export default function AssetsPanel({ onViewReport }) {
   // picking an existing one.
   const resolveCategoryId = async (name) => {
     const trimmed = name.trim();
-    const existing = categories.find((c) => c.name.toLowerCase() === trimmed.toLowerCase());
+    const existing =
+      categories.find((c) => c.name.toLowerCase() === trimmed.toLowerCase()) ||
+      // The linen category under whatever name it was first saved.
+      (trimmed.toLowerCase() === LINEN_CATEGORY.toLowerCase() ? categories.find((c) => c.isLinen) : null);
     if (existing) return existing.id;
 
     const created = await apiPost('/assets/categories', { name: trimmed }, { token: session?.token });
@@ -1061,6 +1201,10 @@ export default function AssetsPanel({ onViewReport }) {
     const errors = {};
     if (!name) errors.name = 'Asset name is required.';
     if (!assetForm.categoryName.trim()) errors.categoryName = 'Enter or choose a category.';
+    // Laundry's stock is counted from this, so linen cannot be saved without it.
+    if (isLinenCategory(assetForm.categoryName, categories) && (assetForm.quantity === '' || !(Number(assetForm.quantity) >= 0))) {
+      errors.quantity = 'Enter how many you own.';
+    }
     // The date input's max blocks the native picker but not a typed date, so
     // this is the check that actually holds on every browser.
     if (assetForm.purchaseDate && assetForm.purchaseDate > todayIso()) {
@@ -1081,6 +1225,7 @@ export default function AssetsPanel({ onViewReport }) {
     if (Object.keys(errors).length > 0) {
       focusFirstError(errors, {
         categoryName: 'assetCategory',
+        quantity: 'assetQuantity',
         name: 'assetName',
         purchaseDate: 'assetPurchaseDate',
         vendorPhone: 'assetVendorPhone',
@@ -1100,6 +1245,7 @@ export default function AssetsPanel({ onViewReport }) {
       const body = {
         name,
         categoryId,
+        quantity: isLinenCategory(assetForm.categoryName, categories) ? assetForm.quantity : '',
         brand: assetForm.brand,
         model: assetForm.model,
         serialNumber: assetForm.serialNumber,
@@ -1979,10 +2125,20 @@ export default function AssetsPanel({ onViewReport }) {
     setShowVendorForm(true);
   };
 
+  const deleteVendor = async (vendor) => {
+    try {
+      await apiDelete(`/assets/vendors/${vendor.id}`, { token: session?.token });
+      await loadVendors();
+      setError('');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not delete that vendor.');
+    }
+  };
+
   const handleVendorSubmit = async (e) => {
     e.preventDefault();
     const errors = {};
-    if (!vendorForm.name.trim()) errors.name = 'Vendor name is required.';
+    if (!vendorForm.name.trim()) errors.name = 'Shop / business name is required.';
     if (vendorForm.phone && !/^[6-9]\d{9}$/.test(vendorForm.phone)) {
       errors.phone = 'Enter a valid 10-digit mobile number.';
     } else if (vendorForm.phone) {
@@ -2074,25 +2230,27 @@ export default function AssetsPanel({ onViewReport }) {
     <div>
       {error && <div className="form-banner form-banner--error">{error}</div>}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <SectionTabs
-          ariaLabel="Assets sections"
-          activeId={tab}
-          onChange={setTab}
-          tabs={[
-            { id: 'register', name: 'Asset Register', count: assets.filter((a) => a.status !== 'RETIRED').length },
-            {
-              id: 'workOrders',
-              name: 'Work Orders',
-              count: openWoCount,
-              flagged: openWoCount > 0,
-              flagTitle: `${openWoCount} open work order${openWoCount === 1 ? '' : 's'}`,
-            },
-            { id: 'vendors', name: 'Vendors', count: (vendors || []).length },
-            { id: 'deadStock', name: 'Dead Stock', count: deadStockAssets.length },
-            { id: 'depreciation', name: 'Depreciation', count: (categories || []).length },
-          ]}
-        />
+      <div className="finance-tabs-row">
+        <div className="finance-tabs">
+          <SectionTabs
+            ariaLabel="Assets sections"
+            activeId={tab}
+            onChange={setTab}
+            tabs={[
+              { id: 'register', name: 'Asset Register', count: assets.filter((a) => a.status !== 'RETIRED').length },
+              {
+                id: 'workOrders',
+                name: 'Work Orders',
+                count: openWoCount,
+                flagged: openWoCount > 0,
+                flagTitle: `${openWoCount} open work order${openWoCount === 1 ? '' : 's'}`,
+              },
+              { id: 'vendors', name: 'Vendors', count: (vendors || []).length },
+              { id: 'deadStock', name: 'Dead Stock', count: deadStockAssets.length },
+              { id: 'depreciation', name: 'Depreciation', count: (categories || []).length },
+            ]}
+          />
+        </div>
         <button type="button" className="btn-secondary" onClick={onViewReport}>
           View Report
         </button>
@@ -2187,7 +2345,7 @@ export default function AssetsPanel({ onViewReport }) {
             </p>
           ) : assetView === 'table' ? (
             <div className="asset-table-wrap">
-              <table className="asset-table">
+              <table className="asset-table finance-table">
                 <thead>
                   <tr>
                     {[
@@ -2235,7 +2393,10 @@ export default function AssetsPanel({ onViewReport }) {
                     return (
                       <tr key={asset.id} onClick={() => openAssetDetail(asset)}>
                         <td className="asset-table__mono">{asset.assetTag}</td>
-                        <td className="asset-table__name">{asset.name}</td>
+                        <td className="asset-table__name">
+                          {asset.name}
+                          {asset.quantity != null && <span className="asset-table__muted"> × {asset.quantity}</span>}
+                        </td>
                         <td>{asset.categoryName}</td>
                         <td className={location ? '' : 'asset-table__muted'}>{location || '—'}</td>
                         <td>
@@ -2371,60 +2532,66 @@ export default function AssetsPanel({ onViewReport }) {
           {visibleWorkOrders.length === 0 ? (
             <p className="inv-panel__hint">No work orders here.</p>
           ) : (
-            <ul className="inv-list">
-              {visibleWorkOrders.map((wo) => (
-                <li key={wo.id} className="inv-item">
-                  <div className="inv-item__body" onClick={() => openWoForm(wo)} style={{ cursor: 'pointer' }}>
-                    <div className="inv-item__name">
-                      {wo.assetName}
-                      <span className="inv-tag">{WO_STATUS_LABEL[wo.status]}</span>
-                      {wo.isWarrantyClaim && <span className="inv-tag">Warranty claim</span>}
-                    </div>
-                    <div className="inv-item__meta">
-                      {wo.description}
-                      {wo.assignedToName && ` · Assigned: ${wo.assignedToName}`}
-                      {wo.vendorName && ` · Vendor: ${wo.vendorName}`}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="asset-table-wrap">
+              <table className="asset-table finance-table">
+                <thead>
+                  <tr>
+                    {[
+                      ['asset', 'Asset'],
+                      ['status', 'Status'],
+                      ['description', 'Description'],
+                      ['assigned', 'Assigned / Vendor'],
+                      ['opened', 'Opened'],
+                    ].map(([key, label]) => (
+                      <th key={key}>
+                        <button
+                          type="button"
+                          className="asset-table__sort-btn"
+                          aria-sort={woSort.key === key ? (woSort.dir === 'desc' ? 'descending' : 'ascending') : 'none'}
+                          onClick={() => toggleWoSort(key)}
+                        >
+                          {label}
+                          <span className="asset-table__sort-icon" aria-hidden="true">
+                            {woSort.key === key ? (woSort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                          </span>
+                        </button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedWorkOrders.map((wo) => (
+                    <tr key={wo.id} onClick={() => openWoForm(wo)}>
+                      <td className="asset-table__name">
+                        {wo.assetName}
+                        {wo.isWarrantyClaim && <span className="inv-tag"> Warranty claim</span>}
+                      </td>
+                      <td>
+                        <span className="inv-tag">{WO_STATUS_LABEL[wo.status]}</span>
+                      </td>
+                      <td className={wo.description ? '' : 'asset-table__muted'}>{wo.description || '—'}</td>
+                      <td className={wo.assignedToName || wo.vendorName ? '' : 'asset-table__muted'}>
+                        {[wo.assignedToName, wo.vendorName].filter(Boolean).join(' · ') || '—'}
+                      </td>
+                      <td className="asset-table__muted">{formatDate(wo.openedAt) || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
 
       {tab === 'vendors' && (
-        <div>
-          <div className="inv-bar">
-            <div className="inv-bar__row">
-              <div />
-              <div className="inv-bar__actions">
-                <button type="button" className="btn-accent" onClick={() => openVendorForm(null)}>
-                  Add vendor
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {(vendors || []).length === 0 ? (
-            <p className="inv-panel__hint">No vendors yet. Add the AC contractor, lift AMC firm, or electrician you call for repairs.</p>
-          ) : (
-            <ul className="inv-list">
-              {vendors.map((vendor) => (
-                <li key={vendor.id} className="inv-item">
-                  <div className="inv-item__body" onClick={() => openVendorForm(vendor)} style={{ cursor: 'pointer' }}>
-                    <div className="inv-item__name">{vendor.name}</div>
-                    <div className="inv-item__meta">
-                      {vendor.specialty || 'No specialty set'}
-                      {vendor.phone && ` · ${vendor.phone}`}
-                      {vendor.altPhone && ` / ${vendor.altPhone}`}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <VendorDirectory
+          vendors={vendors}
+          emptyHint="No vendors yet. Add the AC contractor, lift AMC firm, or electrician you call for repairs."
+          deleteNote="Assets, work orders and coverage already linked to them keep the vendor's name."
+          onAdd={() => openVendorForm(null)}
+          onEdit={openVendorForm}
+          onDelete={deleteVendor}
+        />
       )}
 
       {tab === 'deadStock' && (
@@ -2436,7 +2603,7 @@ export default function AssetsPanel({ onViewReport }) {
             </p>
           ) : (
             <div className="asset-table-wrap">
-              <table className="asset-table">
+              <table className="asset-table finance-table">
                 <thead>
                   <tr>
                     <th>Tag</th>
@@ -2477,25 +2644,54 @@ export default function AssetsPanel({ onViewReport }) {
             Every category needs a depreciation rate before its assets can appear on the Profit &amp; Loss
             report — the method and rate on an asset's category apply to every unit filed under it.
           </p>
+
           {(categories || []).length === 0 ? (
             <p className="inv-panel__hint">No categories yet. Register an asset first to create one.</p>
           ) : (
-            <ul className="inv-list">
-              {categories.map((cat) => (
-                <li key={cat.id} className="inv-item">
-                  <div className="inv-item__body" onClick={() => openDepreciationForm(cat)} style={{ cursor: 'pointer' }}>
-                    <div className="inv-item__name">{cat.name}</div>
-                    <div className="inv-item__meta">
-                      {cat.depreciationRatePercent != null ? (
-                        `${cat.depreciationBlock ? `${cat.depreciationBlock} · ` : ''}${cat.depreciationRatePercent}% ${cat.depreciationMethod === 'SLM' ? 'straight-line' : 'WDV'}`
-                      ) : (
-                        <span className="asset-table__muted">No rate set</span>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="asset-table-wrap">
+              <table className="asset-table finance-table">
+                <thead>
+                  <tr>
+                    {[
+                      ['category', 'Category'],
+                      ['block', 'IT Act block'],
+                      ['method', 'Method'],
+                      ['rate', 'Rate'],
+                    ].map(([key, label]) => (
+                      <th key={key}>
+                        <button
+                          type="button"
+                          className="asset-table__sort-btn"
+                          aria-sort={depreciationSort.key === key ? (depreciationSort.dir === 'desc' ? 'descending' : 'ascending') : 'none'}
+                          onClick={() => toggleDepreciationSort(key)}
+                        >
+                          {label}
+                          <span className="asset-table__sort-icon" aria-hidden="true">
+                            {depreciationSort.key === key ? (depreciationSort.dir === 'desc' ? '▼' : '▲') : '⇅'}
+                          </span>
+                        </button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedCategories.map((cat) => (
+                    <tr key={cat.id} onClick={() => openDepreciationForm(cat)}>
+                      <td className="asset-table__name">{cat.name}</td>
+                      <td className={cat.depreciationBlock ? '' : 'asset-table__muted'}>
+                        {cat.depreciationBlock || '—'}
+                      </td>
+                      <td className={cat.depreciationRatePercent != null ? '' : 'asset-table__muted'}>
+                        {cat.depreciationRatePercent != null ? (cat.depreciationMethod === 'SLM' ? 'Straight-line' : 'WDV') : '—'}
+                      </td>
+                      <td className={cat.depreciationRatePercent != null ? '' : 'asset-table__muted'}>
+                        {cat.depreciationRatePercent != null ? `${cat.depreciationRatePercent}%` : 'No rate set'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -2562,6 +2758,12 @@ export default function AssetsPanel({ onViewReport }) {
                       <div>
                         <dt>Model</dt>
                         <dd>{selectedAsset.model}</dd>
+                      </div>
+                    )}
+                    {selectedAsset.quantity != null && (
+                      <div>
+                        <dt>Quantity owned</dt>
+                        <dd>{selectedAsset.quantity}</dd>
                       </div>
                     )}
                     {selectedAsset.serialNumber && (
@@ -2887,7 +3089,7 @@ export default function AssetsPanel({ onViewReport }) {
                       <div style={{ gridColumn: '1 / -1' }}>
                         <button
                           type="button"
-                          className="btn-primary"
+                          className="btn-accent"
                           disabled={addingAssetPayment || !newAssetPayment.amount}
                           onClick={(e) => handleAddAssetPayment(e)}
                         >
@@ -2992,9 +3194,7 @@ export default function AssetsPanel({ onViewReport }) {
                       setAssetForm((f) => ({ ...f, categoryName: name }));
                       if (fieldErrors.categoryName) setFieldErrors((f) => ({ ...f, categoryName: undefined }));
                     }}
-                    options={[...new Set([...categories.map((c) => c.name), ...SUGGESTED_CATEGORIES])].sort((a, b) =>
-                      a.localeCompare(b)
-                    )}
+                    options={categoryOptions(categories)}
                   />
                   {fieldErrors.categoryName ? (
                     <span className="field__error">{fieldErrors.categoryName}</span>
@@ -3004,6 +3204,37 @@ export default function AssetsPanel({ onViewReport }) {
                     </span>
                   )}
                 </div>
+
+                {/* Linen is a stock, not one unit. This count is what Laundry
+                    works from: it shows there as the number owned. */}
+                {isLinenCategory(assetForm.categoryName, categories) && (
+                  <div className="field field--span2">
+                    <label htmlFor="assetQuantity">
+                      Quantity owned <Req />
+                    </label>
+                    <input
+                      id="assetQuantity"
+                      type="number"
+                      inputMode="numeric"
+                      min="0"
+                      step="1"
+                      value={assetForm.quantity}
+                      aria-invalid={Boolean(fieldErrors.quantity)}
+                      onChange={(e) => {
+                        setAssetForm((f) => ({ ...f, quantity: e.target.value }));
+                        if (fieldErrors.quantity) setFieldErrors((f) => ({ ...f, quantity: undefined }));
+                      }}
+                      placeholder="e.g. 50"
+                    />
+                    {fieldErrors.quantity ? (
+                      <span className="field__error">{fieldErrors.quantity}</span>
+                    ) : (
+                      <span className="field__hint">
+                        Count every piece: in rooms, in the store and out for washing. Laundry tracks its stock from this number.
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <h4 className="form-section__title">Purchase details</h4>
 
@@ -3496,9 +3727,7 @@ export default function AssetsPanel({ onViewReport }) {
                       setBulkForm((f) => ({ ...f, categoryName: name }));
                       if (bulkFieldErrors.categoryName) setBulkFieldErrors((f) => ({ ...f, categoryName: undefined }));
                     }}
-                    options={[...new Set([...categories.map((c) => c.name), ...SUGGESTED_CATEGORIES])].sort((a, b) =>
-                      a.localeCompare(b)
-                    )}
+                    options={categoryOptions(categories)}
                   />
                   {bulkFieldErrors.categoryName ? (
                     <span className="field__error">{bulkFieldErrors.categoryName}</span>
@@ -4453,10 +4682,11 @@ export default function AssetsPanel({ onViewReport }) {
 
                 <div className="field">
                   <label htmlFor="vendorName">
-                    Name <Req />
+                    Shop / business name <Req />
                   </label>
                   <input
                     id="vendorName"
+                    placeholder="e.g. Sai Electricals"
                     aria-invalid={Boolean(vendorFieldErrors.name)}
                     value={vendorForm.name}
                     onChange={(e) => {
@@ -4472,6 +4702,7 @@ export default function AssetsPanel({ onViewReport }) {
                   <input
                     id="vendorContact"
                     value={vendorForm.contactPerson}
+                    placeholder="Who you speak to there"
                     onChange={(e) => setVendorForm((f) => ({ ...f, contactPerson: e.target.value }))}
                   />
                 </div>

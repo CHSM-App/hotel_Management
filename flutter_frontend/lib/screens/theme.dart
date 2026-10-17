@@ -11,31 +11,44 @@ import 'package:flutter/material.dart';
 /// resolve to the right flat colours without per-screen edits.
 class AppTheme {
   // ── Surface ───────────────────────────────────────────────────────────────
-  static const Color bg = Color(0xFFF9FAFB);
+  static const Color bg = Color(0xFFF4F6FA);
   static const Color card = Color(0xFFFFFFFF);
-  static const Color border = Color(0xFFF0F1F3);
+  static const Color border = Color(0xFFE3E8F0);
+
+  /// A noticeably darker hairline than [border] — too-light to read as an
+  /// edge against a plain white card. Used where a box must visibly
+  /// separate from a white surface it sits inside (an extra room's card
+  /// inside the "Stay & room" card, say), mirroring the web form's own
+  /// `--border` (#E3E8F0), which is this same step darker than its page
+  /// background for the same reason.
+  static const Color border2 = Color(0xFFE3E8F0);
 
   /// Aliases for the old neumorphic tokens — still referenced by shadow
   /// lists and a handful of screens' `Border.all(color: ...)` calls.
-  static const Color shadowDark = Color(0xFFE4E6EA);
+  static const Color shadowDark = Color(0xFFDCE1EC);
   static const Color shadowLight = Color(0xFFFFFFFF);
 
   // ── Text ──────────────────────────────────────────────────────────────────
-  static const Color text = Color(0xFF4A5568);
-  static const Color heading = Color(0xFF1A1D23);
-  static const Color muted = Color(0xFF8B8F99);
+  static const Color text = Color(0xFF48566A);
+  static const Color heading = Color(0xFF16212E);
+  static const Color muted = Color(0xFF78859A);
 
   // ── Accent ────────────────────────────────────────────────────────────────
-  static const Color accent = Color(0xFF5A67D8);
+  static const Color accent = Color(0xFF1457AD);
+
+  /// The web navbar's own dark navy (OwnerDashboard.css --brand) — the top bar only.
+  static const Color navbar = Color(0xFF0B2E5C);
+  static const Color brandLift = Color(0xFF1457AD);
+  static const Color gold = Color(0xFFC79A3A);
 
   /// The sidebar's own brand tokens — lifted straight from the web
   /// dashboard's OwnerDashboard.css / index.css (--brand, --brand-ink,
   /// --brand-wash, --brand-wash-edge) so the rail reads as the same surface
   /// on both clients rather than a phone-flavoured guess at it.
-  static const Color sidebarBrand = Color(0xFF5B3FD9);
-  static const Color sidebarBrandInk = Color(0xFF4527B8);
-  static const Color sidebarBrandWash = Color(0xFFEFEBFD);
-  static const Color sidebarBrandWashEdge = Color(0xFFDCD4FA);
+  static const Color sidebarBrand = Color(0xFF1457AD);
+  static const Color sidebarBrandInk = Color(0xFF10499A);
+  static const Color sidebarBrandWash = Color(0xFFEAF1FB);
+  static const Color sidebarBrandWashEdge = Color(0xFFBBD2EC);
   static const Color sidebarText = Color(0xFF48566A);
   static const Color sidebarTextMuted = Color(0xFF78859A);
   static const Color sidebarBorder = Color(0xFFE3E8F0);
@@ -49,12 +62,18 @@ class AppTheme {
   // ── Status ────────────────────────────────────────────────────────────────
   // The tape chart's own vocabulary, carried over so a room reads the same on
   // the phone as it does on the wall screen at the desk.
-  static const Color vacant = Color(0xFF6FA57C);
+  static const Color vacant = Color(0xFF087A50);
   static const Color reserved = Color(0xFFE0453C);
   static const Color checkedIn = Color(0xFF2F7FE4);
   static const Color stayed = Color(0xFF8695A3);
   static const Color draft = Color(0xFFF2C31D);
-  static const Color danger = Color(0xFFB42318);
+  static const Color danger = Color(0xFFC62828);
+
+  /// A problem worth flagging but not stopping the desk over — over
+  /// capacity being the first use, where Save still has to work. Mirrors
+  /// .form-banner--warning / --color-warning in forms.css.
+  static const Color warningWash = Color(0xFFFBF1DA);
+  static const Color warningInk = Color(0xFF8A6710);
 
   // ── Spacing ───────────────────────────────────────────────────────────────
   static const double s4 = 4;
@@ -119,6 +138,25 @@ class AppTheme {
   static const List<BoxShadow> subtle = [
     BoxShadow(color: Color(0x06101828), offset: Offset(0, 1), blurRadius: 2),
   ];
+
+  /// A tinted, floating shadow for the one or two accent-colored elements
+  /// per screen that should visibly sit above everything else (a primary
+  /// FAB, say) — colored by the element itself rather than plain black, the
+  /// way a modern SaaS dashboard lifts its single most important control.
+  static List<BoxShadow> floating(Color tint) => [
+    BoxShadow(color: tint.withValues(alpha: 0.35), offset: const Offset(0, 6), blurRadius: 16),
+    BoxShadow(color: tint.withValues(alpha: 0.18), offset: const Offset(0, 2), blurRadius: 4),
+  ];
+
+  /// The accent's own two-stop gradient — used sparingly for the single
+  /// highlighted surface on a screen (today's date chip, the primary FAB)
+  /// so the flat palette gets one deliberate moment of richness rather than
+  /// a flat fill everywhere.
+  static const Gradient accentGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [accent, sidebarBrandInk],
+  );
 
   static ThemeData get light {
     const scheme = ColorScheme.light(
@@ -223,6 +261,18 @@ class AppTheme {
       ),
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
+      dialogTheme: const DialogThemeData(
+        backgroundColor: card,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(rLarge)),
+        ),
+        elevation: 8,
+      ),
+      // Every screen's date field now opens `showAppDatePicker` (see
+      // widgets/compact_date_picker.dart) — a small custom calendar card
+      // instead of Material's big banner dialog — so `datePickerTheme` has
+      // no call sites left to style and was removed.
     );
   }
 }

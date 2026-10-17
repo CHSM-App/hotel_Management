@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/rooms_viewmodel.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
+import 'checkout_policy_panel.dart';
 import 'price_chart_panel.dart';
+import 'price_simulator_panel.dart';
 import 'rooms_panel.dart';
 
 /// Rooms & rates: the same page the web dashboard puts under that name, with
@@ -70,89 +73,32 @@ class _RoomsRatesScreenState extends ConsumerState<RoomsRatesScreen> {
         ),
       );
     }
-    return _tab == 'rooms' ? const RoomsPanel() : const PriceChartPanel();
+    return switch (_tab) {
+      'rooms' => const RoomsPanel(),
+      'chart' => const PriceChartPanel(),
+      'simulator' => const PriceSimulatorPanel(),
+      _ => const CheckoutPolicyPanel(),
+    };
   }
 }
 
-/// Same sliding-pill segmented control the billing screen's To-bill/Issued
-/// switch uses — one connected control with a moving highlight, rather than
-/// two separate boxes that don't read as a single tab bar.
 class _SubTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
   const _SubTabs({required this.selected, required this.onSelect});
 
-  static const _tabs = {'rooms': 'Rooms', 'chart': 'Price chart'};
-
-  static const double _height = 44;
-
   @override
   Widget build(BuildContext context) {
-    final keys = _tabs.keys.toList();
-    final selectedIndex = keys.indexOf(selected).clamp(0, keys.length - 1);
-
-    Widget segment(String key, String label) {
-      final isSelected = key == selected;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => onSelect(key),
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: _height,
-            child: Center(
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  color: isSelected ? AppTheme.accent : AppTheme.muted,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 14,
-                ),
-                child: Text(label, overflow: TextOverflow.ellipsis),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment(
-              -1 + (2 / (keys.length - 1)) * selectedIndex,
-              0,
-            ),
-            child: FractionallySizedBox(
-              widthFactor: 1 / keys.length,
-              child: Container(
-                height: _height - 8,
-                decoration: BoxDecoration(
-                  color: AppTheme.card,
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium - 4),
-                  boxShadow: AppTheme.extruded,
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              for (final entry in _tabs.entries) segment(entry.key, entry.value),
-            ],
-          ),
-        ],
-      ),
+    return PillTabs(
+      selected: selected,
+      onSelect: onSelect,
+      tabs: const [
+        PillTab('rooms', 'Rooms', Icons.bed_rounded),
+        PillTab('chart', 'Price chart', Icons.price_change_rounded),
+        PillTab('simulator', 'Simulator', Icons.calculate_rounded),
+        PillTab('checkout', 'Checkout policy', Icons.logout_rounded),
+      ],
     );
   }
 }

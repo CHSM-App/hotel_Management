@@ -5,6 +5,7 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { logger } = require('../../config/logger');
 const { UPLOAD_DIR: LOGO_DIR } = require('../../middleware/logoUpload');
+const { UPLOAD_DIR: HERO_IMAGE_DIR } = require('../../middleware/heroImageUpload');
 
 async function createLodgeWithOwner(input) {
   const pool = await getPool();
@@ -18,14 +19,6 @@ async function createLodgeWithOwner(input) {
 
     if (existingSlug.recordset.length > 0) {
       throw new ApiError('That slug is already taken.', 409, 'slug');
-    }
-
-    const existingPhone = await new sql.Request(transaction)
-      .input('phone', sql.NVarChar, input.ownerPhone)
-      .query('SELECT id FROM dbo.users WHERE phone = @phone');
-
-    if (existingPhone.recordset.length > 0) {
-      throw new ApiError('A user with that phone number already exists.', 409, 'ownerPhone');
     }
 
     const lodgeResult = await new sql.Request(transaction)
@@ -53,20 +46,21 @@ async function createLodgeWithOwner(input) {
       .input('hasExpenses', sql.Bit, input.hasExpenses)
       .input('hasOtherServices', sql.Bit, input.hasOtherServices)
       .input('hasHousekeeping', sql.Bit, input.hasHousekeeping)
+      .input('hasLaundry', sql.Bit, input.hasLaundry)
       .query(`
         INSERT INTO dbo.lodges
           (name, slug, phone, whatsapp_number, address, name_mr, address_mr, city, state,
            latitude, longitude, checkin_mode,
            is_gst_registered, gstin, is_specified_premises,
            has_rooms, serves_food, food_room_service, food_table_service, has_events,
-           has_assets, has_expenses, has_other_services, has_housekeeping)
+           has_assets, has_expenses, has_other_services, has_housekeeping, has_laundry)
         OUTPUT inserted.id
         VALUES
           (@name, @slug, @phone, @whatsappNumber, @address, @nameMr, @addressMr, @city, @state,
            @latitude, @longitude, @checkinMode,
            @isGstRegistered, @gstin, @isSpecifiedPremises,
            @hasRooms, @servesFood, @foodRoomService, @foodTableService, @hasEvents,
-           @hasAssets, @hasExpenses, @hasOtherServices, @hasHousekeeping)
+           @hasAssets, @hasExpenses, @hasOtherServices, @hasHousekeeping, @hasLaundry)
       `);
 
     const lodgeId = lodgeResult.recordset[0].id;
@@ -80,9 +74,9 @@ async function createLodgeWithOwner(input) {
       .input('passwordHash', sql.NVarChar, passwordHash)
       .query(`
         INSERT INTO dbo.users
-          (lodge_id, name, email, phone, password_hash, role, must_reset_password)
+          (lodge_id, name, email, phone, password_hash, role)
         VALUES
-          (@lodgeId, @name, @email, @phone, @passwordHash, 'OWNER', 1)
+          (@lodgeId, @name, @email, @phone, @passwordHash, 'OWNER')
       `);
 
     // Every property that lets rooms has an extra bed to sell, so it starts
@@ -113,15 +107,16 @@ async function listLodges() {
 
   const result = await pool.request().query(`
     SELECT
-      l.id, l.name, l.slug, l.city, l.state, l.latitude, l.longitude, l.checkin_mode, l.is_gst_registered,
+      l.id, l.name, l.slug, l.phone AS lodge_phone, l.city, l.state, l.latitude, l.longitude,
+      l.checkin_mode, l.is_gst_registered,
       l.is_specified_premises, l.is_active, l.created_at,
       l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
-      l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping,
+      l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry,
       l.logo_path, l.show_logo_on_receipt,
-      u.name AS owner_name, u.phone AS owner_phone
+      u.name AS owner_name, u.phone AS owner_phone, u.email AS owner_email
     FROM dbo.lodges l
     OUTER APPLY (
-      SELECT TOP 1 name, phone
+      SELECT TOP 1 name, phone, email
       FROM dbo.users
       WHERE lodge_id = l.id AND role = 'OWNER'
       ORDER BY created_at
@@ -148,20 +143,20 @@ async function getLodgeDetail(id) {
       latitude, longitude,
       checkin_mode, is_gst_registered, gstin, is_specified_premises,
       has_rooms, serves_food, food_room_service, food_table_service, has_events,
-      has_assets, has_expenses, has_other_services, has_housekeeping,
+      has_assets, has_expenses, has_other_services, has_housekeeping, has_laundry,
       check_out_time, check_in_time, late_grace_minutes, late_half_day_percent,
       late_full_day_after_minutes, late_full_day_percent,
-      logo_path, show_logo_on_receipt,
+      logo_path, show_logo_on_receipt, hero_image_path,
       is_active, created_at
     FROM dbo.lodges
     WHERE id = @id;
 
-    -- Owner only. No password material is selected: this screen shows who
-    -- can sign in, never how.
-    SELECT id, name, email, phone, role, is_active, must_reset_password, created_at
+    -- Every login on the property, owner and staff alike. No password
+    -- material is selected: this screen shows who can sign in, never how.
+    SELECT id, name, email, phone, role, is_active, created_at, last_seen
     FROM dbo.users
-    WHERE lodge_id = @id AND role = 'OWNER'
-    ORDER BY created_at;
+    WHERE lodge_id = @id
+    ORDER BY CASE WHEN role = 'OWNER' THEN 0 ELSE 1 END, created_at;
 
     SELECT
       (SELECT COUNT(*) FROM dbo.rooms WHERE lodge_id = @id) AS rooms,
@@ -216,8 +211,11 @@ function assertProfileConsistent(row) {
   if (row.is_gst_registered && !row.gstin) {
     throw new ApiError('Enter the GSTIN, or turn off GST registration.', 400);
   }
-  if (row.has_housekeeping && !row.has_rooms) {
-    throw new ApiError('Housekeeping looks after rooms - turn on rooms first.', 400);
+  if (row.has_housekeeping && !row.has_rooms && !row.has_events) {
+    throw new ApiError('Housekeeping looks after rooms and event venues - turn on rooms or events first.', 400);
+  }
+  if (row.has_laundry && !row.has_rooms && !row.has_events) {
+    throw new ApiError('Laundry looks after room and venue linen - turn on rooms or events first.', 400);
   }
   if (row.has_other_services && !row.has_rooms) {
     throw new ApiError('Other services are sold from the rooms side - turn on rooms first.', 400);
@@ -277,10 +275,28 @@ async function updateLodge(id, input) {
     has_expenses: flag('hasExpenses', 'has_expenses'),
     has_other_services: flag('hasOtherServices', 'has_other_services'),
     has_housekeeping: flag('hasHousekeeping', 'has_housekeeping'),
+    has_laundry: flag('hasLaundry', 'has_laundry'),
     is_active: flag('isActive', 'is_active'),
     show_logo_on_receipt: flag('showLogoOnReceipt', 'show_logo_on_receipt'),
   };
   assertProfileConsistent(next);
+
+  // Guest laundry is billed when it is handed over. Switching the section off
+  // with orders still open would strand them: taken in, never billed.
+  if (current.has_laundry && !next.has_laundry) {
+    const open = (
+      await pool
+        .request()
+        .input('id', sql.BigInt, id)
+        .query("SELECT COUNT(*) AS n FROM dbo.laundry_orders WHERE lodge_id = @id AND status IN ('RECEIVED', 'WASHING', 'READY')")
+    ).recordset[0].n;
+    if (open > 0) {
+      throw new ApiError(
+        `${open} guest laundry ${open === 1 ? 'order is' : 'orders are'} still open. Hand over or cancel ${open === 1 ? 'it' : 'them'} first, then switch Laundry off.`,
+        409
+      );
+    }
+  }
 
   if (next.slug !== current.slug) {
     const taken = await pool
@@ -318,6 +334,7 @@ async function updateLodge(id, input) {
     .input('hasExpenses', sql.Bit, next.has_expenses)
     .input('hasOtherServices', sql.Bit, next.has_other_services)
     .input('hasHousekeeping', sql.Bit, next.has_housekeeping)
+    .input('hasLaundry', sql.Bit, next.has_laundry)
     .input('isActive', sql.Bit, next.is_active)
     .input('showLogoOnReceipt', sql.Bit, next.show_logo_on_receipt)
     .query(`
@@ -330,7 +347,7 @@ async function updateLodge(id, input) {
           has_rooms = @hasRooms, serves_food = @servesFood, food_room_service = @foodRoomService,
           food_table_service = @foodTableService, has_events = @hasEvents,
           has_assets = @hasAssets, has_expenses = @hasExpenses, has_other_services = @hasOtherServices,
-          has_housekeeping = @hasHousekeeping, is_active = @isActive,
+          has_housekeeping = @hasHousekeeping, has_laundry = @hasLaundry, is_active = @isActive,
           show_logo_on_receipt = @showLogoOnReceipt
       WHERE id = @id
     `);
@@ -386,6 +403,201 @@ async function removeLodgeLogo(id) {
   return getLodgeDetail(id);
 }
 
+// Deletes the file backing a stored hero_image_path, best-effort — same
+// reasoning as deleteLogoFile.
+async function deleteHeroImageFile(heroImagePath) {
+  if (!heroImagePath) return;
+  try {
+    await fs.unlink(path.join(HERO_IMAGE_DIR, heroImagePath));
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      logger.warn({ err, heroImagePath }, 'Could not delete old lodge hero image file');
+    }
+  }
+}
+
+// Internal staff setting or replacing a property's public-page hero
+// background, e.g. during onboarding when the owner has handed over photos
+// but has no dashboard login yet. Left unset, the page falls back to the
+// first room/venue photo.
+async function updateLodgeHeroImage(id, filename) {
+  const pool = await getPool();
+  const current = (
+    await pool.request().input('id', sql.BigInt, id).query('SELECT hero_image_path FROM dbo.lodges WHERE id = @id')
+  ).recordset[0];
+  if (!current) throw new ApiError('Lodge not found.', 404);
+
+  await pool
+    .request()
+    .input('id', sql.BigInt, id)
+    .input('heroImagePath', sql.NVarChar, filename)
+    .query('UPDATE dbo.lodges SET hero_image_path = @heroImagePath WHERE id = @id');
+
+  await deleteHeroImageFile(current.hero_image_path);
+  return getLodgeDetail(id);
+}
+
+async function removeLodgeHeroImage(id) {
+  const pool = await getPool();
+  const current = (
+    await pool.request().input('id', sql.BigInt, id).query('SELECT hero_image_path FROM dbo.lodges WHERE id = @id')
+  ).recordset[0];
+  if (!current) throw new ApiError('Lodge not found.', 404);
+
+  await pool.request().input('id', sql.BigInt, id).query('UPDATE dbo.lodges SET hero_image_path = NULL WHERE id = @id');
+
+  await deleteHeroImageFile(current.hero_image_path);
+  return getLodgeDetail(id);
+}
+
+function toIsoDate(d) {
+  if (typeof d === 'string') return d.slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
+
+// Inclusive of both ends, same as reports.service.js's datesInRange.
+function datesInRange(fromDate, toDate) {
+  const dates = [];
+  const cur = new Date(`${fromDate}T00:00:00Z`);
+  const end = new Date(`${toDate}T00:00:00Z`);
+  while (cur <= end) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+// The four widgets the Overview dashboard needs beyond what getLodgeDetail
+// already carries — kept as a second call so a lodge with no rooms/no food
+// doesn't pay for queries it has nothing to show, and so the Food Orders
+// period toggle only re-fetches this, not the whole page.
+async function getLodgeDashboard(id, { foodPeriod = 'today' } = {}) {
+  const pool = await getPool();
+
+  const today = toIsoDate(new Date());
+  const weekAgo = toIsoDate(new Date(Date.now() - 6 * 86400000));
+  const foodFrom = foodPeriod === '7d' ? weekAgo : today;
+
+  const roomDistributionResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, id)
+    .query(`
+      SELECT c.name, COUNT(r.id) AS room_count
+      FROM dbo.room_categories c
+      LEFT JOIN dbo.rooms r ON r.category_id = c.id AND r.is_active = 1
+      WHERE c.lodge_id = @lodgeId
+      GROUP BY c.name
+      ORDER BY room_count DESC
+    `);
+  const roomDistribution = roomDistributionResult.recordset.map((row) => ({
+    name: row.name,
+    count: row.room_count,
+  }));
+
+  // Same overlap pattern as reports.service.js's getOccupancyReport, split
+  // into two buckets instead of one: every non-cancelled booking counts as
+  // "sold" for a day it covers, and the ones actually checked in also count
+  // as "in house".
+  const bookingRoomsResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, id)
+    .input('fromDate', sql.Date, weekAgo)
+    .input('toDate', sql.Date, today)
+    .query(`
+      SELECT br.room_id, br.check_in_date, br.check_out_date, br.status
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      WHERE b.lodge_id = @lodgeId AND br.status <> 'CANCELLED'
+        AND br.check_in_date < DATEADD(day, 1, @toDate) AND br.check_out_date > @fromDate
+    `);
+  const trendDates = datesInRange(weekAgo, today);
+  const soldByDate = new Map(trendDates.map((d) => [d, new Set()]));
+  const inHouseByDate = new Map(trendDates.map((d) => [d, new Set()]));
+  for (const row of bookingRoomsResult.recordset) {
+    const stayStart = toIsoDate(row.check_in_date);
+    const stayEnd = toIsoDate(row.check_out_date);
+    for (const date of trendDates) {
+      if (date >= stayStart && date < stayEnd) {
+        soldByDate.get(date).add(row.room_id);
+        if (row.status === 'CHECKED_IN') inHouseByDate.get(date).add(row.room_id);
+      }
+    }
+  }
+  const bookingTrend = trendDates.map((date) => ({
+    date,
+    sold: soldByDate.get(date).size,
+    inHouse: inHouseByDate.get(date).size,
+  }));
+
+  const foodBySourceResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, id)
+    .input('fromDate', sql.Date, foodFrom)
+    .input('toDate', sql.Date, today)
+    .query(`
+      SELECT source, COUNT(*) AS n
+      FROM dbo.food_orders
+      WHERE lodge_id = @lodgeId AND status <> 'CANCELLED' AND order_date BETWEEN @fromDate AND @toDate
+      GROUP BY source
+    `);
+  const foodBySource = foodBySourceResult.recordset.map((row) => ({ source: row.source, count: row.n }));
+
+  // Recent activity across the property, newest first. No money anywhere —
+  // an invoice or a payment is shown as the event it is, not as a figure
+  // platform staff have no reason to be reading off someone else's bill.
+  const activityResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, id)
+    .query(`
+      SELECT TOP 50 kind, detail, occurred_at FROM (
+        SELECT 'INVOICE' AS kind, CASE WHEN r.room_number IS NOT NULL THEN 'Room ' + r.room_number ELSE 'Food bill' END AS detail,
+               i.created_at AS occurred_at
+        FROM dbo.invoices i
+        LEFT JOIN dbo.bookings b ON b.id = i.booking_id
+        LEFT JOIN dbo.rooms r ON r.id = b.room_id
+        WHERE i.lodge_id = @lodgeId AND i.status = 'ISSUED'
+
+        UNION ALL
+        SELECT 'BOOKING', 'Room ' + r.room_number, b.created_at
+        FROM dbo.bookings b
+        JOIN dbo.rooms r ON r.id = b.room_id
+        WHERE b.lodge_id = @lodgeId
+
+        UNION ALL
+        SELECT 'FOOD_ORDER',
+               CASE fo.source
+                 WHEN 'TABLE' THEN 'Table ' + t.label
+                 WHEN 'ROOM' THEN 'Room ' + r.room_number
+                 ELSE 'Counter'
+               END,
+               fo.placed_at
+        FROM dbo.food_orders fo
+        LEFT JOIN dbo.dining_tables t ON t.id = fo.table_id
+        LEFT JOIN dbo.rooms r ON r.id = fo.room_id
+        WHERE fo.lodge_id = @lodgeId
+
+        UNION ALL
+        SELECT 'CHECK_IN', 'Room ' + r.room_number, b.actual_check_in_at
+        FROM dbo.bookings b
+        JOIN dbo.rooms r ON r.id = b.room_id
+        WHERE b.lodge_id = @lodgeId AND b.actual_check_in_at IS NOT NULL
+
+        UNION ALL
+        SELECT 'PAYMENT', pl.method, pl.created_at
+        FROM dbo.payment_lines pl
+        WHERE pl.lodge_id = @lodgeId
+      ) activity
+      ORDER BY occurred_at DESC
+    `);
+  const activity = activityResult.recordset.map((row) => ({
+    type: row.kind,
+    detail: row.detail,
+    occurredAt: row.occurred_at,
+  }));
+
+  return { roomDistribution, bookingTrend, foodBySource, activity };
+}
+
 module.exports = {
   createLodgeWithOwner,
   listLodges,
@@ -393,4 +605,7 @@ module.exports = {
   updateLodge,
   updateLodgeLogo,
   removeLodgeLogo,
+  updateLodgeHeroImage,
+  removeLodgeHeroImage,
+  getLodgeDashboard,
 };

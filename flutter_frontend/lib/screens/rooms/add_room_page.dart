@@ -218,18 +218,18 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
         title: Row(
           children: [
             Container(
-              width: 34,
-              height: 34,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
                 borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x335A67D8),
+                    color: Color(0x331457AD),
                     offset: Offset(0, 3),
                     blurRadius: 8,
                   ),
@@ -249,36 +249,38 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
             height: 3,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x005A67D8)],
+                colors: [AppTheme.accent, Color(0x001457AD)],
               ),
             ),
           ),
         ),
       ),
       body: SafeArea(
-        child: ListView(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
           controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(
             AppTheme.s12,
+            AppTheme.s8,
             AppTheme.s12,
             AppTheme.s12,
-            AppTheme.s16,
           ),
           children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ModeToggle(
-                      options: const {'single': 'Single', 'bulk': 'Bulk range'},
-                      selected: _bulkMode ? 'bulk' : 'single',
-                      // A dormitory can't be added as a bulk range — its beds
-                      // are added one at a time after the room exists, so
-                      // there's no one bed list a whole range could share.
-                      onSelect: submitting || _isDormitory
-                          ? (_) {}
-                          : (v) => setState(() => _bulkMode = v == 'bulk'),
-                    ),
+                  // A dormitory can't be added as a bulk range — its beds are
+                  // added one at a time after the room exists, so there's no
+                  // one bed list a whole range could share.
+                  ModeToggle(
+                    expanded: true,
+                    options: const {'single': 'Single', 'bulk': 'Bulk range'},
+                    selected: _bulkMode ? 'bulk' : 'single',
+                    onSelect: submitting || _isDormitory
+                        ? (_) {}
+                        : (v) => setState(() => _bulkMode = v == 'bulk'),
                   ),
-                  const SizedBox(height: AppTheme.s12),
+                  const SizedBox(height: AppTheme.s8),
                   if (_error != null &&
                       _backendErrorField != 'roomNumber' &&
                       _backendErrorField != 'rangeStart') ...[
@@ -298,18 +300,22 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: AppTheme.s12),
+                    const SizedBox(height: AppTheme.s8),
                   ],
 
                   NeuCard(
                     radius: AppTheme.rLarge,
                     shadow: AppTheme.elevated,
-                    padding: const EdgeInsets.all(AppTheme.s16),
+                    padding: const EdgeInsets.all(AppTheme.s12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SectionLabel(_bulkMode ? 'Room range' : 'Room number', number: 1),
-                        const SizedBox(height: AppTheme.s12),
+                        SectionLabel(
+                          _bulkMode ? 'Room range' : 'Room number',
+                          number: 1,
+                          icon: Icons.tag_rounded,
+                        ),
+                        const SizedBox(height: AppTheme.s8),
                         if (!_bulkMode)
                           NeuField(
                             key: _roomNumberKey,
@@ -321,6 +327,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             keyboardType: TextInputType.text,
                             onChanged: (_) => setState(() {}),
                             forceUppercase: true,
+                            dense: true,
                           )
                         else
                           KeyedSubtree(
@@ -338,6 +345,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                         required: true,
                                         keyboardType: TextInputType.number,
                                         onChanged: (_) => setState(() {}),
+                                        dense: true,
                                       ),
                                     ),
                                     const SizedBox(width: AppTheme.s12),
@@ -349,6 +357,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                         required: true,
                                         keyboardType: TextInputType.number,
                                         onChanged: (_) => setState(() {}),
+                                        dense: true,
                                       ),
                                     ),
                                   ],
@@ -364,10 +373,10 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             ),
                           ),
                         const SectionDivider(),
-                        const SectionLabel('Pricing', number: 2),
-                        const SizedBox(height: AppTheme.s12),
-                        const RequiredLabel('Category'),
+                        const SectionLabel('Pricing', number: 2, icon: Icons.payments_rounded),
                         const SizedBox(height: AppTheme.s8),
+                        const RequiredLabel('Category'),
+                        const SizedBox(height: AppTheme.s4),
                         KeyedSubtree(
                           key: _categoryKey,
                           child: CategoryDropdown(
@@ -384,23 +393,9 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             style: const TextStyle(color: AppTheme.danger, fontSize: 12),
                           ),
                         ],
-                        if (_selectedCategory != null) ...[
-                          const SizedBox(height: AppTheme.s12),
-                          Wrap(
-                            spacing: AppTheme.s8,
-                            runSpacing: AppTheme.s8,
-                            children: [
-                              _RateChip(
-                                '${formatPrice(_selectedCategory!.basePrice)} /night',
-                                accent: true,
-                              ),
-                              _RateChip(_selectedCategory!.name),
-                            ],
-                          ),
-                        ],
                         const SectionDivider(),
-                        const SectionLabel('Room details', number: 3),
-                        const SizedBox(height: AppTheme.s12),
+                        const SectionLabel('Room details', number: 3, icon: Icons.king_bed_rounded),
+                        const SizedBox(height: AppTheme.s8),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -412,59 +407,111 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                 hint: '1',
                                 required: true,
                                 errorText: _floorError,
+                                keyboardType: TextInputType.number,
                                 onChanged: (_) => setState(() {}),
+                                dense: true,
                               ),
                             ),
-                            const SizedBox(width: AppTheme.s12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const RequiredLabel('Bathroom'),
-                                  const SizedBox(height: AppTheme.s8),
-                                  KeyedSubtree(
-                                    key: _bathroomKey,
-                                    child: OptionDropdown(
-                                      values: bathroomTypes,
-                                      labels: bathroomLabel,
-                                      selected: _bathroomType,
-                                      hasError: _bathroomError != null,
-                                      onSelect: (v) => setState(() => _bathroomType = v),
-                                    ),
-                                  ),
-                                  if (_bathroomError != null) ...[
-                                    const SizedBox(height: AppTheme.s4),
-                                    Text(
-                                      _bathroomError!,
-                                      style: const TextStyle(color: AppTheme.danger, fontSize: 12),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppTheme.s16),
-
-                        KeyedSubtree(
-                          key: _dormitoryKey,
-                          child: Row(
-                            children: [
-                              Switch(
-                                value: _isDormitory,
-                                onChanged: (v) => setState(() {
-                                  _isDormitory = v;
-                                  if (v) _bulkMode = false;
-                                }),
-                                activeThumbColor: AppTheme.accent,
-                              ),
+                            if (!_isDormitory) ...[
+                              const SizedBox(width: AppTheme.s12),
                               Expanded(
-                                child: Text(
-                                  'This is a dormitory (sold bed-by-bed)',
-                                  style: Theme.of(context).textTheme.bodyMedium,
+                                child: NeuField(
+                                  key: _occupancyKey,
+                                  controller: _maxOccupancy,
+                                  label: 'Max occupancy',
+                                  hint: '2',
+                                  required: true,
+                                  errorText: _occupancyError,
+                                  keyboardType: TextInputType.number,
+                                  onChanged: (_) => setState(() {}),
+                                  dense: true,
                                 ),
                               ),
                             ],
+                          ],
+                        ),
+                        const SizedBox(height: AppTheme.s8),
+                        const RequiredLabel('Bathroom'),
+                        const SizedBox(height: AppTheme.s4),
+                        KeyedSubtree(
+                          key: _bathroomKey,
+                          child: OptionDropdown(
+                            values: bathroomTypes,
+                            labels: bathroomLabel,
+                            selected: _bathroomType,
+                            hasError: _bathroomError != null,
+                            onSelect: (v) => setState(() => _bathroomType = v),
+                          ),
+                        ),
+                        if (_bathroomError != null) ...[
+                          const SizedBox(height: AppTheme.s4),
+                          Text(
+                            _bathroomError!,
+                            style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                          ),
+                        ],
+                        const SizedBox(height: AppTheme.s8),
+
+                        KeyedSubtree(
+                          key: _dormitoryKey,
+                          child: GestureDetector(
+                            onTap: () => setState(() {
+                              _isDormitory = !_isDormitory;
+                              if (_isDormitory) _bulkMode = false;
+                            }),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppTheme.s12,
+                                vertical: AppTheme.s8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _isDormitory
+                                    ? AppTheme.accent.withValues(alpha: 0.07)
+                                    : AppTheme.bg,
+                                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                                border: Border.all(
+                                  color: _isDormitory
+                                      ? AppTheme.accent.withValues(alpha: 0.35)
+                                      : AppTheme.border,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 30,
+                                    height: 30,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: _isDormitory
+                                          ? AppTheme.accent.withValues(alpha: 0.12)
+                                          : AppTheme.card,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.bed_rounded,
+                                      size: 16,
+                                      color: _isDormitory ? AppTheme.accent : AppTheme.muted,
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppTheme.s12),
+                                  Expanded(
+                                    child: Text(
+                                      'This is a dormitory (sold bed-by-bed)',
+                                      style: Theme.of(context).textTheme.bodyMedium,
+                                    ),
+                                  ),
+                                  Switch(
+                                    value: _isDormitory,
+                                    onChanged: (v) => setState(() {
+                                      _isDormitory = v;
+                                      if (v) _bulkMode = false;
+                                    }),
+                                    activeThumbColor: AppTheme.accent,
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                         if (_isDormitory) ...[
@@ -478,7 +525,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             hasError: _dormitoryError != null && _dormitoryGender == null,
                             onSelect: (v) => setState(() => _dormitoryGender = v),
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           NeuField(
                             controller: _dormitoryPrice,
                             label: 'Price per bed, per night',
@@ -486,8 +533,9 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             required: true,
                             keyboardType: TextInputType.number,
                             onChanged: (_) => setState(() {}),
+                            dense: true,
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           const RequiredLabel('AC'),
                           const SizedBox(height: AppTheme.s8),
                           OptionDropdown(
@@ -497,7 +545,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             hasError: _dormitoryError != null && _dormitoryIsAc == null,
                             onSelect: (v) => setState(() => _dormitoryIsAc = v),
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           const RequiredLabel('Beds'),
                           const SizedBox(height: AppTheme.s4),
                           const Text(
@@ -505,40 +553,50 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             style: TextStyle(color: AppTheme.muted, fontSize: 11),
                           ),
                           const SizedBox(height: AppTheme.s8),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline_rounded),
-                                color: AppTheme.muted,
-                                onPressed: _dormitoryBedCount <= 1
-                                    ? null
-                                    : () => setState(() => _dormitoryBedCount--),
-                              ),
-                              SizedBox(
-                                width: 40,
-                                child: Text(
-                                  '$_dormitoryBedCount',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: AppTheme.heading,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.bg,
+                              borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                              border: Border.all(color: AppTheme.border),
+                            ),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline_rounded),
+                                  color: AppTheme.muted,
+                                  onPressed: _dormitoryBedCount <= 1
+                                      ? null
+                                      : () => setState(() => _dormitoryBedCount--),
+                                ),
+                                SizedBox(
+                                  width: 32,
+                                  child: Text(
+                                    '$_dormitoryBedCount',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: AppTheme.heading,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline_rounded),
-                                color: AppTheme.accent,
-                                onPressed: _dormitoryBedCount >= 60
-                                    ? null
-                                    : () => setState(() => _dormitoryBedCount++),
-                              ),
-                              const SizedBox(width: AppTheme.s4),
-                              Text(
-                                'bed${_dormitoryBedCount == 1 ? '' : 's'} in this room',
-                                style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
-                              ),
-                            ],
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline_rounded),
+                                  color: AppTheme.accent,
+                                  onPressed: _dormitoryBedCount >= 60
+                                      ? null
+                                      : () => setState(() => _dormitoryBedCount++),
+                                ),
+                                const SizedBox(width: AppTheme.s4),
+                                Expanded(
+                                  child: Text(
+                                    'bed${_dormitoryBedCount == 1 ? '' : 's'} in this room',
+                                    style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                           if (_dormitoryError != null) ...[
                             const SizedBox(height: AppTheme.s4),
@@ -560,8 +618,14 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           child: Column(
                             children: [
                         for (var i = 0; i < _beds.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: AppTheme.s8),
+                          Container(
+                            margin: const EdgeInsets.only(bottom: AppTheme.s8),
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.bg,
+                              borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                              border: Border.all(color: AppTheme.border),
+                            ),
                             child: Row(
                               children: [
                                 Expanded(
@@ -581,12 +645,14 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                     label: '',
                                     keyboardType: TextInputType.number,
                                     onChanged: (v) => _beds[i].count = int.tryParse(v) ?? 1,
+                                    dense: true,
                                   ),
                                 ),
                                 if (_beds.length > 1)
                                   IconButton(
                                     icon: const Icon(Icons.close_rounded, size: 18),
                                     color: AppTheme.muted,
+                                    visualDensity: VisualDensity.compact,
                                     onPressed: () => setState(() {
                                       _beds[i].countController.dispose();
                                       _beds.removeAt(i);
@@ -595,20 +661,32 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                               ],
                             ),
                           ),
-                        // A plain link, the same weight the website's own
-                        // "+ Add another bed" carries — a bordered button here
-                        // would outweigh a line this optional.
                         GestureDetector(
                           onTap: () => setState(() => _beds.add(BedDraft())),
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: AppTheme.s4),
-                            child: Text(
-                              '+ Add another bed',
-                              style: TextStyle(
-                                color: AppTheme.accent,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.s12,
+                              vertical: AppTheme.s8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withValues(alpha: 0.07),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.add_rounded, color: AppTheme.accent, size: 16),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Add another bed',
+                                  style: TextStyle(
+                                    color: AppTheme.accent,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -622,35 +700,25 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: AppTheme.s12),
-
-                        NeuField(
-                          key: _occupancyKey,
-                          controller: _maxOccupancy,
-                          label: 'Max occupancy',
-                          hint: '2',
-                          required: true,
-                          errorText: _occupancyError,
-                          keyboardType: TextInputType.number,
-                          onChanged: (_) => setState(() {}),
-                        ),
                         ],
-                        const SizedBox(height: AppTheme.s16),
+                        const SizedBox(height: AppTheme.s8),
 
                         NeuField(
                           controller: _description,
                           label: 'Description (optional)',
                           hint: 'Corner room, quiet side, good morning light',
                           maxLength: 200,
+                          dense: true,
                         ),
                         if (!_bulkMode) ...[
                           const SectionDivider(),
                           SectionLabel(
                             'Photos',
                             number: 4,
+                            icon: Icons.photo_camera_rounded,
                             trailing: _newPhotos.isEmpty ? null : '${_newPhotos.length}',
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           Wrap(
                             spacing: AppTheme.s8,
                             runSpacing: AppTheme.s8,
@@ -674,7 +742,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                     ),
                   ),
                   const SizedBox(height: AppTheme.s16),
-                  _Footer(
+                  RoomFormFooter(
                     roomCountLabel: _roomCountLabel,
                     category: _selectedCategory,
                     submitting: submitting,
@@ -682,6 +750,8 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                     onSubmit: _submit,
                   ),
                 ],
+            ),
+          ),
         ),
       ),
     );
@@ -842,14 +912,21 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
 /// The rate this room (or range) will carry, pinned above Cancel/Add room —
 /// the same "rate stays visible while the form is filled in" the booking
 /// screen's own quote total does.
-class _Footer extends StatelessWidget {
+class RoomFormFooter extends StatelessWidget {
+  final String submitLabel;
+  final IconData submitIcon;
+  final String cancelLabel;
   final String roomCountLabel;
   final RoomCategory? category;
   final bool submitting;
   final VoidCallback onCancel;
   final VoidCallback onSubmit;
 
-  const _Footer({
+  const RoomFormFooter({
+    super.key,
+    this.submitLabel = 'Add room',
+    this.submitIcon = Icons.add_rounded,
+    this.cancelLabel = 'Cancel',
     required this.roomCountLabel,
     required this.category,
     required this.submitting,
@@ -860,7 +937,7 @@ class _Footer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s12),
+      padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s8),
       decoration: const BoxDecoration(
         color: AppTheme.bg,
         border: Border(top: BorderSide(color: AppTheme.border)),
@@ -876,10 +953,22 @@ class _Footer extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
                 decoration: BoxDecoration(
                   color: AppTheme.accent.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                  border: Border.all(color: AppTheme.accent.withValues(alpha: 0.18)),
                 ),
                 child: Row(
                   children: [
+                    Container(
+                      width: 26,
+                      height: 26,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.meeting_room_rounded, color: AppTheme.accent, size: 14),
+                    ),
+                    const SizedBox(width: AppTheme.s8),
                     Expanded(
                       child: Text(
                         '$roomCountLabel · ${category!.name}',
@@ -910,7 +999,7 @@ class _Footer extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
             ],
             Row(
               children: [
@@ -918,7 +1007,7 @@ class _Footer extends StatelessWidget {
                   child: NeuButton(
                     onPressed: submitting ? null : onCancel,
                     padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-                    child: const Text('Cancel'),
+                    child: Text(cancelLabel),
                   ),
                 ),
                 const SizedBox(width: AppTheme.s12),
@@ -934,14 +1023,14 @@ class _Footer extends StatelessWidget {
                             width: 16,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : const FittedBox(
+                        : FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                                SizedBox(width: 4),
-                                Text('Add room'),
+                                Icon(submitIcon, color: Colors.white, size: 18),
+                                const SizedBox(width: 4),
+                                Text(submitLabel),
                               ],
                             ),
                           ),
@@ -956,11 +1045,11 @@ class _Footer extends StatelessWidget {
   }
 }
 
-class _RateChip extends StatelessWidget {
+class RateChip extends StatelessWidget {
   final String label;
   final bool accent;
 
-  const _RateChip(this.label, {this.accent = false});
+  const RateChip(this.label, {super.key, this.accent = false});
 
   @override
   Widget build(BuildContext context) {

@@ -76,69 +76,68 @@
 .menu-search input:focus-visible {
   outline: none;
   border-color: var(--focus);
-  box-shadow: 0 0 0 3px rgba(91, 63, 217, 0.12);
+  box-shadow: 0 0 0 3px rgba(0, 176, 255, 0.12);
 }
 
+/* Plain text, not chips: these two are read, never pressed, and a pill around
+   a label nobody can act on just repeats the shape the actionable controls
+   above and below this row already use — three different kinds of "button"
+   reading the same is what made the bar feel like nothing but pills. */
 .menu-stats {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
-.menu-stat {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  background: var(--surface);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
-  border-radius: 999px;
-  padding: 5px 13px;
-  font-size: 12.5px;
-  color: var(--text-muted);
+.menu-stats__item {
   white-space: nowrap;
 }
 
-.menu-stat strong {
-  font-size: 14px;
+.menu-stats__item strong {
   font-weight: 700;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
-/* The out-of-stock count doubles as the filter for it — the number a kitchen
-   glances at and the way to act on it are the same control. */
-.menu-stat--btn {
-  font-family: inherit;
+.menu-stats__dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* The one stat that's also a filter keeps a chip, so it still reads as
+   something to press rather than a fact to read — but only shows up once
+   there's a reason to, see the condition around it in MenuPanel.jsx. */
+.menu-stats__flag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--danger);
   cursor: pointer;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-color: transparent;
   transition: var(--neu-transition);
 }
 
-.menu-stat--btn:hover:not(:disabled) {
-  color: var(--danger);
-  box-shadow: var(--shadow-raised-hover);
+.menu-stats__flag strong {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-/* The filter is on while it is held down. */
-.menu-stat--btn:active:not(:disabled),
-.menu-stat--btn[aria-pressed='true'] {
-  box-shadow: var(--shadow-pressed);
-}
-
-.menu-stat--btn:disabled {
-  cursor: default;
-  opacity: 0.65;
-}
-
-.menu-stat--btn.is-on {
-  background: var(--danger-bg);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.menu-stat--btn.is-on strong {
-  color: var(--danger);
+.menu-stats__flag:hover,
+.menu-stats__flag.is-on {
+  text-decoration-color: currentColor;
 }
 
 .menu-bar__searching {
@@ -167,6 +166,22 @@
   color: var(--accent);
 }
 
+/* The tab strip, pinned below the app's own sticky topbar (--dash-topbar-h —
+   see the same offset on .dash-sidebar in OwnerDashboard.css) so it stays on
+   screen as the whole menu scrolls underneath it — the strip is a shortcut
+   into that scroll, not a filter on it, so it has to still be reachable from
+   wherever the kitchen has scrolled to. Opaque so scrolled dish cards don't
+   show through it, with a shadow carrying the same "sits above the page"
+   read the topbar's own shadow gives it. */
+.menu-panel__sticky {
+  position: sticky;
+  top: var(--dash-topbar-h, 0px);
+  z-index: 10;
+  background: var(--paper);
+  margin-bottom: 16px;
+  box-shadow: 0 6px 14px -10px rgba(22, 33, 46, 0.25);
+}
+
 /* ------------------------------------------------------------------ section */
 
 .menu-section {
@@ -191,6 +206,16 @@
   border-bottom: 1px solid var(--border);
   background: var(--paper);
   flex-wrap: wrap;
+  transition: var(--neu-transition), border-color 200ms ease;
+}
+
+/* The section the tab strip is currently pointing at, tinted the same
+   --brand-wash the live tab and the sidebar's own selected row use — so
+   "this one's current" reads as one colour across the screen rather than
+   a different accent per place it shows up. */
+.menu-section__head--current {
+  background: var(--brand-wash);
+  border-bottom-color: var(--brand-wash-edge);
 }
 
 .menu-section__heading {
@@ -347,8 +372,8 @@
     -45deg,
     transparent,
     transparent 8px,
-    rgba(193, 18, 31, 0.045) 8px,
-    rgba(193, 18, 31, 0.045) 16px
+    rgba(234, 67, 53, 0.045) 8px,
+    rgba(234, 67, 53, 0.045) 16px
   );
 }
 
@@ -420,8 +445,8 @@
     -45deg,
     transparent,
     transparent 8px,
-    rgba(193, 18, 31, 0.045) 8px,
-    rgba(193, 18, 31, 0.045) 16px
+    rgba(234, 67, 53, 0.045) 8px,
+    rgba(234, 67, 53, 0.045) 16px
   );
 }
 
@@ -768,7 +793,7 @@
 }
 
 .menu-type__option.is-on {
-  background: #eef4f2;
+  background: var(--brand-wash);
   border-color: var(--brand);
   color: var(--brand-ink);
   box-shadow: inset 0 0 0 1px var(--brand), var(--shadow-pressed);

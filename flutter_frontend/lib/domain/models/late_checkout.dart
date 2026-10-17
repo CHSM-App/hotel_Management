@@ -26,9 +26,20 @@ class LateCheckout {
 
   final num lastNightRate;
 
-  /// WITHIN_GRACE, HALF_DAY or FULL_DAY.
+  /// WITHIN_GRACE, HALF_DAY, FULL_DAY or EXTRA_NIGHTS (cycle properties).
   final String? band;
   final num percent;
+
+  /// The instant the room was due back — checkout time on the departure date,
+  /// or 24h-per-night from arrival on an HOUR_24 property.
+  final DateTime? deadline;
+
+  /// A cycle property counts whole nights rather than a grace window: how
+  /// many were booked, how many were actually stayed, and the gap between
+  /// them — see [band] == EXTRA_NIGHTS.
+  final int plannedNights;
+  final int actualNights;
+  final int extraNights;
 
   const LateCheckout({
     required this.bookingId,
@@ -40,6 +51,10 @@ class LateCheckout {
     this.lastNightRate = 0,
     this.band,
     this.percent = 0,
+    this.deadline,
+    this.plannedNights = 0,
+    this.actualNights = 0,
+    this.extraNights = 0,
   });
 
   factory LateCheckout.fromJson(Map<String, dynamic> json) => LateCheckout(
@@ -52,16 +67,22 @@ class LateCheckout {
     lastNightRate: asNum(json['lastNightRate']),
     band: asStringOrNull(json['band']),
     percent: asNum(json['percent']),
+    deadline: DateTime.tryParse(asStringOrNull(json['deadline']) ?? ''),
+    plannedNights: asInt(json['plannedNights']),
+    actualNights: asInt(json['actualNights']),
+    extraNights: asInt(json['extraNights']),
   );
 
   String get bandLabel {
     switch (band) {
       case 'HALF_DAY':
-        return 'Half day';
+        return 'part-day rate';
       case 'FULL_DAY':
-        return 'Full day';
+        return 'full-night rate';
+      case 'EXTRA_NIGHTS':
+        return 'extra night';
       default:
-        return 'Within grace';
+        return 'within grace';
     }
   }
 }

@@ -8,11 +8,13 @@ const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 const pricingService = require('../pricing/pricing.service');
 const notifications = require('../notifications/bookingConfirmation');
 const cancellationNotice = require('../notifications/cancellationNotice');
+const checkinWelcome = require('../notifications/checkinWelcome');
 const billingService = require('../billing/billing.service');
 const { splitAcross } = require('../reports/reports.service');
 const advanceReceiptsService = require('../billing/advanceReceipts.service');
 const { logger } = require('../../config/logger');
 const draftsService = require('./drafts.service');
+const customersService = require('../customers/customers.service');
 const lateCheckout = require('./lateCheckout');
 const { apportionDiscount, mergeRoomNights, rollUpStatus } = require('./bookingRooms');
 
@@ -794,7 +796,12 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
 // itself OR if a buyout (bed_id IS NULL) already covers the room for any
 // overlapping night — the same rule hasOverlap enforces at write time, read
 // back here so the picker never offers what the write would then reject.
-async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
+//
+// excludeBookingId is the booking currently being edited, if any — its own
+// occupancy is left out of the taken check (same reasoning as
+// listAvailableRoomsForBooking) so re-opening a bed booking doesn't show its
+// own bed as taken and block saving it back unchanged.
+async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate, excludeBookingId = null) {
   const pool = await getPool();
 
   const roomResult = await pool
@@ -821,6 +828,7 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
     .input('roomId', sql.BigInt, roomId)
     .input('checkInDate', sql.Date, checkInDate)
     .input('checkOutDate', sql.Date, checkOutDate)
+    .input('excludeBookingId', sql.BigInt, excludeBookingId)
     .query(`
       SELECT db.id, db.bed_label,
              CASE WHEN EXISTS (
@@ -828,6 +836,7 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
                JOIN dbo.bookings b ON b.id = br.booking_id
                WHERE br.room_id = @roomId AND br.status IN ('BOOKED', 'CHECKED_IN')
                  AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+                 AND (@excludeBookingId IS NULL OR b.id <> @excludeBookingId)
                  AND (
                    b.bed_id = db.id OR b.bed_id IS NULL
                    OR EXISTS (SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id = db.id)
@@ -845,10 +854,12 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate) {
     .input('roomId', sql.BigInt, roomId)
     .input('checkInDate', sql.Date, checkInDate)
     .input('checkOutDate', sql.Date, checkOutDate)
+    .input('excludeBookingId', sql.BigInt, excludeBookingId)
     .query(`
       SELECT TOP 1 id FROM dbo.booking_rooms
       WHERE room_id = @roomId AND status IN ('BOOKED', 'CHECKED_IN')
         AND check_in_date < @checkOutDate AND check_out_date > @checkInDate
+        AND (@excludeBookingId IS NULL OR booking_id <> @excludeBookingId)
     `);
 
   // One rate for every bed in the room — the room's own price if it has
@@ -1833,7 +1844,7 @@ async function getBooking(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT id, service_name, unit_label, quantity, line_total, status, on_room_bill, invoice_id, started_at
+      SELECT id, service_name, unit_label, quantity, headcount, line_total, status, on_room_bill, invoice_id, started_at
       FROM dbo.service_usages
       WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND status <> 'CANCELLED'
       ORDER BY started_at ASC
@@ -1843,6 +1854,7 @@ async function getBooking(lodgeId, bookingId) {
     name: u.service_name,
     unitLabel: u.unit_label,
     quantity: Number(u.quantity),
+    headcount: Number(u.headcount),
     amount: Number(u.line_total),
     status: u.status,
     billed: u.invoice_id != null,
@@ -1995,6 +2007,27 @@ async function createBooking(lodgeId, userId, input) {
 
     const bookingId = insertResult.recordset[0].id;
 
+    // Same transaction as the booking row itself: a customer-record write
+    // failing here rolls the booking back too, consistent with everything
+    // else in this function — there's no "booking saved but customer record
+    // silently missing" state to reason about later.
+    const customerId = await customersService.upsertCustomerForRoomStay(() => new sql.Request(transaction), lodgeId, {
+      phone: input.guestPhone,
+      name: input.guestName,
+      idProofType: input.idProofType ?? null,
+      idProofNumber: input.idProofNumber ?? null,
+      idProofDocument: input.idProofDocument ?? null,
+      amount: totalPrice,
+      stayDate: first.checkInDate,
+    });
+    if (customerId) {
+      await new sql.Request(transaction)
+        .input('id', sql.BigInt, bookingId)
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('customerId', sql.BigInt, customerId)
+        .query('UPDATE dbo.bookings SET customer_id = @customerId WHERE id = @id AND lodge_id = @lodgeId');
+    }
+
     for (const room of priced.rooms) {
       await insertBookingRoom(transaction, bookingId, room);
     }
@@ -2014,7 +2047,9 @@ async function createBooking(lodgeId, userId, input) {
 
     // Not awaited: the guest's confirmation is best-effort and the desk should
     // not wait on the provider. The notifier never rejects — it logs.
-    void notifications.notifyStayBooked(lodgeId, bookingId);
+    // Skipped when the desk chose plain "Save" rather than "Save & send
+    // WhatsApp" (input.sendWhatsApp === false).
+    if (input.sendWhatsApp !== false) void notifications.notifyStayBooked(lodgeId, bookingId);
 
     return { id: bookingId };
   } catch (err) {
@@ -2145,6 +2180,7 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
       SELECT b.num_guests, b.id_proof_type, b.total_price, b.advance_amount,
+             b.guest_name, b.guest_phone,
              l.serves_food, l.food_room_service
       FROM dbo.bookings b
       JOIN dbo.lodges l ON l.id = b.lodge_id
@@ -2314,6 +2350,20 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
       throw new ApiError('Booking not found or not ready for check-in.', 409);
     }
 
+    // Only when an ID proof actually just arrived — the common pre-reservation
+    // case (migration 019): booked without one, mandatory from check-in on.
+    // No amount/stayDate passed, so the customer's stay count isn't bumped a
+    // second time for a booking createBooking() already counted.
+    if (input.idProofType) {
+      await customersService.upsertCustomerForRoomStay(() => new sql.Request(transaction), lodgeId, {
+        phone: bookingRow.guest_phone,
+        name: bookingRow.guest_name,
+        idProofType: input.idProofType,
+        idProofNumber: input.idProofNumber ?? null,
+        idProofDocument: input.idProofDocument ?? null,
+      });
+    }
+
     for (const room of arriving) {
       // A PIN only where a guest could actually use one. A rooms-only property
       // has no kitchen and no QR to scan, so a PIN there is a number reception
@@ -2348,7 +2398,14 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
   // this receipts the instalment just taken rather than the running total.
   await autoIssueAdvanceReceipt(lodgeId, userId ?? null, bookingId, input);
 
-  return getBooking(lodgeId, bookingId);
+  const booking = await getBooking(lodgeId, bookingId);
+
+  // Not awaited: same reasoning as notifyStayBooked — the welcome is
+  // best-effort, and the desk checking a guest in shouldn't wait on a
+  // WhatsApp provider. The notifier never rejects — it logs.
+  void checkinWelcome.notifyCheckedIn(lodgeId, booking);
+
+  return booking;
 }
 
 // What reception is shown before they check anyone out: when the stay was due
@@ -2472,6 +2529,129 @@ function toClockTime(value) {
   if (typeof value === 'string') return value.slice(0, 8);
   const pad = (n) => String(n).padStart(2, '0');
   return `${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}:${pad(value.getUTCSeconds())}`;
+}
+
+// The stays whose check-out deadline has arrived or is close enough to be
+// worth a word to reception — same deadline getLateCheckout works out for one
+// booking at a time, swept here across every room currently occupied. A guest
+// still in-house past their own deadline stays on the list (ever more
+// overdue) until the room is actually checked out, rather than dropping off
+// once the minute has passed.
+async function listCheckoutAlerts(lodgeId, { windowMinutes = 60, at = new Date() } = {}) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`
+      SELECT br.id AS booking_room_id, br.booking_id, br.room_id, r.room_number,
+             br.check_in_date, br.check_out_date, br.actual_check_in_at,
+             b.guest_name, l.checkin_mode, l.check_out_time
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      JOIN dbo.rooms r ON r.id = br.room_id
+      JOIN dbo.lodges l ON l.id = b.lodge_id
+      WHERE b.lodge_id = @lodgeId AND br.status = 'CHECKED_IN'
+    `);
+
+  const alerts = [];
+  for (const row of result.recordset) {
+    const deadline = lateCheckout.checkoutDeadline({
+      checkinMode: row.checkin_mode,
+      checkOutTime: toClockTime(row.check_out_time),
+      checkInDate: toIsoDate(row.check_in_date),
+      checkOutDate: toIsoDate(row.check_out_date),
+      actualCheckInAt: row.actual_check_in_at,
+    });
+    const minutesUntil = Math.round((deadline.getTime() - at.getTime()) / 60000);
+    if (minutesUntil > windowMinutes) continue;
+
+    const overdue = minutesUntil <= 0;
+    // Asia/Kolkata — the same wall clock the deadline itself is pinned to
+    // (see lateCheckout.js), so the time named in the message is the one
+    // printed on the room's own checkout policy, not the server's own zone.
+    const dueTimeLabel = deadline.toLocaleTimeString('en-IN', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata',
+    });
+
+    alerts.push({
+      bookingId: row.booking_id,
+      bookingRoomId: row.booking_room_id,
+      roomId: row.room_id,
+      roomNumber: row.room_number,
+      guestName: row.guest_name,
+      deadline: deadline.toISOString(),
+      minutesUntil,
+      overdue,
+      message: overdue
+        ? `Room ${row.room_number} · ${row.guest_name} — check-out is overdue by ${lateCheckout.lateLabel(lateCheckout.overdueMinutes(deadline, at))} (was due ${dueTimeLabel}).`
+        : `Room ${row.room_number} · ${row.guest_name} — check-out time approaching, due ${dueTimeLabel}.`,
+    });
+  }
+
+  // Most pressing first — the longest overdue, then the soonest due.
+  alerts.sort((a, b) => a.minutesUntil - b.minutesUntil);
+  return alerts;
+}
+
+// The stays due to arrive today, early enough to be worth a word before the
+// desk is surprised by a walk-in — the check-in mirror of listCheckoutAlerts
+// above. check_in_date <= today rather than = today on purpose: a booking
+// still BOOKED past its own arrival date (nobody checked them in, nobody
+// cancelled) is an unresolved no-show, and it keeps surfacing with a growing
+// overdue figure rather than silently dropping off the list once the
+// calendar date moves on — the same persistence listCheckoutAlerts gives an
+// overdue checkout.
+async function listCheckinAlerts(lodgeId, { windowMinutes = 60, at = new Date() } = {}) {
+  const pool = await getPool();
+  const today = lateCheckout.isoDateInLodgeZone(at);
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('today', sql.Date, today)
+    .query(`
+      SELECT br.id AS booking_room_id, br.booking_id, br.room_id, r.room_number,
+             br.check_in_date, b.guest_name, l.check_in_time
+      FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      JOIN dbo.rooms r ON r.id = br.room_id
+      JOIN dbo.lodges l ON l.id = b.lodge_id
+      WHERE b.lodge_id = @lodgeId AND br.status = 'BOOKED' AND br.check_in_date <= @today
+    `);
+
+  const alerts = [];
+  for (const row of result.recordset) {
+    const deadline = lateCheckout.atLocalTime(toIsoDate(row.check_in_date), toClockTime(row.check_in_time));
+    const minutesUntil = Math.round((deadline.getTime() - at.getTime()) / 60000);
+    if (minutesUntil > windowMinutes) continue;
+
+    const overdue = minutesUntil <= 0;
+    const dueTimeLabel = deadline.toLocaleTimeString('en-IN', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata',
+    });
+
+    alerts.push({
+      bookingId: row.booking_id,
+      bookingRoomId: row.booking_room_id,
+      roomId: row.room_id,
+      roomNumber: row.room_number,
+      guestName: row.guest_name,
+      deadline: deadline.toISOString(),
+      minutesUntil,
+      overdue,
+      message: overdue
+        ? `Room ${row.room_number} · ${row.guest_name} — arrival is overdue by ${lateCheckout.lateLabel(lateCheckout.overdueMinutes(deadline, at))} (expected ${dueTimeLabel}).`
+        : `Room ${row.room_number} · ${row.guest_name} — arrival time approaching, expected ${dueTimeLabel}.`,
+    });
+  }
+
+  alerts.sort((a, b) => a.minutesUntil - b.minutesUntil);
+  return alerts;
 }
 
 // Checks out one room (roomId) or every room still in. lateCharge is whatever
@@ -3083,6 +3263,14 @@ async function cancelBooking(
     throw new ApiError('Booking not found or cannot be cancelled.', 409);
   }
   const booking = await getBooking(lodgeId, bookingId);
+
+  // Undoes what createBooking() added to this guest's customer record — a
+  // cancelled booking was never a stay, so it shouldn't keep counting as one.
+  await customersService.reverseCustomerForCancelledStay(lodgeId, {
+    phone: booking.guestPhone,
+    amount: booking.totalPrice,
+  });
+
   // Awaited, unlike the booking confirmation: the desk asked to cancel and
   // wants to know whether the guest was told, so the result rides back on
   // the same response instead of only reaching the log. Still never throws —
@@ -3092,7 +3280,17 @@ async function cancelBooking(
   return { ...booking, whatsapp };
 }
 
+// The guest's WhatsApp confirmation, sent on the desk's say-so from the
+// "Booking saved" card rather than automatically on save. Awaited, unlike the
+// old fire-and-forget send, so the desk is told whether it went. Never throws
+// for a provider problem — notifyStayBooked reports those as a status.
+async function sendBookingWhatsApp(lodgeId, bookingId) {
+  await getBooking(lodgeId, bookingId);
+  return notifications.notifyStayBooked(lodgeId, bookingId);
+}
+
 module.exports = {
+  sendBookingWhatsApp,
   idProofExists,
   priceStay,
   quoteBooking,
@@ -3109,6 +3307,8 @@ module.exports = {
   createBooking,
   checkIn,
   getLateCheckout,
+  listCheckoutAlerts,
+  listCheckinAlerts,
   checkOut,
   updateBooking,
   cancelBooking,

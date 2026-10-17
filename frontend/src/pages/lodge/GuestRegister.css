@@ -1,7 +1,7 @@
 .guest-register {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .guest-register .field {
@@ -29,14 +29,14 @@
    below, divided by a hairline so the second band reads as refinement of the
    first rather than as four unrelated controls in one box. */
 .guest-register__toolbar {
-  padding: 16px 20px;
+  padding: 12px 16px;
 }
 
 .guest-register__toolbar-top {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 16px 24px;
+  gap: 10px 18px;
 }
 
 .guest-register__range {
@@ -53,7 +53,7 @@
    has to line up with them. */
 .guest-register__range-dash {
   color: var(--text-muted);
-  padding-bottom: 12px;
+  padding-bottom: 8px;
 }
 
 .guest-register__search {
@@ -117,9 +117,9 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px 20px;
-  margin-top: 14px;
-  padding-top: 14px;
+  gap: 8px 16px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 
@@ -141,7 +141,7 @@
   background: none;
   border: none;
   border-radius: 999px;
-  padding: 6px 13px;
+  padding: 5px 11px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -179,7 +179,7 @@
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
   border-radius: 999px;
-  padding: 5px 12px;
+  padding: 4px 10px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -396,164 +396,177 @@
 
 /* ---- Register table ----------------------------------------------------- */
 
-.guest-register__card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.guest-register__card-title {
-  font-family: var(--serif);
-  font-size: 16px;
-  color: var(--ink);
-}
-
-.guest-register__card-sub {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.guest-register__card-tools {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.guest-register__card-count {
-  flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--paper);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-inset);
-  border-radius: 999px;
-  padding: 4px 10px;
-  white-space: nowrap;
-}
-
-.guest-register__refresh {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--surface);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
-  border-radius: 8px;
-  padding: 6px 12px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: border-color 150ms ease, background 150ms ease;
-}
-
-.guest-register__refresh:hover:not(:disabled) {
-  color: var(--brand-ink);
-  box-shadow: var(--shadow-raised-hover);
-}
-
-.guest-register__refresh:active:not(:disabled) {
-  box-shadow: var(--shadow-pressed);
-}
-
-/* Nothing to press while it is already refreshing. */
-.guest-register__refresh:disabled {
-  box-shadow: none;
-}
-
-.guest-register__refresh:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
 /* The head has to stay while a long range scrolls, so the scroll happens here
    rather than down the whole page. */
+/* No longer its own capped-height scrollbox — the register now scrolls with
+   the rest of the page, and the header (position: sticky, offset by the
+   navbar's own height below) is what stays on screen instead of a second,
+   nested scrollbar doing it. overflow-x alone is still needed below the
+   phone breakpoint, where the sheet is wider than the screen regardless of
+   how tall it's allowed to grow. */
 .guest-register__table-scroll {
-  max-height: 62vh;
-  overflow: auto;
+  overflow-x: visible;
 }
 
-/* ---- Spreadsheet grid ----------------------------------------------------
+/* ---- Register grid --------------------------------------------------------
 
    A register is read the way a ledger sheet is: down one column, comparing
-   figures, not across one row at a time. So the table is ruled both ways —
-   every cell bounded, rows banded, columns separated — rather than left as
-   floating lines of text on white. The vertical rules are what a horizontal-
-   only table is missing: without them the eye loses which column a value
-   belongs to halfway down a long range.
+   figures, not across one row at a time. Rows are banded and ruled so a long
+   range stays trackable — vertical gridlines are deliberately left out
+   (horizontal dividers plus banding already carry the "which column is
+   this" job without the wire-cage look a full grid gives a wide sheet).
 
    Scoped to .guest-register__table throughout, because .dash-table is also the
-   internal dashboard's table, and that is a short list where a full grid would
-   be heavier than the content needs. */
+   internal dashboard's table, and that is a short list where this much
+   structure would be heavier than the content needs. */
+/* table-layout: fixed plus a width on every column, rather than shrink-to-fit
+   on most and "whatever's left" on Guest — the latter put all of the table's
+   slack into one column, so the gap after a short name was enormous while
+   every other gap stayed tight. Fixed percentages give each column its own
+   share of the row instead, so the rhythm between columns is the same from
+   row to row and the table doesn't lean on Guest to absorb the rest of the
+   card's width. Percentages, not px, so the same ratio holds as the card
+   itself resizes. Cells stay nowrap (below): a column is sized for its
+   normal content, not its longest possible one, so a rare long value spills
+   past its column rather than wrapping the row taller. */
 .guest-register__table {
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
 }
 
-/* The head is a band, not a line of loose labels. It takes the brand wash
-   rather than plain grey: the register is the screen this section is named for,
-   and a tinted header is what separates a sheet you are meant to work in from a
-   table that merely lists things. The rule under it is the brand's own edge
-   colour, so the band closes on a line of its own family instead of a grey one
-   laid across it. */
+.guest-register__table th,
+.guest-register__table td {
+  white-space: nowrap;
+}
+
+.guest-register__table th:nth-child(1),
+.guest-register__table td:nth-child(1) {
+  width: 9%;
+}
+
+/* A stay that spans several rooms lists them all ("001, 002, 101") — long
+   enough on its own to run past the column's 9% share. The table-wide nowrap
+   above left it to spill, uncontained, straight over the Bill No column
+   beside it. Letting just this one column wrap keeps a multi-room list on
+   its own line (or two), inside its own cell, instead of overlapping its
+   neighbour. */
+.guest-register__table td:nth-child(1) .guest-register__cell-main {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+}
+
+.guest-register__table th:nth-child(2),
+.guest-register__table td:nth-child(2) {
+  width: 11%;
+}
+
+.guest-register__table th:nth-child(3),
+.guest-register__table td:nth-child(3) {
+  width: 24%;
+}
+
+.guest-register__table th:nth-child(4),
+.guest-register__table td:nth-child(4) {
+  width: 11%;
+}
+
+.guest-register__table th:nth-child(5),
+.guest-register__table td:nth-child(5) {
+  width: 17%;
+}
+
+.guest-register__table th:nth-child(6),
+.guest-register__table td:nth-child(6) {
+  width: 10%;
+}
+
+.guest-register__table th:nth-child(7),
+.guest-register__table td:nth-child(7) {
+  width: 12%;
+}
+
+.guest-register__table th:nth-child(8),
+.guest-register__table td:nth-child(8) {
+  width: 6%;
+}
+
+/* Solid brand-navy band, not a pale wash — the header needs to read as a
+   fixture distinct from the rows under it, not just a tinted label row.
+   Stuck to the navbar's own height (not 0): the table no longer scrolls
+   inside its own capped box, it scrolls with the page, so the header has to
+   clear the real navbar above it the same way .tape-controls does on the
+   Room Chart page. */
 .guest-register__table thead th {
   position: sticky;
-  top: 0;
+  top: var(--dash-topbar-h, 0);
   z-index: 2;
-  /* The violet wash band, with the labels in black rather than the brand violet
-     they started as. The band was never the problem — a tinted header is what
-     makes this read as a sheet to work in. The problem was that the ink on it
-     was the *same hue* as the wash behind it, one step apart, so the headings
-     read as watermarks.
-
-     Black is the strongest answer to that: no hue of its own to argue with the
-     wash, maximum contrast, and it leaves the violet band free to be a surface
-     rather than a colour competing with the words on it. */
-  background: linear-gradient(180deg, #f6f3ff 0%, var(--brand-wash, #efebfd) 100%);
-  color: #000;
-  padding: 11px 14px;
-  border-bottom: 2px solid var(--brand-wash-edge, #dcd4fa);
-  border-right: 1px solid var(--brand-wash-edge, #dcd4fa);
+  /* --brand-ink, not --brand — the navbar directly above is already a solid
+     --brand fill, and the two sit flush with nothing between them. Matching
+     shades there fuses them into one slab, with the navbar's own search box
+     and avatar reading as if they'd been dropped inside the table header.
+     The darker ink keeps this a deliberate second bar, not a continuation
+     of the first. */
+  background: var(--brand-ink);
+  color: #ffffff;
+  padding: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   font-size: 11px;
   font-weight: 700;
-  /* Rows pass *under* the head when a long range scrolls. Without a shadow the
-     two meet as flat colour and the topmost row looks stuck to the heading
-     instead of moving behind it. */
-  box-shadow: 0 1px 3px rgba(22, 33, 46, 0.06);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  /* Rows pass *under* the head when a long range scrolls. A crisper shadow
+     than a floating card needs — this is a bar flush against the navbar, so
+     the divide from the content below has to carry the separation on its
+     own. */
+  box-shadow: 0 2px 4px rgba(8, 43, 89, 0.16);
 }
 
+/* Square across the top, not rounded — this edge sits flush under the navbar
+   while stuck, so a floating-card corner here would read as a gap rather
+   than a curve. The sheet still rounds off at the bottom, where the last row
+   genuinely is a free edge. */
+.guest-register__table thead th:first-child,
 .guest-register__table thead th:last-child {
-  border-right: none;
+  border-radius: 0;
+}
+
+.guest-register__table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-card, 12px);
+}
+
+.guest-register__table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-card, 12px);
+}
+
+/* .asset-table__sort-btn is shared with InventoryPanel's own table — its
+   muted-grey default doesn't read against this solid brand header, so both
+   the resting and active/hover colours are overridden here to stay legible.
+   Padding moved here from the <th> (now padding: 0 above) and tightened —
+   the shared button's own 12px/16px plus the cell's own padding were
+   stacking into a taller row than this compact header needs. */
+.guest-register__table .asset-table__sort-btn {
+  padding: 7px 14px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.guest-register__table .asset-table__sort-btn:hover,
+.guest-register__table .asset-table__sort-btn[aria-sort='ascending'],
+.guest-register__table .asset-table__sort-btn[aria-sort='descending'] {
+  color: #ffffff;
+}
+
+.guest-register__table .asset-table__sort-icon {
+  opacity: 0.9;
 }
 
 .guest-register__table td {
   vertical-align: middle;
   /* Tighter than the dashboard's 16px: the point of a sheet is that many rows
      are on screen at once to be compared. */
-  padding: 9px 14px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  /* The column rules are drawn lighter than the row rules on purpose. Both at
-     full strength turns the sheet into a wire cage that competes with its own
-     contents; the horizontal lines separate records, which is the stronger of
-     the two readings, so the verticals only need to be enough to keep a column
-     tracked down the page.
-
-     The violet edge, matching the band the columns hang from — the grid then
-     reads as one sheet ruled by the same hand rather than as grey lines under a
-     tinted header. */
-  border-right: 1px solid var(--brand-wash-edge, #dcd4fa);
-}
-
-.guest-register__table td:last-child {
-  border-right: none;
 }
 
 /* Banding does the work the eye needs to track one row across eight columns —
@@ -561,7 +574,7 @@
    Held very light: the stripe is a guide for the eye, and at any more weight it
    competes with the status badges and the in-house edge for attention. */
 .guest-register__table tbody tr:nth-child(even) > td {
-  background: var(--neu-sunken, #eef1f7);
+  background: var(--neu-sunken, #f7f8fa);
 }
 
 /* Figures line up digit over digit down the column, which is the only way a
@@ -612,20 +625,13 @@
    is. Same violet as the header, so pointing at a row and reading its column
    heading are visibly the same gesture. */
 .guest-register__table tbody tr:hover > td {
-  background: var(--brand-wash, #efebfd);
+  background: var(--brand-wash, #e6edf4);
 }
 
-/* Guests still in the building are the rows a desk acts on; a left edge marks
-   them without adding a colour the status badge already carries. */
-.guest-register__row--in-house > td:first-child {
-  /* Widened a touch from 3px: the sheet now has a ruled left edge of its own,
-     and at 3px the marker was reading as a slightly thicker border rather than
-     as a flag on the row. */
-  box-shadow: inset 4px 0 0 0 var(--brand);
-}
-
-/* The room number is the marker's label — an edge with ordinary text beside it
-   marks the row but doesn't say what about it is different. */
+/* Guests still in the building are the rows a desk acts on — the room
+   number tints to the brand colour rather than carrying a left-edge bar
+   (removed on request), so the row still reads as marked without the extra
+   line down its side. */
 .guest-register__row--in-house > td:first-child .guest-register__cell-main {
   color: var(--brand-ink);
 }
@@ -709,18 +715,6 @@
    row of the banding. */
 .guest-register__row--draft > td {
   background: #fffdf5;
-}
-
-.guest-register__row-phone {
-  color: var(--text-muted);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  text-decoration-color: var(--border);
-}
-
-.guest-register__row-phone:hover {
-  color: var(--accent);
-  text-decoration-color: currentColor;
 }
 
 /* Two lines per cell: what identifies the row, and what qualifies it. Keeps
@@ -964,8 +958,8 @@
   /* Was #eef4f2, a green-grey, under violet ink — the two hues fought and the
      tag read as a leftover from another palette. The brand's own wash puts the
      chip and its letters in one colour family. */
-  background: var(--brand-wash, #efebfd);
-  box-shadow: inset 0 0 0 1px var(--brand-wash-edge, #dcd4fa);
+  background: var(--brand-wash, #e6edf4);
+  box-shadow: inset 0 0 0 1px var(--brand-wash-edge, #c7d6e6);
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -1664,16 +1658,6 @@
     font-size: 18px;
   }
 
-  .guest-register__card-head {
-    padding: 14px 16px;
-    flex-wrap: wrap;
-  }
-
-  .guest-register__card-tools {
-    width: 100%;
-    justify-content: space-between;
-  }
-
   .guest-register__skeleton {
     padding: 8px 16px;
   }
@@ -1686,12 +1670,6 @@
 
   .guest-register__empty-actions .btn-secondary {
     width: 100%;
-  }
-
-  /* A phone has less height to give the register, and the page's own scroll
-     shouldn't fight the table's. */
-  .guest-register__table-scroll {
-    max-height: none;
   }
 
   .guest-register__table thead th {

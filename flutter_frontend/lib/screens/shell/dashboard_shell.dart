@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,19 +13,25 @@ import '../billing/billing_screen.dart';
 import '../billing/event_billing_screen.dart';
 import '../bookings/bookings_screen.dart';
 import '../bookings/register_screen.dart';
+import '../customers/customers_screen.dart';
 import '../events/events_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../food/food_billing_screen.dart';
 import '../food/menu_setup_screen.dart';
+import '../housekeeping/housekeeping_screen.dart';
 import '../income/income_screen.dart';
+import '../laundry/laundry_screen.dart';
 import '../placeholder_screen.dart';
 import '../profile/profile_screen.dart';
 import '../reports/reports_screen.dart';
 import '../rooms/rooms_rates_screen.dart';
+import '../services/services_screen.dart';
 import '../staff/staff_roles_screen.dart';
 import '../theme.dart';
 import 'feature.dart';
 import 'sidebar.dart';
+import 'sign_out_dialog.dart';
+import 'staff_alerts_bell.dart';
 
 /// The signed-in app: a top bar, a section, and the sidebar that chooses it —
 /// the same rail the web dashboard uses, rather than a phone bottom bar.
@@ -55,12 +63,61 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   DateTime? _lastBackPressedAt;
   static const _exitWindow = Duration(seconds: 2);
 
+  /// Lets a section (currently just Reports) put its own trailing buttons —
+  /// the PDF/Excel download icons — directly in the top bar next to the
+  /// section title, instead of opening a second header row underneath. The
+  /// active section writes into this after its own build (see
+  /// ReportsScreen's headerActions) and clears it again on dispose, so
+  /// switching away from Reports doesn't leave its icons stuck in the bar.
+  final ValueNotifier<Widget?> _headerActions = ValueNotifier(null);
+
+  // The sidebar's Housekeeping badge polls the open-issue count the same way
+  // the web rail's useOpenIssues does (30s) — started once the signed-in
+  // login actually has Housekeeping to begin with, never before.
+  Timer? _issueCountTimer;
+  bool _issuePollingStarted = false;
+
+  // The staff alerts bell's own polling — started once, the same way the
+  // housekeeping badge's timer above is, right after `me` first loads.
+  bool _staffAlertsStarted = false;
+
+  @override
+  void dispose() {
+    _headerActions.dispose();
+    _issueCountTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
     // Never synchronously in initState — the provider is not ready to be
     // written to during the first build.
     Future.microtask(() => ref.read(authViewModelProvider.notifier).loadMe());
+  }
+
+  void _startIssuePolling() {
+    ref.read(housekeepingViewModelProvider.notifier).loadIssueSummary();
+    _issueCountTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => ref.read(housekeepingViewModelProvider.notifier).loadIssueSummary(),
+    );
+  }
+
+  /// Gated per category on the same permissions OwnerDashboard.jsx checks
+  /// (lines 426-429/417): a role sees only the alert categories it can
+  /// actually act on, not every one bundled behind a single gate.
+  void _startStaffAlerts(Me me) {
+    final permissions = me.user;
+    ref.read(staffAlertsViewModelProvider.notifier).start(
+      canCheckin: permissions.can('bookings.manage'),
+      canCheckout: permissions.can('bookings.manage'),
+      canWorkOrders: permissions.canAny(['assets.manage', 'reports.view']),
+      canCoverage: permissions.canAny(['assets.manage', 'reports.view']),
+      canPendingOrders: permissions.can('orders.manage'),
+      canHousekeeping: _features(me).any((f) => f.key == 'housekeeping'),
+      canReports: permissions.can('reports.view'),
+    );
   }
 
   void _toggleGroup(String group, String? activeGroup) {
@@ -73,12 +130,39 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     final state = ref.watch(authViewModelProvider);
     final me = state.me;
     final compact = AppTheme.isCompact(context);
+    final issueCount = ref.watch(
+      housekeepingViewModelProvider.select((s) => s.issueSummary.count),
+    );
+
+    if (!_issuePollingStarted &&
+        me != null &&
+        _features(me).any((f) => f.key == 'housekeeping')) {
+      _issuePollingStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startIssuePolling());
+    }
+
+    if (!_staffAlertsStarted && me != null) {
+      _staffAlertsStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startStaffAlerts(me));
+    }
+
+    final staffAlerts = ref.watch(staffAlertsViewModelProvider.select((s) => s.alerts));
+    ref.listen(staffAlertsViewModelProvider.select((s) => s.toast), (previous, toast) {
+      if (toast == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(toast.message),
+          backgroundColor: toast.urgent ? AppTheme.danger : AppTheme.heading,
+        ),
+      );
+      ref.read(staffAlertsViewModelProvider.notifier).clearToast();
+    });
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
-        statusBarColor: AppTheme.card,
-        statusBarIconBrightness: Brightness.dark,
-        statusBarBrightness: Brightness.light,
+        statusBarColor: AppTheme.navbar,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
       ),
       child: PopScope(
         canPop: false,
@@ -88,13 +172,17 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         },
         child: Scaffold(
           key: _scaffoldKey,
-          drawer: (me != null && compact) ? _drawer(me) : null,
+          drawer: (me != null && compact) ? _drawer(me, issueCount) : null,
           body: Column(
             children: [
               _TopBar(
                 title: me == null ? null : _activeTitle(_features(me)),
                 onMenuTap: (me != null && compact)
                     ? () => _scaffoldKey.currentState?.openDrawer()
+                    : null,
+                actions: _headerActions,
+                bell: (me != null && _canSeeStaffAlerts(me))
+                    ? StaffAlertsBell(alerts: staffAlerts)
                     : null,
               ),
               const _OfflineBanner(),
@@ -105,7 +193,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (me != null && !compact) _rail(me),
+                      if (me != null && !compact) _rail(me, issueCount),
                       Expanded(
                         child: _ResponsiveBody(
                           child: _body(state.isLoading, state.error, me),
@@ -157,6 +245,17 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   List<Feature> _features(Me me) =>
       kFeatures.where((f) => f.availableTo(me)).toList();
 
+  /// Mirrors canSeeStaffAlerts in OwnerDashboard.jsx:454-455 — the bell shows
+  /// if any one of the categories it feeds would have something to say.
+  bool _canSeeStaffAlerts(Me me) {
+    final p = me.user;
+    return p.can('bookings.manage') ||
+        p.canAny(['assets.manage', 'reports.view']) ||
+        p.can('orders.manage') ||
+        p.can('reports.view') ||
+        _features(me).any((f) => f.key == 'housekeeping');
+  }
+
   /// `_section` stays null until the desk actually taps something — it is
   /// never written on load, only read. Everywhere that needs "the section
   /// actually showing" (the sidebar's own highlight, which group starts
@@ -189,7 +288,18 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     return null;
   }
 
-  void _select(String key) => setState(() => _section = key);
+  void _select(String key) => setState(() {
+    _section = key;
+    // Every section change drops whatever icon is up there right away,
+    // unconditionally — relying on the outgoing screen's own dispose() to
+    // clear it instead left a stale icon showing on whatever opened next
+    // (e.g. Services' PDF icon still up once Laundry's own Hotel Laundry
+    // tab, which has none, had already loaded) whenever dispose() lost the
+    // race within the same build. A section that wants one puts it back
+    // itself, from its own build's addPostFrameCallback, once it is
+    // actually on screen — so the gap is at most a single frame.
+    _headerActions.value = null;
+  });
 
   /// Same confirmation ProfileScreen's own sign-out carries. No popUntil
   /// needed here the way that screen needs one: DashboardShell is the root
@@ -197,33 +307,13 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   /// clearing the session is enough for AuthGate to show LoginScreen next
   /// build.
   Future<void> _confirmSignOut(BuildContext context) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.bg,
-        title: const Text('Sign out?', style: TextStyle(color: AppTheme.heading)),
-        content: const Text(
-          'You will need your phone or email and password to get back in.',
-          style: TextStyle(color: AppTheme.text),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Stay signed in'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out', style: TextStyle(color: AppTheme.danger)),
-          ),
-        ],
-      ),
-    );
+    final ok = await showSignOutDialog(context);
     if (ok == true) {
       await ref.read(authViewModelProvider.notifier).signOut();
     }
   }
 
-  Widget _rail(Me me) {
+  Widget _rail(Me me, int issueCount) {
     final features = _features(me);
     if (features.isEmpty) return const SizedBox.shrink();
     return AnimatedContainer(
@@ -239,6 +329,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         onSelect: _select,
         groupToggle: _groupToggle,
         onToggleGroup: (g) => _toggleGroup(g, _activeGroup(features)),
+        issueCount: issueCount,
         me: me,
         onProfileTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const ProfileScreen()),
@@ -251,7 +342,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     );
   }
 
-  Widget _drawer(Me me) {
+  Widget _drawer(Me me, int issueCount) {
     final features = _features(me);
     return Drawer(
       width: 280,
@@ -265,6 +356,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
           },
           groupToggle: _groupToggle,
           onToggleGroup: (g) => _toggleGroup(g, _activeGroup(features)),
+          issueCount: issueCount,
           me: me,
           onProfileTap: () {
             Navigator.of(context).pop();
@@ -320,10 +412,18 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return const FoodBillingScreen();
       case 'billing':
         return const BillingScreen();
+      case 'customers':
+        return const CustomersScreen();
       case 'eventBilling':
         return const EventBillingScreen();
       case 'rooms':
         return const RoomsRatesScreen();
+      case 'housekeeping':
+        return const HousekeepingScreen();
+      case 'laundry':
+        return LaundryScreen(headerActions: _headerActions);
+      case 'otherServices':
+        return ServicesScreen(headerActions: _headerActions);
       case 'menu':
         return const MenuSetupScreen();
       // The three keyed separately (not just a different initialTab on the
@@ -344,13 +444,13 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       case 'income':
         return const IncomeScreen();
       case 'report-overview':
-        return const ReportsScreen(key: ValueKey('report-overview'), only: 'overview');
+        return ReportsScreen(key: const ValueKey('report-overview'), only: 'overview', headerActions: _headerActions);
       case 'report-sales':
-        return const ReportsScreen(key: ValueKey('report-sales'), only: 'sales');
+        return ReportsScreen(key: const ValueKey('report-sales'), only: 'sales', headerActions: _headerActions);
       case 'report-finance':
-        return const ReportsScreen(key: ValueKey('report-finance'), only: 'finance');
+        return ReportsScreen(key: const ValueKey('report-finance'), only: 'finance', headerActions: _headerActions);
       case 'report-assets':
-        return const ReportsScreen(key: ValueKey('report-assets'), only: 'assets');
+        return ReportsScreen(key: const ValueKey('report-assets'), only: 'assets', headerActions: _headerActions);
       case 'staff':
         return const StaffRolesScreen();
       default:
@@ -422,19 +522,20 @@ class _OfflineBanner extends ConsumerWidget {
                 color: AppTheme.danger.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(AppTheme.rMedium),
                 border: Border.all(color: AppTheme.danger.withValues(alpha: 0.25)),
+                boxShadow: AppTheme.subtle,
               ),
               child: Row(
                 children: [
                   Container(
-                    width: 24,
-                    height: 24,
+                    width: 26,
+                    height: 26,
                     decoration: BoxDecoration(
                       color: AppTheme.danger.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Icons.wifi_off_rounded,
-                      size: 13,
+                      size: 14,
                       color: AppTheme.danger,
                     ),
                   ),
@@ -472,7 +573,16 @@ class _TopBar extends StatelessWidget {
   /// wide enough for the permanent rail has nothing for it to open.
   final VoidCallback? onMenuTap;
 
-  const _TopBar({this.title, this.onMenuTap});
+  /// Trailing buttons the active section wants shown next to its title —
+  /// currently only Reports, for its PDF/Excel download icons. Null (the
+  /// common case) shows nothing extra.
+  final ValueNotifier<Widget?>? actions;
+
+  /// The staff alerts bell — null when the signed-in login holds none of the
+  /// permissions any alert category needs (see [_canSeeStaffAlerts]).
+  final Widget? bell;
+
+  const _TopBar({this.title, this.onMenuTap, this.actions, this.bell});
 
   @override
   Widget build(BuildContext context) {
@@ -485,35 +595,47 @@ class _TopBar extends StatelessWidget {
         AppTheme.s16,
         0,
       ),
-      decoration: const BoxDecoration(
-        color: AppTheme.card,
-        border: Border(bottom: BorderSide(color: AppTheme.border)),
+      decoration: BoxDecoration(
+        color: AppTheme.navbar,
+        boxShadow: AppTheme.elevated,
       ),
       child: SizedBox(
-        height: 52,
+        height: 56,
         child: Row(
           children: [
             if (onMenuTap != null)
               IconButton(
                 tooltip: 'Sections',
-                icon: const Icon(Icons.menu_rounded, color: AppTheme.text, size: 22),
+                icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 22),
                 visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.16),
+                  shape: const CircleBorder(),
+                ),
                 onPressed: onMenuTap,
               )
             else
               const SizedBox(width: AppTheme.s8),
+            const SizedBox(width: AppTheme.s8),
             Expanded(
               child: Text(
                 title ?? '',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
                 ),
               ),
             ),
+            if (actions != null)
+              ValueListenableBuilder<Widget?>(
+                valueListenable: actions!,
+                builder: (context, child, _) => child ?? const SizedBox.shrink(),
+              ),
+            if (bell != null) bell!,
           ],
         ),
       ),

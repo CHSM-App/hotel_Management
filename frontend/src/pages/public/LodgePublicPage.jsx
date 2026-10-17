@@ -80,6 +80,7 @@ function availabilityOf(type) {
 const roomImageUrl = (filename) => `${API_BASE}/room-images/${filename}`;
 const venueImageUrl = (filename) => `${API_BASE}/venue-images/${filename}`;
 const menuImageUrl = (filename) => `${API_BASE}/menu-images/${filename}`;
+const serviceImageUrl = (filename) => `${API_BASE}/service-images/${filename}`;
 // logoUrl already carries the /hotel-logos/ prefix from the API (see
 // public.service.js), unlike the filenames above.
 const logoUrl = (lodge) => (lodge.logoUrl ? `${API_BASE}${lodge.logoUrl}` : null);
@@ -104,7 +105,13 @@ function VenueCard({ lodge, venue, onOpenPhotos, onEnquireEvent }) {
             onClick={() => onOpenPhotos(venue.images.map(venueImageUrl), 0)}
             aria-label={`View photos of ${venue.name}`}
           >
-            <img src={venueImageUrl(venue.images[0])} alt={`${venue.name} at ${lodge.name}`} className="lodge-public__room-img" />
+            <img
+              src={venueImageUrl(venue.images[0])}
+              alt={`${venue.name} at ${lodge.name}`}
+              className="lodge-public__room-img"
+              loading="lazy"
+              decoding="async"
+            />
           </button>
         ) : (
           <div className="lodge-public__room-placeholder">{venue.name}</div>
@@ -138,6 +145,66 @@ function VenueCard({ lodge, venue, onOpenPhotos, onEnquireEvent }) {
           >
             Enquire for Venue
           </button>
+        ) : (
+          <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the property'} to enquire.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Something sold per use rather than per night or per function — a private
+// pool slot, a round on the games table. No dates or booking behind it, so
+// the card is the same shape as a venue's but the enquiry is a single
+// pre-filled WhatsApp message rather than the full room/event form.
+function ServiceCard({ lodge, service, onOpenPhotos }) {
+  const message = `Hi! I'd like to know more about ${service.name} at ${lodge.name}.`;
+  const whatsappLink = buildWhatsAppLink(lodge.whatsappNumber, message);
+  const telLink = lodge.phone ? `tel:${lodge.phone}` : null;
+
+  return (
+    <div className="lodge-public__room">
+      <div className="lodge-public__room-cover">
+        {service.image ? (
+          <button
+            type="button"
+            className="lodge-public__room-cover-btn"
+            onClick={() => onOpenPhotos([serviceImageUrl(service.image)], 0)}
+            aria-label={`View photo of ${service.name}`}
+          >
+            <img
+              src={serviceImageUrl(service.image)}
+              alt={`${service.name} at ${lodge.name}`}
+              className="lodge-public__room-img"
+              loading="lazy"
+              decoding="async"
+            />
+          </button>
+        ) : (
+          <div className="lodge-public__room-placeholder">{service.name}</div>
+        )}
+      </div>
+
+      <div className="lodge-public__room-body">
+        <div className="lodge-public__room-top">
+          <div>
+            <div className="lodge-public__room-number">{service.name}</div>
+            <div className="lodge-public__room-category">Other service</div>
+          </div>
+          <div className="lodge-public__room-rate">
+            {formatPrice(service.price)}
+            <span className="lodge-public__room-rate-unit"> /{service.unitLabel}</span>
+          </div>
+        </div>
+
+        {whatsappLink ? (
+          <a className="site-btn site-btn--whatsapp" href={whatsappLink} target="_blank" rel="noopener noreferrer">
+            Enquire on WhatsApp
+          </a>
+        ) : telLink ? (
+          <a className="site-btn site-btn--whatsapp" href={telLink}>
+            Call {lodge.phone}
+          </a>
         ) : (
           <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the property'} to enquire.</p>
         )}
@@ -319,11 +386,9 @@ function RoomTypeCard({ lodge, type, onOpenPhotos, onEnquireRoom }) {
 
   const beds = type.bedSizes.map((b) => bedSizeLabel[b]).filter(Boolean);
   const baths = type.bathroomTypes.map((b) => bathroomTypeLabel[b]).filter(Boolean);
-  const sleeps =
-    type.maxOccupancy &&
-    (type.minOccupancy === type.maxOccupancy
-      ? `Sleeps ${type.maxOccupancy}`
-      : `Sleeps ${type.minOccupancy}–${type.maxOccupancy}`);
+  // The ceiling only: rooms of one type can differ ("2–4"), and "Max" over a
+  // range would say nothing a guest counting heads could use.
+  const sleeps = type.maxOccupancy && `Max ${type.maxOccupancy} ${type.maxOccupancy === 1 ? 'Guest' : 'Guests'}`;
 
   const chips = [beds.length > 0 && `${joinWords(beds)} bed`, baths.length > 0 && joinWords(baths), sleeps].filter(
     Boolean
@@ -348,6 +413,8 @@ function RoomTypeCard({ lodge, type, onOpenPhotos, onEnquireRoom }) {
               src={roomImageUrl(type.images[0])}
               alt={`${type.name} room at ${lodge.name}`}
               className="lodge-public__room-img"
+              loading="lazy"
+              decoding="async"
             />
           </button>
         ) : (
@@ -723,7 +790,7 @@ export default function LodgePublicPage() {
   const [heroLoaded, setHeroLoaded] = useState(false);
   useEffect(() => {
     if (!data || typeof IntersectionObserver === 'undefined') return undefined;
-    const targets = ['home', 'rooms', 'events', 'menu', 'contact'].map((id) => document.getElementById(id)).filter(Boolean);
+    const targets = ['home', 'rooms', 'events', 'menu', 'services', 'reviews', 'contact'].map((id) => document.getElementById(id)).filter(Boolean);
     if (targets.length === 0) return undefined;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -808,7 +875,7 @@ export default function LodgePublicPage() {
     );
   }
 
-  const { lodge, roomTypes, roomAddons = [], venues = [], addons = [], menu = [] } = data;
+  const { lodge, roomTypes, roomAddons = [], venues = [], addons = [], menu = [], reviews = [], otherServices = [] } = data;
   const generalMessage = `Hi! I'd like to know more about ${lodge.name}.`;
 
   // Which parts of the page this property has. The nav strip only appears
@@ -817,6 +884,8 @@ export default function LodgePublicPage() {
     lodge.hasRooms && { id: 'rooms', label: 'Rooms' },
     lodge.hasEvents && venues.length > 0 && { id: 'events', label: 'Venues & functions' },
     lodge.servesFood && menu.length > 0 && { id: 'menu', label: 'Menu' },
+    lodge.hasOtherServices && otherServices.length > 0 && { id: 'services', label: 'Other services' },
+    reviews.length > 0 && { id: 'reviews', label: 'Guest reviews' },
   ].filter(Boolean);
   const nothingListed = sections.length === 0 && roomTypes.length === 0;
 
@@ -833,10 +902,12 @@ export default function LodgePublicPage() {
     .filter(Boolean)
     .join(' · ');
 
-  // The photos across the top: rooms first, then venues, the first three shown
-  // and the rest reachable through the lightbox. A property with no photos
-  // gets a single-column hero rather than an empty frame.
+  // The photos across the top: the owner's own hero pick first if they set
+  // one, then room photos, then venues — the first shown as the actual
+  // background, the rest reachable through the lightbox. A property with no
+  // photos gets a single-column hero rather than an empty frame.
   const heroImages = [
+    ...(lodge.heroImageUrl ? [`${API_BASE}${lodge.heroImageUrl}`] : []),
     ...roomTypes.flatMap((t) => t.images.map(roomImageUrl)),
     ...venues.flatMap((v) => v.images.map(venueImageUrl)),
   ].slice(0, 12);
@@ -871,6 +942,13 @@ export default function LodgePublicPage() {
         title: allVegMenu ? 'Pure-veg restaurant' : 'Restaurant',
         detail: `${totalDishes} dish${totalDishes === 1 ? '' : 'es'} across ${menu.length} section${menu.length === 1 ? '' : 's'}${lodge.foodRoomService ? ' · room service' : ''}`,
         cta: 'See menu',
+      },
+    lodge.hasOtherServices &&
+      otherServices.length > 0 && {
+        id: 'services',
+        title: 'Other services',
+        detail: `${otherServices.length} service${otherServices.length === 1 ? '' : 's'} available`,
+        cta: 'See services',
       },
     {
       id: 'contact',
@@ -1274,6 +1352,46 @@ export default function LodgePublicPage() {
             </p>
           </div>
           <MenuCard menu={menu} onOpenPhotos={openLightbox} />
+          </div>
+        </section>
+      )}
+
+      {lodge.hasOtherServices && otherServices.length > 0 && (
+        <section className="lodge-public__services site-section site-section--tinted" id="services">
+          <div className="site-container">
+          <div className="lodge-public__section-head">
+            <span className="lodge-public__eyebrow">More to enjoy</span>
+            <h2>Other services</h2>
+            <p>Extras billed per use — message us to check availability.</p>
+          </div>
+          <div className="lodge-public__room-grid">
+            {otherServices.map((service) => (
+              <ServiceCard key={service.id} lodge={lodge} service={service} onOpenPhotos={openLightbox} />
+            ))}
+          </div>
+          </div>
+        </section>
+      )}
+
+      {reviews.length > 0 && (
+        <section className="lodge-public__reviews site-section" id="reviews">
+          <div className="site-container">
+            <div className="lodge-public__section-head">
+              <span className="lodge-public__eyebrow">Guest reviews</span>
+              <h2>What our guests say</h2>
+            </div>
+            <div className="lodge-public__review-grid">
+              {reviews.map((r) => (
+                <article className="lodge-public__review-card" key={r.id}>
+                  <div className="lodge-public__review-stars" aria-label={`${r.rating} out of 5 stars`}>
+                    {'★'.repeat(r.rating)}
+                    <span className="lodge-public__review-stars-off">{'★'.repeat(5 - r.rating)}</span>
+                  </div>
+                  <p className="lodge-public__review-comment">&ldquo;{r.comment}&rdquo;</p>
+                  <p className="lodge-public__review-name">{r.guestName}</p>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
       )}
