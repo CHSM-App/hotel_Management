@@ -9,28 +9,11 @@
   min-height: 100svh;
   background: var(--paper);
 
-  /* Same superadmin-panel theme LodgesDashboard.css defines for .dash-shell,
-     repeated here since this form renders under its own top-level wrapper
-     rather than inside that one. Keeps the owner-facing app on its own
-     violet brand. */
-  --brand: #1246A0;
-  --brand-ink: #0D3882;
-  --brand-lift: #1246A0;
-  --brand-band: #1246A0;
-  --brand-band-deep: #0D3882;
-  --brand-navy: #082B59;
-  --brand-wash: #EAF1FB;
-  --brand-wash-edge: #BBD2EC;
-  --brand-focus: rgba(18, 70, 160, 0.16);
-  --paper: #F4F7FB;
-  --surface: #FFFFFF;
-  --border: #D5DEEA;
-  --ink: #142B4A;
-  --text-muted: #64748B;
-  --success: #087A50;
-  --success-bg: #E3F6EE;
-  --danger: #C62828;
-  --danger-bg: #FBEAEA;
+  /* Dark panel tone for .reg-summary and the tinted focus ring, derived from
+     the shared brand tokens rather than a second private palette — this page
+     now runs the same violet brand as the rest of the app. */
+  --brand-navy: var(--brand-ink);
+  --brand-focus: rgba(0, 176, 255, 0.16);
 }
 
 /* Topbar ------------------------------------------------------------------ */
@@ -106,7 +89,7 @@
   display: inline-block;
   padding: 4px 12px;
   border-radius: 999px;
-  background: #f7ecec;
+  background: #FDF3D9;
   color: var(--accent-ink);
   font-size: 11px;
   font-weight: 700;
@@ -783,8 +766,8 @@
    usually well past the top by the time Create is pressed. Runs once on
    mount, so it doesn't restart on every re-render while the banner is up. */
 @keyframes reg-banner-flash {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(193, 18, 31, 0); }
-  20%, 60% { box-shadow: 0 0 0 4px rgba(193, 18, 31, 0.3); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 67, 53, 0); }
+  20%, 60% { box-shadow: 0 0 0 4px rgba(234, 67, 53, 0.3); }
 }
 
 .reg-shell .form-banner--flash {

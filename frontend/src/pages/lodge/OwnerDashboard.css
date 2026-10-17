@@ -87,26 +87,34 @@
   /* Its own space above the rule — without it a tall menu that fills the rail
      would put Sign out directly against the last section, which is exactly the
      misread ("another section") the separator is there to prevent. */
-  padding-top: 18px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
-/* Shaped like a nav item so it belongs to the rail, but never carries the
-   brand wash or the pressed state — it goes somewhere, it isn't somewhere you
-   are. Drawn in the danger tone throughout rather than only on hover: it is
-   the one control here that ends the session, and a grey row that turns red
-   under the pointer announces that only to someone already reaching for it. */
+/* Drawn as an actual button now, not a borderless row that only happens to
+   be clickable — a visible outline and a faint fill of its own red at rest,
+   so the eye finds it as a bounded control in the footer rather than reading
+   it as stray text under the rule. Centred rather than left-aligned like the
+   nav items above it: those are a list to scan down, this is a single
+   action, and a centred label is what makes that reading obvious at a
+   glance. Drawn in the danger tone throughout rather than only on hover: it
+   is the one control here that ends the session, and something that only
+   turns red under the pointer announces that fact just to someone already
+   reaching for it. Sized a notch below the nav items above it (tighter
+   padding, smaller type) so it still reads as the rail's quiet exit rather
+   than a ninth, equally-weighted section. */
 .dash-sidebar__signout {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  text-align: left;
-  background: transparent;
-  border: 1px solid transparent;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  background: rgba(139, 0, 0, 0.05);
+  border: 1px solid rgba(139, 0, 0, 0.22);
   border-radius: var(--radius-tile);
-  padding: 9px 12px;
-  font-size: 14px;
+  padding: 7px 10px;
+  font-size: 13px;
   font-weight: 600;
   /* A deeper blood red than the --danger the form errors use. Those sit inside
      a panel and only ever appear when something is wrong; this one is on
@@ -114,18 +122,18 @@
      brownish next to them rather than reading as red at all. */
   color: #8B0000;
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
 .dash-sidebar__signout svg {
   flex-shrink: 0;
 }
 
-/* A wash of the same red rather than the plain surface the nav items lift onto
-   — the row is already red, so lifting it onto white would drain colour at the
-   exact moment it is being pressed. */
+/* A deeper wash and a solid border on top of the resting fill — the button
+   presses in rather than switching on from nothing. */
 .dash-sidebar__signout:hover {
-  background: rgba(139, 0, 0, 0.08);
+  background: rgba(139, 0, 0, 0.1);
+  border-color: rgba(139, 0, 0, 0.32);
   box-shadow: var(--shadow-raised);
 }
 
@@ -222,25 +230,25 @@
    needing a marker bolted to its edge, so the 3px brand rule the old flat
    version needed is gone. Kept shallow (--shadow-pressed, not
    --shadow-inset) because it sits inside a panel that is itself raised. */
-/* Tinted in the brand rather than the page grey it used to take. The chrome is
-   violet now, and a neutral well read as "disabled" beside it — the section you
-   are in should be the one place in the sidebar carrying the brand. */
+/* Tinted in a light sky blue rather than the page grey it used to take, or
+   the navy the chrome runs — a calm wash for a state that's on screen the
+   whole time, with amber kept for one-off buttons and actions instead. */
 .dash-sidebar__item[aria-current='page'] {
-  background: var(--brand-wash);
-  box-shadow: inset 0 0 0 1px var(--brand-wash-edge);
-  color: var(--brand-ink);
+  background: var(--focus-wash);
+  box-shadow: inset 0 0 0 1px var(--focus-wash-edge);
+  color: var(--link);
   font-weight: 600;
 }
 
 /* A pressed item doesn't lift again under the pointer — it is already where a
    press would put it, and the travel would read as it being deselected. */
 .dash-sidebar__item[aria-current='page']:hover {
-  background: var(--brand-wash);
-  box-shadow: inset 0 0 0 1px var(--brand-wash-edge);
+  background: var(--focus-wash);
+  box-shadow: inset 0 0 0 1px var(--focus-wash-edge);
 }
 
 .dash-sidebar__item[aria-current='page'] svg {
-  color: var(--brand-ink);
+  color: var(--link);
 }
 
 /* The guide's own entry, last in the nav and set off by a rule: every item
@@ -354,7 +362,7 @@
 
   .dash-sidebar__item[aria-current='page'] {
     border-left-color: transparent;
-    border-bottom-color: var(--brand);
+    border-bottom-color: var(--focus);
   }
 
   .dash-sidebar__soon {
@@ -387,7 +395,7 @@
    introducing a second visual language — same tokens, same light source. */
 
 /* The band already carries a gradient; what it lacked was a bottom edge. On a
-   white content area the violet simply stopped, which read as a crop rather
+   white content area the navy simply stopped, which read as a crop rather
    than as a layer sitting above the page. A hairline of its own darker end
    plus a short ambient throw gives it somewhere to land. */
 .dash-topbar {
@@ -396,7 +404,7 @@
   /* Above the sidebar's own sticky positioning, so scrolling a long tape chart
      doesn't slide the rail over the bar. Kept below the dropdown's z-50. */
   z-index: 30;
-  box-shadow: 0 1px 0 rgba(91, 63, 217, 0.35), 0 6px 16px -8px rgba(22, 33, 46, 0.2);
+  box-shadow: 0 1px 0 rgba(10, 58, 107, 0.35), 0 6px 16px -8px rgba(22, 33, 46, 0.2);
 }
 
 /* The property's name is the one piece of identity on the screen. At 16px in
@@ -437,7 +445,7 @@
   opacity: 1;
 }
 
-/* The selected row reads as brand-tinted, but on a rail of eleven rows the
+/* The selected row reads as amber-tinted, but on a rail of eleven rows the
    tint alone is a weak anchor at a glance across a desk. A short bar on the
    leading edge gives it a hard left boundary — the one place the eye returns
    to when scanning a vertical list. */
@@ -454,7 +462,7 @@
   width: 3px;
   height: 18px;
   border-radius: 0 3px 3px 0;
-  background: var(--brand);
+  background: var(--focus);
 }
 
 /* "Soon" sat at full muted contrast on a raised chip, which made an unbuilt
@@ -514,9 +522,16 @@
 
    Scoped to --light so the superadmin dashboard, which shares .dash-topbar,
    keeps the band it was designed with. */
-/* Declared on the shell rather than on the bar, so the rail below can read the
-   same number — the brand block and the sidebar have to be the same width or
-   the search field stops lining up with the content column. */
+/* Declared on the shell rather than on the bar — the rail below is the only
+   thing that still reads this token (the brand block decoupled from it, see
+   .dash-brand further down), but it stays a shared variable rather than a
+   literal on .dash-sidebar so the width has one place to change.
+   Tried narrower once (220px, to give the page back some of the rail's
+   width) and reverted it: group headings are white-space: nowrap and don't
+   shrink, so "Finance & Management" pushed its own chevron out past the
+   row's right edge at that width — the real font metrics ran tighter than
+   the margin a quick visual check had found safe. 240px is the width every
+   heading in the rail actually fits at. */
 /* Scoped to a shell that actually contains the light bar. Vite bundles every
    stylesheet into one file, so a bare .dash-shell here would retune the
    superadmin dashboard too — it shares the class and still wants its 58px
@@ -542,10 +557,13 @@
   --brand-band-deep: #071E3D;
   --brand-wash: #EAF1FB;
   --brand-wash-edge: #BBD2EC;
-  --success: #087A50;
-  --success-bg: #E3F6EE;
-  --danger: #C62828;
-  --danger-bg: #FBEAEA;
+  /* Green/red from the approved contrast palette, in place of the navy-tuned
+     success/danger this scope used to carry — same pair as the root tokens
+     in index.css, repeated here only because this scope overrides them. */
+  --success: #28A745;
+  --success-bg: #E8F6EC;
+  --danger: #EA4335;
+  --danger-bg: #FDECEA;
 }
 
 .dash-topbar--light {
@@ -654,15 +672,18 @@
    phone — an outlined square so it reads as a control in its own right
    rather than a bare icon floating in the bar. */
 /* Bare icon rather than a button chip — no fill, no border, just the three
-   lines in white with a little room before them so it doesn't sit flush
-   against the bar's own edge. */
+   lines in white. margin-left (not an asymmetric left padding, which this
+   used to carry) is what centres the icon at the same x-position as the
+   icon column in the collapsed sidebar directly below it — 30px from the
+   page's left edge, worked out from the rail's own width/padding math
+   (.dash-sidebar--icon-only). A left-only padding shifted the icon 5px shy
+   of that, which is the misalignment between the toggle and the rail. */
 .dash-topbar__menu {
   flex-shrink: 0;
   width: 34px;
   height: 34px;
-  margin-left: 6px;
+  margin-left: 13px;
   margin-right: 14px;
-  padding-left: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1084,22 +1105,22 @@
    pages are what you scan. */
 .dash-sidebar__label--toggle {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.07em;
-  color: var(--text-muted);
+  color: var(--brand);
   padding: 8px 12px;
   margin-bottom: 0;
   transition: background 150ms ease, color 150ms ease;
 }
 
 .dash-sidebar__label--toggle:hover {
-  color: var(--text);
+  color: var(--brand-ink);
   background: rgba(0, 0, 0, 0.04);
 }
 
 .dash-sidebar__label--toggle:focus-visible,
 .dash-sidebar__item:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -1134,8 +1155,8 @@
 
 .dash-sidebar__item[aria-current='page'],
 .dash-sidebar__item[aria-current='page']:hover {
-  background: var(--brand-wash);
-  box-shadow: none;
+  background: var(--focus-wash);
+  box-shadow: inset 0 0 0 1px var(--focus-wash-edge);
 }
 
 /* The active bar now sits on the guide line instead of floating inside the row. */
@@ -1312,13 +1333,18 @@
 
   /* Sign out keeps its own red, lifted a shade for contrast against the
      saturated blue fill rather than the deep blood-red tuned for the white
-     row. */
+     row — and its resting fill/border move to the same light red so the
+     button's outline still reads against navy instead of disappearing into
+     it the way the dark-red version tuned for the white rail would. */
   .dash-sidebar--icon-only .dash-sidebar__signout {
     color: #ffb4a8;
+    background: rgba(255, 180, 168, 0.1);
+    border-color: rgba(255, 180, 168, 0.3);
   }
 
   .dash-sidebar--icon-only .dash-sidebar__signout:hover {
     background: rgba(255, 180, 168, 0.16);
+    border-color: rgba(255, 180, 168, 0.4);
     box-shadow: none;
   }
 }
@@ -1412,7 +1438,7 @@
 .dash-sidebar__label--toggle:focus-visible,
 .dash-sidebar__item:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 1.5px var(--brand), 0 0 0 4px var(--brand-wash);
+  box-shadow: 0 0 0 1.5px var(--focus), 0 0 0 4px rgba(0, 176, 255, 0.18);
 }
 
 /* A touch more room in every row — 8px top/bottom read slightly cramped
@@ -1427,11 +1453,13 @@
   border-radius: 2px;
 }
 
-/* Sign out and User guide are sidebar items in function, not just in shape —
-   same row height and icon alignment as the nav above them, so the rail
-   reads as one consistent list from top to bottom instead of the nav
-   getting more care than what bookends it. */
-.dash-sidebar__signout,
+/* User guide is a sidebar item in function, not just in shape — same row
+   height and icon alignment as the nav above it, so the rail reads as one
+   consistent list from top to bottom instead of the nav getting more care
+   than what bookends it. Sign out keeps its own smaller size (set where it's
+   defined, above) rather than matching this: it ends the session instead of
+   opening a section, and a compact row says that without the extra weight of
+   a ninth full-sized nav item. */
 .dash-sidebar__guide .dash-sidebar__item {
   padding: 9px 10px;
   border-radius: 8px;

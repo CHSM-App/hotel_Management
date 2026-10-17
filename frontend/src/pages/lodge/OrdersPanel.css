@@ -719,8 +719,11 @@ label.order-card__item:has(.order-card__tick:disabled) {
   color: var(--danger);
 }
 
-/* .glass-backdrop carries only the scrim colour; this is the overlay it needs,
-   matching the pattern every other panel in the app uses. */
+/* .glass-backdrop carries only the scrim colour; this is the overlay it
+   needs, matching the pattern every other panel in the app uses. Still used
+   by CancelOrderDialog and AddToRoomDialog below (both centre a .cancel-modal
+   on it) even though CounterOrderForm — the dialog this was named for — has
+   moved off it onto its own page. */
 .counter-backdrop {
   position: fixed;
   inset: 0;
@@ -731,22 +734,113 @@ label.order-card__item:has(.order-card__tick:disabled) {
   z-index: 100;
 }
 
-/* Header and running order stay put while only the menu scrolls. Reception is
-   reading an order down a phone line — losing the total off the bottom of the
-   dialog is how a dish gets missed. */
-.counter-modal {
-  width: 100%;
-  max-width: 620px;
-  max-height: 92vh;
+/* Take/edit an order used to open as a dialog boxed down to 620px with the
+   rest of the screen dimmed behind it — cramped for a menu that can run to a
+   hundred dishes. It's a full page instead: the same head/scroll/pinned-cart
+   structure the modal used, just sized to the viewport rather than to a
+   centred box, so the menu gets the whole width to lay out in. */
+.order-take-page {
   display: flex;
   flex-direction: column;
+  /* .orders-panel carries no padding of its own — every other view in it
+     (the queue, History) is fine running edge to edge, but a raised card
+     butted right up against the window edge reads as clipped rather than
+     floating. This is the card's own margin rather than something added to
+     .orders-panel, so the rest of the panel's views are untouched. */
+  margin: 16px;
+  /* A set height, not a floor: flex:1 on .counter-form__scroll below only
+     scrolls its own overflow instead of growing the whole page if this box
+     has a real height to divide up. Without it the cart pinned at the
+     bottom (.counter-summary) just gets pushed off the end of a hundred-dish
+     menu instead of staying in view the way it did in the modal. A guess at
+     the chrome above this page (topbar) plus this card's own margin, with a
+     floor so it never collapses to something unworkably short on a page
+     that has less of that chrome than expected. */
+  height: max(480px, calc(100vh - var(--dash-topbar-h, 64px) - 32px));
+  /* The modal this replaced was its own raised surface floating over the
+     page; a plain page loses that the moment the backdrop goes with it. A
+     card the same shape — raised, rounded, clipped at the corners — gives
+     the form back a defined edge instead of just bleeding into the grey
+     behind it. A hairline border on top of the shadow is what actually
+     draws that edge on a page whose own background (var(--neu-base)) is
+     close enough in tone to the card that the shadow alone reads as a soft
+     blur rather than a boundary. */
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  box-shadow: var(--shadow-raised);
   overflow: hidden;
-  padding: 0;
 }
 
+.order-take-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--border);
+}
+
+.order-take-page__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.order-take-page__heading svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--brand);
+}
+
+.order-take-page__head h3 {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.order-take-page__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
+}
+
+.order-take-page__back:hover {
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.order-take-page__back:active {
+  box-shadow: var(--shadow-pressed);
+}
+
+.order-take-page__back:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Menu on the left, cart on the right — a row rather than the stacked
+   menu-then-pinned-bar the modal used, now that there's a full-width page to
+   lay the two side by side in. Each half scrolls on its own. */
 .counter-form {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: stretch;
   min-height: 0;
   flex: 1;
 }
@@ -755,7 +849,39 @@ label.order-card__item:has(.order-card__tick:disabled) {
   padding: 20px 24px 8px;
   overflow-y: auto;
   flex: 1;
+  min-width: 0;
   min-height: 0;
+}
+
+/* The cart column: a fixed width that holds a dish name and its price on one
+   line without wrapping, narrow enough that the menu still gets most of the
+   page. Its own flex column so the note field and the running lines can
+   scroll while the total and the buttons stay pinned at the foot — same
+   split the modal's bottom bar did, just turned sideways. */
+.counter-cart {
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  flex-shrink: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--paper);
+  /* A faint inward shadow along the seam rather than a flat hairline — the
+     menu reads as the surface the cart sits a step below, the same depth
+     cue every raised/sunken pairing in the app uses. */
+  box-shadow: inset 6px 0 10px -10px rgba(22, 33, 46, 0.18);
+}
+
+.counter-cart__title {
+  margin: 0 0 14px;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.counter-cart__note {
+  margin-bottom: 16px;
 }
 
 /* Who is checked into the selected room. Sits directly under the destination
@@ -821,25 +947,82 @@ label.order-card__item:has(.order-card__tick:disabled) {
   font-weight: 600;
 }
 
-.counter-find {
-  display: flex;
-  gap: 10px;
+.menu-search {
   margin-bottom: 14px;
 }
 
-.counter-find__section {
+/* A leading icon over an otherwise ordinary .field input/select — the
+   field keeps its own border, background and focus ring from forms.css;
+   this only positions the glyph and clears room for it with padding, the
+   same relationship .menu-search has with its own icon. */
+.counter-field-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.counter-field-icon svg {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.counter-field-icon input,
+.counter-field-icon select {
+  width: 100%;
+  padding-left: 36px;
+}
+
+/* Section shortcuts as a row of pills rather than a dropdown — the same
+   control the guest's own QR menu jumps around its sections with. A click
+   scrolls the one long list below to that section instead of filtering
+   everything else out of it. */
+.counter-sections {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -4px 18px;
+  padding: 2px 4px;
+  /* A plain cut row of pills gives no sign there's more to the right —
+     fading the last ~28px of each edge toward transparent is the same
+     "there's more here" cue a horizontally-scrolled photo strip uses, so
+     the far pill doesn't read as the last one just because it's cut off. */
+  mask-image: linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent);
+}
+
+.counter-sections::-webkit-scrollbar {
+  display: none;
+}
+
+.counter-sections__tab {
   flex-shrink: 0;
-  max-width: 46%;
   border: 1px solid transparent;
   box-shadow: var(--shadow-raised);
-  border-radius: 10px;
-  background: var(--paper);
-  padding: 10px 12px;
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 16px;
   font-family: inherit;
   font-size: 14px;
-  color: var(--ink);
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
-  min-height: 42px;
+  min-height: 40px;
+  transition: var(--neu-transition);
+}
+
+.counter-sections__tab:hover {
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.counter-sections__tab[aria-current='true'] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #ffffff;
+  box-shadow: none;
 }
 
 .counter-section {
@@ -850,12 +1033,22 @@ label.order-card__item:has(.order-card__tick:disabled) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 0;
+  padding: 10px 12px;
+  margin: 0 -12px;
+  border-radius: 8px;
   border-bottom: 1px solid var(--border);
+  transition: background-color 150ms ease;
 }
 
 .counter-line:last-child {
   border-bottom: none;
+}
+
+/* A quiet highlight on the row a cursor is actually over — a hundred-dish
+   list with no hover cue reads as static text rather than something each
+   line of which can be acted on. */
+.counter-line:hover {
+  background: var(--paper);
 }
 
 .counter-line__main {
@@ -869,6 +1062,26 @@ label.order-card__item:has(.order-card__tick:disabled) {
   font-size: 14px;
   color: var(--ink);
   min-width: 0;
+}
+
+/* The dish's own photo, same square whether it's a real image or the
+   placeholder — a row that grew taller the moment a photo loaded would
+   shove every row under it down the page. */
+.counter-line__photo {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--paper);
+}
+
+.counter-line__photo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
 }
 
 /* Indented under the dish so a size reads as belonging to it rather than as
@@ -920,10 +1133,17 @@ label.order-card__item:has(.order-card__tick:disabled) {
 }
 
 .counter-line__qty span {
-  min-width: 18px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .counter-line__qty button:disabled {
@@ -933,35 +1153,44 @@ label.order-card__item:has(.order-card__tick:disabled) {
 
 /* ------------------------------------------------------- the running order */
 
+/* The scrollable top of the cart column — the note field and the lines
+   picked so far. Takes whatever height .counter-cart has left over once
+   .counter-foot below has claimed its own, rather than capping itself the
+   way it did inside the bottom bar it used to be. */
 .counter-summary {
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-  background: var(--paper);
-  padding: 12px 24px 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 20px 12px;
 }
 
 .counter-summary__empty {
-  margin: 0 0 10px;
+  margin: 16px 0 0;
+  padding: 18px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-tile);
+  text-align: center;
   font-size: 13px;
   color: var(--text-muted);
 }
 
-/* Capped so a large order scrolls inside the summary rather than pushing the
-   total and the buttons out of the dialog. */
 .counter-summary__lines {
   list-style: none;
-  margin: 0 0 10px;
+  margin: 0;
   padding: 0;
-  max-height: 22vh;
-  overflow-y: auto;
 }
 
 .counter-summary__lines li {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 5px 0;
+  padding: 8px 0;
   font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.counter-summary__lines li:last-child {
+  border-bottom: none;
 }
 
 .counter-summary__qty {
@@ -1006,17 +1235,33 @@ label.order-card__item:has(.order-card__tick:disabled) {
   box-shadow: var(--shadow-pressed);
 }
 
+/* Pinned at the foot of the cart column, same as it was pinned along the
+   bottom of the modal — just stacked (total, then the two buttons) rather
+   than run in a row, since a 340px column has no room to spread three things
+   sideways the way the full-width bar did. */
 .counter-foot {
+  flex-shrink: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.counter-foot__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.counter-foot__actions button {
+  flex: 1;
 }
 
 .counter-total {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-right: auto;
   font-size: 17px;
   font-weight: 800;
   color: var(--ink);
@@ -1029,51 +1274,34 @@ label.order-card__item:has(.order-card__tick:disabled) {
   color: var(--text-muted);
 }
 
+/* Below this, a 340px cart column beside the menu leaves barely any width
+   for either — the two stack instead, cart last, same trade-off the old
+   modal made on a phone (the running order scrolls away with the menu
+   rather than staying pinned). */
+@media (max-width: 900px) {
+  .counter-form {
+    flex-direction: column;
+  }
+
+  .counter-cart {
+    width: auto;
+    flex-shrink: 1;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
 @media (max-width: 560px) {
-  /* Near-fullscreen, like every other modal in the app at this width — 20px of
-     scrim showing on each side is width this dialog does not have to give. */
-  .counter-backdrop {
-    padding: 10px;
-    align-items: flex-start;
-  }
-
-  .counter-modal {
-    max-width: none;
-    /* svh rather than vh: 92vh is measured against the tallest the viewport
-       ever gets on mobile Safari, so the footer with "Place order" in it sat
-       under the address bar until the page was scrolled. */
-    max-height: calc(100svh - 20px);
-  }
-
-  .counter-find {
-    flex-wrap: wrap;
-  }
-
-  .counter-find__section {
-    max-width: none;
-    width: 100%;
-  }
-
+  .order-take-page__head,
   .counter-form__scroll,
   .counter-summary {
     padding-left: 16px;
     padding-right: 16px;
   }
 
-  /* The total and the two buttons are ~350px of content on a 320px screen.
-     The total takes its own line above them and the pair splits the row —
-     both stay full-height targets rather than being squeezed to fit. */
   .counter-foot {
-    flex-wrap: wrap;
-  }
-
-  .counter-total {
-    flex-basis: 100%;
-    margin-right: 0;
-  }
-
-  .counter-foot button {
-    flex: 1;
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
 
@@ -1461,21 +1689,26 @@ th[aria-sort] .history-table__sort-icon {
   text-align: right;
 }
 
+/* Purple at rest, not only on hover — this is the secondary action beside a
+   primary .history-table__btn--primary (navy) button, and the palette's own
+   colour for secondary actions is what tells the two apart at a glance
+   rather than only on interaction. */
 .history-table__btn {
   margin-left: 6px;
   padding: 3px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--secondary);
   border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
+  background: color-mix(in srgb, var(--secondary) 8%, var(--surface));
+  color: var(--secondary-ink);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .history-table__btn:hover:not(:disabled) {
-  border-color: var(--brand);
-  color: var(--brand);
+  background: var(--secondary);
+  border-color: var(--secondary);
+  color: #fff;
 }
 
 .history-table__btn--danger:hover:not(:disabled) {

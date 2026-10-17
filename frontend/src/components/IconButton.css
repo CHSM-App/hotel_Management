@@ -15,7 +15,10 @@
   border: none;
   border-radius: 9px;
   background: var(--neu-base);
-  color: var(--text);
+  /* Sky blue at rest, not only on hover — the palette's colour for icons —
+     so the glyph itself carries it instead of only announcing it on
+     interaction. */
+  color: var(--focus);
   cursor: pointer;
   /* The same raised-to-pressed language as every other control in the app, so
      an icon button reads as a sibling of the text buttons it replaced. */
@@ -29,6 +32,10 @@
   box-sizing: border-box;
 }
 
+/* Deepens toward ink on hover — the glyph is already sky blue at rest (see
+   .icon-btn above), so hover needs its own direction to still read as
+   "interactive" rather than restating the same colour. --icon-btn--danger
+   below still wins its own hover colour. */
 .icon-btn:hover {
   box-shadow: var(--shadow-raised-hover);
   color: var(--ink);

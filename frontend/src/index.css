@@ -1,17 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #5B3FD9;
-  --color-secondary: #C79A3A;
-  --color-background: #F4F6FA;
+  --color-primary: #0A3A6B;
+  --color-secondary: #8B5CF6;
+  --color-background: #F3F4F6;
   --color-surface: #FFFFFF;
-  --color-success: #15803D;
-  --color-warning: #E0A414;
-  --color-danger: #C0392B;
+  --color-success: #28A745;
+  --color-warning: #FFC107;
+  --color-danger: #EA4335;
 
-  /* CTA gradient stops — e.g. bg-gradient-to-r from-cta-from to-cta-to */
-  --color-cta-from: #7C5CE8;
-  --color-cta-to: #5B3FD9;
+  /* CTA gradient stops — e.g. bg-gradient-to-r from-cta-from to-cta-to. Amber,
+     not brand navy: the primary action on a navy-chrome page has to be the one
+     warm, unmissable thing on it, and a navy button on a navy topbar would
+     vanish into its own background. */
+  --color-cta-from: #FFCD3C;
+  --color-cta-to: #FFC107;
 
   /* Semantic radii. The 20px card corner dated from the extrusion palette,
      where a generous curve was needed to catch the light; the surfaces are
@@ -71,46 +74,60 @@
   --ink: #16212E;
   --text: #48566A;
   --text-muted: #78859A;
-  --paper: #F4F6FA;
+  --paper: #F3F4F6;
   --surface: #FFFFFF;
-  /* Soft enough to read as a groove rather than a drawn line, but still
-     present: table rules and list dividers carry real meaning and shadows
-     alone can't separate a 32px row. */
-  --border: #E3E8F0;
-  /* The brand is a violet, and it is the only saturated hue the chrome uses —
-     topbar, primary buttons, the selected item in the sidebar. --brand is the
-     mid stop the flat surfaces take; --brand-ink is the deep end, used as the
-     second stop wherever the chrome runs a gradient and as the pressed state
-     for anything filled with --brand. */
-  --brand: #5B3FD9;
-  --brand-ink: #4527B8;
-  /* The gradient the topbar and the primary button run: the brand lit from the
-     left. Kept as its own pair rather than reusing --brand/--brand-ink, so the
-     lift reads as light on a surface instead of as a darker shade of itself. */
-  --brand-lift: #7C5CE8;
-  /* The topbar runs the full width of the screen and sits above every page, so
-     the same violet that reads as confident on a 140px button reads as a heavy
-     slab at 1900px. These two are the band's own stops: the brand lifted and
-     desaturated a step, so the bar still says violet without pressing down on
-     the page under it. White text clears 4.5:1 on both ends. */
-  --brand-band: #8B72EC;
-  --brand-band-deep: #6E52E0;
-  /* Violet at the weight a tint needs: the sidebar's selected row, hover wells,
-     any place the brand has to sit under text rather than behind white. */
-  --brand-wash: #EFEBFD;
-  --brand-wash-edge: #DCD4FA;
-  /* Gold stays the accent — it is what makes the draft count findable against a
-     screen whose chrome is now entirely violet. */
-  --accent: #C79A3A;
-  --accent-ink: #A67C22;
-  /* Active/on states. The violet is the brand, so it cannot also be the
-     affirmative signal — a status pill in brand colour reads as chrome rather
-     than as a state. Green at 4.6:1 on its own tint. */
-  --success: #15803D;
-  --success-bg: #E9F5ED;
-  --danger: #C0392B;
-  --danger-bg: #FBECEA;
-  --focus: #5B3FD9;
+  /* The palette's own light gray, used verbatim: table rules, list dividers
+     and card rims all read off this one value now. */
+  --border: #E5E7EB;
+  /* Deep navy — the approved palette's anchor colour. It is chrome only: the
+     topbar, the sidebar, the selected-section wash. It does not run the
+     primary button or a text link — on a navy topbar a navy button would
+     vanish into its own background, which is exactly the "too much blue"
+     flatness the violet brand used to produce everywhere at once. --brand-ink
+     is the deep end, used as the pressed state and the second gradient stop. */
+  --brand: #0A3A6B;
+  --brand-ink: #072748;
+  /* The gradient the topbar runs: the navy lit from the left. */
+  --brand-lift: #14508C;
+  --brand-band: #0F3D6E;
+  --brand-band-deep: #072748;
+  /* Navy at the weight a tint needs: hover wells on dark chrome, any place
+     the brand has to sit under text rather than behind white. */
+  --brand-wash: #E6EDF4;
+  --brand-wash-edge: #C7D6E6;
+  /* Amber — the palette's pick for buttons and highlights: every primary CTA
+     reads in amber against the navy/white/gray the rest of the chrome runs
+     in. --accent-ink is the same amber darkened to carry text weight on a
+     light amber tint. Not used for the active menu item — see --focus-wash
+     below, a light blue reads calmer for a state that's on-screen constantly
+     rather than a one-off action. */
+  --accent: #FFC107;
+  --accent-ink: #8A5B00;
+  /* Status colours, unrelated to chrome or action — green and red read as
+     state regardless of what the rest of the page is doing. */
+  --success: #28A745;
+  --success-bg: #E8F6EC;
+  --danger: #EA4335;
+  --danger-bg: #FDECEA;
+  /* Sky blue — the palette's pick for links, icons and interactive elements.
+     --focus is the saturated value, correct for icons, rings and anything
+     large or thick enough to only need the 3:1 non-text contrast floor.
+     --link is the same hue darkened until it clears 4.5:1 on white, for
+     actual link and interactive text — #00B0FF on white measures under 2:1
+     and is not legible as body-sized text. --focus-wash/-edge is the tint
+     weight: the sidebar's active row and any other "you are here" surface
+     that needs to stay light rather than filling solid blue. */
+  --focus: #00B0FF;
+  --focus-wash: #E3F6FD;
+  --focus-wash-edge: #B8E6FA;
+  --link: #0077B6;
+  /* Purple — secondary actions and special features only: the outlined
+     "Add to room bill"/"Clear filters" class of button that sits beside a
+     primary amber one, or a badge that needs to read as a distinct feature
+     rather than as the main flow. Not used for chrome, links or primary
+     buttons — if everything saturated is violet, nothing reads as special. */
+  --secondary: #8B5CF6;
+  --secondary-ink: #6D28D9;
 
   /* --- Editable fields -----------------------------------------------------
      Cards are already white, so a field cannot be told apart from the card it
@@ -126,9 +143,10 @@
      shallow: the border is doing most of the work now. */
   --shadow-well: inset 0 1px 2px rgba(22, 33, 46, 0.06);
   --shadow-well-hover: inset 0 1px 3px rgba(22, 33, 46, 0.1);
-  /* Focus is a brand ring outside the box: the rim already says "field", so
-     the active one needs a different axis to be found on. */
-  --shadow-well-focus: inset 0 1px 2px rgba(22, 33, 46, 0.04), 0 0 0 3px rgba(91, 63, 217, 0.22);
+  /* Focus is a sky-blue ring outside the box — the palette's pick for
+     interactive states — so the rim already says "field" and the active one
+     needs a different axis to be found on. */
+  --shadow-well-focus: inset 0 1px 2px rgba(22, 33, 46, 0.04), 0 0 0 3px rgba(0, 176, 255, 0.28);
 
   --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
   --serif: 'Fraunces', Georgia, serif;
@@ -163,25 +181,27 @@
     background: rgba(15, 23, 42, 0.45);
   }
 
-  /* Gradient CTA button — e.g. "Convert to Booking". The deepest fill on the
-     page, so the primary action is never in doubt. */
+  /* Gradient CTA button — e.g. "Convert to Booking". Amber, the palette's
+     button colour, so the primary action is never in doubt against a navy or
+     white surface. Dark ink text rather than white: amber is a light fill and
+     white-on-amber fails contrast. */
   .btn-cta {
     background-image: linear-gradient(135deg, var(--color-cta-from), var(--color-cta-to));
-    color: #fff;
+    color: var(--ink);
     border-radius: var(--radius-tile);
-    box-shadow: 0 2px 6px rgba(69, 39, 184, 0.26), 0 10px 22px -8px rgba(69, 39, 184, 0.46);
+    box-shadow: 0 2px 6px rgba(138, 91, 0, 0.26), 0 10px 22px -8px rgba(138, 91, 0, 0.46);
     transition: filter 150ms ease, box-shadow 150ms ease;
   }
 
   .btn-cta:hover {
     filter: brightness(1.06);
-    box-shadow: 0 4px 10px rgba(69, 39, 184, 0.3), 0 16px 30px -8px rgba(69, 39, 184, 0.5);
+    box-shadow: 0 4px 10px rgba(138, 91, 0, 0.3), 0 16px 30px -8px rgba(138, 91, 0, 0.5);
   }
 
   /* Pressed rather than nudged down: the inset does what translateY used to. */
   .btn-cta:active {
     filter: brightness(0.98);
-    box-shadow: inset 0 2px 6px rgba(45, 22, 130, 0.45);
+    box-shadow: inset 0 2px 6px rgba(106, 70, 0, 0.45);
   }
 
   /* Reusable extrusion primitives, for markup that has no stylesheet of its
@@ -281,7 +301,7 @@ button {
 }
 
 a {
-  color: var(--brand);
+  color: var(--link);
 }
 
 /* Kept deliberately. Neumorphism's stock failure is that a control and its

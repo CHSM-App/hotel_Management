@@ -237,6 +237,14 @@ export const FEATURES = [
     group: 'Setup',
   },
   {
+    key: 'billNumbering',
+    title: 'Bill Numbering',
+    description: 'Where the next bill and advance receipt continue from.',
+    permission: 'billing.manage',
+    icon: 'hash',
+    group: 'Setup',
+  },
+  {
     key: 'assets',
     title: 'Asset Inventory',
     description: 'Register equipment, track warranty/AMC, and log repairs.',

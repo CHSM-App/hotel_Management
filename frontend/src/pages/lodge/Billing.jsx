@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPostForm, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
-import BillNumberingPanel from './BillNumberingPanel';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
-import { formatDateLong } from './stayFormat';
 import BillDocument from './BillDocument';
 import DownloadIcon from '../../components/DownloadIcon';
 import ShareMenu from '../../components/ShareMenu';
@@ -135,13 +133,14 @@ function advanceSettlementLabel(receipt) {
 
 // The "Room" tag alone reads as an exclusive-use room, same as any other
 // stay — nothing about it says the guest holds one bed in a shared
-// dormitory, not the room outright. Said here rather than as its own badge:
-// this is still the same source (a room bill), just qualified, and a second
-// tag beside it would repeat what the room number already implies once this
-// one names it.
+// dormitory, not the room outright. Folded into the word itself ("Room" ->
+// "Dormitory") rather than appended as " · Dormitory": that used to make a
+// two-part tag like "Room + food · Dormitory", which is long enough to wrap
+// or overflow its pill in the compact card badge and overlap the guest name
+// beside it. One word says the same thing without the extra width.
 function sourceLabel(inv) {
   const base = SOURCE_LABEL[billSource(inv)];
-  return inv.isDormitory ? `${base} · Dormitory` : base;
+  return inv.isDormitory ? base.replace('Room', 'Dormitory') : base;
 }
 
 // An advance receipt, restated in the shape the bills list reads.
@@ -526,9 +525,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     ...(billsServices ? [{ key: 'services', label: 'Services to bill' }] : []),
     ...(billsTables ? [{ key: 'tables', label: 'Food to bill' }] : []),
     { key: 'bills', label: 'Bills' },
-    // Last, and deliberately not first: numbering is set once at setup and
-    // then left alone, while the other tabs are used every day.
-    { key: 'numbering', label: 'Numbering' },
   ];
 
   // The landing tab depends on what this login can bill, so it is worked out
@@ -1479,8 +1475,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       </div>
       )}
 
-      {activeTab === 'numbering' && <BillNumberingPanel />}
-
       {activeTab === 'tables' && (
         <div className="chart-section">
           <div className="chart-section__header">
@@ -1588,7 +1582,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             <div className="dash-state">Nothing waiting — every completed service has been billed.</div>
           )}
           {!serviceError && serviceUsages && serviceUsages.length > 0 && (
-            <section className="history-sheet billing-sheet">
+            <section className="history-sheet billing-sheet billing-sheet__page-scroll">
               <div className="history-table-wrap">
                 <table className="history-table billing-sheet__services">
                   <thead>
@@ -1617,7 +1611,16 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                         <td className="history-table__num">
                           {u.laundryOrderId
                             ? `${u.usageIds.length} item${u.usageIds.length === 1 ? '' : 's'}`
-                            : `${u.quantity}${u.headcount > 1 ? ` × ${u.headcount}` : ''} × ${formatPrice(u.unitPrice)}`}
+                            : /* The service's own unit ("use", "hour", "session" ...),
+                                 not a bare second number next to the quantity — the
+                                 old "1 × 2 × ₹100" read as three unlabelled figures
+                                 with no way to tell which was people and which was
+                                 uses. Headcount only appears when more than one
+                                 person shared the use, same as the stay-side total
+                                 this mirrors (StayDetails.jsx). */
+                              `${u.quantity} ${u.unitLabel}${u.quantity === 1 ? '' : 's'}${
+                                u.headcount > 1 ? ` × ${u.headcount} people` : ''
+                              } × ${formatPrice(u.unitPrice)}`}
                         </td>
                         <td className="history-table__num history-table__strong">{formatPrice(u.lineTotal)}</td>
                         <td className="history-table__actions">
@@ -1787,24 +1790,70 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               </p>
             </section>
           )}
+          {/* Same card language as the kitchen queue (order-card): a tinted
+              ticket with a head, a meta line, a body of line items and a
+              foot with the number that matters. There the body is the
+              dishes a cook works through; here it's the charges that make
+              up the bill, named section by section instead of left for the
+              desk to reconstruct from one lump sum. */}
           {!queueError && queue && queue.length > 0 && listView === 'cards' && (
-            <div className="chart-list">
-              {queue.map((b) => (
-                <div className="chart-row billing-panel__queue-row" key={b.id}>
-                  <span className="chart-row__name">
-                    {b.guestName}
-                    <span className="chart-row__dates">
-                      {b.roomNumber} · {b.categoryName} · {formatDateLong(b.checkInDate)} – {formatDateLong(b.checkOutDate)}
-                    </span>
-                  </span>
-                  <span className="billing-panel__queue-actions">
-                    <span className="chart-row__value">{formatPrice(b.totalPrice + (b.foodTotal || 0))}</span>
-                    <button type="button" className="btn-accent" onClick={() => openBilling({ kind: 'STAY', bookingId: b.id })}>
-                      Bill
-                    </button>
-                  </span>
-                </div>
-              ))}
+            <div className="orders-grid">
+              {queue.map((b) => {
+                const nights = nightsBetween(b.checkInDate, b.checkOutDate);
+                const due = b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0) - (b.advanceAmount || 0);
+                return (
+                  <div className="order-card order-card--ready billing-card" key={b.id}>
+                    <div className="order-card__head">
+                      <span className="order-card__number billing-card__guest">{b.guestName}</span>
+                      <span className="order-card__badge">{nights} night{nights === 1 ? '' : 's'}</span>
+                    </div>
+
+                    <div className="order-card__meta">
+                      <span className="order-card__target">{b.roomNumber} · {b.categoryName}</span>
+                      <span className="order-card__sep" aria-hidden="true">
+                        ·
+                      </span>
+                      <span className="order-card__elapsed">{shortDay(b.checkInDate)} → {shortDay(b.checkOutDate)}</span>
+                    </div>
+
+                    <ul className="order-card__items">
+                      <li className="order-card__item">
+                        <span className="order-card__item-name">Room charge</span>
+                        <span className="order-card__item-price">{formatPrice(b.totalPrice)}</span>
+                      </li>
+                      {b.lateCheckoutCharge > 0 && (
+                        <li className="order-card__item">
+                          <span className="order-card__item-name">Late checkout</span>
+                          <span className="order-card__item-price">{formatPrice(b.lateCheckoutCharge)}</span>
+                        </li>
+                      )}
+                      {b.foodTotal > 0 && (
+                        <li className="order-card__item">
+                          <span className="order-card__item-name">Food</span>
+                          <span className="order-card__item-price">{formatPrice(b.foodTotal)}</span>
+                        </li>
+                      )}
+                      {b.advanceAmount > 0 && (
+                        <li className="order-card__item">
+                          <span className="order-card__item-name">Advance paid</span>
+                          <span className="order-card__item-price billing-card__advance">− {formatPrice(b.advanceAmount)}</span>
+                        </li>
+                      )}
+                    </ul>
+
+                    <div className="order-card__foot">
+                      <span className="order-card__count">To collect</span>
+                      <span className="order-card__total billing-card__due">{formatPrice(due)}</span>
+                    </div>
+
+                    <div className="order-card__actions">
+                      <button type="button" className="order-btn" onClick={() => openBilling({ kind: 'STAY', bookingId: b.id })}>
+                        Bill
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1897,21 +1946,54 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             </section>
           )}
           {!eventQueueError && eventQueue && eventQueue.length > 0 && listView === 'cards' && (
-            <div className="chart-list">
+            <div className="orders-grid">
               {eventQueue.map((ev) => (
-                <div className="chart-row billing-panel__queue-row" key={ev.id}>
-                  <span className="chart-row__name">
-                    {ev.title}
-                    <span className="chart-row__dates">
-                      {ev.organiserName} · {ev.venueName} · {formatBillDate(ev.startAt)}
+                <div className="order-card order-card--ready billing-card" key={ev.id}>
+                  <div className="order-card__head">
+                    <span className="order-card__number billing-card__guest">{ev.title}</span>
+                    <span className="order-card__badge">{ev.billablePax ? `${ev.billablePax} guests` : formatBillDate(ev.startAt)}</span>
+                  </div>
+
+                  <div className="order-card__meta">
+                    <span className="order-card__target">{ev.organiserName}</span>
+                    <span className="order-card__sep" aria-hidden="true">
+                      ·
                     </span>
-                  </span>
-                  <span className="billing-panel__queue-actions">
-                    <span className="chart-row__value">{formatPrice(ev.balanceDue)}</span>
-                    <button type="button" className="btn-accent" onClick={() => openBilling({ kind: 'EVENT', eventBookingId: ev.id })}>
+                    <span className="order-card__elapsed">{ev.venueName} · {formatBillDate(ev.startAt)}</span>
+                  </div>
+
+                  <ul className="order-card__items">
+                    <li className="order-card__item">
+                      <span className="order-card__item-name">Quoted total</span>
+                      <span className="order-card__item-price">{formatPrice(ev.totalAmount)}</span>
+                    </li>
+                    {ev.advanceAmount > 0 && (
+                      <li className="order-card__item">
+                        <span className="order-card__item-name">Advance paid</span>
+                        <span className="order-card__item-price billing-card__advance">− {formatPrice(ev.advanceAmount)}</span>
+                      </li>
+                    )}
+                  </ul>
+
+                  {/* The bill will not issue while an extra has no price —
+                      called out here the same as on the sheet, so a desk
+                      working from cards isn't the one surprised by it. */}
+                  {ev.unpricedExtras > 0 && (
+                    <div className="order-card__note">
+                      {ev.unpricedExtras} extra{ev.unpricedExtras === 1 ? '' : 's'} still to price
+                    </div>
+                  )}
+
+                  <div className="order-card__foot">
+                    <span className="order-card__count">To collect</span>
+                    <span className="order-card__total billing-card__due">{formatPrice(ev.balanceDue)}</span>
+                  </div>
+
+                  <div className="order-card__actions">
+                    <button type="button" className="order-btn" onClick={() => openBilling({ kind: 'EVENT', eventBookingId: ev.id })}>
                       Bill
                     </button>
-                  </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -2088,7 +2170,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               )}
 
               {listView === 'sheet' && (
-                <section className="history-sheet billing-sheet">
+                <section className="history-sheet billing-sheet billing-sheet__bills billing-sheet__page-scroll">
                   <div className="history-table-wrap">
                     <table className="history-table">
                       <thead>
@@ -3281,6 +3363,20 @@ const billParty = (inv) =>
       ? `${inv.guestName} · ${inv.venueName || 'Function'}`
       : inv.guestName;
 
+// What the Status column actually shows, named once so the column that sorts
+// by it and the cells that render it can't drift apart the way they had —
+// sorting only ever told Void from everything else, while the cell in the
+// Bills tab shows four different states (Void, a cancelled advance, an
+// advance with a balance still due, or plainly Issued). Clicking the Status
+// heading moved rows between two buckets that didn't match the three or four
+// a desk could actually see, which is what read as "sorting doesn't work".
+function invoiceStatusLabel(inv) {
+  if (inv.status === 'VOID') return 'Void';
+  if (inv.kind === 'ADVANCE' && inv.cancelled) return 'Cancelled';
+  if (inv.kind === 'ADVANCE' && inv.balanceDue > 0) return 'Due';
+  return 'Issued';
+}
+
 // The bills table's columns, and what each one sorts on. A number sorts as a
 // number; everything else as text, with digits read as numbers so bill 9 comes
 // before bill 10 and room 2 before room 12.
@@ -3291,7 +3387,7 @@ const REPORT_COLUMNS = [
   { key: 'party', label: 'Guest / Table', value: (inv) => billParty(inv) ?? '' },
   { key: 'room', label: 'Room', value: (inv) => (inv.kind === 'FOOD' || inv.kind === 'EVENT' ? '' : inv.roomNumber || '') },
   { key: 'document', label: 'Document', value: (inv) => DOCUMENT_LABEL[inv.documentType] ?? '' },
-  { key: 'status', label: 'Status', value: (inv) => (inv.status === 'VOID' ? 'Void' : 'Issued') },
+  { key: 'status', label: 'Status', value: (inv) => invoiceStatusLabel(inv) },
   { key: 'amount', label: 'Amount', value: (inv) => Number(inv.totalAmount || 0), className: 'history-table__num' },
 ];
 
@@ -3384,7 +3480,7 @@ export function BillsReport({ lodge }) {
       {error && <div className="form-banner form-banner--error">{error}</div>}
       {!error && !invoices && <PageLoader inline label="Loading bills" />}
       {!error && invoices && (
-        <section className="history-sheet billing-sheet">
+        <section className="history-sheet billing-sheet billing-sheet__bills billing-sheet__page-scroll">
           <div className="history-table-wrap">
             <table className="history-table">
               <thead>
@@ -3431,7 +3527,7 @@ export function BillsReport({ lodge }) {
                       <td>
                         <span className={`bill-tag bill-tag--${tagClass(source)}`}>{sourceLabel(inv)}</span>
                       </td>
-                      <td>{billParty(inv)}</td>
+                      <td className="billing-sheet__guest-cell">{billParty(inv)}</td>
                       <td>{inv.kind === 'FOOD' || inv.kind === 'EVENT' ? '—' : inv.roomNumber || '—'}</td>
                       <td>
                         <span className={`bill-tag bill-tag--${DOCUMENT_TAG[inv.documentType]}`}>{DOCUMENT_LABEL[inv.documentType]}</span>

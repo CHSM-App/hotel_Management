@@ -64,21 +64,23 @@
      read as one. Nothing is ever printed on these tiles — they are empty
      buttons — so the colour is free to be bright, and being the only warm
      light hue on the chart is what makes a parked room findable at a glance. */
-  --tape-draft: #f2c31d;
+  --tape-draft: var(--accent, #f2c31d);
   /* Pressed and hovered: darker, so the tile still reads as the same yellow
      rather than as a different state colour. */
-  --tape-draft-deep: #d4a70c;
+  --tape-draft-deep: var(--accent-ink, #d4a70c);
 
   /* The search marker. Violet on purpose: every other colour on this chart is
      already spoken for by a booking state, and a highlight drawn in one of them
      would read as "this stay is now checked in" rather than "this stay is what
      you asked for". Violet is the only hue here that means nothing else, so it
-     can be laid over a red, a blue or a slate tile and still say one thing. */
-  --tape-hit: #7c3aed;
-  --tape-hit-soft: rgba(124, 58, 237, 0.18);
+     can be laid over a red, a blue or a slate tile and still say one thing —
+     now the same violet as --secondary elsewhere in the app, rather than a
+     private shade of it. */
+  --tape-hit: var(--secondary, #7c3aed);
+  --tape-hit-soft: rgba(139, 92, 246, 0.18);
   /* The tint behind the result count. Light enough to sit under violet text at
      full contrast, strong enough to read as a filled chip rather than a smudge. */
-  --tape-hit-wash: rgba(124, 58, 237, 0.1);
+  --tape-hit-wash: rgba(139, 92, 246, 0.1);
 
   /* The grid's rhythm. Tiles were 26x22 in a 32px row, which on a desk-width
      window left every night a target too small to click with confidence and
@@ -167,16 +169,56 @@
   color: var(--text-muted);
 }
 
-/* ---------- legend ---------- */
+/* ---------- legend + category row ---------- */
 
-.tape-legend {
+/* The status swatches and the category jump chips, sharing one line. Two
+   groups rather than one undifferentiated run of pills: .tape-row__status
+   wraps if it runs out of room, .tape-row__cats scrolls sideways instead
+   (a property with many categories shouldn't push the status swatches off
+   the row), and the divider between them marks the seam. */
+.tape-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.tape-row__status {
   display: flex;
   align-items: center;
   gap: 7px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
-  font-size: 13px;
-  color: var(--text);
+}
+
+/* var(--border) reads as almost nothing against the row's own background —
+   this needs to read as a seam between two different controls, not a stray
+   pixel, so it is drawn wider, taller than the chips either side of it, and
+   in the muted text colour rather than the hairline border one. */
+.tape-row__divider {
+  width: 2px;
+  align-self: stretch;
+  min-height: 30px;
+  margin: 0 1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  flex-shrink: 0;
+}
+
+.tape-row__cats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 1px;
+}
+
+.tape-row__cats::-webkit-scrollbar {
+  display: none;
 }
 
 /* The window's overall sold figure, pushed to the far end of the colour-key
@@ -291,27 +333,6 @@
 }
 
 /* ---------- jump-to-category chips ---------- */
-
-/* Its own line under the legend rather than more chips on the end of it. The
-   legend's chips are captions for the colours in the grid; these are a way of
-   moving around it, and a property with four grades of room would otherwise
-   push the search box and the status chips onto a second line anyway. */
-.tape-cats {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 9px;
-  /* One line, scrolled sideways, on a property with more categories than the
-     strip is wide — wrapping would grow the sticky header a row at a time and
-     eat the chart underneath it. */
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 1px;
-}
-
-.tape-cats::-webkit-scrollbar {
-  display: none;
-}
 
 /* Same chip as the legend's — raised off the surface rather than outlined —
    so the two rows of chips read as one family instead of two different
@@ -1376,12 +1397,12 @@
    page would be off screen the instant it did its job. Sticking the whole strip
    rather than the search alone also keeps the legend and the month legible
    against a chart scrolled far from its own header. */
-/* No longer sticky — only the category row below (.tape-cats--sticky) stays
-   pinned under the navbar now. This strip (stepper, search, legend) scrolls
-   away with the rest of the page like ordinary content. position: relative
-   is kept so the ::before fade this element no longer needs doesn't anchor
-   to some further ancestor by accident if anything still toggles the
-   --stuck class on it. */
+/* No longer sticky — only the merged status/category row below
+   (.tape-row--sticky) stays pinned under the navbar now. This strip
+   (stepper, search) scrolls away with the rest of the page like ordinary
+   content. position: relative is kept so the ::before fade this element no
+   longer needs doesn't anchor to some further ancestor by accident if
+   anything still toggles the --stuck class on it. */
 .tape-controls {
   position: relative;
   margin-inline: -4px;
@@ -1389,11 +1410,11 @@
   padding: 6px 4px 2px;
 }
 
-/* --- Sticky category row ----------------------------------------------------
+/* --- Sticky status/category row ---------------------------------------------
    Pinned directly under the navbar on its own — opaque at all times (not
    just once "stuck") since this row is now the only thing in the strip that
    stays on screen while the chart scrolls under it. */
-.tape-cats--sticky {
+.tape-row--sticky {
   position: sticky;
   top: var(--dash-topbar-h, 0);
   z-index: 20;
@@ -1405,18 +1426,10 @@
   box-shadow: 0 6px 10px -6px rgba(16, 24, 40, 0.14);
 }
 
-/* Both rows inside the strip are tightened: they used to carry 16px each, which
-   on three rows was most of the wasted depth. */
+/* The toolbar row is tightened: it used to carry 16px, which on three rows
+   was most of the wasted depth. */
 .tape-controls .bookings-panel__toolbar {
   margin-bottom: 8px;
-}
-
-.tape-controls .tape-legend {
-  /* The row now carries the search field as well as the chips, so it sets its
-     own height rather than being a line of 24px pills. */
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 0;
 }
 
 /* The search field, first on the row it shares with the category chips.
@@ -1771,7 +1784,7 @@
    a booking that has to say whether it is reserved, in, or gone. */
 .tape-tile--hit-active {
   z-index: 3;
-  box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(124, 58, 237, 0.35);
+  box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(139, 92, 246, 0.35);
 }
 
 /* A radar ping in the stay's own colour.
@@ -1871,15 +1884,15 @@
 
 @keyframes tape-hit-pulse {
   0% {
-    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 0 rgba(124, 58, 237, 0.5);
+    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 0 rgba(139, 92, 246, 0.5);
   }
 
   70% {
-    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 9px rgba(124, 58, 237, 0);
+    box-shadow: 0 0 0 2px var(--tape-hit), 0 0 0 9px rgba(139, 92, 246, 0);
   }
 
   100% {
-    box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(124, 58, 237, 0.35);
+    box-shadow: 0 0 0 2px var(--tape-hit), 0 2px 8px rgba(139, 92, 246, 0.35);
   }
 }
 

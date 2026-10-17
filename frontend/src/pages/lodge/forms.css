@@ -318,7 +318,7 @@
 .field select.field__control--invalid:focus-visible,
 .field textarea.field__control--invalid:focus-visible {
   border-color: var(--danger);
-  box-shadow: var(--shadow-well), 0 0 0 3px rgba(193, 18, 31, 0.28);
+  box-shadow: var(--shadow-well), 0 0 0 3px rgba(234, 67, 53, 0.28);
 }
 
 .form-banner {
@@ -336,7 +336,7 @@
 /* Same soft-fill language as the room-rate chip elsewhere in this form —
    confirms a step actually completed, rather than warning about one. */
 .form-banner--success {
-  background: #eef4f2;
+  background: var(--brand-wash);
   color: var(--brand-ink);
 }
 
@@ -348,8 +348,8 @@
    does for a field caught before the request ever went out. Runs once on
    mount, so it doesn't restart on every re-render while the banner is up. */
 @keyframes form-banner-flash {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(193, 18, 31, 0); }
-  20%, 60% { box-shadow: 0 0 0 4px rgba(193, 18, 31, 0.35); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 67, 53, 0); }
+  20%, 60% { box-shadow: 0 0 0 4px rgba(234, 67, 53, 0.35); }
 }
 
 .form-banner--flash {
@@ -357,7 +357,7 @@
 }
 
 .form-banner--info {
-  background: #eef4f2;
+  background: var(--brand-wash);
   color: var(--brand-ink);
 }
 
@@ -366,8 +366,8 @@
    --color-warning) rather than reusing --error, so it doesn't read as a
    blocking failure. */
 .form-banner--warning {
-  background: #FBF1DA;
-  color: #8A6710;
+  background: color-mix(in srgb, var(--accent) 18%, white);
+  color: var(--accent-ink);
 }
 
 /* Extruded rather than outlined — it carries no fill of its own, so the
@@ -642,7 +642,7 @@
    1.2:1 against the base and can't be the only signal. */
 .checkbox-chip:has(input:checked) {
   border-color: var(--brand);
-  background: #eef4f2;
+  background: var(--brand-wash);
   color: var(--brand-ink);
   font-weight: 600;
 }
@@ -700,7 +700,7 @@
 .field input[aria-invalid='true'],
 .field select[aria-invalid='true'] {
   border-color: var(--danger);
-  box-shadow: inset 2px 2px 5px rgba(176, 42, 42, 0.16), inset -2px -2px 5px var(--neu-light);
+  box-shadow: inset 2px 2px 5px rgba(234, 67, 53, 0.16), inset -2px -2px 5px var(--neu-light);
 }
 
 /* Same rule, one level deeper — for a field whose input sits inside a
@@ -708,7 +708,7 @@
    rather than as a direct child of .field. */
 .field:has(> .field__error) .asset-suggest input {
   border-color: var(--danger);
-  box-shadow: inset 2px 2px 5px rgba(176, 42, 42, 0.16), inset -2px -2px 5px var(--neu-light);
+  box-shadow: inset 2px 2px 5px rgba(234, 67, 53, 0.16), inset -2px -2px 5px var(--neu-light);
 }
 
 .field .asset-suggest input:disabled {
@@ -789,12 +789,12 @@
   background: none;
   border: 1px solid var(--border);
   border-radius: 8px;
-  color: var(--danger, #b42318);
+  color: var(--danger);
   cursor: pointer;
 }
 
 .pay-lines__remove:hover {
-  border-color: var(--danger, #b42318);
+  border-color: var(--danger);
 }
 
 /* Tinted rather than bare: on a plain background the strip read as a label
@@ -836,7 +836,7 @@
   border-color: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
-  box-shadow: var(--shadow-inset), 0 0 0 2px rgba(156, 43, 43, 0.16);
+  box-shadow: var(--shadow-inset), 0 0 0 2px rgba(255, 193, 7, 0.25);
 }
 
 /* Focus still wins: once the desk is in the field, the ring says "you are
@@ -1163,7 +1163,7 @@
 }
 
 .modal-form__chip--rate {
-  background: #eef4f2;
+  background: var(--brand-wash);
   border-color: var(--brand);
   color: var(--brand-ink);
 }

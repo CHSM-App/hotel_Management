@@ -113,7 +113,7 @@
 
 .detail-hero__logo-error {
   font-size: 12px;
-  color: var(--danger, #dc2626);
+  color: var(--danger);
 }
 
 .detail-hero__hero-hint {
