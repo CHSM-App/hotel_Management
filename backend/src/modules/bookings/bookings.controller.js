@@ -517,6 +517,15 @@ async function cancelBookingHandler(req, res, next) {
   }
 }
 
+async function sendBookingWhatsAppHandler(req, res, next) {
+  try {
+    const whatsapp = await bookingsService.sendBookingWhatsApp(req.user.lodgeId, Number(req.params.id));
+    res.json({ whatsapp });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Parked bookings
 // ---------------------------------------------------------------------------
@@ -602,4 +611,5 @@ module.exports = {
   listCheckinAlertsHandler,
   checkOutHandler,
   cancelBookingHandler,
+  sendBookingWhatsAppHandler,
 };

@@ -126,6 +126,10 @@ class _FakeBookingRepository implements BookingRepository {
       throw UnimplementedError();
 
   @override
+  Future<Map<String, dynamic>> sendWhatsApp(int id) =>
+      throw UnimplementedError();
+
+  @override
   Future<LateCheckout> roomLateCheckout(int id, int roomId) =>
       throw UnimplementedError();
 

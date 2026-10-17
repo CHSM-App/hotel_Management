@@ -148,6 +148,10 @@ class BookingImpl implements BookingRepository {
       api.cancelBooking(id, body);
 
   @override
+  Future<Map<String, dynamic>> sendWhatsApp(int id) =>
+      api.sendBookingWhatsApp(id);
+
+  @override
   Future<List<BookingDraft>> drafts() => api.drafts();
 
   @override

@@ -421,6 +421,14 @@ class ApiService {
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
   }
 
+  /// Send the guest their booking confirmation on WhatsApp. Answers with the
+  /// server's outcome: `status` is 'sent', 'failed' (with `error`) or
+  /// 'skipped' (not configured, no number).
+  Future<Map<String, dynamic>> sendBookingWhatsApp(int id) async {
+    final res = await _dio.post('/bookings/$id/send-whatsapp');
+    return Map<String, dynamic>.from(_map(res.data)['whatsapp'] as Map);
+  }
+
   // ===== BOOKING DRAFTS =====
 
   /// Every parked booking on this property — the same list the web drafts

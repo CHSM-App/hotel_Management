@@ -20,6 +20,7 @@ const {
   listCheckinAlertsHandler,
   checkOutHandler,
   cancelBookingHandler,
+  sendBookingWhatsAppHandler,
   listDraftsHandler,
   getDraftHandler,
   createDraftHandler,
@@ -66,5 +67,6 @@ router.patch('/:id/check-out', authenticate, staff, checkOutHandler);
 router.patch('/:id/rooms/:roomId/check-in', authenticate, staff, idProofUpload, checkInHandler);
 router.patch('/:id/rooms/:roomId/check-out', authenticate, staff, checkOutHandler);
 router.patch('/:id/cancel', authenticate, staff, cancelBookingHandler);
+router.post('/:id/send-whatsapp', authenticate, staff, sendBookingWhatsAppHandler);
 
 module.exports = router;

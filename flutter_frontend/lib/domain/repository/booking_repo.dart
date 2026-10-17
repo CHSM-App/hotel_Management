@@ -96,6 +96,10 @@ abstract class BookingRepository {
   /// settles whatever advance was on file.
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]);
 
+  /// Send the guest their booking confirmation on WhatsApp; the map carries
+  /// the server's `status` ('sent' / 'failed' / 'skipped') and any `error`.
+  Future<Map<String, dynamic>> sendWhatsApp(int id);
+
   /// Every parked booking on this property.
   Future<List<BookingDraft>> drafts();
 

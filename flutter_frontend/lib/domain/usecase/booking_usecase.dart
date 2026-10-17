@@ -135,6 +135,10 @@ class BookingUsecase {
   Future<Booking> cancel(int id, [Map<String, dynamic>? body]) =>
       repository.cancel(id, body);
 
+  /// Send the guest their booking confirmation on WhatsApp.
+  Future<Map<String, dynamic>> sendWhatsApp(int id) =>
+      repository.sendWhatsApp(id);
+
   /// Every parked booking on this property.
   Future<List<BookingDraft>> drafts() => repository.drafts();
 

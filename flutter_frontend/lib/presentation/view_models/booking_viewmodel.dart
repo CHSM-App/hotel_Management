@@ -1710,6 +1710,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     List<GuestDraft> guests = const [],
     List<VehicleDraft> vehicles = const [],
     List<PaymentDraft> advanceLines = const [],
+    bool sendWhatsApp = false,
   }) async {
     if (state.submitting) return null;
     final room = state.room;
@@ -1743,6 +1744,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
         'numGuests': '$numGuests',
         'guestName': guestName.trim(),
         'guestPhone': guestPhone.trim(),
+        // Saving never sends the guest's WhatsApp confirmation by itself; the
+        // "Booking saved" card has its own button for that.
+        'sendWhatsApp': '$sendWhatsApp',
         // Not a fixed value: a stay starting today is a walk-in and is checked
         // in below, a later one is a reservation and waits.
         'bookingType': state.bookingType,

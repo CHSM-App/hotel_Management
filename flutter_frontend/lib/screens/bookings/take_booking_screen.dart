@@ -12,6 +12,7 @@ import '../../domain/models/guest_match.dart';
 import '../../domain/models/multi_room_logic.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
+import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
 import '../../widgets/format.dart';
@@ -882,6 +883,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         booking: booking,
         advance: advance,
         advanceMethod: advanceMethod,
+        onSendWhatsApp: () =>
+            ref.read(bookingUsecaseProvider).sendWhatsApp(booking.id),
         onPrintReceipt: () => Navigator.of(dialogContext).pop('print'),
         onDone: () => Navigator.of(dialogContext).pop('done'),
       ),
@@ -1787,7 +1790,7 @@ class _PrimaryCtaState extends State<_PrimaryCta> {
 /// The web form's own "Booking saved" card — what to do next after a fresh
 /// booking, right where the desk is already looking, instead of leaving them
 /// to find the stay again from the list for the receipt a guest is waiting on.
-class _BookingSavedDialog extends StatelessWidget {
+class _BookingSavedDialog extends StatefulWidget {
   final Booking booking;
 
   /// What the desk actually typed into the advance rows, not what the
@@ -1804,6 +1807,10 @@ class _BookingSavedDialog extends StatelessWidget {
   final num advance;
   final String? advanceMethod;
 
+  /// Asks the server to WhatsApp the guest their confirmation. Saving never
+  /// does that by itself — it only happens when this is pressed. Resolves to
+  /// the server's `{status, error?}`.
+  final Future<Map<String, dynamic>> Function() onSendWhatsApp;
   final VoidCallback onPrintReceipt;
   final VoidCallback onDone;
 
@@ -1811,12 +1818,56 @@ class _BookingSavedDialog extends StatelessWidget {
     required this.booking,
     required this.advance,
     required this.advanceMethod,
+    required this.onSendWhatsApp,
     required this.onPrintReceipt,
     required this.onDone,
   });
 
   @override
+  State<_BookingSavedDialog> createState() => _BookingSavedDialogState();
+}
+
+class _BookingSavedDialogState extends State<_BookingSavedDialog> {
+  bool _sending = false;
+
+  /// Null until the desk has pressed the button; then what came of it.
+  String? _whatsAppNote;
+  bool _whatsAppSent = false;
+
+  Future<void> _sendWhatsApp() async {
+    setState(() {
+      _sending = true;
+      _whatsAppNote = null;
+    });
+    String note;
+    var sent = false;
+    try {
+      final result = await widget.onSendWhatsApp();
+      switch (result['status']) {
+        case 'sent':
+          sent = true;
+          note = 'WhatsApp message sent to the guest.';
+        case 'failed':
+          note = 'Could not send on WhatsApp: ${result['error'] ?? 'unknown error'}.';
+        default:
+          note = 'WhatsApp is not set up or the guest has no number — nothing was sent.';
+      }
+    } catch (_) {
+      note = 'Could not send the WhatsApp message. Try again.';
+    }
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      _whatsAppSent = sent;
+      _whatsAppNote = note;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final booking = widget.booking;
+    final advance = widget.advance;
+    final advanceMethod = widget.advanceMethod;
     final paidInFull =
         booking.totalPrice != null &&
         (booking.totalPrice! - advance).abs() < 0.01;
@@ -1886,7 +1937,7 @@ class _BookingSavedDialog extends StatelessWidget {
               advance > 0
                   ? '${paidInFull ? 'Full payment of' : 'Advance of'} '
                         '${formatPrice(advance)}'
-                        '${advanceMethod != null ? ' by ${advanceMethod!.toLowerCase()}' : ''} '
+                        '${advanceMethod != null ? ' by ${advanceMethod.toLowerCase()}' : ''} '
                         'taken — its receipt has been issued automatically.'
                   : 'No advance was taken, so there is nothing to receipt yet.',
               style: Theme.of(context).textTheme.bodySmall,
@@ -1897,14 +1948,53 @@ class _BookingSavedDialog extends StatelessWidget {
               NeuButton(
                 primary: true,
                 expand: true,
-                onPressed: onPrintReceipt,
+                onPressed: widget.onPrintReceipt,
                 child: const Text('Advance receipt'),
               ),
               const SizedBox(height: AppTheme.s4),
             ],
             NeuButton(
               expand: true,
-              onPressed: onDone,
+              outlineColor: const Color(0xFF25D366),
+              onPressed: (_sending || _whatsAppSent) ? null : _sendWhatsApp,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_sending)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF25D366),
+                      ),
+                    )
+                  else
+                    Icon(
+                      _whatsAppSent ? Icons.check_rounded : Icons.send_rounded,
+                      size: 16,
+                      color: const Color(0xFF25D366),
+                    ),
+                  const SizedBox(width: AppTheme.s8),
+                  Text(_whatsAppSent ? 'WhatsApp sent' : 'Send WhatsApp message'),
+                ],
+              ),
+            ),
+            if (_whatsAppNote != null) ...[
+              const SizedBox(height: AppTheme.s4),
+              Text(
+                _whatsAppNote!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _whatsAppSent ? AppTheme.vacant : AppTheme.danger,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppTheme.s4),
+            NeuButton(
+              expand: true,
+              onPressed: widget.onDone,
               child: const Text('Done'),
             ),
           ],

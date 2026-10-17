@@ -121,6 +121,9 @@ class _FakeBookings implements BookingRepository {
       Booking(id: id, status: 'CANCELLED');
 
   @override
+  Future<Map<String, dynamic>> sendWhatsApp(int id) async => {'status': 'sent'};
+
+  @override
   Future<List<Room>> availableRooms(String a, String b) async => const [];
 
   @override

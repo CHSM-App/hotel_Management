@@ -2047,7 +2047,9 @@ async function createBooking(lodgeId, userId, input) {
 
     // Not awaited: the guest's confirmation is best-effort and the desk should
     // not wait on the provider. The notifier never rejects — it logs.
-    void notifications.notifyStayBooked(lodgeId, bookingId);
+    // Skipped when the desk chose plain "Save" rather than "Save & send
+    // WhatsApp" (input.sendWhatsApp === false).
+    if (input.sendWhatsApp !== false) void notifications.notifyStayBooked(lodgeId, bookingId);
 
     return { id: bookingId };
   } catch (err) {
@@ -3278,7 +3280,17 @@ async function cancelBooking(
   return { ...booking, whatsapp };
 }
 
+// The guest's WhatsApp confirmation, sent on the desk's say-so from the
+// "Booking saved" card rather than automatically on save. Awaited, unlike the
+// old fire-and-forget send, so the desk is told whether it went. Never throws
+// for a provider problem — notifyStayBooked reports those as a status.
+async function sendBookingWhatsApp(lodgeId, bookingId) {
+  await getBooking(lodgeId, bookingId);
+  return notifications.notifyStayBooked(lodgeId, bookingId);
+}
+
 module.exports = {
+  sendBookingWhatsApp,
   idProofExists,
   priceStay,
   quoteBooking,
