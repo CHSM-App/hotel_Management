@@ -89,11 +89,14 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
     }
 
     return RefreshIndicator(
+      // In table view the scroll is the rows', a level below the
+      // table's horizontal scroller.
+      notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
       onRefresh: () => ref.read(housekeepingViewModelProvider.notifier).loadIssues(),
       color: AppTheme.accent,
-      child: ListView(
+      child: TablePageBody(
+        table: _view == 'table',
         padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
-        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           if (state.error != null) ...[
             HkErrorBanner(state.error!),
@@ -242,12 +245,11 @@ class _IssuesTable extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -260,20 +262,8 @@ class _IssuesTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Only the rows scroll vertically, so the header above stays
-                // pinned however long the list gets.
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
+              rows: [
                       for (var i = 0; i < issues.length; i++) _IssueTableRow(issue: issues[i], shaded: i.isOdd, anyClosed: anyClosed, busy: busyIssueKey == issues[i].key, onClose: () => onClose(issues[i])),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),

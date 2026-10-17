@@ -1227,27 +1227,17 @@ class ReportDataTable extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: _width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _row(
+            child: StickyHeaderTable(
+              header: _row(
                   context,
                   columns.map((c) => c.label.toUpperCase()).toList(),
                   columns.map((c) => c.align).toList(),
                   header: true,
                 ),
-                // Only the rows scroll vertically, so the header above stays
-                // pinned however long the list gets.
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
+              rows: [
                       for (var i = 0; i < rows.length; i++)
                         _row(
                           context,
@@ -1263,9 +1253,6 @@ class ReportDataTable extends StatelessWidget {
                           bold: true,
                           border: true,
                         ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),

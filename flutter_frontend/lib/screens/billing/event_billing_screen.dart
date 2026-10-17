@@ -105,16 +105,19 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
     }
 
     return RefreshIndicator(
+      // In table view the scroll is the rows', a level below the
+      // table's horizontal scroller.
+      notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
       onRefresh: _load,
       color: AppTheme.accent,
-      child: ListView(
+      child: TablePageBody(
+        table: _view == 'table',
         padding: const EdgeInsets.fromLTRB(
           AppTheme.s12,
           AppTheme.s8,
           AppTheme.s12,
           AppTheme.s24,
         ),
-        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           toggle,
           const SizedBox(height: AppTheme.s12),
@@ -335,12 +338,11 @@ class EventReadyToBillTable extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(
@@ -380,14 +382,7 @@ class EventReadyToBillTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
+              rows: [
                       for (var i = 0; i < events.length; i++)
                         _EventReadyToBillRow(
                           event: events[i],
@@ -395,9 +390,6 @@ class EventReadyToBillTable extends StatelessWidget {
                           onBill: () => onBill(events[i]),
                         ),
                       _EventReadyToBillFooter(events: events),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),

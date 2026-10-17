@@ -433,12 +433,11 @@ class _LinenSpreadsheet extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: totalWidth,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -455,16 +454,7 @@ class _LinenSpreadsheet extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Only the rows scroll vertically, so the header above stays
-                // pinned however long the list gets.
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
+              rows: [
                       for (var i = 0; i < items.length; i++)
                         _SpreadsheetRow(
                           item: items[i],
@@ -474,9 +464,6 @@ class _LinenSpreadsheet extends StatelessWidget {
                           onLoss: () => onLoss(items[i]),
                           onHide: () => onHide(items[i]),
                         ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
@@ -965,12 +952,11 @@ class _HistoryTableState extends State<_HistoryTable> {
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.rMedium),
       child: HScrollTable(
+        rowsScrollbar: true,
         child: SizedBox(
           width: totalWidth,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
+          child: StickyHeaderTable(
+            header: Container(
                 decoration: const BoxDecoration(
                   color: AppTheme.sidebarBrandWash,
                   border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -988,21 +974,9 @@ class _HistoryTableState extends State<_HistoryTable> {
                   ],
                 ),
               ),
-              // Only the rows scroll vertically, so the header above stays
-              // pinned however long the list gets.
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                ),
-                child: ListView(
-                  shrinkWrap: true,
-                  padding: EdgeInsets.zero,
-                  children: [
+            rows: [
                     for (var i = 0; i < movements.length; i++)
                       _HistoryRow(movement: movements[i], shaded: i.isOdd),
-                  ],
-                ),
-              ),
             ],
           ),
         ),

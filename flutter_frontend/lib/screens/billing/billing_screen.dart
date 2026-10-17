@@ -144,6 +144,39 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     }
 
     // Selected on the Services tab right now, if that's the tab open — used
+    final tools = <Widget>[
+      BillingSearchAndViewToggle(
+        controller: _search,
+        view: _view,
+        onViewChanged: (v) => setState(() => _view = v),
+        onSearchChanged: () => setState(() {}),
+      ),
+      const SizedBox(height: AppTheme.s12),
+      if (tab == _BillingTab.issued) ...[
+        BillingDateFilterRow(
+          filterKey: _dateFilterKey,
+          from: _customFrom,
+          to: _customTo,
+          onPresetSelected: _applyDatePreset,
+          onFromChanged: (v) => setState(() {
+            _customFrom = v;
+            _dateFilterKey = 'custom';
+          }),
+          onToChanged: (v) => setState(() {
+            _customTo = v;
+            _dateFilterKey = 'custom';
+          }),
+        ),
+        const SizedBox(height: AppTheme.s12),
+      ],
+    ];
+    final content = switch (tab) {
+      _BillingTab.food => _food(state),
+      _BillingTab.services => _services(state),
+      _BillingTab.issued => _issued(state, restaurantOnly: widget.restaurantOnly),
+      _ => _queue(state),
+    };
+
     // The tab strip stays put above the list rather than scrolling away with
     // it — same fixed Column/Expanded split FoodBillingScreen uses for its
     // own Kitchen queue/History/Numbering strip (and this screen's own
@@ -164,52 +197,54 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           child: RefreshIndicator(
             onRefresh: _load,
             color: AppTheme.accent,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(
-                AppTheme.s12,
-                AppTheme.s12,
-                AppTheme.s12,
-                AppTheme.s24,
-              ),
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                BillingSearchAndViewToggle(
-                  controller: _search,
-                  view: _view,
-                  onViewChanged: (v) => setState(() => _view = v),
-                  onSearchChanged: () => setState(() {}),
-                ),
-                const SizedBox(height: AppTheme.s12),
-                if (tab == _BillingTab.issued) ...[
-                  BillingDateFilterRow(
-                    filterKey: _dateFilterKey,
-                    from: _customFrom,
-                    to: _customTo,
-                    onPresetSelected: _applyDatePreset,
-                    onFromChanged: (v) => setState(() {
-                      _customFrom = v;
-                      _dateFilterKey = 'custom';
-                    }),
-                    onToChanged: (v) => setState(() {
-                      _customTo = v;
-                      _dateFilterKey = 'custom';
-                    }),
+            // In the sheet view the vertical scroll belongs to the table's
+            // own rows, a level below its horizontal scroller.
+            notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
+            child: _view == 'table'
+                ? _tableLayout(tools, content)
+                : ListView(
+                    padding: _pagePadding,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [...tools, ...content],
                   ),
-                  const SizedBox(height: AppTheme.s12),
-                ],
-                if (tab == _BillingTab.food)
-                  ..._food(state)
-                else if (tab == _BillingTab.services)
-                  ..._services(state)
-                else if (tab == _BillingTab.issued)
-                  ..._issued(state, restaurantOnly: widget.restaurantOnly)
-                else
-                  ..._queue(state),
-              ],
-            ),
           ),
         ),
       ],
+    );
+  }
+
+  static const _pagePadding = EdgeInsets.fromLTRB(
+    AppTheme.s12,
+    AppTheme.s12,
+    AppTheme.s12,
+    AppTheme.s24,
+  );
+
+  /// The sheet view: search and filters stay put and the table takes the
+  /// rest of the screen, so only its rows scroll — under a column header
+  /// that never leaves view — instead of the page scrolling the header away
+  /// and the rows then scrolling again inside it.
+  Widget _tableLayout(List<Widget> tools, List<Widget> content) {
+    return Padding(
+      padding: _pagePadding.copyWith(bottom: AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ...tools,
+          // A lone table fills what's left and shrinks to its rows when
+          // there are few; loading and empty states keep their usual,
+          // scrollable spacing.
+          if (content.length == 1)
+            Flexible(child: content.single)
+          else
+            Expanded(
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: content,
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -923,12 +958,11 @@ class _ServiceQueueTable extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+                header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(
@@ -962,14 +996,7 @@ class _ServiceQueueTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
+                rows: [
                       for (var i = 0; i < groups.length; i++)
                         _ServiceTableRow(
                           usage: groups[i].display,
@@ -980,10 +1007,7 @@ class _ServiceQueueTable extends StatelessWidget {
                           onAddToRoom: () => onAddToRoom(groups[i]),
                           onBill: () => onBill(groups[i]),
                         ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
             ),
           ),
         ),
@@ -2141,12 +2165,11 @@ class BillingQueueTable extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+                header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(
@@ -2179,23 +2202,11 @@ class BillingQueueTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Only the rows scroll vertically, so the header above stays
-                // pinned however long the list gets.
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
+                rows: [
                       for (var i = 0; i < rows.length; i++)
                         _QueueTableRow(row: rows[i], shaded: i.isOdd),
                       _QueueTableFooter(rows: rows),
-                    ],
-                  ),
-                ),
-              ],
+                ],
             ),
           ),
         ),
@@ -2420,12 +2431,11 @@ class ReadyToBillTable extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+                header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(
@@ -2465,14 +2475,7 @@ class ReadyToBillTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
+                rows: [
                       for (var i = 0; i < stays.length; i++)
                         _ReadyToBillRow(
                           stay: stays[i],
@@ -2480,10 +2483,7 @@ class ReadyToBillTable extends StatelessWidget {
                           onBill: () => onBill(stays[i]),
                         ),
                       _ReadyToBillFooter(stays: stays),
-                    ],
-                  ),
-                ),
-              ],
+                ],
             ),
           ),
         ),
@@ -2880,12 +2880,11 @@ class BillingInvoiceTable extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+                header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(
@@ -2924,26 +2923,14 @@ class BillingInvoiceTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Only the rows scroll vertically, so the header above stays
-                // pinned however long the list gets.
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
+                rows: [
                       for (var i = 0; i < documents.length; i++)
                         _InvoiceTableRow(
                           document: documents[i],
                           shaded: i.isOdd,
                         ),
                       _InvoiceTableFooter(documents: documents),
-                    ],
-                  ),
-                ),
-              ],
+                ],
             ),
           ),
         ),

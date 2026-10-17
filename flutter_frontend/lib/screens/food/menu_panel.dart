@@ -1029,41 +1029,22 @@ class _DishTable extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: HScrollTable(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minWidth: _rowWidth + AppTheme.s12 * 2,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _DishTableHeader(),
-                  // Only the rows scroll vertically, so the header above stays
-                  // pinned however long the list gets.
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                    ),
-                    child: SizedBox(
-                      width: _rowWidth + AppTheme.s12 * 2,
-                      child: ListView(
-                        shrinkWrap: true,
-                        padding: EdgeInsets.zero,
-                        children: [
-                          for (var i = 0; i < items.length; i++)
-                            _DishTableRow(
-                              item: items[i],
-                              sections: sections,
-                              striped: i.isOdd,
-                              isLast: i == items.length - 1,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        rowsScrollbar: true,
+        child: SizedBox(
+          width: _rowWidth + AppTheme.s12 * 2,
+          child: StickyHeaderTable(
+            header: const _DishTableHeader(),
+            rows: [
+              for (var i = 0; i < items.length; i++)
+                _DishTableRow(
+                  item: items[i],
+                  sections: sections,
+                  striped: i.isOdd,
+                  isLast: i == items.length - 1,
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

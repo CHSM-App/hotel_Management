@@ -101,18 +101,21 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
+          // In table view the scroll is the rows', a level below the
+          // table's horizontal scroller.
+          notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
           onRefresh: () => (!state.myOrdersMode && state.tab == OrdersTab.queue)
               ? vm.loadQueue()
               : vm.loadHistory(),
           color: AppTheme.accent,
-          child: ListView(
+          child: TablePageBody(
+            table: state.listView == 'sheet',
             padding: const EdgeInsets.fromLTRB(
               AppTheme.s16,
               AppTheme.s8,
               AppTheme.s16,
               88,
             ),
-            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               if (!widget.hideTabs) ...[
                 _TabRow(
@@ -2138,22 +2141,12 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: _totalWidth,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _sheetRow(header: true, cells: headerCells),
-                // Only the rows scroll vertically, so the header above stays
-                // pinned however long the list gets.
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
+            child: StickyHeaderTable(
+              header: _sheetRow(header: true, cells: headerCells),
+              rows: [
                       for (var i = 0; i < widget.orders.length; i++) ...[
                         _sheetRow(
                           shaded: i.isOdd,
@@ -2166,9 +2159,6 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                           _dishesExpanded(widget.orders[i], shaded: i.isOdd),
                       ],
                       _sheetFooter(),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
