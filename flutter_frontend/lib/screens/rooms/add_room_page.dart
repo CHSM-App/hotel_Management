@@ -218,8 +218,8 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
         title: Row(
           children: [
             Container(
-              width: 34,
-              height: 34,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
@@ -264,25 +264,23 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
           controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(
             AppTheme.s12,
+            AppTheme.s8,
             AppTheme.s12,
             AppTheme.s12,
-            AppTheme.s16,
           ),
           children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ModeToggle(
-                      options: const {'single': 'Single', 'bulk': 'Bulk range'},
-                      selected: _bulkMode ? 'bulk' : 'single',
-                      // A dormitory can't be added as a bulk range — its beds
-                      // are added one at a time after the room exists, so
-                      // there's no one bed list a whole range could share.
-                      onSelect: submitting || _isDormitory
-                          ? (_) {}
-                          : (v) => setState(() => _bulkMode = v == 'bulk'),
-                    ),
+                  // A dormitory can't be added as a bulk range — its beds are
+                  // added one at a time after the room exists, so there's no
+                  // one bed list a whole range could share.
+                  ModeToggle(
+                    expanded: true,
+                    options: const {'single': 'Single', 'bulk': 'Bulk range'},
+                    selected: _bulkMode ? 'bulk' : 'single',
+                    onSelect: submitting || _isDormitory
+                        ? (_) {}
+                        : (v) => setState(() => _bulkMode = v == 'bulk'),
                   ),
-                  const SizedBox(height: AppTheme.s12),
+                  const SizedBox(height: AppTheme.s8),
                   if (_error != null &&
                       _backendErrorField != 'roomNumber' &&
                       _backendErrorField != 'rangeStart') ...[
@@ -302,13 +300,13 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: AppTheme.s12),
+                    const SizedBox(height: AppTheme.s8),
                   ],
 
                   NeuCard(
                     radius: AppTheme.rLarge,
                     shadow: AppTheme.elevated,
-                    padding: const EdgeInsets.all(AppTheme.s16),
+                    padding: const EdgeInsets.all(AppTheme.s12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -317,7 +315,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           number: 1,
                           icon: Icons.tag_rounded,
                         ),
-                        const SizedBox(height: AppTheme.s12),
+                        const SizedBox(height: AppTheme.s8),
                         if (!_bulkMode)
                           NeuField(
                             key: _roomNumberKey,
@@ -376,9 +374,9 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                           ),
                         const SectionDivider(),
                         const SectionLabel('Pricing', number: 2, icon: Icons.payments_rounded),
-                        const SizedBox(height: AppTheme.s12),
-                        const RequiredLabel('Category'),
                         const SizedBox(height: AppTheme.s8),
+                        const RequiredLabel('Category'),
+                        const SizedBox(height: AppTheme.s4),
                         KeyedSubtree(
                           key: _categoryKey,
                           child: CategoryDropdown(
@@ -395,37 +393,46 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             style: const TextStyle(color: AppTheme.danger, fontSize: 12),
                           ),
                         ],
-                        if (_selectedCategory != null) ...[
-                          const SizedBox(height: AppTheme.s12),
-                          Wrap(
-                            spacing: AppTheme.s8,
-                            runSpacing: AppTheme.s8,
-                            children: [
-                              RateChip(
-                                '${formatPrice(_selectedCategory!.basePrice)} /night',
-                                accent: true,
-                              ),
-                              RateChip(_selectedCategory!.name),
-                            ],
-                          ),
-                        ],
                         const SectionDivider(),
                         const SectionLabel('Room details', number: 3, icon: Icons.king_bed_rounded),
-                        const SizedBox(height: AppTheme.s12),
-                        NeuField(
-                          key: _floorKey,
-                          controller: _floor,
-                          label: 'Floor',
-                          hint: '1',
-                          required: true,
-                          errorText: _floorError,
-                          keyboardType: TextInputType.number,
-                          onChanged: (_) => setState(() {}),
-                          dense: true,
-                        ),
-                        const SizedBox(height: AppTheme.s12),
-                        const RequiredLabel('Bathroom'),
                         const SizedBox(height: AppTheme.s8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: NeuField(
+                                key: _floorKey,
+                                controller: _floor,
+                                label: 'Floor',
+                                hint: '1',
+                                required: true,
+                                errorText: _floorError,
+                                keyboardType: TextInputType.number,
+                                onChanged: (_) => setState(() {}),
+                                dense: true,
+                              ),
+                            ),
+                            if (!_isDormitory) ...[
+                              const SizedBox(width: AppTheme.s12),
+                              Expanded(
+                                child: NeuField(
+                                  key: _occupancyKey,
+                                  controller: _maxOccupancy,
+                                  label: 'Max occupancy',
+                                  hint: '2',
+                                  required: true,
+                                  errorText: _occupancyError,
+                                  keyboardType: TextInputType.number,
+                                  onChanged: (_) => setState(() {}),
+                                  dense: true,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: AppTheme.s8),
+                        const RequiredLabel('Bathroom'),
+                        const SizedBox(height: AppTheme.s4),
                         KeyedSubtree(
                           key: _bathroomKey,
                           child: OptionDropdown(
@@ -443,7 +450,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             style: const TextStyle(color: AppTheme.danger, fontSize: 12),
                           ),
                         ],
-                        const SizedBox(height: AppTheme.s12),
+                        const SizedBox(height: AppTheme.s8),
 
                         KeyedSubtree(
                           key: _dormitoryKey,
@@ -518,7 +525,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             hasError: _dormitoryError != null && _dormitoryGender == null,
                             onSelect: (v) => setState(() => _dormitoryGender = v),
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           NeuField(
                             controller: _dormitoryPrice,
                             label: 'Price per bed, per night',
@@ -528,7 +535,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             onChanged: (_) => setState(() {}),
                             dense: true,
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           const RequiredLabel('AC'),
                           const SizedBox(height: AppTheme.s8),
                           OptionDropdown(
@@ -538,7 +545,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             hasError: _dormitoryError != null && _dormitoryIsAc == null,
                             onSelect: (v) => setState(() => _dormitoryIsAc = v),
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           const RequiredLabel('Beds'),
                           const SizedBox(height: AppTheme.s4),
                           const Text(
@@ -613,7 +620,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                         for (var i = 0; i < _beds.length; i++)
                           Container(
                             margin: const EdgeInsets.only(bottom: AppTheme.s8),
-                            padding: const EdgeInsets.all(AppTheme.s8),
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: AppTheme.s4),
                             decoration: BoxDecoration(
                               color: AppTheme.bg,
                               borderRadius: BorderRadius.circular(AppTheme.rMedium),
@@ -645,6 +652,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                                   IconButton(
                                     icon: const Icon(Icons.close_rounded, size: 18),
                                     color: AppTheme.muted,
+                                    visualDensity: VisualDensity.compact,
                                     onPressed: () => setState(() {
                                       _beds[i].countController.dispose();
                                       _beds.removeAt(i);
@@ -692,21 +700,8 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: AppTheme.s12),
-
-                        NeuField(
-                          key: _occupancyKey,
-                          controller: _maxOccupancy,
-                          label: 'Max occupancy',
-                          hint: '2',
-                          required: true,
-                          errorText: _occupancyError,
-                          keyboardType: TextInputType.number,
-                          onChanged: (_) => setState(() {}),
-                          dense: true,
-                        ),
                         ],
-                        const SizedBox(height: AppTheme.s12),
+                        const SizedBox(height: AppTheme.s8),
 
                         NeuField(
                           controller: _description,
@@ -723,7 +718,7 @@ class _AddRoomPageState extends ConsumerState<AddRoomPage> {
                             icon: Icons.photo_camera_rounded,
                             trailing: _newPhotos.isEmpty ? null : '${_newPhotos.length}',
                           ),
-                          const SizedBox(height: AppTheme.s12),
+                          const SizedBox(height: AppTheme.s8),
                           Wrap(
                             spacing: AppTheme.s8,
                             runSpacing: AppTheme.s8,
@@ -942,7 +937,7 @@ class RoomFormFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s12),
+      padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s8),
       decoration: const BoxDecoration(
         color: AppTheme.bg,
         border: Border(top: BorderSide(color: AppTheme.border)),
@@ -1004,7 +999,7 @@ class RoomFormFooter extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
             ],
             Row(
               children: [

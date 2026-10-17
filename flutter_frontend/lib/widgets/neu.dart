@@ -785,7 +785,7 @@ class _NeuFieldState extends State<NeuField> {
               if (widget.labelAction != null) widget.labelAction!,
             ],
           ),
-          const SizedBox(height: AppTheme.s8),
+          SizedBox(height: widget.dense ? AppTheme.s4 : AppTheme.s8),
         ],
         NeuPressed(
           focused: _focused,
@@ -834,7 +834,7 @@ class _NeuFieldState extends State<NeuField> {
                     counterText: '',
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(
-                      vertical: widget.dense ? 8 : 10,
+                      vertical: widget.dense ? 6 : 10,
                     ),
                   ),
                 ),
