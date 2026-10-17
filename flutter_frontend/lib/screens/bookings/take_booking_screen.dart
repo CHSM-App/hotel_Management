@@ -691,9 +691,11 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   ///
   /// Re-saving a draft that was opened from the tape chart's own yellow tile
   /// updates that same row rather than parking a second copy of it.
+  bool _savingDraft = false;
+
   Future<void> _saveDraft() async {
     final state = ref.read(bookingViewModelProvider);
-    if (state.submitting) return;
+    if (state.submitting || _savingDraft) return;
     final form = _draftForm();
     final hasContent =
         _name.text.trim().isNotEmpty ||
@@ -706,10 +708,12 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       _say('There is nothing to save yet — fill in a detail or two first.');
       return;
     }
+    setState(() => _savingDraft = true);
     final ok = await ref
         .read(bookingViewModelProvider.notifier)
         .saveDraft(form);
     if (!mounted) return;
+    setState(() => _savingDraft = false);
     if (!ok) {
       _say(
         ref.read(bookingViewModelProvider).error ??
@@ -931,12 +935,12 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
                 borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x335A67D8),
+                    color: Color(0x331457AD),
                     offset: Offset(0, 3),
                     blurRadius: 8,
                   ),
@@ -968,7 +972,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             height: 3,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x005A67D8)],
+                colors: [AppTheme.accent, Color(0x001457AD)],
               ),
             ),
           ),
@@ -1480,7 +1484,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                         horizontal: AppTheme.s8,
                         vertical: AppTheme.s4,
                       ),
-                      onPressed: state.submitting ? null : _saveDraft,
+                      onPressed: (state.submitting || _savingDraft)
+                          ? null
+                          : _saveDraft,
                       outlineColor: AppTheme.accent,
                       child: Text(
                         state.draftId != null ? 'Update draft' : 'Save draft',
@@ -1496,7 +1502,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
               // there is a room to save against. The server holds a
               // lock that stops two devices booking one room; nothing
               // stops one device asking twice.
-              onPressed: (state.submitting || state.room == null)
+              onPressed: (state.submitting || _savingDraft || state.room == null)
                   ? null
                   : _submit,
               loading: state.submitting,
@@ -1612,12 +1618,12 @@ class _SectionLabel extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [AppTheme.accent, Color(0xFF434FC1)],
+                colors: [AppTheme.accent, Color(0xFF10499A)],
               ),
               shape: BoxShape.circle,
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x2A5A67D8),
+                  color: Color(0x2A1457AD),
                   offset: Offset(0, 2),
                   blurRadius: 5,
                 ),
@@ -1728,13 +1734,13 @@ class _PrimaryCtaState extends State<_PrimaryCta> {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [AppTheme.accent, Color(0xFF434FC1)],
+              colors: [AppTheme.accent, Color(0xFF10499A)],
             ),
             borderRadius: BorderRadius.circular(AppTheme.rMedium + 2),
             boxShadow: enabled
                 ? const [
                     BoxShadow(
-                      color: Color(0x3A5A67D8),
+                      color: Color(0x3A1457AD),
                       offset: Offset(0, 6),
                       blurRadius: 16,
                     ),
@@ -1832,12 +1838,12 @@ class _BookingSavedDialog extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0x405A67D8),
+                    color: Color(0x401457AD),
                     offset: Offset(0, 6),
                     blurRadius: 16,
                   ),
@@ -2141,7 +2147,7 @@ class _TogglePill extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: active
               ? const LinearGradient(
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 )
               : null,
           color: active ? null : AppTheme.card,
@@ -2150,7 +2156,7 @@ class _TogglePill extends StatelessWidget {
           boxShadow: active
               ? const [
                   BoxShadow(
-                    color: Color(0x2A5A67D8),
+                    color: Color(0x2A1457AD),
                     offset: Offset(0, 3),
                     blurRadius: 8,
                   ),
@@ -2628,7 +2634,7 @@ class _CategoryFilterChip extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: selected
               ? const LinearGradient(
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 )
               : null,
           color: selected ? null : AppTheme.card,
@@ -2765,7 +2771,7 @@ class _RoomChoiceTile extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: selected
               ? const LinearGradient(
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 )
               : null,
           color: selected ? null : AppTheme.card,
@@ -3446,7 +3452,7 @@ class _Chip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5.5),
       decoration: BoxDecoration(
         gradient: accent
-            ? const LinearGradient(colors: [AppTheme.accent, Color(0xFF434FC1)])
+            ? const LinearGradient(colors: [AppTheme.accent, Color(0xFF10499A)])
             : null,
         color: accent ? null : AppTheme.bg,
         border: accent ? null : Border.all(color: AppTheme.border),
@@ -3454,7 +3460,7 @@ class _Chip extends StatelessWidget {
         boxShadow: accent
             ? const [
                 BoxShadow(
-                  color: Color(0x225A67D8),
+                  color: Color(0x221457AD),
                   offset: Offset(0, 2),
                   blurRadius: 6,
                 ),

@@ -695,15 +695,23 @@ class _SidebarItem extends StatelessWidget {
 /// leftover item tacked on below the real groups — the one difference is
 /// the trailing icon: a plain chevron rather than the rotating one, since
 /// tapping this pushes a new screen instead of expanding rows in place.
-class _SettingsNavRow extends StatelessWidget {
+class _SettingsNavRow extends StatefulWidget {
   final bool collapsed;
   final VoidCallback onTap;
 
   const _SettingsNavRow({required this.collapsed, required this.onTap});
 
   @override
+  State<_SettingsNavRow> createState() => _SettingsNavRowState();
+}
+
+class _SettingsNavRowState extends State<_SettingsNavRow> {
+  bool _open = false;
+
+  @override
   Widget build(BuildContext context) {
-    if (collapsed) {
+    final onTap = widget.onTap;
+    if (widget.collapsed) {
       final button = Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
@@ -726,42 +734,91 @@ class _SettingsNavRow extends StatelessWidget {
       return Tooltip(message: 'Settings', child: button);
     }
 
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(AppTheme.rSmall),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppTheme.rSmall),
-        hoverColor: AppTheme.bg,
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.fromLTRB(
-            AppTheme.s12,
-            AppTheme.s4,
-            AppTheme.s12,
-            AppTheme.s8,
+    // Same grammar as [_GroupHeader]: the header only expands, and the
+    // Profile row inside it is what actually opens the screen.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+            hoverColor: AppTheme.bg,
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s12,
+                AppTheme.s4,
+                AppTheme.s12,
+                AppTheme.s8,
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'SETTINGS',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.sidebarText,
+                        letterSpacing: 0.9,
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _open ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 150),
+                    child: const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: AppTheme.sidebarTextMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'SETTINGS',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.sidebarText,
-                    letterSpacing: 0.9,
+        ),
+        if (_open)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
+                hoverColor: AppTheme.bg,
+                onTap: onTap,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppTheme.s12,
+                    vertical: AppTheme.s8 + 1,
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(width: AppTheme.s8 + 3),
+                      Icon(
+                        Icons.person_outline_rounded,
+                        size: 18,
+                        color: AppTheme.sidebarTextMuted,
+                      ),
+                      SizedBox(width: AppTheme.s12 - 2),
+                      Text(
+                        'Profile',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.sidebarText,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 16,
-                color: AppTheme.sidebarTextMuted,
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+      ],
     );
   }
 }

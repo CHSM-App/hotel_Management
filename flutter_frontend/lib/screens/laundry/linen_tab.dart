@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/laundry.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../bookings/receipt_download.dart';
 import '../theme.dart';
@@ -431,14 +432,12 @@ class _LinenSpreadsheet extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: totalWidth,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -455,15 +454,16 @@ class _LinenSpreadsheet extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < items.length; i++)
-                  _SpreadsheetRow(
-                    item: items[i],
-                    shaded: i.isOdd,
-                    managedInAssets: managedInAssets,
-                    onEdit: () => onEdit(items[i]),
-                    onLoss: () => onLoss(items[i]),
-                    onHide: () => onHide(items[i]),
-                  ),
+              rows: [
+                      for (var i = 0; i < items.length; i++)
+                        _SpreadsheetRow(
+                          item: items[i],
+                          shaded: i.isOdd,
+                          managedInAssets: managedInAssets,
+                          onEdit: () => onEdit(items[i]),
+                          onLoss: () => onLoss(items[i]),
+                          onHide: () => onHide(items[i]),
+                        ),
               ],
             ),
           ),
@@ -951,14 +951,12 @@ class _HistoryTableState extends State<_HistoryTable> {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.rMedium),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      child: HScrollTable(
+        rowsScrollbar: true,
         child: SizedBox(
           width: totalWidth,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
+          child: StickyHeaderTable(
+            header: Container(
                 decoration: const BoxDecoration(
                   color: AppTheme.sidebarBrandWash,
                   border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -976,8 +974,9 @@ class _HistoryTableState extends State<_HistoryTable> {
                   ],
                 ),
               ),
-              for (var i = 0; i < movements.length; i++)
-                _HistoryRow(movement: movements[i], shaded: i.isOdd),
+            rows: [
+                    for (var i = 0; i < movements.length; i++)
+                      _HistoryRow(movement: movements[i], shaded: i.isOdd),
             ],
           ),
         ),

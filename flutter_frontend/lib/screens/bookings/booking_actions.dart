@@ -458,13 +458,13 @@ class _LateCheckoutPrimaryButtonState extends State<_LateCheckoutPrimaryButton> 
               end: Alignment.bottomRight,
               colors: _down
                   ? const [AppTheme.sidebarBrand, AppTheme.sidebarBrandInk]
-                  : const [Color(0xFF7C5CE8), AppTheme.sidebarBrand],
+                  : const [Color(0xFF1457AD), AppTheme.sidebarBrand],
             ),
             borderRadius: BorderRadius.circular(AppTheme.rMedium),
             boxShadow: _down
                 ? null
                 : const [
-                    BoxShadow(color: Color(0x4A5B3FD9), offset: Offset(0, 10), blurRadius: 22),
+                    BoxShadow(color: Color(0x4A1457AD), offset: Offset(0, 10), blurRadius: 22),
                   ],
           ),
           child: Center(

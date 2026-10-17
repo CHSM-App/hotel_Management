@@ -58,20 +58,30 @@ class TokenNotifier extends StateNotifier<TokenState> {
 
   /// Read the session back off disk at boot.
   Future<void> loadSession() async {
-    final stored = await TokenStorage.getSession();
-    if (stored == null) {
+    // Secure storage can throw or hang on a device whose keystore is
+    // unreadable (after a reinstall or restore). main() awaits this before
+    // runApp, so an unguarded failure leaves the phone on a black screen —
+    // fall back to signed-out instead.
+    try {
+      final stored = await TokenStorage.getSession().timeout(
+        const Duration(seconds: 5),
+      );
+      if (stored == null) {
+        state = const TokenState(isLoading: false);
+        return;
+      }
+      final name = await TokenStorage.getValue('NAME');
+      final lodgeId = await TokenStorage.getValue('LODGE_ID');
+      state = TokenState(
+        token: stored['token'],
+        role: stored['role'],
+        name: name,
+        lodgeId: lodgeId == null ? null : int.tryParse(lodgeId),
+        isLoading: false,
+      );
+    } catch (_) {
       state = const TokenState(isLoading: false);
-      return;
     }
-    final name = await TokenStorage.getValue('NAME');
-    final lodgeId = await TokenStorage.getValue('LODGE_ID');
-    state = TokenState(
-      token: stored['token'],
-      role: stored['role'],
-      name: name,
-      lodgeId: lodgeId == null ? null : int.tryParse(lodgeId),
-      isLoading: false,
-    );
   }
 
   /// Keep the session that /auth/login just handed back.

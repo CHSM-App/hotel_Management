@@ -712,6 +712,9 @@ class NeuField extends StatefulWidget {
 }
 
 class _NeuFieldState extends State<NeuField> {
+  // Phone fields are always digits-only and capped at 10 unless a maxLength is given.
+  bool get _isPhone => widget.keyboardType == TextInputType.phone;
+
   FocusNode? _ownNode;
   bool _focused = false;
 
@@ -782,7 +785,7 @@ class _NeuFieldState extends State<NeuField> {
               if (widget.labelAction != null) widget.labelAction!,
             ],
           ),
-          const SizedBox(height: AppTheme.s8),
+          SizedBox(height: widget.dense ? AppTheme.s4 : AppTheme.s8),
         ],
         NeuPressed(
           focused: _focused,
@@ -809,8 +812,10 @@ class _NeuFieldState extends State<NeuField> {
                       ? const [_UppercaseFormatter()]
                       : widget.forceCapitalizeWords
                           ? const [_CapitalizeWordsFormatter()]
-                          : null,
-                  maxLength: widget.maxLength,
+                          : _isPhone
+                              ? [FilteringTextInputFormatter.digitsOnly]
+                              : null,
+                  maxLength: widget.maxLength ?? (_isPhone ? 10 : null),
                   readOnly: widget.readOnly,
                   onTap: widget.onTap,
                   onChanged: widget.onChanged,
@@ -829,7 +834,7 @@ class _NeuFieldState extends State<NeuField> {
                     counterText: '',
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(
-                      vertical: widget.dense ? 8 : 10,
+                      vertical: widget.dense ? 6 : 10,
                     ),
                   ),
                 ),

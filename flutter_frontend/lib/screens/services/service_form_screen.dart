@@ -215,30 +215,26 @@ class _ServiceFormScreenState extends ConsumerState<ServiceFormScreen> {
         title: Row(
           children: [
             Container(
-              width: 34,
-              height: 34,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
                 borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
                 boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x335A67D8),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
+                  BoxShadow(color: Color(0x331457AD), offset: Offset(0, 3), blurRadius: 8),
                 ],
               ),
               child: Icon(
                 _isEdit ? Icons.edit_rounded : Icons.room_service_rounded,
                 color: Colors.white,
-                size: 18,
+                size: 16,
               ),
             ),
-            const SizedBox(width: AppTheme.s12),
+            const SizedBox(width: AppTheme.s8),
             Expanded(
               child: Text(
                 _isEdit ? 'Edit service' : 'Add service',
@@ -253,9 +249,7 @@ class _ServiceFormScreenState extends ConsumerState<ServiceFormScreen> {
           child: Container(
             height: 3,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x005A67D8)],
-              ),
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
             ),
           ),
         ),
@@ -265,143 +259,158 @@ class _ServiceFormScreenState extends ConsumerState<ServiceFormScreen> {
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
-            child: ListView(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(
-                AppTheme.s12,
-                AppTheme.s12,
-                AppTheme.s12,
-                AppTheme.s16,
-              ),
+            child: Column(
               children: [
-                if (_error != null) ...[
-                  _ErrorBanner(_error!),
-                  const SizedBox(height: AppTheme.s12),
-                ],
-
-                NeuCard(
-                  radius: AppTheme.rLarge,
-                  shadow: AppTheme.elevated,
-                  padding: const EdgeInsets.all(AppTheme.s16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                Expanded(
+                  child: ListView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s12),
                     children: [
-                      const SectionLabel('Details', number: 1, icon: Icons.room_service_rounded),
-                      const SizedBox(height: AppTheme.s12),
-                      NeuField(
-                        key: _nameKey,
-                        controller: _name,
-                        label: 'Service name',
-                        required: true,
-                        errorText: _nameError,
-                        hint: 'Private pool',
-                        forceCapitalizeWords: true,
-                        onChanged: (_) => setState(() {}),
-                        dense: true,
-                      ),
-                      const SizedBox(height: AppTheme.s12),
-                      Text('Photo (optional)', style: Theme.of(context).textTheme.bodySmall),
-                      const SizedBox(height: AppTheme.s8),
-                      _photoPicker(),
-
-                      const SectionDivider(),
-                      const SectionLabel('Pricing', number: 2, icon: Icons.payments_rounded),
-                      const SizedBox(height: AppTheme.s12),
-                      const Text(
-                        'Price is what the guest pays, GST included. Past use keeps its old price.',
-                        style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
-                      ),
-                      const SizedBox(height: AppTheme.s12),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: NeuField(
-                              key: _priceKey,
-                              controller: _price,
-                              label: 'Price',
-                              required: true,
-                              errorText: _priceError,
-                              keyboardType: TextInputType.number,
-                              onChanged: (_) => setState(() {}),
-                              dense: true,
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.s12),
-                          Expanded(
-                            child: NeuField(
-                              controller: _gst,
-                              label: 'GST %',
-                              keyboardType: TextInputType.number,
-                              dense: true,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppTheme.s12),
-                      const RequiredLabel('Per'),
-                      const SizedBox(height: AppTheme.s8),
-                      KeyedSubtree(
-                        key: _unitKey,
-                        child: OptionDropdown(
-                          values: [...kServiceUnitSuggestions, '__other'],
-                          labels: {for (final u in kServiceUnitSuggestions) u: u, '__other': 'Other…'},
-                          selected: isOther ? '__other' : _unit,
-                          hasError: _unitError != null,
-                          onSelect: (v) => setState(() => _unit = v == '__other' ? null : v),
-                        ),
-                      ),
-                      if (isOther) ...[
+                      if (_error != null) ...[
+                        _ErrorBanner(_error!),
                         const SizedBox(height: AppTheme.s8),
-                        NeuField(
-                          controller: _unitOther,
-                          label: '',
-                          hint: 'Type your own',
-                          errorText: _unitError,
-                          onChanged: (_) => setState(() {}),
-                          dense: true,
-                        ),
                       ],
+                      NeuCard(
+                        radius: AppTheme.rLarge,
+                        shadow: AppTheme.elevated,
+                        padding: const EdgeInsets.all(AppTheme.s12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SectionLabel('Details', number: 1, icon: Icons.room_service_rounded),
+                            const SizedBox(height: AppTheme.s8),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(width: 72, child: _photoPicker()),
+                                const SizedBox(width: AppTheme.s12),
+                                Expanded(
+                                  child: NeuField(
+                                    key: _nameKey,
+                                    controller: _name,
+                                    label: 'Service name',
+                                    required: true,
+                                    errorText: _nameError,
+                                    hint: 'Private pool',
+                                    forceCapitalizeWords: true,
+                                    onChanged: (_) => setState(() {}),
+                                    dense: true,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppTheme.s4),
+                            const Text(
+                              'Photo is optional.',
+                              style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                            ),
+                            const SectionDivider(),
+                            const SectionLabel('Pricing', number: 2, icon: Icons.payments_rounded),
+                            const SizedBox(height: AppTheme.s8),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: NeuField(
+                                    key: _priceKey,
+                                    controller: _price,
+                                    label: 'Price (incl. GST)',
+                                    required: true,
+                                    errorText: _priceError,
+                                    keyboardType: TextInputType.number,
+                                    onChanged: (_) => setState(() {}),
+                                    dense: true,
+                                  ),
+                                ),
+                                const SizedBox(width: AppTheme.s12),
+                                Expanded(
+                                  child: NeuField(
+                                    controller: _gst,
+                                    label: 'GST %',
+                                    keyboardType: TextInputType.number,
+                                    dense: true,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppTheme.s8),
+                            const RequiredLabel('Per'),
+                            const SizedBox(height: AppTheme.s4),
+                            KeyedSubtree(
+                              key: _unitKey,
+                              child: OptionDropdown(
+                                values: [...kServiceUnitSuggestions, '__other'],
+                                labels: {for (final u in kServiceUnitSuggestions) u: u, '__other': 'Other…'},
+                                selected: isOther ? '__other' : _unit,
+                                hasError: _unitError != null,
+                                onSelect: (v) => setState(() => _unit = v == '__other' ? null : v),
+                              ),
+                            ),
+                            if (isOther) ...[
+                              const SizedBox(height: AppTheme.s8),
+                              NeuField(
+                                controller: _unitOther,
+                                label: '',
+                                hint: 'Type your own',
+                                errorText: _unitError,
+                                onChanged: (_) => setState(() {}),
+                                dense: true,
+                              ),
+                            ],
+                            const SizedBox(height: AppTheme.s8),
+                            const Text(
+                              'Past use keeps its old price.',
+                              style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: AppTheme.s16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: NeuButton(
-                        onPressed: state.submitting ? null : () => Navigator.of(context).pop(),
-                        padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-                        child: const Text('Cancel'),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s8),
+                  decoration: const BoxDecoration(
+                    color: AppTheme.bg,
+                    border: Border(top: BorderSide(color: AppTheme.border)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: NeuButton(
+                          onPressed: state.submitting ? null : () => Navigator.of(context).pop(),
+                          padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                          child: const Text('Cancel'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: AppTheme.s12),
-                    Expanded(
-                      flex: 2,
-                      child: NeuButton(
-                        primary: true,
-                        onPressed: state.submitting ? null : _submit,
-                        padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-                        child: state.submitting
-                            ? const SizedBox(
-                                height: 16,
-                                width: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.save_rounded, color: Colors.white, size: 18),
-                                    SizedBox(width: 4),
-                                    Text('Save'),
-                                  ],
+                      const SizedBox(width: AppTheme.s12),
+                      Expanded(
+                        flex: 2,
+                        child: NeuButton(
+                          primary: true,
+                          onPressed: state.submitting ? null : _submit,
+                          padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
+                          child: state.submitting
+                              ? const SizedBox(
+                                  height: 16,
+                                  width: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.save_rounded, color: Colors.white, size: 18),
+                                      SizedBox(width: 4),
+                                      Text('Save'),
+                                    ],
+                                  ),
                                 ),
-                              ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),

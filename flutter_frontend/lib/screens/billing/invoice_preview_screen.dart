@@ -43,117 +43,123 @@ class InvoicePreviewScreen extends ConsumerWidget {
               canChangeOrientation: false,
               canChangePageFormat: false,
               canDebug: false,
+              scrollViewDecoration: const BoxDecoration(
+                color: Color(0xFFECEEF2),
+              ),
+              previewPageMargin: const EdgeInsets.all(AppTheme.s12),
               actions: const [],
             ),
           ),
-          SafeArea(
-            top: false,
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
-                child: Padding(
-                  padding: const EdgeInsets.all(AppTheme.s12),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: NeuButton(
-                              onPressed: () => _printPdf(context, ref),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppTheme.s8,
-                                vertical: AppTheme.s12,
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.print_rounded, size: 18, color: AppTheme.heading),
-                                  SizedBox(width: 6),
-                                  Flexible(
-                                    child: Text('Print', overflow: TextOverflow.ellipsis),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.s8),
-                          Expanded(
-                            child: NeuButton(
-                              onPressed: () => _downloadPdf(context, ref),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppTheme.s8,
-                                vertical: AppTheme.s12,
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.download_rounded, size: 18, color: AppTheme.heading),
-                                  SizedBox(width: 6),
-                                  Flexible(
-                                    child: Text('Download', overflow: TextOverflow.ellipsis),
-                                  ),
-                                ],
+          DecoratedBox(
+            decoration: const BoxDecoration(
+              color: AppTheme.card,
+              border: Border(top: BorderSide(color: AppTheme.border2)),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 12,
+                  offset: Offset(0, -2),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: AppTheme.maxContentWidth,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTheme.s12,
+                      AppTheme.s8,
+                      AppTheme.s12,
+                      AppTheme.s4,
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _ActionButton(
+                                icon: Icons.print_rounded,
+                                label: 'Print',
+                                onPressed: () => _printPdf(context, ref),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: AppTheme.s8),
-                          Expanded(
-                            child: NeuButton(
-                              onPressed: () => _sharePdf(context, ref),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppTheme.s8,
-                                vertical: AppTheme.s12,
+                            const SizedBox(width: AppTheme.s8),
+                            Expanded(
+                              child: _ActionButton(
+                                icon: Icons.download_rounded,
+                                label: 'Download',
+                                onPressed: () => _downloadPdf(context, ref),
                               ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.share_rounded, size: 18, color: AppTheme.heading),
-                                  SizedBox(width: 6),
-                                  Flexible(
-                                    child: Text('Share', overflow: TextOverflow.ellipsis),
+                            ),
+                            const SizedBox(width: AppTheme.s8),
+                            Expanded(
+                              child: _ActionButton(
+                                icon: Icons.share_rounded,
+                                label: 'Share',
+                                onPressed: () => _sharePdf(context, ref),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (invoice.status == 'ISSUED') ...[
+                          const SizedBox(height: AppTheme.s8),
+                          // One press: the bill is sent to the guest's WhatsApp
+                          // number by the server, link only — no chat to attach it
+                          // in, same as the web billing screen's own button.
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF25D366),
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(0, 40),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: AppTheme.s8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppTheme.rMedium,
                                   ),
-                                ],
+                                ),
+                                textStyle: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onPressed: () => _shareOnWhatsApp(context, ref),
+                              icon: const Icon(Icons.send_rounded, size: 18),
+                              label: const Text('Send this bill on WhatsApp'),
+                            ),
+                          ),
+                        ],
+                        if (!invoice.isVoid) ...[
+                          Align(
+                            alignment: Alignment.center,
+                            child: TextButton.icon(
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: () => _confirmVoid(context, ref),
+                              icon: const Icon(
+                                Icons.block_rounded,
+                                size: 16,
+                                color: AppTheme.danger,
+                              ),
+                              label: Text(
+                                'Void this bill',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: AppTheme.danger),
                               ),
                             ),
                           ),
                         ],
-                      ),
-                      if (invoice.status == 'ISSUED') ...[
-                        const SizedBox(height: AppTheme.s8),
-                        // One press: the bill is sent to the guest's WhatsApp
-                        // number by the server, link only — no chat to attach it
-                        // in, same as the web billing screen's own button.
-                        NeuButton(
-                          expand: true,
-                          onPressed: () => _shareOnWhatsApp(context, ref),
-                          padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.send_rounded, size: 18, color: Color(0xFF25D366)),
-                              SizedBox(width: 8),
-                              Text('Send this bill on WhatsApp'),
-                            ],
-                          ),
-                        ),
                       ],
-                      if (!invoice.isVoid) ...[
-                        const SizedBox(height: AppTheme.s4),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () => _confirmVoid(context, ref),
-                            child: Text(
-                              'Void this bill',
-                              style: Theme.of(
-                                context,
-                              ).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -231,7 +237,10 @@ class InvoicePreviewScreen extends ConsumerWidget {
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(apiErrorMessage(e)), backgroundColor: AppTheme.heading),
+        SnackBar(
+          content: Text(apiErrorMessage(e)),
+          backgroundColor: AppTheme.heading,
+        ),
       );
     }
   }
@@ -262,7 +271,10 @@ class InvoicePreviewScreen extends ConsumerWidget {
         builder: (context, setState) {
           return AlertDialog(
             backgroundColor: AppTheme.bg,
-            title: const Text('Void this bill?', style: TextStyle(color: AppTheme.heading)),
+            title: const Text(
+              'Void this bill?',
+              style: TextStyle(color: AppTheme.heading),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -299,7 +311,10 @@ class InvoicePreviewScreen extends ConsumerWidget {
                   }
                   Navigator.pop(context, value);
                 },
-                child: const Text('Void', style: TextStyle(color: AppTheme.danger)),
+                child: const Text(
+                  'Void',
+                  style: TextStyle(color: AppTheme.danger),
+                ),
               ),
             ],
           );
@@ -308,7 +323,9 @@ class InvoicePreviewScreen extends ConsumerWidget {
     );
 
     if (reason == null || reason.isEmpty || !context.mounted) return;
-    final ok = await ref.read(billingViewModelProvider.notifier).voidInvoice(invoice.id, reason);
+    final ok = await ref
+        .read(billingViewModelProvider.notifier)
+        .voidInvoice(invoice.id, reason);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -317,5 +334,52 @@ class InvoicePreviewScreen extends ConsumerWidget {
       ),
     );
     if (ok) Navigator.of(context).pop();
+  }
+}
+
+/// Icon over label so "Download" fits a third of a narrow phone.
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppTheme.heading,
+        side: const BorderSide(color: AppTheme.border2),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        ),
+        minimumSize: const Size(0, 38),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s4,
+          vertical: AppTheme.s8,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AppTheme.accent),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

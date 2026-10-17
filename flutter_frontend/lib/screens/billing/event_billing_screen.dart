@@ -5,6 +5,7 @@ import '../../domain/models/event_booking.dart';
 import '../../domain/models/invoice.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/billing_viewmodel.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/pill_tabs.dart';
@@ -104,16 +105,19 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
     }
 
     return RefreshIndicator(
+      // In table view the scroll is the rows', a level below the
+      // table's horizontal scroller.
+      notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
       onRefresh: _load,
       color: AppTheme.accent,
-      child: ListView(
+      child: TablePageBody(
+        table: _view == 'table',
         padding: const EdgeInsets.fromLTRB(
           AppTheme.s12,
           AppTheme.s8,
           AppTheme.s12,
           AppTheme.s24,
         ),
-        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           toggle,
           const SizedBox(height: AppTheme.s12),
@@ -333,14 +337,12 @@ class EventReadyToBillTable extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(
@@ -380,13 +382,14 @@ class EventReadyToBillTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < events.length; i++)
-                  _EventReadyToBillRow(
-                    event: events[i],
-                    shaded: i.isOdd,
-                    onBill: () => onBill(events[i]),
-                  ),
-                _EventReadyToBillFooter(events: events),
+              rows: [
+                      for (var i = 0; i < events.length; i++)
+                        _EventReadyToBillRow(
+                          event: events[i],
+                          shaded: i.isOdd,
+                          onBill: () => onBill(events[i]),
+                        ),
+                      _EventReadyToBillFooter(events: events),
               ],
             ),
           ),

@@ -8,6 +8,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/orders_viewmodel.dart';
 import '../../widgets/compact_date_picker.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../billing/invoice_preview_screen.dart';
 import '../billing/issue_food_bill_screen.dart';
@@ -100,18 +101,21 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
+          // In table view the scroll is the rows', a level below the
+          // table's horizontal scroller.
+          notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
           onRefresh: () => (!state.myOrdersMode && state.tab == OrdersTab.queue)
               ? vm.loadQueue()
               : vm.loadHistory(),
           color: AppTheme.accent,
-          child: ListView(
+          child: TablePageBody(
+            table: state.listView == 'sheet',
             padding: const EdgeInsets.fromLTRB(
               AppTheme.s16,
               AppTheme.s8,
               AppTheme.s16,
               88,
             ),
-            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               if (!widget.hideTabs) ...[
                 _TabRow(
@@ -245,7 +249,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           if (pending > 0)
             Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.s8),
@@ -257,7 +261,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s12),
+            padding: const EdgeInsets.only(bottom: AppTheme.s8),
             child: _SectionHeader(
               label: 'Live orders',
               count: filtered.length,
@@ -667,14 +671,14 @@ class _ResponsiveCards extends StatelessWidget {
             children: [
               for (final card in cards)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s12),
+                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
                   child: card,
                 ),
             ],
           );
         }
 
-        const spacing = AppTheme.s12;
+        const spacing = AppTheme.s8;
         final itemWidth = (width - spacing * (columns - 1)) / columns;
         return Wrap(
           spacing: spacing,
@@ -887,7 +891,8 @@ class OrdersViewToggle extends StatelessWidget {
           onTap: () => onChanged(value),
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
           child: Container(
-            padding: const EdgeInsets.all(AppTheme.s8),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
             decoration: BoxDecoration(
               color: on ? AppTheme.accent.withValues(alpha: 0.1) : null,
               borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -904,16 +909,21 @@ class OrdersViewToggle extends StatelessWidget {
 
     return Align(
       alignment: Alignment.centerRight,
-      child: NeuCard(
-        radius: AppTheme.rSmall,
-        shadow: AppTheme.subtle,
-        padding: const EdgeInsets.all(2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            button('sheet', Icons.table_rows_rounded, 'Spreadsheet view'),
-            button('cards', Icons.view_agenda_rounded, 'Card view'),
-          ],
+      // Same 50px height as _SearchField so the two sit level in a row.
+      child: SizedBox(
+        height: 50,
+        child: NeuCard(
+          radius: AppTheme.rSmall,
+          shadow: AppTheme.subtle,
+          padding: const EdgeInsets.all(2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              button('sheet', Icons.table_rows_rounded, 'Spreadsheet view'),
+              button('cards', Icons.view_agenda_rounded, 'Card view'),
+            ],
+          ),
         ),
       ),
     );
@@ -1202,10 +1212,10 @@ class _OrderCard extends ConsumerWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppTheme.s12,
+                AppTheme.s8 + 2,
+                AppTheme.s4 + 2,
+                AppTheme.s8 + 2,
                 AppTheme.s8,
-                AppTheme.s12,
-                AppTheme.s12,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2130,24 +2140,25 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: _totalWidth,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _sheetRow(header: true, cells: headerCells),
-                for (var i = 0; i < widget.orders.length; i++) ...[
-                  _sheetRow(
-                    shaded: i.isOdd,
-                    accent: _OrderCard._statusColour(widget.orders[i].status),
-                    cells: _rowCells(context, widget.orders[i]),
-                  ),
-                  if (_open.contains(widget.orders[i].id))
-                    _dishesExpanded(widget.orders[i], shaded: i.isOdd),
-                ],
-                _sheetFooter(),
+            child: StickyHeaderTable(
+              header: _sheetRow(header: true, cells: headerCells),
+              rows: [
+                      for (var i = 0; i < widget.orders.length; i++) ...[
+                        _sheetRow(
+                          shaded: i.isOdd,
+                          accent: _OrderCard._statusColour(
+                            widget.orders[i].status,
+                          ),
+                          cells: _rowCells(context, widget.orders[i]),
+                        ),
+                        if (_open.contains(widget.orders[i].id))
+                          _dishesExpanded(widget.orders[i], shaded: i.isOdd),
+                      ],
+                      _sheetFooter(),
               ],
             ),
           ),
@@ -2255,7 +2266,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
                 child: Padding(
                   padding: EdgeInsets.symmetric(
                     horizontal: AppTheme.s8,
-                    vertical: header ? AppTheme.s12 : AppTheme.s8 + 2,
+                    vertical: header ? AppTheme.s8 : AppTheme.s4 + 1,
                   ),
                   child: cells[i],
                 ),

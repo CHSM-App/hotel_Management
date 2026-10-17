@@ -44,6 +44,10 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
   final _quantity = TextEditingController(text: '1');
   final _headcount = TextEditingController(text: '1');
   int? _bookingId;
+
+  /// Whether the guest is picked from the in-house list rather than typed in
+  /// as a walk-in.
+  bool _staying = false;
   final _guestName = TextEditingController();
   final _guestPhone = TextEditingController();
 
@@ -82,6 +86,7 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
       _quantity.text = '${u.quantity}';
       _headcount.text = '${u.headcount}';
       _bookingId = u.bookingId;
+      _staying = u.bookingId != null;
       _guestName.text = u.guestName ?? '';
       _guestPhone.text = u.guestPhone ?? '';
     }
@@ -89,6 +94,7 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
 
   String? get _guestError {
     if (!_submitAttempted || _bookingId != null) return null;
+    if (_staying) return 'Pick a staying guest.';
     return _guestName.text.trim().isEmpty ? "Enter the walk-in's name, or pick a staying guest." : null;
   }
 
@@ -178,26 +184,22 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
         title: Row(
           children: [
             Container(
-              width: 34,
-              height: 34,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 ),
                 borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
                 boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x335A67D8),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
+                  BoxShadow(color: Color(0x331457AD), offset: Offset(0, 3), blurRadius: 8),
                 ],
               ),
-              child: const Icon(Icons.room_service_rounded, color: Colors.white, size: 18),
+              child: const Icon(Icons.room_service_rounded, color: Colors.white, size: 16),
             ),
-            const SizedBox(width: AppTheme.s12),
+            const SizedBox(width: AppTheme.s8),
             Expanded(
               child: Text(_isEditing ? 'Edit service use' : 'Start a service', overflow: TextOverflow.ellipsis, maxLines: 1),
             ),
@@ -208,9 +210,7 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
           child: Container(
             height: 3,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x005A67D8)],
-              ),
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
             ),
           ),
         ),
@@ -220,116 +220,155 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
-            child: ListView(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(
-                AppTheme.s12,
-                AppTheme.s12,
-                AppTheme.s12,
-                AppTheme.s16,
-              ),
+            child: Column(
               children: [
-                if (_error != null) ...[
-                  _ErrorBanner(_error!),
-                  const SizedBox(height: AppTheme.s12),
-                ],
-                if (active.isEmpty) ...[
-                  const _ErrorBanner('Add a service under "Services & prices" first.'),
-                  const SizedBox(height: AppTheme.s12),
-                ],
-
-                NeuCard(
-                  radius: AppTheme.rLarge,
-                  shadow: AppTheme.elevated,
-                  padding: const EdgeInsets.all(AppTheme.s16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                Expanded(
+                  child: ListView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s12),
                     children: [
-                      const SectionLabel('Service', number: 1, icon: Icons.room_service_rounded),
-                      const SizedBox(height: AppTheme.s12),
-                      const RequiredLabel('Service'),
-                      const SizedBox(height: AppTheme.s8),
-                      KeyedSubtree(
-                        key: _serviceKey,
-                        child: OptionDropdown(
-                          values: active.map((s) => '${s.id}').toList(),
-                          labels: {for (final s in active) '${s.id}': '${s.name} — ${formatPrice(s.price)} per ${s.unitLabel}'},
-                          selected: _serviceId?.toString(),
-                          hasError: _serviceError != null,
-                          onSelect: (v) {
-                            if (!_isEditing) setState(() => _serviceId = int.parse(v));
-                          },
-                          hint: 'Choose…',
-                        ),
-                      ),
-                      if (_serviceError != null) ...[
-                        const SizedBox(height: AppTheme.s4),
-                        Text(_serviceError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                      if (_error != null) ...[
+                        _ErrorBanner(_error!),
+                        const SizedBox(height: AppTheme.s8),
                       ],
-                      const SizedBox(height: AppTheme.s12),
-                      NeuField(
-                        key: _quantityKey,
-                        controller: _quantity,
-                        label: unitLabel != null ? 'Quantity ($unitLabel)' : 'Quantity',
-                        required: true,
-                        errorText: _quantityError,
-                        keyboardType: TextInputType.number,
-                        onChanged: (_) => setState(() {}),
-                        dense: true,
-                      ),
-const SizedBox(height: AppTheme.s12),                      NeuField(                        key: _headcountKey,                        controller: _headcount,                        label: 'Head count',                        required: true,                        errorText: _headcountError,                        keyboardType: TextInputType.number,                        onChanged: (_) => setState(() {}),                        dense: true,                      ),
-
-                      const SectionDivider(),
-                      const SectionLabel('Guest', number: 2, icon: Icons.person_rounded),
-                      const SizedBox(height: AppTheme.s12),
-                      const Text(
-                        "Pick a guest staying in-house, or type a walk-in's name.",
-                        style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
-                      ),
-                      const SizedBox(height: AppTheme.s8),
-                      KeyedSubtree(
-                        key: _guestKey,
-                        child: OptionDropdown(
-                          values: state.inHouseGuests.map((g) => '${g.bookingId}').toList(),
-                          labels: {for (final g in state.inHouseGuests) '${g.bookingId}': 'Room ${g.roomNumber} · ${g.guestName}'},
-                          selected: _bookingId?.toString(),
-                          onSelect: (v) => setState(() => _bookingId = int.parse(v)),
-                          hint: 'Walk-in / not staying',
-                        ),
-                      ),
-                      if (_bookingId != null)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton(
-                            onPressed: () => setState(() => _bookingId = null),
-                            child: const Text('Walk-in / not staying instead'),
-                          ),
-                        ),
-                      if (_bookingId == null) ...[
-                        const SizedBox(height: AppTheme.s12),
-                        NeuField(
-                          controller: _guestName,
-                          label: 'Name',
-                          required: true,
-                          errorText: _guestError,
-                          forceCapitalizeWords: true,
-                          onChanged: (_) => setState(() {}),
-                          dense: true,
-                        ),
-                        const SizedBox(height: AppTheme.s12),
-                        NeuField(
-                          controller: _guestPhone,
-                          label: 'Phone',
-                          keyboardType: TextInputType.phone,
-                          dense: true,
-                        ),
+                      if (active.isEmpty) ...[
+                        const _ErrorBanner('Add a service under "Services & prices" first.'),
+                        const SizedBox(height: AppTheme.s8),
                       ],
+                      NeuCard(
+                        radius: AppTheme.rLarge,
+                        shadow: AppTheme.elevated,
+                        padding: const EdgeInsets.all(AppTheme.s12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SectionLabel('Service', number: 1, icon: Icons.room_service_rounded),
+                            const SizedBox(height: AppTheme.s8),
+                            const RequiredLabel('Service'),
+                            const SizedBox(height: AppTheme.s4),
+                            KeyedSubtree(
+                              key: _serviceKey,
+                              child: OptionDropdown(
+                                values: active.map((s) => '${s.id}').toList(),
+                                labels: {
+                                  for (final s in active)
+                                    '${s.id}': '${s.name} — ${formatPrice(s.price)} per ${s.unitLabel}',
+                                },
+                                selected: _serviceId?.toString(),
+                                hasError: _serviceError != null,
+                                onSelect: (v) {
+                                  if (!_isEditing) setState(() => _serviceId = int.parse(v));
+                                },
+                                hint: 'Choose…',
+                              ),
+                            ),
+                            if (_serviceError != null) ...[
+                              const SizedBox(height: AppTheme.s4),
+                              Text(_serviceError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                            ],
+                            const SizedBox(height: AppTheme.s8),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: NeuField(
+                                    key: _quantityKey,
+                                    controller: _quantity,
+                                    label: unitLabel != null ? 'Quantity ($unitLabel)' : 'Quantity',
+                                    required: true,
+                                    errorText: _quantityError,
+                                    keyboardType: TextInputType.number,
+                                    onChanged: (_) => setState(() {}),
+                                    dense: true,
+                                  ),
+                                ),
+                                const SizedBox(width: AppTheme.s12),
+                                Expanded(
+                                  child: NeuField(
+                                    key: _headcountKey,
+                                    controller: _headcount,
+                                    label: 'Head count',
+                                    required: true,
+                                    errorText: _headcountError,
+                                    keyboardType: TextInputType.number,
+                                    onChanged: (_) => setState(() {}),
+                                    dense: true,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SectionDivider(),
+                            const SectionLabel('Guest', number: 2, icon: Icons.person_rounded),
+                            const SizedBox(height: AppTheme.s8),
+                            ModeToggle(
+                              expanded: true,
+                              options: const {'walkin': 'Walk-in', 'staying': 'Staying guest'},
+                              selected: _staying ? 'staying' : 'walkin',
+                              onSelect: (v) => setState(() {
+                                _staying = v == 'staying';
+                                if (!_staying) _bookingId = null;
+                              }),
+                            ),
+                            const SizedBox(height: AppTheme.s8),
+                            if (_staying) ...[
+                              KeyedSubtree(
+                                key: _guestKey,
+                                child: OptionDropdown(
+                                  values: state.inHouseGuests.map((g) => '${g.bookingId}').toList(),
+                                  labels: {
+                                    for (final g in state.inHouseGuests)
+                                      '${g.bookingId}': 'Room ${g.roomNumber} · ${g.guestName}',
+                                  },
+                                  selected: _bookingId?.toString(),
+                                  hasError: _guestError != null,
+                                  onSelect: (v) => setState(() => _bookingId = int.parse(v)),
+                                  hint: 'Choose a staying guest',
+                                ),
+                              ),
+                              if (_guestError != null) ...[
+                                const SizedBox(height: AppTheme.s4),
+                                Text(_guestError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                              ],
+                            ] else
+                              KeyedSubtree(
+                                key: _guestKey,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: NeuField(
+                                        controller: _guestName,
+                                        label: 'Name',
+                                        required: true,
+                                        errorText: _guestError,
+                                        forceCapitalizeWords: true,
+                                        onChanged: (_) => setState(() {}),
+                                        dense: true,
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppTheme.s12),
+                                    Expanded(
+                                      child: NeuField(
+                                        controller: _guestPhone,
+                                        label: 'Phone',
+                                        keyboardType: TextInputType.phone,
+                                        dense: true,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: AppTheme.s16),
                 _Footer(
                   amount: amount,
+                  breakdown: unitPrice == null
+                      ? null
+                      : '${formatPrice(unitPrice)} × ${_quantity.text.trim().isEmpty ? 0 : _quantity.text.trim()} × ${_headcount.text.trim().isEmpty ? 0 : _headcount.text.trim()}',
                   isEditing: _isEditing,
                   submitting: state.submitting,
                   onCancel: () => Navigator.of(context).pop(),
@@ -351,6 +390,7 @@ const SizedBox(height: AppTheme.s12),                      NeuField(            
 /// screen's own rate summary gets.
 class _Footer extends StatelessWidget {
   final num? amount;
+  final String? breakdown;
   final bool isEditing;
   final bool submitting;
   final VoidCallback onCancel;
@@ -358,6 +398,7 @@ class _Footer extends StatelessWidget {
 
   const _Footer({
     required this.amount,
+    this.breakdown,
     this.isEditing = false,
     required this.submitting,
     required this.onCancel,
@@ -366,7 +407,14 @@ class _Footer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Container(
+      padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s8),
+      decoration: const BoxDecoration(
+        color: AppTheme.bg,
+        border: Border(top: BorderSide(color: AppTheme.border)),
+      ),
+      child: Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         if (amount != null) ...[
           Container(
@@ -392,8 +440,9 @@ class _Footer extends StatelessWidget {
                 const SizedBox(width: AppTheme.s8),
                 Expanded(
                   child: Text(
-                    'Amount',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w500),
+                    breakdown == null ? 'Amount' : 'Amount · $breakdown',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w500),
                   ),
                 ),
                 Text(
@@ -407,7 +456,7 @@ class _Footer extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
         ],
         Row(
           children: [
@@ -447,6 +496,7 @@ class _Footer extends StatelessWidget {
           ],
         ),
       ],
+      ),
     );
   }
 }

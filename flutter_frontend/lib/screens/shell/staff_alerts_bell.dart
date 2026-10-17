@@ -63,8 +63,8 @@ class _StaffAlertsBellState extends State<StaffAlertsBell> with SingleTickerProv
     ]).animate(_controller);
 
     _pulse = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.25), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 1.25, end: 1.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.12), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.12, end: 1.0), weight: 1),
       TweenSequenceItem(tween: ConstantTween(1.0), weight: 8),
     ]).animate(CurvedAnimation(parent: _controller, curve: const Interval(0, 0.25)));
 
@@ -96,27 +96,47 @@ class _StaffAlertsBellState extends State<StaffAlertsBell> with SingleTickerProv
     return IconButton(
       tooltip: count > 0 ? 'Staff alerts — $count ${count == 1 ? 'item' : 'items'}' : 'Staff alerts',
       visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.all(4),
       onPressed: () => _open(context),
       icon: AnimatedBuilder(
         animation: _controller,
-        builder: (context, child) => Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Transform.rotate(
-              angle: _ring.value,
-              alignment: Alignment.topCenter,
-              child: const Icon(Icons.notifications_outlined, color: AppTheme.text, size: 22),
-            ),
-            if (count > 0)
-              Positioned(
-                right: -6,
-                top: -4,
-                child: Transform.scale(
-                  scale: _pulse.value,
-                  child: _CountBadge(count: count),
+        builder: (context, child) => SizedBox(
+          width: 40,
+          height: 40,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              // Soft tinted circle behind the bell, matching the menu button.
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: count > 0 ? 0.24 : 0.16),
+                ),
+                child: Transform.rotate(
+                  angle: _ring.value,
+                  alignment: Alignment.topCenter,
+                  child: Icon(
+                    count > 0 ? Icons.notifications_rounded : Icons.notifications_none_rounded,
+                    color: Colors.white,
+                    size: 21,
+                  ),
                 ),
               ),
-          ],
+              if (count > 0)
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Transform.scale(
+                    scale: _pulse.value,
+                    child: _CountBadge(count: count),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -345,14 +365,14 @@ class _CountBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minWidth: 16),
-      height: 16,
+      constraints: const BoxConstraints(minWidth: 18),
+      height: 18,
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: AppTheme.danger,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.card, width: 1.5),
+        border: Border.all(color: AppTheme.navbar, width: 1.5),
       ),
       child: Text(
         count > 99 ? '99+' : '$count',

@@ -9,9 +9,11 @@ import '../../core/constant.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/room.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/photo_source_sheet.dart';
 import '../theme.dart';
+import 'add_room_page.dart' show RoomFormFooter, RateChip;
 import 'room_form_pieces.dart';
 
 /// Edit an existing room, as its own full-page screen rather than a sheet —
@@ -41,6 +43,18 @@ class EditRoomPage extends ConsumerStatefulWidget {
 }
 
 class _EditRoomPageState extends ConsumerState<EditRoomPage> {
+  final _scrollController = ScrollController();
+
+  // One key per required section, in the order the form asks them — a failed
+  // save jumps straight to the first thing wrong (same as Add room).
+  final _roomNumberKey = GlobalKey();
+  final _floorKey = GlobalKey();
+  final _categoryKey = GlobalKey();
+  final _bathroomKey = GlobalKey();
+  final _dormitoryKey = GlobalKey();
+  final _bedsKey = GlobalKey();
+  final _occupancyKey = GlobalKey();
+
   late final _roomNumber = TextEditingController(text: widget.room.roomNumber);
   late final _floor = TextEditingController(text: widget.room.floor ?? '');
   late final _maxOccupancy = TextEditingController(
@@ -66,11 +80,58 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
 
   /// The backend's name for the field [_error] is about (e.g. "roomNumber"
   /// for "Room number already in use.") — lets this form scroll to and
-  /// highlight the exact field a conflict was about, mirroring
-  /// add_room_page.dart's own handling of the same error.
+  /// highlight the exact field a conflict was about.
   String? _backendErrorField;
 
-  final _roomNumberKey = GlobalKey();
+  /// Nothing turns red until Save has been pressed at least once.
+  bool _submitAttempted = false;
+
+  String? get _roomNumberError {
+    if (_backendErrorField == 'roomNumber') return _error;
+    if (!_submitAttempted) return null;
+    return _roomNumber.text.trim().isEmpty ? 'Enter a room number.' : null;
+  }
+
+  String? get _floorError {
+    if (!_submitAttempted) return null;
+    return _floor.text.trim().isEmpty ? 'Enter the floor.' : null;
+  }
+
+  String? get _categoryError {
+    if (!_submitAttempted) return null;
+    return _categoryId == null ? 'Choose a category.' : null;
+  }
+
+  String? get _bathroomError {
+    if (!_submitAttempted) return null;
+    return _bathroomType == null ? 'Choose a bathroom type.' : null;
+  }
+
+  String? get _bedsError {
+    if (!_submitAttempted || _isDormitory) return null;
+    if (_beds.isEmpty || _beds.any((b) => b.size.isEmpty)) {
+      return 'Choose a size for every bed.';
+    }
+    if (_beds.any((b) => b.count < 1)) return 'Each bed needs a count of 1 or more.';
+    return null;
+  }
+
+  String? get _occupancyError {
+    if (!_submitAttempted || _isDormitory) return null;
+    final occupancy = int.tryParse(_maxOccupancy.text.trim());
+    return (occupancy == null || occupancy <= 0)
+        ? 'Enter a max occupancy greater than 0.'
+        : null;
+  }
+
+  String? get _dormitoryError {
+    if (!_submitAttempted || !_isDormitory) return null;
+    if (_dormitoryGender == null) return 'Choose who this dormitory is for.';
+    final price = num.tryParse(_dormitoryPrice.text.trim());
+    if (price == null || price <= 0) return 'Enter a price per night for this dormitory.';
+    if (_dormitoryIsAc == null) return 'Choose AC or Non-AC.';
+    return null;
+  }
 
   void _scrollToError(GlobalKey key) {
     final context = key.currentContext;
@@ -84,6 +145,9 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
       );
     });
   }
+
+  RoomCategory? get _selectedCategory =>
+      widget.categories.where((c) => c.id == _categoryId).firstOrNull;
 
   @override
   void initState() {
@@ -103,6 +167,7 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _roomNumber.dispose();
     _floor.dispose();
     _maxOccupancy.dispose();
@@ -114,288 +179,413 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
     super.dispose();
   }
 
+  Widget _errorText(String text) => Padding(
+        padding: const EdgeInsets.only(top: AppTheme.s4),
+        child: Text(text, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+      );
+
   @override
   Widget build(BuildContext context) {
     final submitting = ref.watch(roomsViewModelProvider).submitting;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'Edit room · ${widget.room.roomNumber}',
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
+        titleSpacing: AppTheme.s4,
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x331457AD), offset: Offset(0, 3), blurRadius: 8),
+                ],
+              ),
+              child: const Icon(Icons.edit_rounded, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              child: Text(
+                'Edit room · ${widget.room.roomNumber}',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
+            ),
+          ),
         ),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            AppTheme.s16,
-            AppTheme.s8,
-            AppTheme.s16,
-            AppTheme.s32,
-          ),
-          children: [
-            NeuCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_error != null && _backendErrorField != 'roomNumber') ...[
-                    Container(
-                      padding: const EdgeInsets.all(AppTheme.s12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.danger.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
-                          const SizedBox(width: AppTheme.s8),
-                          Expanded(
-                            child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13)),
-                          ),
-                        ],
-                      ),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            child: ListView(
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s12,
+                AppTheme.s12,
+                AppTheme.s12,
+                AppTheme.s16,
+              ),
+              children: [
+                if (_error != null && _backendErrorField != 'roomNumber') ...[
+                  Container(
+                    padding: const EdgeInsets.all(AppTheme.s12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.danger.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
                     ),
-                    const SizedBox(height: AppTheme.s16),
-                  ],
-
-                  const SectionLabel('Numbering', number: 1),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    key: _roomNumberKey,
-                    controller: _roomNumber,
-                    label: 'Room number',
-                    hint: '101',
-                    keyboardType: TextInputType.text,
-                    errorText: _backendErrorField == 'roomNumber' ? _error : null,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: AppTheme.s16),
-                  NeuField(
-                    controller: _floor,
-                    label: 'Floor',
-                    hint: '1',
-                  ),
-
-                  const SectionDivider(),
-                  const SectionLabel('Category', number: 2),
-                  const SizedBox(height: AppTheme.s12),
-                  CategoryDropdown(
-                    categories: widget.categories,
-                    selectedId: _categoryId,
-                    onSelect: (id) => setState(() => _categoryId = id),
-                  ),
-
-                  const SectionDivider(),
-                  const SectionLabel('Bathroom', number: 3),
-                  const SizedBox(height: AppTheme.s12),
-                  Wrap(
-                    spacing: AppTheme.s8,
-                    children: [
-                      for (final type in bathroomTypes)
-                        RoomChoiceChip(
-                          label: bathroomLabel[type]!,
-                          selected: _bathroomType == type,
-                          onTap: () => setState(() => _bathroomType = type),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
+                        const SizedBox(width: AppTheme.s8),
+                        Expanded(
+                          child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13)),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
-
-                  const SectionDivider(),
-                  const SectionLabel('Dormitory', number: 4),
                   const SizedBox(height: AppTheme.s12),
-                  Row(
+                ],
+                NeuCard(
+                  radius: AppTheme.rLarge,
+                  shadow: AppTheme.elevated,
+                  padding: const EdgeInsets.all(AppTheme.s16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Switch(
-                        value: _isDormitory,
-                        onChanged: (v) => setState(() => _isDormitory = v),
-                        activeThumbColor: AppTheme.accent,
+                      const SectionLabel('Numbering', number: 1, icon: Icons.tag_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        key: _roomNumberKey,
+                        controller: _roomNumber,
+                        label: 'Room number',
+                        hint: '101',
+                        required: true,
+                        errorText: _roomNumberError,
+                        keyboardType: TextInputType.text,
+                        forceUppercase: true,
+                        onChanged: (_) => setState(() {}),
+                        dense: true,
                       ),
-                      Expanded(
-                        child: Text(
-                          'This is a dormitory (sold bed-by-bed)',
-                          style: Theme.of(context).textTheme.bodyMedium,
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        key: _floorKey,
+                        controller: _floor,
+                        label: 'Floor',
+                        hint: '1',
+                        required: true,
+                        errorText: _floorError,
+                        onChanged: (_) => setState(() {}),
+                        dense: true,
+                      ),
+
+                      const SectionDivider(),
+                      const SectionLabel('Pricing', number: 2, icon: Icons.payments_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      const RequiredLabel('Category'),
+                      const SizedBox(height: AppTheme.s8),
+                      KeyedSubtree(
+                        key: _categoryKey,
+                        child: CategoryDropdown(
+                          categories: widget.categories,
+                          selectedId: _categoryId,
+                          hasError: _categoryError != null,
+                          onSelect: (id) => setState(() => _categoryId = id),
                         ),
                       ),
-                    ],
-                  ),
-                  if (_isDormitory) ...[
-                    const SizedBox(height: AppTheme.s8),
-                    const RequiredLabel('Who is this dormitory for'),
-                    const SizedBox(height: AppTheme.s8),
-                    OptionDropdown(
-                      values: dormitoryGenders,
-                      labels: dormitoryGenderLabel,
-                      selected: _dormitoryGender,
-                      onSelect: (v) => setState(() => _dormitoryGender = v),
-                    ),
-                    const SizedBox(height: AppTheme.s12),
-                    NeuField(
-                      controller: _dormitoryPrice,
-                      label: 'Price per bed, per night',
-                      hint: '500',
-                      keyboardType: TextInputType.number,
-                    ),
-                    const SizedBox(height: AppTheme.s12),
-                    const RequiredLabel('AC'),
-                    const SizedBox(height: AppTheme.s8),
-                    OptionDropdown(
-                      values: dormitoryAcOptions,
-                      labels: dormitoryAcLabel,
-                      selected: _dormitoryIsAc,
-                      onSelect: (v) => setState(() => _dormitoryIsAc = v),
-                    ),
-                    const SizedBox(height: AppTheme.s16),
-                    DormitoryBedCountField(
-                      beds: widget.room.dormitoryBeds,
-                      count: _dormitoryBedCount,
-                      onChanged: (v) => setState(() => _dormitoryBedCount = v),
-                    ),
-                  ] else ...[
-                  const SectionDivider(),
-                  SectionLabel(
-                    'Beds',
-                    number: 5,
-                    trailing: _beds.length == 1 ? null : '${_beds.length}',
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  for (var i = 0; i < _beds.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: NeuPressed(
-                              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
-                              child: DropdownButtonHideUnderline(
-                                child: DropdownButton<String>(
-                                  isExpanded: true,
-                                  value: _beds[i].size.isEmpty ? null : _beds[i].size,
-                                  dropdownColor: AppTheme.card,
-                                  hint: const Text(
-                                    'Choose bed size',
-                                    style: TextStyle(color: AppTheme.muted, fontSize: 13.5),
-                                  ),
-                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
-                                  items: [
-                                    for (final s in bedSizes)
-                                      DropdownMenuItem(
-                                        value: s,
-                                        child: Text(
-                                          bedSizeLabel[s]!,
-                                          style: Theme.of(context).textTheme.titleSmall,
-                                        ),
-                                      ),
-                                  ],
-                                  onChanged: (v) => setState(() => _beds[i].size = v ?? ''),
-                                ),
+                      if (_categoryError != null) _errorText(_categoryError!),
+                      if (_selectedCategory != null) ...[
+                        const SizedBox(height: AppTheme.s12),
+                        Wrap(
+                          spacing: AppTheme.s8,
+                          runSpacing: AppTheme.s8,
+                          children: [
+                            RateChip('${formatPrice(_selectedCategory!.basePrice)} /night', accent: true),
+                            RateChip(_selectedCategory!.name),
+                          ],
+                        ),
+                      ],
+
+                      const SectionDivider(),
+                      const SectionLabel('Room details', number: 3, icon: Icons.king_bed_rounded),
+                      const SizedBox(height: AppTheme.s12),
+                      const RequiredLabel('Bathroom'),
+                      const SizedBox(height: AppTheme.s8),
+                      KeyedSubtree(
+                        key: _bathroomKey,
+                        child: OptionDropdown(
+                          values: bathroomTypes,
+                          labels: bathroomLabel,
+                          selected: _bathroomType,
+                          hasError: _bathroomError != null,
+                          onSelect: (v) => setState(() => _bathroomType = v),
+                        ),
+                      ),
+                      if (_bathroomError != null) _errorText(_bathroomError!),
+                      const SizedBox(height: AppTheme.s12),
+
+                      KeyedSubtree(
+                        key: _dormitoryKey,
+                        child: GestureDetector(
+                          onTap: () => setState(() => _isDormitory = !_isDormitory),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.s12,
+                              vertical: AppTheme.s8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _isDormitory ? AppTheme.accent.withValues(alpha: 0.07) : AppTheme.bg,
+                              borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                              border: Border.all(
+                                color: _isDormitory
+                                    ? AppTheme.accent.withValues(alpha: 0.35)
+                                    : AppTheme.border,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: AppTheme.s8),
-                          SizedBox(
-                            width: 72,
-                            child: NeuField(
-                              controller: _beds[i].countController,
-                              label: '',
-                              keyboardType: TextInputType.number,
-                              onChanged: (v) => _beds[i].count = int.tryParse(v) ?? 1,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 30,
+                                  height: 30,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: _isDormitory
+                                        ? AppTheme.accent.withValues(alpha: 0.12)
+                                        : AppTheme.card,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.bed_rounded,
+                                    size: 16,
+                                    color: _isDormitory ? AppTheme.accent : AppTheme.muted,
+                                  ),
+                                ),
+                                const SizedBox(width: AppTheme.s12),
+                                Expanded(
+                                  child: Text(
+                                    'This is a dormitory (sold bed-by-bed)',
+                                    style: Theme.of(context).textTheme.bodyMedium,
+                                  ),
+                                ),
+                                Switch(
+                                  value: _isDormitory,
+                                  onChanged: (v) => setState(() => _isDormitory = v),
+                                  activeThumbColor: AppTheme.accent,
+                                ),
+                              ],
                             ),
                           ),
-                          if (_beds.length > 1)
-                            IconButton(
-                              icon: const Icon(Icons.close_rounded, size: 18),
-                              color: AppTheme.muted,
-                              onPressed: () => setState(() {
-                                _beds[i].countController.dispose();
-                                _beds.removeAt(i);
-                              }),
+                        ),
+                      ),
+                      if (_isDormitory) ...[
+                        const SizedBox(height: AppTheme.s12),
+                        const RequiredLabel('Who is this dormitory for'),
+                        const SizedBox(height: AppTheme.s8),
+                        OptionDropdown(
+                          values: dormitoryGenders,
+                          labels: dormitoryGenderLabel,
+                          selected: _dormitoryGender,
+                          hasError: _dormitoryError != null && _dormitoryGender == null,
+                          onSelect: (v) => setState(() => _dormitoryGender = v),
+                        ),
+                        const SizedBox(height: AppTheme.s12),
+                        NeuField(
+                          controller: _dormitoryPrice,
+                          label: 'Price per bed, per night',
+                          hint: '500',
+                          required: true,
+                          keyboardType: TextInputType.number,
+                          onChanged: (_) => setState(() {}),
+                          dense: true,
+                        ),
+                        const SizedBox(height: AppTheme.s12),
+                        const RequiredLabel('AC'),
+                        const SizedBox(height: AppTheme.s8),
+                        OptionDropdown(
+                          values: dormitoryAcOptions,
+                          labels: dormitoryAcLabel,
+                          selected: _dormitoryIsAc,
+                          hasError: _dormitoryError != null && _dormitoryIsAc == null,
+                          onSelect: (v) => setState(() => _dormitoryIsAc = v),
+                        ),
+                        const SizedBox(height: AppTheme.s12),
+                        DormitoryBedCountField(
+                          beds: widget.room.dormitoryBeds,
+                          count: _dormitoryBedCount,
+                          onChanged: (v) => setState(() => _dormitoryBedCount = v),
+                        ),
+                        if (_dormitoryError != null) _errorText(_dormitoryError!),
+                      ] else ...[
+                        const SizedBox(height: AppTheme.s12),
+                        const RequiredLabel('Beds'),
+                        const SizedBox(height: AppTheme.s8),
+                        KeyedSubtree(
+                          key: _bedsKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (var i = 0; i < _beds.length; i++)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: AppTheme.s8),
+                                  padding: const EdgeInsets.all(AppTheme.s8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.bg,
+                                    borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                                    border: Border.all(color: AppTheme.border),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 2,
+                                        child: OptionDropdown(
+                                          values: bedSizes,
+                                          labels: bedSizeLabel,
+                                          selected: _beds[i].size.isEmpty ? null : _beds[i].size,
+                                          onSelect: (v) => setState(() => _beds[i].size = v),
+                                        ),
+                                      ),
+                                      const SizedBox(width: AppTheme.s8),
+                                      SizedBox(
+                                        width: 64,
+                                        child: NeuField(
+                                          controller: _beds[i].countController,
+                                          label: '',
+                                          keyboardType: TextInputType.number,
+                                          onChanged: (v) => _beds[i].count = int.tryParse(v) ?? 1,
+                                          dense: true,
+                                        ),
+                                      ),
+                                      if (_beds.length > 1)
+                                        IconButton(
+                                          icon: const Icon(Icons.close_rounded, size: 18),
+                                          color: AppTheme.muted,
+                                          onPressed: () => setState(() {
+                                            _beds[i].countController.dispose();
+                                            _beds.removeAt(i);
+                                          }),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              GestureDetector(
+                                onTap: () => setState(() => _beds.add(BedDraft())),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppTheme.s12,
+                                    vertical: AppTheme.s8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.accent.withValues(alpha: 0.07),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.add_rounded, color: AppTheme.accent, size: 16),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Add another bed',
+                                        style: TextStyle(
+                                          color: AppTheme.accent,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (_bedsError != null) _errorText(_bedsError!),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: AppTheme.s12),
+                        NeuField(
+                          key: _occupancyKey,
+                          controller: _maxOccupancy,
+                          label: 'Max occupancy',
+                          hint: '2',
+                          required: true,
+                          errorText: _occupancyError,
+                          keyboardType: TextInputType.number,
+                          onChanged: (_) => setState(() {}),
+                          dense: true,
+                        ),
+                      ],
+                      const SizedBox(height: AppTheme.s12),
+                      NeuField(
+                        controller: _description,
+                        label: 'Description (optional)',
+                        hint: 'Corner room, quiet side, good morning light',
+                        maxLength: 200,
+                        dense: true,
+                      ),
+
+                      const SectionDivider(),
+                      SectionLabel(
+                        'Photos',
+                        number: 4,
+                        icon: Icons.photo_camera_rounded,
+                        trailing: '${_existingPhotos.length + _newPhotos.length}',
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                      Wrap(
+                        spacing: AppTheme.s8,
+                        runSpacing: AppTheme.s8,
+                        children: [
+                          for (final img in _existingPhotos)
+                            PhotoThumb(
+                              imageProvider: NetworkImage('$baseUrl/room-images/${img.filename}'),
+                              onRemove: () => _removeExistingPhoto(img),
                             ),
+                          for (final file in _newPhotos)
+                            PhotoThumb(
+                              imageProvider: FileImage(File(file.path)),
+                              onRemove: () => setState(() => _newPhotos.remove(file)),
+                            ),
+                          if (!_photosFull) AddPhotoTile(onTap: _pickPhotos),
                         ],
                       ),
-                    ),
-                  NeuButton(
-                    expand: true,
-                    onPressed: () => setState(() => _beds.add(BedDraft())),
-                    padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
-                    child: const Text('+ Add another bed'),
-                  ),
-                  const SizedBox(height: AppTheme.s16),
-                  NeuField(
-                    controller: _maxOccupancy,
-                    label: 'Max occupancy',
-                    hint: '2',
-                    keyboardType: TextInputType.number,
-                  ),
-                  ],
-
-                  const SectionDivider(),
-                  const SectionLabel('Details', number: 6),
-                  const SizedBox(height: AppTheme.s12),
-                  NeuField(
-                    controller: _description,
-                    label: 'Description (optional)',
-                    hint: 'Corner room, quiet side',
-                    maxLength: 200,
-                  ),
-
-                  const SectionDivider(),
-                  SectionLabel(
-                    'Photos',
-                    number: 7,
-                    trailing: 'up to $maxRoomImages',
-                  ),
-                  const SizedBox(height: AppTheme.s12),
-                  Wrap(
-                    spacing: AppTheme.s8,
-                    runSpacing: AppTheme.s8,
-                    children: [
-                      for (final img in _existingPhotos)
-                        PhotoThumb(
-                          imageProvider: NetworkImage('$baseUrl/room-images/${img.filename}'),
-                          onRemove: () => _removeExistingPhoto(img),
-                        ),
-                      for (final file in _newPhotos)
-                        PhotoThumb(
-                          imageProvider: FileImage(File(file.path)),
-                          onRemove: () => setState(() => _newPhotos.remove(file)),
-                        ),
-                      if (!_photosFull) AddPhotoTile(onTap: _pickPhotos),
+                      const SizedBox(height: AppTheme.s8),
+                      Text(
+                        'Up to $maxRoomImages photos, JPG/PNG/WEBP, 5MB each.',
+                        style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                      ),
                     ],
                   ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: AppTheme.s24),
-            Row(
-              children: [
-                Expanded(
-                  child: NeuButton(
-                    onPressed: submitting ? null : () => Navigator.of(context).pop(),
-                    child: const Text('Close'),
-                  ),
                 ),
-                const SizedBox(width: AppTheme.s12),
-                Expanded(
-                  flex: 2,
-                  child: NeuButton(
-                    primary: true,
-                    expand: true,
-                    onPressed: submitting ? null : _submit,
-                    child: submitting
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Save changes'),
-                  ),
+                const SizedBox(height: AppTheme.s16),
+                RoomFormFooter(
+                  submitLabel: 'Save changes',
+                  submitIcon: Icons.check_rounded,
+                  cancelLabel: 'Close',
+                  roomCountLabel: 'Room ${widget.room.roomNumber}',
+                  category: _selectedCategory,
+                  submitting: submitting,
+                  onCancel: () => Navigator.of(context).pop(),
+                  onSubmit: _submit,
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -438,50 +628,22 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
     setState(() {
       _error = null;
       _backendErrorField = null;
+      _submitAttempted = true;
     });
 
-    if (_categoryId == null) {
-      setState(() => _error = 'Choose a category.');
-      return;
-    }
-    if (_roomNumber.text.trim().isEmpty) {
-      setState(() => _error = 'Enter a room number.');
-      return;
-    }
-    if (_floor.text.trim().isEmpty) {
-      setState(() => _error = 'Enter the floor.');
-      return;
-    }
-    if (_bathroomType == null) {
-      setState(() => _error = 'Choose a bathroom type.');
-      return;
-    }
-    if (!_isDormitory) {
-      if (_beds.isEmpty || _beds.any((b) => b.size.isEmpty)) {
-        setState(() => _error = 'Choose a size for every bed.');
-        return;
-      }
-      if (_beds.any((b) => b.count < 1)) {
-        setState(() => _error = 'Each bed needs a count of 1 or more.');
-        return;
-      }
-      final occupancy = int.tryParse(_maxOccupancy.text.trim());
-      if (occupancy == null || occupancy <= 0) {
-        setState(() => _error = 'Enter a max occupancy greater than 0.');
-        return;
-      }
-    } else {
-      if (_dormitoryGender == null) {
-        setState(() => _error = 'Choose who this dormitory is for.');
-        return;
-      }
-      final price = num.tryParse(_dormitoryPrice.text.trim());
-      if (price == null || price <= 0) {
-        setState(() => _error = 'Enter a price per night for this dormitory.');
-        return;
-      }
-      if (_dormitoryIsAc == null) {
-        setState(() => _error = 'Choose AC or Non-AC.');
+    // Checked top to bottom, so the scroll lands on the first thing wrong.
+    final checks = <(String?, GlobalKey)>[
+      (_roomNumberError, _roomNumberKey),
+      (_floorError, _floorKey),
+      (_categoryError, _categoryKey),
+      (_bathroomError, _bathroomKey),
+      (_dormitoryError, _dormitoryKey),
+      (_bedsError, _bedsKey),
+      (_occupancyError, _occupancyKey),
+    ];
+    for (final (error, key) in checks) {
+      if (error != null) {
+        _scrollToError(key);
         return;
       }
     }

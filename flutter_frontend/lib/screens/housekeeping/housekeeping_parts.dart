@@ -136,7 +136,14 @@ class FilterDropdownButton extends StatelessWidget {
           ),
         ),
         const SizedBox(width: AppTheme.s8),
-        Text('${current.label} · ${current.count}', style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w700)),
+        Flexible(
+          child: Text(
+            '${current.label} · ${current.count}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+        ),
       ],
     );
   }

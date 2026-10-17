@@ -5,6 +5,7 @@ import '../../domain/models/customer.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/customers_viewmodel.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
@@ -100,11 +101,14 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
+          // In table view the scroll is the rows', a level below the
+          // table's horizontal scroller.
+          notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
           onRefresh: () => ref.read(customersViewModelProvider.notifier).loadAll(),
           color: AppTheme.accent,
-          child: ListView(
+          child: TablePageBody(
+            table: view == 'table',
             padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
-            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               _StatsRow(stats: state.stats, inView: filtered.length),
               const SizedBox(height: AppTheme.s12),
@@ -470,14 +474,12 @@ class _CustomerTable extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -507,8 +509,9 @@ class _CustomerTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < customers.length; i++)
-                  _CustomerTableRow(customer: customers[i], shaded: i.isOdd),
+              rows: [
+                      for (var i = 0; i < customers.length; i++)
+                        _CustomerTableRow(customer: customers[i], shaded: i.isOdd),
               ],
             ),
           ),

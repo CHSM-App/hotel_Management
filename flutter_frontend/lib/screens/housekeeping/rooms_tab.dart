@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/housekeeping.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'finish_cleaning_screen.dart';
@@ -117,14 +118,17 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
     }
 
     return RefreshIndicator(
+      // In table view the scroll is the rows', a level below the
+      // table's horizontal scroller.
+      notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
       onRefresh: () => Future.wait([
         ref.read(housekeepingViewModelProvider.notifier).loadRooms(),
         ref.read(housekeepingViewModelProvider.notifier).loadVenues(),
       ]),
       color: AppTheme.accent,
-      child: ListView(
+      child: TablePageBody(
+        table: _view == 'table',
         padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
-        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           if (state.error != null) ...[
             HkErrorBanner(state.error!),
@@ -132,15 +136,15 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
           ],
           Row(
             children: [
-              FilterDropdownButton(options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v)),
-              const Spacer(),
+              Flexible(child: FilterDropdownButton(options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v))),
+              if (bothKinds) ...[
+                const SizedBox(width: AppTheme.s8),
+                Flexible(child: FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces')),
+              ],
+              const SizedBox(width: AppTheme.s8),
               HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
             ],
           ),
-          if (bothKinds) ...[
-            const SizedBox(height: AppTheme.s8),
-            FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces'),
-          ],
           const SizedBox(height: AppTheme.s12),
           if (pool.isNotEmpty && shown.isEmpty)
             NeuNotice(
@@ -448,14 +452,12 @@ class _RoomsTable extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -467,17 +469,18 @@ class _RoomsTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < rooms.length; i++)
-                  _RoomTableRow(
-                    room: rooms[i],
-                    now: now,
-                    shaded: i.isOdd,
-                    busy: busyRoomId == rooms[i].id,
-                    onStart: () => onStart(rooms[i]),
-                    onFinish: () => onFinish(rooms[i]),
-                    onBackInService: () => onBackInService(rooms[i]),
-                    menu: _menuOf(rooms[i], onRelease: () => onRelease(rooms[i]), onMarkDirty: () => onMarkDirty(rooms[i]), onStart: () => onStart(rooms[i]), onCloseForRepair: () => onCloseForRepair(rooms[i])),
-                  ),
+              rows: [
+                      for (var i = 0; i < rooms.length; i++)
+                        _RoomTableRow(
+                          room: rooms[i],
+                          now: now,
+                          shaded: i.isOdd,
+                          busy: busyRoomId == rooms[i].id,
+                          onStart: () => onStart(rooms[i]),
+                          onFinish: () => onFinish(rooms[i]),
+                          onBackInService: () => onBackInService(rooms[i]),
+                          menu: _menuOf(rooms[i], onRelease: () => onRelease(rooms[i]), onMarkDirty: () => onMarkDirty(rooms[i]), onStart: () => onStart(rooms[i]), onCloseForRepair: () => onCloseForRepair(rooms[i])),
+                        ),
               ],
             ),
           ),

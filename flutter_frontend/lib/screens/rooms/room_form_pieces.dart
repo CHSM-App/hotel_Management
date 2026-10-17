@@ -60,19 +60,19 @@ class SectionLabel extends StatelessWidget {
       children: [
         if (badged) ...[
           Container(
-            width: 26,
-            height: 26,
+            width: 22,
+            height: 22,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [AppTheme.accent, Color(0xFF434FC1)],
+                colors: [AppTheme.accent, Color(0xFF10499A)],
               ),
               shape: BoxShape.circle,
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x2A5A67D8),
+                  color: Color(0x2A1457AD),
                   offset: Offset(0, 2),
                   blurRadius: 5,
                 ),
@@ -155,7 +155,16 @@ class ModeToggle extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
 
-  const ModeToggle({super.key, required this.options, required this.selected, required this.onSelect});
+  /// Stretches the pill across the full width, each option sharing it equally.
+  final bool expanded;
+
+  const ModeToggle({
+    super.key,
+    required this.options,
+    required this.selected,
+    required this.onSelect,
+    this.expanded = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -167,27 +176,31 @@ class ModeToggle extends StatelessWidget {
         border: Border.all(color: AppTheme.border),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
         children: [
           for (final entry in options.entries)
-            GestureDetector(
-              onTap: () => onSelect(entry.key),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: entry.key == selected ? AppTheme.accent : Colors.transparent,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  entry.value,
-                  style: TextStyle(
-                    color: entry.key == selected ? Colors.white : AppTheme.text,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
+            () {
+              final tab = GestureDetector(
+                onTap: () => onSelect(entry.key),
+                child: Container(
+                  alignment: expanded ? Alignment.center : null,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: entry.key == selected ? AppTheme.accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    entry.value,
+                    style: TextStyle(
+                      color: entry.key == selected ? Colors.white : AppTheme.text,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-            ),
+              );
+              return expanded ? Expanded(child: tab) : tab;
+            }(),
         ],
       ),
     );
@@ -236,7 +249,7 @@ class OptionDropdown extends StatelessWidget {
       // the same flat grey well as an empty one.
       focused: selected != null,
       radius: AppTheme.rMedium,
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 4),
       child: Theme(
         // The framework paints the open menu's selected row with
         // Theme.focusColor — an accent tint here instead of Material's
@@ -250,6 +263,10 @@ class OptionDropdown extends StatelessWidget {
           child: DropdownButton<String>(
             value: selected,
             isExpanded: true,
+            // Dense, so the closed box is a fixed 24px line. Otherwise the
+            // framework wraps the hint in a 48px-minimum menu-item container,
+            // and an empty picker stands far taller than a filled one.
+            isDense: true,
             dropdownColor: AppTheme.card,
             borderRadius: BorderRadius.circular(AppTheme.rLarge),
             elevation: 6,
@@ -373,7 +390,7 @@ class SectionDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Padding(
-      padding: EdgeInsets.symmetric(vertical: AppTheme.s12),
+      padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
       child: Divider(height: 1, color: AppTheme.border),
     );
   }
@@ -429,7 +446,7 @@ class _ToggleSegment extends StatelessWidget {
               ? const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF434FC1)],
+                  colors: [AppTheme.accent, Color(0xFF10499A)],
                 )
               : null,
           color: selected ? null : AppTheme.bg,
@@ -438,7 +455,7 @@ class _ToggleSegment extends StatelessWidget {
           boxShadow: selected
               ? const [
                   BoxShadow(
-                    color: Color(0x335A67D8),
+                    color: Color(0x331457AD),
                     offset: Offset(0, 3),
                     blurRadius: 8,
                   ),
@@ -542,7 +559,7 @@ class CategoryDropdown extends StatelessWidget {
     final options = categories.where((c) => c.isActive || c.id == selectedId).toList();
     return NeuPressed(
       hasError: hasError,
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 3),
       child: Theme(
         data: Theme.of(context).copyWith(
           focusColor: AppTheme.accent.withValues(alpha: 0.1),
@@ -721,7 +738,20 @@ class PhotoThumb extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
-          child: Image(image: imageProvider, width: 72, height: 72, fit: BoxFit.cover),
+          child: Image(
+            image: imageProvider,
+            width: 72,
+            height: 72,
+            fit: BoxFit.cover,
+            // A missing or unreachable file (e.g. a 404) otherwise paints its
+            // raw exception text, which overflows the tile.
+            errorBuilder: (_, _, _) => Container(
+              width: 72,
+              height: 72,
+              color: AppTheme.bg,
+              child: const Icon(Icons.broken_image_outlined, color: AppTheme.muted, size: 22),
+            ),
+          ),
         ),
         Positioned(
           top: -6,

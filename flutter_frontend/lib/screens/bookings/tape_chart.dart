@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -139,7 +140,27 @@ class _TapeChartState extends ConsumerState<TapeChart>
   /// [_DateHeaderState._onScroll]'s own sticky-month tracking, just reading
   /// the vertical controller's position against each band's key instead of
   /// the horizontal one's offset against a tile width.
-  String? _activeCategory;
+  ///
+  /// A notifier rather than a `setState` field: crossing a band boundary
+  /// mid-scroll used to rebuild the entire chart (every room row) just to
+  /// repaint one highlighted chip. Only the chip strip listens now.
+  final _activeCategory = ValueNotifier<String?>(null);
+
+  /// [BookingState.chartSections] regroups every booking on each read, and
+  /// the scroll listener below reads it every frame — so it is memoised per
+  /// loaded chart. It also keeps the [ChartRoom] instances stable, which is
+  /// what lets their parsed-date cache survive between frames.
+  Object? _sectionsFor;
+  List<ChartSection> _sections = const [];
+
+  List<ChartSection> _sectionsOf(BookingState state) {
+    final data = state.chart.valueOrNull;
+    if (!identical(data, _sectionsFor)) {
+      _sectionsFor = data;
+      _sections = state.chartSections;
+    }
+    return _sections;
+  }
 
   /// True for the span of a chip-triggered [_jumpToKey] animation — guards
   /// [_updateActiveCategoryFromScroll] against overwriting the chip that was
@@ -168,13 +189,9 @@ class _TapeChartState extends ConsumerState<TapeChart>
   bool _suppressAutoDetect = false;
 
   void _updateActiveCategoryFromScroll() {
-    if (_jumpingToChip || _suppressAutoDetect) {
-      debugPrint('[chip-debug] _updateActiveCategoryFromScroll: skipped, '
-          'jumpingToChip=$_jumpingToChip suppressAutoDetect=$_suppressAutoDetect');
-      return;
-    }
+    if (_jumpingToChip || _suppressAutoDetect) return;
     if (!mounted || !_vScroll.hasClients) return;
-    final sections = ref.read(bookingViewModelProvider).chartSections;
+    final sections = _sectionsOf(ref.read(bookingViewModelProvider));
     if (sections.isEmpty) return;
     final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
     if (viewportBox is! RenderBox || !viewportBox.attached) return;
@@ -204,9 +221,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
       }
     }
     found ??= sections.last.categoryName;
-    debugPrint('[chip-debug] _updateActiveCategoryFromScroll: found=$found '
-        'current=$_activeCategory offset=${_vScroll.offset}');
-    if (found != _activeCategory) setState(() => _activeCategory = found);
+    _activeCategory.value = found;
   }
 
   /// Anchors the vertical `CustomScrollView` so a chip jump can measure a
@@ -237,9 +252,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
   // ([_hkTimer]) causing a stray rebuild, which is why the highlight used to
   // lag a tap by up to a minute instead of switching the instant it's tapped.
   void _jumpTo(String category) {
-    debugPrint('[chip-debug] _jumpTo($category) current=$_activeCategory '
-        'hasKey=${_sectionKeys.containsKey(category)}');
-    if (category != _activeCategory) setState(() => _activeCategory = category);
+    _activeCategory.value = category;
     _jumpToKey(_sectionKeys[category], isChipTap: true, debugLabel: category);
   }
 
@@ -272,7 +285,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
     // paint a few pixels taller or shorter and would otherwise leave the
     // target landing partly under (or with a gap below) the pinned header.
     final headerHeight = _DateHeaderDelegate.heightFor(
-      ref.read(bookingViewModelProvider).chartSections.length > 1,
+      _sectionsOf(ref.read(bookingViewModelProvider)).length > 1,
     );
     final rawTarget = _vScroll.offset + sectionTop - headerHeight;
     final target = rawTarget.clamp(
@@ -301,7 +314,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
         .whenComplete(() {
           debugPrint('[chip-debug] $debugLabel: animateTo complete, '
               'isChipTap=$isChipTap clamped=$clamped '
-              'activeCategory=$_activeCategory');
+              'activeCategory=${_activeCategory.value}');
           if (!isChipTap) return;
           _jumpingToChip = false;
           if (clamped) {
@@ -455,6 +468,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
     _hkTimer?.cancel();
     _vScroll.removeListener(_updateActiveCategoryFromScroll);
     _vScroll.dispose();
+    _activeCategory.dispose();
     _hSync.dispose();
     super.dispose();
   }
@@ -501,7 +515,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
       );
     }
 
-    final sections = state.chartSections;
+    final sections = _sectionsOf(state);
     if (sections.isEmpty) {
       return const Center(
         child: Text(
@@ -1510,7 +1524,7 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
   /// — the chip strip above the date header is skipped entirely rather than
   /// pinning an empty sliver of its own height.
   final List<ChartSection>? sections;
-  final String? activeCategory;
+  final ValueListenable<String?> activeCategory;
   final ValueChanged<String>? onTapChip;
   final VoidCallback onTapToday;
   final List<DateTime> dates;
@@ -1592,11 +1606,14 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
                 child: ClipRect(
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: _CategoryChips(
-                      sections: sections!,
-                      dates: dates,
-                      activeCategory: activeCategory,
-                      onTap: onTapChip!,
+                    child: ValueListenableBuilder<String?>(
+                      valueListenable: activeCategory,
+                      builder: (_, active, __) => _CategoryChips(
+                        sections: sections!,
+                        dates: dates,
+                        activeCategory: active,
+                        onTap: onTapChip!,
+                      ),
                     ),
                   ),
                 ),
@@ -2265,24 +2282,36 @@ class _RoomRow extends StatelessWidget {
           Expanded(
             child: _SyncedController(
               sync: hSync,
-              builder: (context, controller) => SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                controller: controller,
-                // Isolates this row's tiles into their own compositing layer.
-                // Every drag jumps every other row's controller too (see
-                // _HorizontalSync._onMoved), and without a boundary here that
-                // repaints the whole chart's paint tree on every one of those
-                // jumps rather than just translating this row's own layer —
-                // the difference between a smooth drag and a stutter once
-                // there's more than a handful of rooms on screen.
-                child: RepaintBoundary(
-                  child: Row(
-                    children: [
-                      for (final d in dates)
-                        _Tile(
-                          stay: room.stayOn(d),
+              // A lazy list with a fixed item extent, not a Row of every
+              // night: only the handful of tiles on screen (plus a small
+              // cache) are ever built, laid out and painted per row, instead
+              // of the whole window for every room. Scroll extents stay exact
+              // because the extent is fixed, so the shared-offset sync and
+              // the jump-to-today maths are unchanged.
+              builder: (context, controller) => SizedBox(
+                height: rowHeight,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  controller: controller,
+                  itemExtent: tile,
+                  itemCount: dates.length,
+                  itemBuilder: (context, i) {
+                    final d = dates[i];
+                    final stay = room.stayOn(d);
+                    final prevStay = room.stayOn(d.subtract(const Duration(days: 1)));
+                    final nextStay = room.stayOn(d.add(const Duration(days: 1)));
+                    final draft = stay == null ? room.draftOn(d) : null;
+                    final prevDraft = prevStay == null
+                        ? room.draftOn(d.subtract(const Duration(days: 1)))
+                        : null;
+                    final nextDraft = nextStay == null
+                        ? room.draftOn(d.add(const Duration(days: 1)))
+                        : null;
+                    final isToday = _isSameDay(d, today);
+                    return _Tile(
+                          stay: stay,
                           dormitoryOccupancy: room.dormitoryOccupancyOn(d),
-                          draft: room.draftOn(d),
+                          draft: draft,
                           room: room.room,
                           date: d,
                           // A run of nights on the same stay draws as one
@@ -2292,55 +2321,38 @@ class _RoomRow extends StatelessWidget {
                           // same continuous block the web tape chart draws,
                           // rather than a row of separately rounded, gapped
                           // boxes.
-                          isRunStart:
-                              room
-                                  .stayOn(d.subtract(const Duration(days: 1)))
-                                  ?.id !=
-                              room.stayOn(d)?.id,
-                          isRunEnd:
-                              room.stayOn(d.add(const Duration(days: 1)))?.id !=
-                              room.stayOn(d)?.id,
+                          isRunStart: prevStay?.id != stay?.id,
+                          isRunEnd: nextStay?.id != stay?.id,
                           // Same continuity check as a real stay's run, but
                           // against the draft parked on the night — without
                           // this a multi-night draft drew as a row of
                           // separately rounded, gapped boxes instead of the
                           // one unbroken bar a run of the same draft's own
                           // nights should read as.
-                          isDraftRunStart:
-                              room
-                                  .draftOn(d.subtract(const Duration(days: 1)))
-                                  ?.id !=
-                              room.draftOn(d)?.id,
-                          isDraftRunEnd:
-                              room
-                                  .draftOn(d.add(const Duration(days: 1)))
-                                  ?.id !=
-                              room.draftOn(d)?.id,
-                          isToday: _isSameDay(d, today),
-                          notReady: _isSameDay(d, today) ? notReady : null,
+                          isDraftRunStart: prevDraft?.id != draft?.id,
+                          isDraftRunEnd: nextDraft?.id != draft?.id,
+                          isToday: isToday,
+                          notReady: isToday ? notReady : null,
                           isPast: d.isBefore(today),
                           isWeekend:
                               d.weekday == DateTime.saturday ||
                               d.weekday == DateTime.sunday,
-                          isHit: hitIds.contains(room.stayOn(d)?.id),
+                          isHit: hitIds.contains(stay?.id),
                           isActiveHit:
-                              activeHitId != null &&
-                              room.stayOn(d)?.id == activeHitId,
+                              activeHitId != null && stay?.id == activeHitId,
                           isFlash:
                               isFlashRoom &&
                               flashBookingId != null &&
-                              room.stayOn(d)?.id == flashBookingId,
+                              stay?.id == flashBookingId,
                           size: tile,
                           height: rowHeight,
                           onTapStay: (b) => onTapStay(b, room),
                           onLongPressStay: (b) => onLongPressStay(b, room),
                           onTapVacant: () => onTapVacant(room.room.id, d),
                           onTapDraft: onTapDraft,
-                          onDormPartial: () =>
-                              onDormPartial(room, d),
-                        ),
-                    ],
-                  ),
+                          onDormPartial: () => onDormPartial(room, d),
+                    );
+                  },
                 ),
               ),
             ),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/asset.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'asset_detail_screen.dart';
@@ -92,11 +93,14 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
+          // In table view the scroll is the rows', a level below the
+          // table's horizontal scroller.
+          notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
           onRefresh: () => ref.read(assetsViewModelProvider.notifier).loadAssets(includeInactive: true),
           color: AppTheme.accent,
-          child: ListView(
+          child: TablePageBody(
+            table: _view == 'table',
             padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
-            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -343,14 +347,12 @@ class _AssetTable extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -380,8 +382,9 @@ class _AssetTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < assets.length; i++)
-                  _AssetTableRow(asset: assets[i], shaded: i.isOdd, statusColor: _statusColor, parent: this),
+              rows: [
+                      for (var i = 0; i < assets.length; i++)
+                        _AssetTableRow(asset: assets[i], shaded: i.isOdd, statusColor: _statusColor, parent: this),
               ],
             ),
           ),

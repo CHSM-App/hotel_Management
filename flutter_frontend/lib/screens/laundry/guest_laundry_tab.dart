@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/laundry.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../housekeeping/housekeeping_parts.dart' show FilterOption, FilterDropdownButton, HkViewToggle, StatusPill, CompactActionButton;
 import '../theme.dart';
@@ -114,11 +115,14 @@ class _GuestLaundryTabState extends ConsumerState<GuestLaundryTab> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
+          // In table view the scroll is the rows', a level below the
+          // table's horizontal scroller.
+          notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
           onRefresh: () => ref.read(laundryViewModelProvider.notifier).loadOrders(),
           color: AppTheme.accent,
-          child: ListView(
+          child: TablePageBody(
+            table: _view == 'table',
             padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, 88),
-            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               if (state.error != null) ...[
                 ErrorBanner(state.error!),
@@ -408,14 +412,12 @@ class _OrderTableState extends State<_OrderTable> {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -433,15 +435,16 @@ class _OrderTableState extends State<_OrderTable> {
                     ],
                   ),
                 ),
-                for (var i = 0; i < orders.length; i++)
-                  _OrderTableRow(
-                    order: orders[i],
-                    shaded: i.isOdd,
-                    busy: widget.busy,
-                    onReceive: () => widget.onReceive(orders[i]),
-                    onDeliver: () => widget.onDeliver(orders[i]),
-                    onCancel: () => widget.onCancel(orders[i]),
-                  ),
+              rows: [
+                      for (var i = 0; i < orders.length; i++)
+                        _OrderTableRow(
+                          order: orders[i],
+                          shaded: i.isOdd,
+                          busy: widget.busy,
+                          onReceive: () => widget.onReceive(orders[i]),
+                          onDeliver: () => widget.onDeliver(orders[i]),
+                          onCancel: () => widget.onCancel(orders[i]),
+                        ),
               ],
             ),
           ),

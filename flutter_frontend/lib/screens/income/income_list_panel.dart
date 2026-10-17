@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/income.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../bookings/id_proof_viewer_screen.dart';
 import '../theme.dart';
@@ -97,11 +98,14 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
+          // In table view the scroll is the rows', a level below the
+          // table's horizontal scroller.
+          notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
           onRefresh: () => ref.read(incomeViewModelProvider.notifier).loadIncome(),
           color: AppTheme.accent,
-          child: ListView(
+          child: TablePageBody(
+            table: _view == 'table',
             padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
-            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -574,14 +578,12 @@ class _IncomeTableState extends State<_IncomeTable> {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.bg,
                     border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
@@ -624,7 +626,8 @@ class _IncomeTableState extends State<_IncomeTable> {
                     ],
                   ),
                 ),
-                for (var i = 0; i < rows.length; i++) _IncomeTableRow(income: rows[i], shaded: i.isOdd, parent: widget),
+              rows: [
+                      for (var i = 0; i < rows.length; i++) _IncomeTableRow(income: rows[i], shaded: i.isOdd, parent: widget),
               ],
             ),
           ),

@@ -5,6 +5,7 @@ import '../../domain/models/menu.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/menu_viewmodel.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'menu_excel_import.dart';
@@ -1027,40 +1028,21 @@ class _DishTable extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: ScrollbarTheme(
-        data: ScrollbarThemeData(
-          thumbColor: WidgetStateProperty.all(
-            AppTheme.muted.withValues(alpha: 0.35),
-          ),
-          trackColor: WidgetStateProperty.all(Colors.transparent),
-          trackBorderColor: WidgetStateProperty.all(Colors.transparent),
-          radius: const Radius.circular(AppTheme.rMedium),
-          thickness: WidgetStateProperty.all(4),
-        ),
-        child: Scrollbar(
-          thumbVisibility: true,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(bottom: 6),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minWidth: _rowWidth + AppTheme.s12 * 2,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _DishTableHeader(),
-                  for (var i = 0; i < items.length; i++)
-                    _DishTableRow(
-                      item: items[i],
-                      sections: sections,
-                      striped: i.isOdd,
-                      isLast: i == items.length - 1,
-                    ),
-                ],
-              ),
-            ),
+      child: HScrollTable(
+        rowsScrollbar: true,
+        child: SizedBox(
+          width: _rowWidth + AppTheme.s12 * 2,
+          child: StickyHeaderTable(
+            header: const _DishTableHeader(),
+            rows: [
+              for (var i = 0; i < items.length; i++)
+                _DishTableRow(
+                  item: items[i],
+                  sections: sections,
+                  striped: i.isOdd,
+                  isLast: i == items.length - 1,
+                ),
+            ],
           ),
         ),
       ),
@@ -1693,12 +1675,12 @@ class _SectionFormDialogState extends ConsumerState<_SectionFormDialog> {
                       gradient: const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [AppTheme.accent, Color(0xFF434FC1)],
+                        colors: [AppTheme.accent, Color(0xFF10499A)],
                       ),
                       borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
                       boxShadow: const [
                         BoxShadow(
-                          color: Color(0x335A67D8),
+                          color: Color(0x331457AD),
                           offset: Offset(0, 3),
                           blurRadius: 8,
                         ),

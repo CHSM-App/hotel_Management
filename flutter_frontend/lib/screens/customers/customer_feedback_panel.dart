@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/customer.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 
@@ -36,11 +37,14 @@ class CustomerFeedbackPanel extends ConsumerWidget {
     final responses = result?.responses ?? const <CustomerFeedbackResponse>[];
 
     return RefreshIndicator(
+      // In table view the scroll is the rows', a level below the
+      // table's horizontal scroller.
+      notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
       onRefresh: () => ref.read(customersViewModelProvider.notifier).loadFeedback(force: true),
       color: AppTheme.accent,
-      child: ListView(
+      child: TablePageBody(
+        table: true,
         padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
-        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           _FeedbackStatsRow(totals: result?.totals ?? const CustomerFeedbackTotals()),
           const SizedBox(height: AppTheme.s12),
@@ -169,14 +173,12 @@ class _FeedbackTable extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -204,8 +206,9 @@ class _FeedbackTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < responses.length; i++)
-                  _FeedbackRow(response: responses[i], shaded: i.isOdd),
+              rows: [
+                      for (var i = 0; i < responses.length; i++)
+                        _FeedbackRow(response: responses[i], shaded: i.isOdd),
               ],
             ),
           ),

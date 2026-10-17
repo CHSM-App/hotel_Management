@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/housekeeping.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'housekeeping_parts.dart';
@@ -88,11 +89,14 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
     }
 
     return RefreshIndicator(
+      // In table view the scroll is the rows', a level below the
+      // table's horizontal scroller.
+      notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
       onRefresh: () => ref.read(housekeepingViewModelProvider.notifier).loadIssues(),
       color: AppTheme.accent,
-      child: ListView(
+      child: TablePageBody(
+        table: _view == 'table',
         padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s4, AppTheme.s16, AppTheme.s32),
-        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           if (state.error != null) ...[
             HkErrorBanner(state.error!),
@@ -100,15 +104,15 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
           ],
           Row(
             children: [
-              FilterDropdownButton(options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v)),
-              const Spacer(),
+              Flexible(child: FilterDropdownButton(options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v))),
+              if (bothKinds) ...[
+                const SizedBox(width: AppTheme.s8),
+                Flexible(child: FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces')),
+              ],
+              const SizedBox(width: AppTheme.s8),
               HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
             ],
           ),
-          if (bothKinds) ...[
-            const SizedBox(height: AppTheme.s8),
-            FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces'),
-          ],
           const SizedBox(height: AppTheme.s12),
           if (shown.isEmpty)
             NeuNotice(
@@ -240,14 +244,12 @@ class _IssuesTable extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
+          rowsScrollbar: true,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+            child: StickyHeaderTable(
+              header: Container(
                   decoration: const BoxDecoration(
                     color: AppTheme.sidebarBrandWash,
                     border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
@@ -260,7 +262,8 @@ class _IssuesTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                for (var i = 0; i < issues.length; i++) _IssueTableRow(issue: issues[i], shaded: i.isOdd, anyClosed: anyClosed, busy: busyIssueKey == issues[i].key, onClose: () => onClose(issues[i])),
+              rows: [
+                      for (var i = 0; i < issues.length; i++) _IssueTableRow(issue: issues[i], shaded: i.isOdd, anyClosed: anyClosed, busy: busyIssueKey == issues[i].key, onClose: () => onClose(issues[i])),
               ],
             ),
           ),
