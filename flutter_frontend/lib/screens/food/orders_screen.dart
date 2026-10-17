@@ -8,6 +8,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/orders_viewmodel.dart';
 import '../../widgets/compact_date_picker.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../billing/invoice_preview_screen.dart';
 import '../billing/issue_food_bill_screen.dart';
@@ -2136,8 +2137,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
           child: SizedBox(
             width: _totalWidth,
             child: Column(

@@ -249,7 +249,7 @@ class OptionDropdown extends StatelessWidget {
       // the same flat grey well as an empty one.
       focused: selected != null,
       radius: AppTheme.rMedium,
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 4),
       child: Theme(
         // The framework paints the open menu's selected row with
         // Theme.focusColor — an accent tint here instead of Material's
@@ -263,6 +263,10 @@ class OptionDropdown extends StatelessWidget {
           child: DropdownButton<String>(
             value: selected,
             isExpanded: true,
+            // Dense, so the closed box is a fixed 24px line. Otherwise the
+            // framework wraps the hint in a 48px-minimum menu-item container,
+            // and an empty picker stands far taller than a filled one.
+            isDense: true,
             dropdownColor: AppTheme.card,
             borderRadius: BorderRadius.circular(AppTheme.rLarge),
             elevation: 6,

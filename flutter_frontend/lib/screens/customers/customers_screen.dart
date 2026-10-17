@@ -5,6 +5,7 @@ import '../../domain/models/customer.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/customers_viewmodel.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
@@ -470,8 +471,7 @@ class _CustomerTable extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
           child: SizedBox(
             width: width,
             child: Column(

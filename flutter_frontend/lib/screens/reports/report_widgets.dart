@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../widgets/compact_date_picker.dart';
 
 import '../../domain/models/report.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 
@@ -1225,8 +1226,7 @@ class ReportDataTable extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
           child: SizedBox(
             width: _width,
             child: Column(

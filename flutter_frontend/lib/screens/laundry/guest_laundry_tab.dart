@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/laundry.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../housekeeping/housekeeping_parts.dart' show FilterOption, FilterDropdownButton, HkViewToggle, StatusPill, CompactActionButton;
 import '../theme.dart';
@@ -408,8 +409,7 @@ class _OrderTableState extends State<_OrderTable> {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
           child: SizedBox(
             width: width,
             child: Column(

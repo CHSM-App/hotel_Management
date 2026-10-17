@@ -5,6 +5,7 @@ import '../../domain/models/menu.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/menu_viewmodel.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'menu_excel_import.dart';
@@ -1027,21 +1028,7 @@ class _DishTable extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: ScrollbarTheme(
-        data: ScrollbarThemeData(
-          thumbColor: WidgetStateProperty.all(
-            AppTheme.muted.withValues(alpha: 0.35),
-          ),
-          trackColor: WidgetStateProperty.all(Colors.transparent),
-          trackBorderColor: WidgetStateProperty.all(Colors.transparent),
-          radius: const Radius.circular(AppTheme.rMedium),
-          thickness: WidgetStateProperty.all(4),
-        ),
-        child: Scrollbar(
-          thumbVisibility: true,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(bottom: 6),
+      child: HScrollTable(
             child: ConstrainedBox(
               constraints: const BoxConstraints(
                 minWidth: _rowWidth + AppTheme.s12 * 2,
@@ -1077,8 +1064,6 @@ class _DishTable extends StatelessWidget {
                 ],
               ),
             ),
-          ),
-        ),
       ),
     );
   }

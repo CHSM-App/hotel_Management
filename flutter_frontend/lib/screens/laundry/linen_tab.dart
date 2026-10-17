@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/laundry.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../bookings/receipt_download.dart';
 import '../theme.dart';
@@ -431,8 +432,7 @@ class _LinenSpreadsheet extends StatelessWidget {
       shadow: AppTheme.subtle,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HScrollTable(
           child: SizedBox(
             width: totalWidth,
             child: Column(
@@ -964,8 +964,7 @@ class _HistoryTableState extends State<_HistoryTable> {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.rMedium),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      child: HScrollTable(
         child: SizedBox(
           width: totalWidth,
           child: Column(
