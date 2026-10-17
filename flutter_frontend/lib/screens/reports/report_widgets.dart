@@ -49,7 +49,7 @@ class StatGrid extends StatelessWidget {
   final int columns;
   final bool compact;
 
-  const StatGrid({super.key, required this.items, this.columns = 2, this.compact = false});
+  const StatGrid({super.key, required this.items, this.columns = 2, this.compact = true});
 
   Widget _buildCard(BuildContext context, StatItem item) {
     return NeuCard(
