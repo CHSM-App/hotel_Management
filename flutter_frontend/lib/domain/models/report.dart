@@ -50,6 +50,10 @@ class ReportBooking {
   final num totalPrice;
   final num advanceAmount;
   final List<TenderLine> advanceTenders;
+  // Receipt number(s) the advance was issued under, comma-joined when more
+  // than one receipt was issued against the same booking. Null until billed
+  // the same way a stay carries no advance receipt at all.
+  final String? advanceReceiptNo;
   final String? invoiceNumber;
   final String? documentType;
   final num? discountAmount;
@@ -105,6 +109,7 @@ class ReportBooking {
     this.totalPrice = 0,
     this.advanceAmount = 0,
     this.advanceTenders = const [],
+    this.advanceReceiptNo,
     this.invoiceNumber,
     this.documentType,
     this.discountAmount,
@@ -157,6 +162,7 @@ class ReportBooking {
             ?.map((e) => TenderLine.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
+    advanceReceiptNo: asStringOrNull(json['advanceReceiptNo']),
     invoiceNumber: asStringOrNull(json['invoiceNumber']),
     documentType: asStringOrNull(json['documentType']),
     discountAmount: asNumOrNull(json['discountAmount']),

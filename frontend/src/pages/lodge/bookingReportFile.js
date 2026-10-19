@@ -189,6 +189,48 @@ function nightsBetween(checkInIso, checkOutIso) {
 // balance) ride on the first room's row only; the booking is billed once,
 // not once per room, so repeating them on every room row would overstate
 // the totals this table foots.
+// One Advance-payments row per room a booking holds, same reasoning as
+// billRowsFor() — a multi-room booking's rooms can sit on different dates,
+// and collapsing them into the booking-level checkInDate/checkOutDate showed
+// every room under one (wrong) pair of dates. The advance itself is one
+// payment against the whole booking, so it rides on the first room's row only.
+function advanceRowsFor(b) {
+  const rooms = b.rooms && b.rooms.length ? b.rooms : [{ roomNumber: b.roomNumber, checkInDate: b.checkInDate, checkOutDate: b.checkOutDate }];
+  return rooms.map((room, i) => {
+    const first = i === 0;
+    return [
+      first ? b.advanceReceiptNo || '—' : '',
+      first ? b.guestName : '',
+      room.roomNumber || '',
+      formatDate(room.checkInDate),
+      formatDate(room.checkOutDate),
+      first ? BOOKING_STATUS_SHORT[b.status] || b.status : '',
+      first ? formatAmount(b.advanceAmount) : '—',
+      first ? tendersLabel(b.advanceTenders) || '—' : '',
+    ];
+  });
+}
+
+// One Cancelled-settlements row per room a booking holds, same reasoning as
+// billRowsFor()/advanceRowsFor() — a multi-room booking's rooms can sit on
+// different dates. The settlement figures ride on the first room's row only.
+function cancelledRowsFor(b) {
+  const rooms = b.rooms && b.rooms.length ? b.rooms : [{ roomNumber: b.roomNumber, checkInDate: b.checkInDate, checkOutDate: b.checkOutDate }];
+  return rooms.map((room, i) => {
+    const first = i === 0;
+    return [
+      first ? b.guestName : '',
+      room.roomNumber || '',
+      formatDate(room.checkInDate),
+      formatDate(room.checkOutDate),
+      first ? b.cancelReason || '—' : '',
+      first && b.advanceAmount ? formatAmount(b.advanceAmount) : '—',
+      first && b.refundAmount ? formatAmount(b.refundAmount) : '—',
+      first && b.cancellationCharge ? formatAmount(b.cancellationCharge) : '—',
+    ];
+  });
+}
+
 function billRowsFor(b) {
   const rooms = b.rooms && b.rooms.length ? b.rooms : [{ roomNumber: b.roomNumber, checkInDate: b.checkInDate, checkOutDate: b.checkOutDate }];
   return rooms.map((room, i) => {
@@ -711,13 +753,14 @@ const FINAL_BILL_COLUMNS = [
 ];
 
 const ADVANCE_COLUMNS = [
-  { label: 'Guest', width: 160 },
-  { label: 'Rm', width: 30 },
-  { label: 'Check-in', width: 55 },
-  { label: 'Check-out', width: 55 },
-  { label: 'Status', width: 50 },
-  { label: 'Advance', width: 70, align: 'right' },
-  { label: 'Paid by', width: 110 },
+  { label: 'Receipt No', width: 72 },
+  { label: 'Guest', width: 140 },
+  { label: 'Rm', width: 28 },
+  { label: 'Check-in', width: 50 },
+  { label: 'Check-out', width: 50 },
+  { label: 'Status', width: 45 },
+  { label: 'Advance', width: 65, align: 'right' },
+  { label: 'Paid by', width: 80 },
 ];
 
 const CANCELLED_COLUMNS = [
@@ -1062,16 +1105,8 @@ export async function buildBookingReportPdf(rawReport) {
       columns: ADVANCE_COLUMNS,
       fontSize: 7,
       rowHeight: 12,
-      rows: advanceOnlyBookings.map((b) => [
-        b.guestName,
-        b.roomNumber,
-        formatDate(b.checkInDate),
-        formatDate(b.checkOutDate),
-        BOOKING_STATUS_SHORT[b.status] || b.status,
-        formatAmount(b.advanceAmount),
-        tendersLabel(b.advanceTenders) || '—',
-      ]),
-      totals: ['Total', '', '', '', '', formatAmount(advanceTotal), ''],
+      rows: advanceOnlyBookings.flatMap(advanceRowsFor),
+      totals: ['', 'Total', '', '', '', '', formatAmount(advanceTotal), ''],
     });
   }
 
@@ -1093,16 +1128,7 @@ export async function buildBookingReportPdf(rawReport) {
       columns: CANCELLED_COLUMNS,
       fontSize: 7,
       rowHeight: 12,
-      rows: cancelledBookings.map((b) => [
-        b.guestName,
-        b.roomNumber,
-        formatDate(b.checkInDate),
-        formatDate(b.checkOutDate),
-        b.cancelReason || '—',
-        b.advanceAmount ? formatAmount(b.advanceAmount) : '—',
-        b.refundAmount ? formatAmount(b.refundAmount) : '—',
-        b.cancellationCharge ? formatAmount(b.cancellationCharge) : '—',
-      ]),
+      rows: cancelledBookings.flatMap(cancelledRowsFor),
       totals: ['Total', '', '', '', '', formatAmount(held), formatAmount(refunded), formatAmount(charged)],
     });
   }

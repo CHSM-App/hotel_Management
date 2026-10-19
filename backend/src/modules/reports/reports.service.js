@@ -436,6 +436,32 @@ async function getTendersForBookings(pool, lodgeId, bookingIds) {
   return { advance, balance };
 }
 
+// Every receipt number an advance has been issued under, oldest first — a
+// booking can carry more than one (a top-up issues a second receipt), so the
+// register shows all of them rather than picking one arbitrarily.
+async function getAdvanceReceiptNumbersForBookings(pool, lodgeId, bookingIds) {
+  if (bookingIds.length === 0) return new Map();
+  const request = pool.request().input('lodgeId', sql.BigInt, lodgeId);
+  bookingIds.forEach((id, i) => request.input(`b${i}`, sql.BigInt, id));
+  const list = bookingIds.map((_, i) => `@b${i}`).join(', ');
+
+  const result = await request.query(`
+    SELECT booking_id AS parent_id, receipt_number
+    FROM dbo.advance_receipts
+    WHERE lodge_id = @lodgeId AND status = 'ISSUED' AND booking_id IN (${list})
+    ORDER BY booking_id, created_at, id
+  `);
+
+  const map = new Map();
+  for (const row of result.recordset) {
+    const key = String(row.parent_id);
+    const list = map.get(key) ?? [];
+    list.push(row.receipt_number);
+    map.set(key, list);
+  }
+  return map;
+}
+
 // Occupied nights only count stays that actually happened — CHECKED_IN
 // (in progress) or CHECKED_OUT (completed). A BOOKED reservation that
 // never arrived, or a CANCELLED one, never occupied the room.
@@ -750,11 +776,9 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       ORDER BY b.created_at DESC, b.id DESC
     `);
 
-  const tenders = await getTendersForBookings(
-    pool,
-    lodgeId,
-    result.recordset.map((row) => row.id)
-  );
+  const bookingIds = result.recordset.map((row) => row.id);
+  const tenders = await getTendersForBookings(pool, lodgeId, bookingIds);
+  const advanceReceiptNumbers = await getAdvanceReceiptNumbersForBookings(pool, lodgeId, bookingIds);
 
   const bookings = result.recordset.map((row) => {
     const billed = row.invoice_number != null;
@@ -820,6 +844,9 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       advanceTenders: mergeTenders(
         splitAcross(advanceAmount, tenders.advance.get(String(row.id)), row.advance_payment_method)
       ),
+      // Receipt number(s) the advance was issued under — joined for display
+      // when a booking's advance was topped up across more than one receipt.
+      advanceReceiptNo: (advanceReceiptNumbers.get(String(row.id)) ?? []).join(', ') || null,
       // How a cancellation settled the advance: refunded to the guest, and
       // kept as the cancellation charge. Null on live stays, and on
       // cancellations that never settled the money.

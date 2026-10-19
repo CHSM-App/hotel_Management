@@ -420,13 +420,14 @@ class BookingReportPdf {
   ];
 
   static const List<ReportPdfColumn> _advanceColumns = [
-    ReportPdfColumn('Guest', flex: 160),
-    ReportPdfColumn('Rm', flex: 30),
-    ReportPdfColumn('Check-in', flex: 55),
-    ReportPdfColumn('Check-out', flex: 55),
-    ReportPdfColumn('Status', flex: 50),
-    ReportPdfColumn('Advance', flex: 70, align: pw.TextAlign.right),
-    ReportPdfColumn('Paid by', flex: 110),
+    ReportPdfColumn('Receipt No', flex: 72),
+    ReportPdfColumn('Guest', flex: 140),
+    ReportPdfColumn('Rm', flex: 28),
+    ReportPdfColumn('Check-in', flex: 50),
+    ReportPdfColumn('Check-out', flex: 50),
+    ReportPdfColumn('Status', flex: 45),
+    ReportPdfColumn('Advance', flex: 65, align: pw.TextAlign.right),
+    ReportPdfColumn('Paid by', flex: 80),
   ];
 
   static const List<ReportPdfColumn> _cancelledColumns = [
@@ -555,34 +556,53 @@ class BookingReportPdf {
     );
   }
 
+  // One row per room a booking holds, same reasoning as the final-bills table
+  // — a multi-room booking's rooms can sit on different dates, and showing
+  // them under one (wrong) pair of booking-level dates hid that. The advance
+  // is one payment against the whole booking, so it rides on the first
+  // room's row only.
   static pw.Widget _advancePaymentsTable(List<ReportBooking> advanceOnly) {
     num advanceTotal = 0;
     for (final b in advanceOnly) {
       advanceTotal += b.advanceAmount;
     }
+    final rows = <List<String>>[];
+    for (final b in advanceOnly) {
+      final rooms = b.rooms.isNotEmpty
+          ? b.rooms
+          : [ReportBookingRoom(roomNumber: b.roomNumber, checkInDate: b.checkInDate, checkOutDate: b.checkOutDate)];
+      final paidBy = b.advanceTenders.isEmpty
+          ? '—'
+          : (b.advanceTenders.length == 1
+              ? paymentModeLabel(b.advanceTenders[0].method)
+              : tendersLabel(b.advanceTenders, ReportPdfStyle.amount));
+      for (var i = 0; i < rooms.length; i++) {
+        final r = rooms[i];
+        final first = i == 0;
+        rows.add([
+          first ? (b.advanceReceiptNo ?? '—') : '',
+          first ? (b.guestName ?? '') : '',
+          r.roomNumber ?? '',
+          ReportPdfStyle.dateOnly(r.checkInDate),
+          ReportPdfStyle.dateOnly(r.checkOutDate),
+          first ? (kStatusShort[b.status] ?? b.status) : '',
+          first ? ReportPdfStyle.amount(b.advanceAmount) : '—',
+          first ? paidBy : '',
+        ]);
+      }
+    }
     return ReportPdfStyle.table(
       columns: _advanceColumns,
       fontSize: 7,
-      rows: [
-        for (final b in advanceOnly)
-          [
-            b.guestName ?? '',
-            b.roomNumber ?? '',
-            ReportPdfStyle.dateOnly(b.checkInDate),
-            ReportPdfStyle.dateOnly(b.checkOutDate),
-            kStatusShort[b.status] ?? b.status,
-            ReportPdfStyle.amount(b.advanceAmount),
-            b.advanceTenders.isEmpty
-                ? '—'
-                : (b.advanceTenders.length == 1
-                    ? paymentModeLabel(b.advanceTenders[0].method)
-                    : tendersLabel(b.advanceTenders, ReportPdfStyle.amount)),
-          ],
-      ],
-      totals: ['Total', '', '', '', '', ReportPdfStyle.amount(advanceTotal), ''],
+      rows: rows,
+      totals: ['', 'Total', '', '', '', '', ReportPdfStyle.amount(advanceTotal), ''],
     );
   }
 
+  // One row per room a booking holds, same reasoning as the final-bills and
+  // advance-payments tables — a multi-room booking's rooms can sit on
+  // different dates, and showing them under one (wrong) pair of booking-level
+  // dates hid that. The settlement figures ride on the first room's row only.
   static pw.Widget _cancelledSettlementsTable(List<ReportBooking> cancelled) {
     num held = 0, refunded = 0, charged = 0;
     for (final b in cancelled) {
@@ -590,22 +610,30 @@ class BookingReportPdf {
       refunded += b.refundAmount ?? 0;
       charged += b.cancellationCharge ?? 0;
     }
+    final rows = <List<String>>[];
+    for (final b in cancelled) {
+      final rooms = b.rooms.isNotEmpty
+          ? b.rooms
+          : [ReportBookingRoom(roomNumber: b.roomNumber, checkInDate: b.checkInDate, checkOutDate: b.checkOutDate)];
+      for (var i = 0; i < rooms.length; i++) {
+        final r = rooms[i];
+        final first = i == 0;
+        rows.add([
+          first ? (b.guestName ?? '') : '',
+          r.roomNumber ?? '',
+          ReportPdfStyle.dateOnly(r.checkInDate),
+          ReportPdfStyle.dateOnly(r.checkOutDate),
+          first ? (b.cancelReason ?? '—') : '',
+          first && b.advanceAmount > 0 ? ReportPdfStyle.amount(b.advanceAmount) : '—',
+          first && (b.refundAmount ?? 0) > 0 ? ReportPdfStyle.amount(b.refundAmount) : '—',
+          first && (b.cancellationCharge ?? 0) > 0 ? ReportPdfStyle.amount(b.cancellationCharge) : '—',
+        ]);
+      }
+    }
     return ReportPdfStyle.table(
       columns: _cancelledColumns,
       fontSize: 7,
-      rows: [
-        for (final b in cancelled)
-          [
-            b.guestName ?? '',
-            b.roomNumber ?? '',
-            ReportPdfStyle.dateOnly(b.checkInDate),
-            ReportPdfStyle.dateOnly(b.checkOutDate),
-            b.cancelReason ?? '—',
-            b.advanceAmount > 0 ? ReportPdfStyle.amount(b.advanceAmount) : '—',
-            (b.refundAmount ?? 0) > 0 ? ReportPdfStyle.amount(b.refundAmount) : '—',
-            (b.cancellationCharge ?? 0) > 0 ? ReportPdfStyle.amount(b.cancellationCharge) : '—',
-          ],
-      ],
+      rows: rows,
       totals: [
         'Total', '', '', '', '',
         ReportPdfStyle.amount(held), ReportPdfStyle.amount(refunded), ReportPdfStyle.amount(charged),
