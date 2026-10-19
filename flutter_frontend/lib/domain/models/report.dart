@@ -13,8 +13,29 @@ class TenderLine {
   );
 }
 
+/// One room of a booking with its own dates — a multi-room booking need not
+/// have every room on the same nights.
+class ReportBookingRoom {
+  final String? roomNumber;
+  final String checkInDate;
+  final String checkOutDate;
+
+  const ReportBookingRoom({
+    this.roomNumber,
+    required this.checkInDate,
+    required this.checkOutDate,
+  });
+
+  factory ReportBookingRoom.fromJson(Map<String, dynamic> json) => ReportBookingRoom(
+    roomNumber: asStringOrNull(json['roomNumber']),
+    checkInDate: json['checkInDate']?.toString() ?? '',
+    checkOutDate: json['checkOutDate']?.toString() ?? '',
+  );
+}
+
 /// One row of the booking register — GET /reports/bookings.
 class ReportBooking {
+  final List<ReportBookingRoom> rooms;
   final int id;
   final String? guestName;
   final String? guestPhone;
@@ -69,6 +90,7 @@ class ReportBooking {
   final num? cancellationCharge;
 
   const ReportBooking({
+    this.rooms = const [],
     required this.id,
     this.guestName,
     this.guestPhone,
@@ -112,6 +134,11 @@ class ReportBooking {
   });
 
   factory ReportBooking.fromJson(Map<String, dynamic> json) => ReportBooking(
+    rooms:
+        (json['rooms'] as List?)
+            ?.map((e) => ReportBookingRoom.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
     id: asInt(json['id']),
     guestName: asStringOrNull(json['guestName']),
     guestPhone: asStringOrNull(json['guestPhone']),

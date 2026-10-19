@@ -50,13 +50,9 @@ class ReportPdfStyle {
     final datePart = iso.split('T').first;
     final parts = datePart.split('-');
     if (parts.length != 3) return iso;
-    final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
     final m = int.tryParse(parts[1]);
     if (m == null || m < 1 || m > 12) return iso;
-    return '${parts[2]} ${months[m - 1]} ${parts[0]}';
+    return '${parts[2]}/${parts[1]}/${parts[0]}';
   }
 
   static String dateTime(DateTime value) {
@@ -275,7 +271,9 @@ class ReportPdfStyle {
     required List<List<String>> rows,
     List<String>? totals,
     double fontSize = 8,
-    bool zebra = true,
+    // Off, as on the web: a shaded row's fill would paint over the grid line
+    // above it, and the full grid is what the design wants.
+    bool zebra = false,
   }) {
     pw.TableRow headerRow() => pw.TableRow(
       decoration: const pw.BoxDecoration(color: band),
@@ -317,10 +315,14 @@ class ReportPdfStyle {
       columnWidths: {
         for (var i = 0; i < columns.length; i++) i: pw.FlexColumnWidth(columns[i].flex),
       },
+      // A full grid — every cell boxed, not just ruled between rows.
       border: const pw.TableBorder(
+        left: pw.BorderSide(width: 0.6, color: rule),
+        right: pw.BorderSide(width: 0.6, color: rule),
         top: pw.BorderSide(width: 0.6, color: rule),
         bottom: pw.BorderSide(width: 0.6, color: rule),
         horizontalInside: pw.BorderSide(width: 0.3, color: rule),
+        verticalInside: pw.BorderSide(width: 0.3, color: rule),
       ),
       children: [
         headerRow(),

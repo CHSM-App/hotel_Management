@@ -129,12 +129,13 @@ class BookingReportPdf {
             generatedAt: generatedAt,
           ),
           ReportPdfStyle.note(
-            'This report has three parts. Part 1 is money received in the period, counted on the date each payment '
-            'came in, whichever stay it was for. Part 2 is the stays that checked in during the period and the bills '
-            'issued for them, counted by check-in date. Part 3 is the register of those stays, one row each. Parts 1 '
-            'and 2 are dated differently and are not expected to agree. Cancelled bookings are listed but excluded '
-            'from every money figure, except the cancellation charges kept on them, which part 1 counts as income. '
-            'All amounts in rupees.',
+            'This report has three parts. Part 1 is the register - every stay checking in this period, split by what '
+            'settled its money. Part 2 is money received in the period, counted on the date each payment came in, '
+            'whichever stay it was for. Part 3 is the stays that checked in during the period and the bills issued '
+            'for them, counted by check-in date - the same stays listed in part 1. Parts 2 and 3 are dated '
+            'differently and are not expected to agree. Cancelled bookings are listed but excluded from every money '
+            'figure, except the cancellation charges kept on them, which part 2 counts as income. '
+            'This is a room report: food is reported under Restaurant. All amounts in rupees.',
           ),
           ReportPdfStyle.tiles([
             ('Money received in period', ReportPdfStyle.amount(summary.totalCollected)),
@@ -146,8 +147,19 @@ class BookingReportPdf {
           ], width: ReportPdfStyle.contentWidthLandscape, perRow: 6),
           pw.SizedBox(height: 14),
 
-          // ---- Part 1 ------------------------------------------------------
-          ReportPdfStyle.heading('1. Money received in $period',
+          // ---- Part 1: the register ----------------------------------------
+          // Three registers, not one - a bill, an advance and a cancellation
+          // settle differently. Leads the report, same as the web: it is the
+          // part that gets printed and filed.
+          ReportPdfStyle.heading(
+            '1. Register - stays checking in $period',
+            subtitle: 'Split by what settled the money - a bill, an advance, or a cancellation',
+          ),
+          ..._registerSections(rawReport),
+          pw.NewPage(),
+
+          // ---- Part 2 ------------------------------------------------------
+          ReportPdfStyle.heading('2. Money received in $period',
               subtitle: 'Cash basis - dated by when the money came in'),
           ReportPdfStyle.tiles(
             summary.cancellationChargesKept > 0
@@ -181,9 +193,9 @@ class BookingReportPdf {
           ],
           pw.SizedBox(height: 14),
 
-          // ---- Part 2 ------------------------------------------------------
-          ReportPdfStyle.heading('2. Stays checking in $period',
-              subtitle: 'By check-in date - the stays listed in part 3'),
+          // ---- Part 3 ------------------------------------------------------
+          ReportPdfStyle.heading('3. Stays checking in $period',
+              subtitle: 'By check-in date - the stays listed in part 1'),
           ReportPdfStyle.tiles([
             ('Bookings', '${summary.totalBookings}'),
             for (final entry in kBookingStatusLabel.entries)
@@ -242,17 +254,6 @@ class BookingReportPdf {
             'The advance a bill deducted is the advance held when it was issued. Money received on these bills '
             'appears in part 1 only if it came in during this period.',
           ),
-          pw.NewPage(),
-
-          // ---- Part 3 --------------------------------------------------
-          // Three registers, not one - a bill, an advance and a cancellation
-          // settle differently and a reader checking one against its source
-          // document should not have to pick it out of a mixed list.
-          ReportPdfStyle.heading(
-            '3. Register - stays checking in $period',
-            subtitle: 'Split by what settled the money - a bill, an advance, or a cancellation',
-          ),
-          ..._registerSections(rawReport),
         ],
       ),
     );
@@ -402,22 +403,20 @@ class BookingReportPdf {
   static const List<ReportPdfColumn> _finalBillColumns = [
     ReportPdfColumn('Bill no.', flex: 44),
     ReportPdfColumn('Type', flex: 32),
-    ReportPdfColumn('Bill date', flex: 42),
-    ReportPdfColumn('Guest', flex: 90),
-    ReportPdfColumn('Rm', flex: 20),
-    ReportPdfColumn('Check-in', flex: 42),
-    ReportPdfColumn('Check-out', flex: 42),
-    ReportPdfColumn('Nts', flex: 16, align: pw.TextAlign.right),
-    ReportPdfColumn('Status', flex: 38),
-    ReportPdfColumn('Discount', flex: 44, align: pw.TextAlign.right),
-    ReportPdfColumn('Taxable', flex: 48, align: pw.TextAlign.right),
-    ReportPdfColumn('CGST', flex: 45, align: pw.TextAlign.right),
-    ReportPdfColumn('SGST', flex: 45, align: pw.TextAlign.right),
-    ReportPdfColumn('R/off', flex: 30, align: pw.TextAlign.right),
-    ReportPdfColumn('Billed', flex: 48, align: pw.TextAlign.right),
-    ReportPdfColumn('Advance', flex: 46, align: pw.TextAlign.right),
-    ReportPdfColumn('Balance', flex: 46, align: pw.TextAlign.right),
-    ReportPdfColumn('Paid by', flex: 60),
+    ReportPdfColumn('Bill date', flex: 48),
+    ReportPdfColumn('Guest', flex: 94),
+    ReportPdfColumn('Rm', flex: 36),
+    ReportPdfColumn('Check-in', flex: 48),
+    ReportPdfColumn('Check-out', flex: 48),
+    ReportPdfColumn('Nts', flex: 20, align: pw.TextAlign.right),
+    ReportPdfColumn('Discount', flex: 46, align: pw.TextAlign.right),
+    ReportPdfColumn('Taxable', flex: 50, align: pw.TextAlign.right),
+    ReportPdfColumn('CGST', flex: 46, align: pw.TextAlign.right),
+    ReportPdfColumn('SGST', flex: 46, align: pw.TextAlign.right),
+    ReportPdfColumn('Billed', flex: 50, align: pw.TextAlign.right),
+    ReportPdfColumn('Advance', flex: 48, align: pw.TextAlign.right),
+    ReportPdfColumn('Balance', flex: 48, align: pw.TextAlign.right),
+    ReportPdfColumn('Paid by', flex: 66),
   ];
 
   static const List<ReportPdfColumn> _advanceColumns = [
@@ -452,7 +451,8 @@ class BookingReportPdf {
       // ---- 3A. Final bills --------------------------------------------
       ReportPdfStyle.subheading('A. Final bills - ${billed.length} ${billed.length == 1 ? 'bill' : 'bills'}'),
       ReportPdfStyle.note(
-        'Every stay with a bill issued. Taxable + CGST + SGST + R/off = Billed. Advance is the advance held '
+        'Every stay with a bill issued. A booking with several rooms gets one line per room, each with its own '
+        'check-in and check-out; the bill figures sit on its first line only. Advance is the advance held '
         'against the stay; Balance is what else was collected on the bill.',
       ),
       if (billed.isEmpty)
@@ -498,49 +498,58 @@ class BookingReportPdf {
   }
 
   static pw.Widget _finalBillsTable(List<ReportBooking> billed) {
-    num nights = 0, discount = 0, taxable = 0, cgst = 0, sgst = 0, roundOff = 0, billedTotal = 0;
+    num nights = 0, discount = 0, taxable = 0, cgst = 0, sgst = 0, billedTotal = 0;
     num advance = 0, balance = 0;
+    final rows = <List<String>>[];
     for (final b in billed) {
-      nights += b.nights;
+      // One line per room, each with its own dates; a booking without a
+      // rooms list falls back to its own room and dates. The bill is issued
+      // once, so its figures ride on the first line only.
+      final rooms = b.rooms.isNotEmpty
+          ? b.rooms
+          : [ReportBookingRoom(roomNumber: b.roomNumber, checkInDate: b.checkInDate, checkOutDate: b.checkOutDate)];
       discount += b.discountAmount ?? 0;
       taxable += b.taxableValue ?? 0;
       cgst += b.cgstAmount ?? 0;
       sgst += b.sgstAmount ?? 0;
-      roundOff += b.roundOff ?? 0;
       billedTotal += b.billedAmount ?? 0;
       advance += b.advanceAmount;
       balance += b.balanceCollected ?? 0;
+      for (var i = 0; i < rooms.length; i++) {
+        final r = rooms[i];
+        final first = i == 0;
+        final inD = DateTime.tryParse(r.checkInDate.split('T').first);
+        final outD = DateTime.tryParse(r.checkOutDate.split('T').first);
+        final n = (inD != null && outD != null) ? outD.difference(inD).inDays : (first ? b.nights : 0);
+        nights += n;
+        rows.add([
+          first ? (b.invoiceNumber ?? '—') : '',
+          first ? (kDocumentShort[b.documentType] ?? b.documentType ?? '—') : '',
+          first ? ReportPdfStyle.dateOnly(b.invoiceDate) : '',
+          first ? (b.guestName ?? '') : '',
+          r.roomNumber ?? '',
+          ReportPdfStyle.dateOnly(r.checkInDate),
+          ReportPdfStyle.dateOnly(r.checkOutDate),
+          '$n',
+          first ? ReportPdfStyle.amount(b.discountAmount) : '—',
+          first ? ReportPdfStyle.amount(b.taxableValue) : '—',
+          first ? ReportPdfStyle.amount(b.cgstAmount) : '—',
+          first ? ReportPdfStyle.amount(b.sgstAmount) : '—',
+          first ? ReportPdfStyle.amount(b.billedAmount) : '—',
+          first && b.advanceAmount > 0 ? ReportPdfStyle.amount(b.advanceAmount) : '—',
+          first && (b.balanceCollected ?? 0) > 0 ? ReportPdfStyle.amount(b.balanceCollected) : '—',
+          first ? (paidByLabel(b).isEmpty ? '—' : paidByLabel(b)) : '',
+        ]);
+      }
     }
     return ReportPdfStyle.table(
       columns: _finalBillColumns,
       fontSize: 7,
-      rows: [
-        for (final b in billed)
-          [
-            b.invoiceNumber ?? '—',
-            kDocumentShort[b.documentType] ?? b.documentType ?? '—',
-            ReportPdfStyle.dateOnly(b.invoiceDate),
-            b.guestName ?? '',
-            b.roomNumber ?? '',
-            ReportPdfStyle.dateOnly(b.checkInDate),
-            ReportPdfStyle.dateOnly(b.checkOutDate),
-            '${b.nights}',
-            kStatusShort[b.status] ?? b.status,
-            ReportPdfStyle.amount(b.discountAmount),
-            ReportPdfStyle.amount(b.taxableValue),
-            ReportPdfStyle.amount(b.cgstAmount),
-            ReportPdfStyle.amount(b.sgstAmount),
-            ReportPdfStyle.amount(b.roundOff),
-            ReportPdfStyle.amount(b.billedAmount),
-            b.advanceAmount > 0 ? ReportPdfStyle.amount(b.advanceAmount) : '—',
-            (b.balanceCollected ?? 0) > 0 ? ReportPdfStyle.amount(b.balanceCollected) : '—',
-            paidByLabel(b).isEmpty ? '—' : paidByLabel(b),
-          ],
-      ],
+      rows: rows,
       totals: [
-        'Total', '', '', '', '', '', '', '$nights', '',
+        'Total', '', '', '', '', '', '', '$nights',
         ReportPdfStyle.amount(discount), ReportPdfStyle.amount(taxable), ReportPdfStyle.amount(cgst),
-        ReportPdfStyle.amount(sgst), ReportPdfStyle.amount(roundOff), ReportPdfStyle.amount(billedTotal),
+        ReportPdfStyle.amount(sgst), ReportPdfStyle.amount(billedTotal),
         ReportPdfStyle.amount(advance), ReportPdfStyle.amount(balance), '',
       ],
     );
