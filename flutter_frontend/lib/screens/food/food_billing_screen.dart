@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/orders_viewmodel.dart';
 import '../billing/billing_screen.dart';
-import '../billing/numbering_screen.dart';
 import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'orders_screen.dart';
@@ -15,16 +14,10 @@ import 'orders_screen.dart';
 /// (propertyProfile.js's 'food' row is now titled "Food orders & Billing").
 ///
 /// The strip mirrors FoodSection.jsx's own `strip` exactly: Kitchen queue and
-/// History show for a login holding orders.manage/orders.take, with
-/// Numbering appended when it also holds billing.manage — a login with both
-/// (OWNER, RECEPTION) gets exactly those three tabs, nothing else. Food to
-/// bill and Bills drop out entirely in that case, because a delivered
-/// order's own row already offers Issue bill (orders_screen.dart's
-/// `canIssueBill`) — there is nothing left for a separate billing list to
-/// show that the order list doesn't. A login with only billing.manage (an
-/// accountant) never reaches the orders tabs: it gets Billing (the full
-/// restaurant Billing screen, Food to bill/Bills included) and Numbering
-/// instead.
+/// History show for a login holding orders.manage/orders.take. A login with
+/// only billing.manage (an accountant) never reaches the orders tabs: it
+/// gets Billing (the full restaurant Billing screen, Food to bill/Bills
+/// included) instead.
 class FoodBillingScreen extends ConsumerStatefulWidget {
   const FoodBillingScreen({super.key});
 
@@ -33,12 +26,6 @@ class FoodBillingScreen extends ConsumerStatefulWidget {
 }
 
 class _FoodBillingScreenState extends ConsumerState<FoodBillingScreen> {
-  /// Numbering isn't a value of [OrdersTab] — [OrdersViewModel] has no idea
-  /// billing exists — so this screen tracks it on its own, the same way
-  /// FoodSection.jsx's own `view` carries 'billing' alongside the order
-  /// view's 'queue'/'active'/'history'.
-  bool _onNumbering = false;
-
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(authViewModelProvider).me;
@@ -59,32 +46,16 @@ class _FoodBillingScreenState extends ConsumerState<FoodBillingScreen> {
           label: ordersState.needsAccepting > 0
               ? 'Kitchen (${ordersState.needsAccepting} new)'
               : 'Kitchen queue',
-          selected: !_onNumbering && ordersState.tab == OrdersTab.queue,
-          onTap: () {
-            setState(() => _onNumbering = false);
-            ordersVm.setTab(OrdersTab.queue);
-          },
+          selected: ordersState.tab == OrdersTab.queue,
+          onTap: () => ordersVm.setTab(OrdersTab.queue),
         ),
         _Segment(
           label: 'History',
-          selected: !_onNumbering && ordersState.tab == OrdersTab.history,
-          onTap: () {
-            setState(() => _onNumbering = false);
-            ordersVm.setTab(OrdersTab.history);
-          },
+          selected: ordersState.tab == OrdersTab.history,
+          onTap: () => ordersVm.setTab(OrdersTab.history),
         ),
       ] else if (canBill)
-        _Segment(
-          label: 'Billing',
-          selected: !_onNumbering,
-          onTap: () => setState(() => _onNumbering = false),
-        ),
-      if (canBill)
-        _Segment(
-          label: 'Numbering',
-          selected: _onNumbering,
-          onTap: () => setState(() => _onNumbering = true),
-        ),
+        _Segment(label: 'Billing', selected: true, onTap: () {}),
     ];
 
     return Column(
@@ -100,12 +71,7 @@ class _FoodBillingScreenState extends ConsumerState<FoodBillingScreen> {
             child: _TabStrip(segments: segments),
           ),
         Expanded(
-          child: _onNumbering
-              ? const Padding(
-                  padding: EdgeInsets.all(AppTheme.s16),
-                  child: NumberingScreen(),
-                )
-              : canOrders
+          child: canOrders
               ? const OrdersScreen(hideTabs: true)
               : const BillingScreen(restaurantOnly: true),
         ),
@@ -130,7 +96,6 @@ class _TabStrip extends StatelessWidget {
   static IconData _iconFor(String label) {
     if (label.startsWith('Kitchen')) return Icons.soup_kitchen_rounded;
     if (label == 'History') return Icons.history_rounded;
-    if (label == 'Numbering') return Icons.pin_rounded;
     return Icons.receipt_long_rounded;
   }
 

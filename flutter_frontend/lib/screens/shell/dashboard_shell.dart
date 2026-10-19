@@ -11,6 +11,7 @@ import '../../widgets/neu.dart';
 import '../assets/assets_screen.dart';
 import '../billing/billing_screen.dart';
 import '../billing/event_billing_screen.dart';
+import '../billing/numbering_screen.dart';
 import '../bookings/bookings_screen.dart';
 import '../bookings/register_screen.dart';
 import '../customers/customers_screen.dart';
@@ -453,6 +454,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return ReportsScreen(key: const ValueKey('report-assets'), only: 'assets', headerActions: _headerActions);
       case 'staff':
         return const StaffRolesScreen();
+      case 'billNumbering':
+        return const NumberingScreen();
       default:
         // Every other section is deliberately still a stub — see the file.
         return PlaceholderScreen(feature: active);

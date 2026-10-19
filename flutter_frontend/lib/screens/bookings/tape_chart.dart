@@ -196,28 +196,31 @@ class _TapeChartState extends ConsumerState<TapeChart>
     final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
     if (viewportBox is! RenderBox || !viewportBox.attached) return;
     final headerHeight = _DateHeaderDelegate.heightFor(sections.length > 1);
-    // The active section is whichever band's own span still straddles the
-    // header line — not just the last one whose *top* has crossed it. A
-    // section that's been entirely scrolled past has its bottom edge above
-    // the header too, so skip it and keep looking; the first one whose
-    // bottom still reaches (or exceeds) the header line is the one actually
-    // sitting underneath it right now. This also covers a short trailing
-    // band (a one-room Dormitory, say) without a special bottom-of-scroll
-    // case: if an earlier, taller band still pokes past the header — e.g.
-    // because the scroll got clamped short while jumping to it, with no
-    // scrollable room left past it — that earlier band is correctly still
-    // the one found, rather than forcing the last section just because the
-    // scroll happens to be pinned at its max extent.
+    final viewportHeight = viewportBox.size.height;
+    // The active section is whichever band actually occupies the most of
+    // the visible area below the pinned header right now — not just the
+    // first one whose bottom hasn't fully scrolled past it. A tall band
+    // sitting mostly above the header but still poking a sliver below it
+    // used to keep winning even once a shorter band underneath (a one-room
+    // Dormitory, say) had taken over most of the screen, leaving the chip
+    // strip stuck on the band the desk had actually scrolled away from.
+    // Measuring each band's visible span against the header line and the
+    // bottom of the viewport and picking the one with the most of it on
+    // screen matches what the desk is actually looking at.
     String? found;
+    double bestVisible = 0;
     for (final section in sections) {
       final box = _sectionKeys[section.categoryName]?.currentContext
           ?.findRenderObject();
       if (box is! RenderBox || !box.attached) continue;
       final top = box.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
       final bottom = top + box.size.height;
-      if (bottom > headerHeight + 1) {
+      final visibleTop = top < headerHeight ? headerHeight : top;
+      final visibleBottom = bottom > viewportHeight ? viewportHeight : bottom;
+      final visible = visibleBottom - visibleTop;
+      if (visible > bestVisible) {
+        bestVisible = visible;
         found = section.categoryName;
-        break;
       }
     }
     found ??= sections.last.categoryName;

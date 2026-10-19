@@ -19,13 +19,12 @@ import 'billing_screen.dart'
         billingDatePresetRange,
         matchesBillingDateRange;
 import 'issue_event_bill_screen.dart';
-import 'numbering_screen.dart';
 
-enum _EventBillingTab { ready, issued, numbering }
+enum _EventBillingTab { ready, issued }
 
 /// Event billing — the Events group's own billing row (mirrors the web's
-/// `<Billing stream="event" />`, OwnerDashboard.jsx): Ready to bill, Bills,
-/// and Numbering — the same three tabs stream="event" renders there
+/// `<Billing stream="event" />`, OwnerDashboard.jsx): Ready to bill and
+/// Bills — the same two tabs stream="event" renders there
 /// (`/billing/event-queue` feeds "Ready to bill" there too).
 class EventBillingScreen extends ConsumerStatefulWidget {
   const EventBillingScreen({super.key});
@@ -81,28 +80,6 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
       readyCount: billing.eventQueue.valueOrNull?.length,
       onChanged: (v) => setState(() => _tab = v),
     );
-
-    if (_tab == _EventBillingTab.numbering) {
-      return Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppTheme.s12,
-              AppTheme.s8,
-              AppTheme.s12,
-              0,
-            ),
-            child: toggle,
-          ),
-          const Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(AppTheme.s12),
-              child: NumberingScreen(),
-            ),
-          ),
-        ],
-      );
-    }
 
     return RefreshIndicator(
       // In table view the scroll is the rows', a level below the
@@ -290,7 +267,6 @@ class _Toggle extends StatelessWidget {
       tabs: [
         PillTab('ready', 'Ready to bill', Icons.pending_actions_rounded, count: readyCount),
         const PillTab('issued', 'Bills', Icons.receipt_long_rounded),
-        const PillTab('numbering', 'Numbering', Icons.pin_rounded),
       ],
     );
   }

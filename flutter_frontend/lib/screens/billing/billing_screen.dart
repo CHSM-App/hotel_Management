@@ -18,9 +18,8 @@ import 'invoice_preview_screen.dart';
 import 'issue_bill_screen.dart';
 import 'issue_food_bill_screen.dart';
 import 'issue_service_bill_screen.dart';
-import 'numbering_screen.dart';
 
-enum _BillingTab { toBill, food, services, issued, numbering }
+enum _BillingTab { toBill, food, services, issued }
 
 /// Billing: what still has to be billed, and what already has been.
 ///
@@ -110,38 +109,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       showRoom: !widget.restaurantOnly,
       showFood: widget.restaurantOnly,
       showServices: showServices,
-      // FoodBillingScreen already wraps restaurant billing with its own
-      // external Numbering segment (see its _onNumbering) — showing a
-      // second one here, nested inside the same screen, would be the same
-      // settings reachable two confusing ways.
-      showNumbering: !widget.restaurantOnly,
       toBillCount: state.queue.valueOrNull?.length,
       foodCount: state.foodQueue.valueOrNull?.length,
       serviceCount: state.serviceQueue.valueOrNull?.length,
       onChanged: (v) => setState(() => _tab = v),
     );
-
-    if (tab == _BillingTab.numbering) {
-      return Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppTheme.s12,
-              AppTheme.s8,
-              AppTheme.s12,
-              0,
-            ),
-            child: toggle,
-          ),
-          const Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(AppTheme.s12),
-              child: NumberingScreen(),
-            ),
-          ),
-        ],
-      );
-    }
 
     // Selected on the Services tab right now, if that's the tab open — used
     final tools = <Widget>[
@@ -179,9 +151,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
     // The tab strip stays put above the list rather than scrolling away with
     // it — same fixed Column/Expanded split FoodBillingScreen uses for its
-    // own Kitchen queue/History/Numbering strip (and this screen's own
-    // Numbering case above), so switching tabs never requires scrolling back
-    // up to find them first.
+    // own Kitchen queue/History strip, so switching tabs never requires
+    // scrolling back up to find them first.
     return Column(
       children: [
         Padding(
@@ -780,10 +751,6 @@ class _Toggle extends StatelessWidget {
   /// — mirrors `billsServices` in Billing.jsx.
   final bool showServices;
 
-  /// Last, and deliberately not first — same order and reasoning as the
-  /// web's own `tabs` array in Billing.jsx: numbering is set once at setup
-  /// and then left alone, while the other tabs are used every day.
-  final bool showNumbering;
   final int? toBillCount;
   final int? foodCount;
   final int? serviceCount;
@@ -794,7 +761,6 @@ class _Toggle extends StatelessWidget {
     this.showRoom = true,
     required this.showFood,
     this.showServices = false,
-    this.showNumbering = false,
     required this.toBillCount,
     required this.foodCount,
     this.serviceCount,
@@ -814,7 +780,6 @@ class _Toggle extends StatelessWidget {
         if (showFood)
           PillTab('food', 'Food to bill', Icons.restaurant_rounded, count: foodCount),
         const PillTab('issued', 'Bills', Icons.receipt_long_rounded),
-        if (showNumbering) const PillTab('numbering', 'Numbering', Icons.pin_rounded),
       ],
     );
   }

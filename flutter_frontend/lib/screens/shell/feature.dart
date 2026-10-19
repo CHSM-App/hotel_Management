@@ -270,6 +270,15 @@ const kFeatures = <Feature>[
     permission: 'staff.manage',
     group: 'Setup',
   ),
+  // Same web module (BillNumberingPanel.jsx): where the next bill and
+  // advance receipt continue from (propertyProfile.js's 'billNumbering').
+  Feature(
+    key: 'billNumbering',
+    title: 'Bill Numbering',
+    icon: Icons.tag_rounded,
+    permission: 'billing.manage',
+    group: 'Setup',
+  ),
   // Same web sidebar group (propertyProfile.js's 'Finance & Management'):
   // Asset inventory, Expenses, Other Income and Reports sit together under
   // one collapsible header rather than as four flat rows.
