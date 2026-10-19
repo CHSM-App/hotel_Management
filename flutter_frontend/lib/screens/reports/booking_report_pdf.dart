@@ -245,21 +245,14 @@ class BookingReportPdf {
           pw.NewPage(),
 
           // ---- Part 3 --------------------------------------------------
+          // Three registers, not one - a bill, an advance and a cancellation
+          // settle differently and a reader checking one against its source
+          // document should not have to pick it out of a mixed list.
           ReportPdfStyle.heading(
-            '3. Register - ${rawReport.bookings.length} ${rawReport.bookings.length == 1 ? 'stay' : 'stays'} checking in $period',
-            subtitle: "Money columns are the bill's own figures; totals foot the rows above them",
+            '3. Register - stays checking in $period',
+            subtitle: 'Split by what settled the money - a bill, an advance, or a cancellation',
           ),
-          ReportPdfStyle.note(
-            'Taxable + CGST + SGST + R/off = Billed on every billed row. Advance is the advance held against the '
-            'stay; Balance is what was collected on the bill. A stay with no bill yet shows - in the bill columns; '
-            'its booked value is in part 2 under "Not yet billed".'
-            '${cancelled.count > 0 ? ' Cancelled bookings are listed for the record with their money columns blank - they are excluded from every total here; any cancellation charge kept on one is income in part 1.' : ''}',
-          ),
-          if (rawReport.bookings.isEmpty)
-            pw.Text('No stays checked in during this period.',
-                style: pw.TextStyle(fontSize: 8, color: ReportPdfStyle.muted))
-          else
-            _registerTable(rawReport, summary, bills),
+          ..._registerSections(rawReport),
         ],
       ),
     );
@@ -399,27 +392,215 @@ class BookingReportPdf {
 
   // ── Section 3: the register ────────────────────────────────────────────
   //
-  // The column set and per-row/totals projection are shared with the
-  // on-screen data grid in bookings_report_panel.dart — see
-  // booking_register_rows.dart — so the phone screen and this PDF can never
-  // quietly disagree about what a column means.
+  // Split into three tables — Final bills, Advance payments, Cancelled
+  // settlements — mirroring the three-section Part 3 in
+  // frontend/src/pages/lodge/bookingReportFile.js. This split is specific to
+  // the PDF; the on-screen grid in bookings_report_panel.dart keeps the
+  // single combined register (booking_register_rows.dart), same as the web
+  // dashboard's live Bookings tab does.
 
-  static pw.Widget _registerTable(BookingsReport report, BookingsReportSummary summary, ReportBillTotals bills) {
-    const List<double> widths = [44, 32, 52, 22, 44, 46, 44, 46, 18, 38, 44, 48, 45, 45, 30, 48, 46, 46, 56];
-    final cols = [
-      for (var i = 0; i < kRegisterColumns.length; i++)
-        ReportPdfColumn(
-          kRegisterColumns[i].label,
-          flex: widths[i],
-          align: kRegisterColumns[i].rightAlign ? pw.TextAlign.right : pw.TextAlign.left,
-        ),
+  static const List<ReportPdfColumn> _finalBillColumns = [
+    ReportPdfColumn('Bill no.', flex: 44),
+    ReportPdfColumn('Type', flex: 32),
+    ReportPdfColumn('Bill date', flex: 42),
+    ReportPdfColumn('Guest', flex: 90),
+    ReportPdfColumn('Rm', flex: 20),
+    ReportPdfColumn('Check-in', flex: 42),
+    ReportPdfColumn('Check-out', flex: 42),
+    ReportPdfColumn('Nts', flex: 16, align: pw.TextAlign.right),
+    ReportPdfColumn('Status', flex: 38),
+    ReportPdfColumn('Discount', flex: 44, align: pw.TextAlign.right),
+    ReportPdfColumn('Taxable', flex: 48, align: pw.TextAlign.right),
+    ReportPdfColumn('CGST', flex: 45, align: pw.TextAlign.right),
+    ReportPdfColumn('SGST', flex: 45, align: pw.TextAlign.right),
+    ReportPdfColumn('R/off', flex: 30, align: pw.TextAlign.right),
+    ReportPdfColumn('Billed', flex: 48, align: pw.TextAlign.right),
+    ReportPdfColumn('Advance', flex: 46, align: pw.TextAlign.right),
+    ReportPdfColumn('Balance', flex: 46, align: pw.TextAlign.right),
+    ReportPdfColumn('Paid by', flex: 60),
+  ];
+
+  static const List<ReportPdfColumn> _advanceColumns = [
+    ReportPdfColumn('Guest', flex: 160),
+    ReportPdfColumn('Rm', flex: 30),
+    ReportPdfColumn('Check-in', flex: 55),
+    ReportPdfColumn('Check-out', flex: 55),
+    ReportPdfColumn('Status', flex: 50),
+    ReportPdfColumn('Advance', flex: 70, align: pw.TextAlign.right),
+    ReportPdfColumn('Paid by', flex: 110),
+  ];
+
+  static const List<ReportPdfColumn> _cancelledColumns = [
+    ReportPdfColumn('Guest', flex: 140),
+    ReportPdfColumn('Rm', flex: 28),
+    ReportPdfColumn('Check-in', flex: 50),
+    ReportPdfColumn('Check-out', flex: 50),
+    ReportPdfColumn('Cancel reason', flex: 180),
+    ReportPdfColumn('Advance held', flex: 70, align: pw.TextAlign.right),
+    ReportPdfColumn('Refunded', flex: 70, align: pw.TextAlign.right),
+    ReportPdfColumn('Cancel chg.', flex: 80, align: pw.TextAlign.right),
+  ];
+
+  static List<pw.Widget> _registerSections(BookingsReport report) {
+    final billed = report.bookings.where((b) => b.status != 'CANCELLED' && b.invoiceNumber != null).toList();
+    final advanceOnly = report.bookings
+        .where((b) => b.status != 'CANCELLED' && b.invoiceNumber == null && b.advanceAmount > 0)
+        .toList();
+    final cancelled = report.bookings.where((b) => b.status == 'CANCELLED').toList();
+
+    return [
+      // ---- 3A. Final bills --------------------------------------------
+      ReportPdfStyle.subheading('A. Final bills - ${billed.length} ${billed.length == 1 ? 'bill' : 'bills'}'),
+      ReportPdfStyle.note(
+        'Every stay with a bill issued. Taxable + CGST + SGST + R/off = Billed. Advance is the advance held '
+        'against the stay; Balance is what else was collected on the bill.',
+      ),
+      if (billed.isEmpty)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 14),
+          child: pw.Text('No bills issued for stays checking in this period.',
+              style: pw.TextStyle(fontSize: 8, color: ReportPdfStyle.muted)),
+        )
+      else
+        pw.Padding(padding: const pw.EdgeInsets.only(bottom: 14), child: _finalBillsTable(billed)),
+
+      // ---- 3B. Advance payments ----------------------------------------
+      ReportPdfStyle.subheading(
+        'B. Advance payments - ${advanceOnly.length} ${advanceOnly.length == 1 ? 'stay' : 'stays'} not yet billed',
+      ),
+      ReportPdfStyle.note(
+        'Stays holding an advance with no bill issued yet. Once billed, the stay moves up into Final bills and '
+        "this advance shows in that row's Advance column instead.",
+      ),
+      if (advanceOnly.isEmpty)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 14),
+          child: pw.Text('No unbilled stays holding an advance.',
+              style: pw.TextStyle(fontSize: 8, color: ReportPdfStyle.muted)),
+        )
+      else
+        pw.Padding(padding: const pw.EdgeInsets.only(bottom: 14), child: _advancePaymentsTable(advanceOnly)),
+
+      // ---- 3C. Cancelled settlements ------------------------------------
+      ReportPdfStyle.subheading(
+        'C. Cancelled settlements - ${cancelled.length} ${cancelled.length == 1 ? 'booking' : 'bookings'}',
+      ),
+      ReportPdfStyle.note(
+        'Every cancelled booking that was checking in this period, and how the advance held on it was settled. '
+        'Any cancellation charge kept is income in part 1; a refund is not.',
+      ),
+      if (cancelled.isEmpty)
+        pw.Text('No cancelled bookings checking in this period.',
+            style: pw.TextStyle(fontSize: 8, color: ReportPdfStyle.muted))
+      else
+        _cancelledSettlementsTable(cancelled),
     ];
+  }
 
+  static pw.Widget _finalBillsTable(List<ReportBooking> billed) {
+    num nights = 0, discount = 0, taxable = 0, cgst = 0, sgst = 0, roundOff = 0, billedTotal = 0;
+    num advance = 0, balance = 0;
+    for (final b in billed) {
+      nights += b.nights;
+      discount += b.discountAmount ?? 0;
+      taxable += b.taxableValue ?? 0;
+      cgst += b.cgstAmount ?? 0;
+      sgst += b.sgstAmount ?? 0;
+      roundOff += b.roundOff ?? 0;
+      billedTotal += b.billedAmount ?? 0;
+      advance += b.advanceAmount;
+      balance += b.balanceCollected ?? 0;
+    }
     return ReportPdfStyle.table(
-      columns: cols,
+      columns: _finalBillColumns,
       fontSize: 7,
-      rows: [for (final b in report.bookings) registerRow(b)],
-      totals: registerTotalsRow(summary, bills),
+      rows: [
+        for (final b in billed)
+          [
+            b.invoiceNumber ?? '—',
+            kDocumentShort[b.documentType] ?? b.documentType ?? '—',
+            ReportPdfStyle.dateOnly(b.invoiceDate),
+            b.guestName ?? '',
+            b.roomNumber ?? '',
+            ReportPdfStyle.dateOnly(b.checkInDate),
+            ReportPdfStyle.dateOnly(b.checkOutDate),
+            '${b.nights}',
+            kStatusShort[b.status] ?? b.status,
+            ReportPdfStyle.amount(b.discountAmount),
+            ReportPdfStyle.amount(b.taxableValue),
+            ReportPdfStyle.amount(b.cgstAmount),
+            ReportPdfStyle.amount(b.sgstAmount),
+            ReportPdfStyle.amount(b.roundOff),
+            ReportPdfStyle.amount(b.billedAmount),
+            b.advanceAmount > 0 ? ReportPdfStyle.amount(b.advanceAmount) : '—',
+            (b.balanceCollected ?? 0) > 0 ? ReportPdfStyle.amount(b.balanceCollected) : '—',
+            paidByLabel(b).isEmpty ? '—' : paidByLabel(b),
+          ],
+      ],
+      totals: [
+        'Total', '', '', '', '', '', '', '$nights', '',
+        ReportPdfStyle.amount(discount), ReportPdfStyle.amount(taxable), ReportPdfStyle.amount(cgst),
+        ReportPdfStyle.amount(sgst), ReportPdfStyle.amount(roundOff), ReportPdfStyle.amount(billedTotal),
+        ReportPdfStyle.amount(advance), ReportPdfStyle.amount(balance), '',
+      ],
+    );
+  }
+
+  static pw.Widget _advancePaymentsTable(List<ReportBooking> advanceOnly) {
+    num advanceTotal = 0;
+    for (final b in advanceOnly) {
+      advanceTotal += b.advanceAmount;
+    }
+    return ReportPdfStyle.table(
+      columns: _advanceColumns,
+      fontSize: 7,
+      rows: [
+        for (final b in advanceOnly)
+          [
+            b.guestName ?? '',
+            b.roomNumber ?? '',
+            ReportPdfStyle.dateOnly(b.checkInDate),
+            ReportPdfStyle.dateOnly(b.checkOutDate),
+            kStatusShort[b.status] ?? b.status,
+            ReportPdfStyle.amount(b.advanceAmount),
+            b.advanceTenders.isEmpty
+                ? '—'
+                : (b.advanceTenders.length == 1
+                    ? paymentModeLabel(b.advanceTenders[0].method)
+                    : tendersLabel(b.advanceTenders, ReportPdfStyle.amount)),
+          ],
+      ],
+      totals: ['Total', '', '', '', '', ReportPdfStyle.amount(advanceTotal), ''],
+    );
+  }
+
+  static pw.Widget _cancelledSettlementsTable(List<ReportBooking> cancelled) {
+    num held = 0, refunded = 0, charged = 0;
+    for (final b in cancelled) {
+      held += b.advanceAmount;
+      refunded += b.refundAmount ?? 0;
+      charged += b.cancellationCharge ?? 0;
+    }
+    return ReportPdfStyle.table(
+      columns: _cancelledColumns,
+      fontSize: 7,
+      rows: [
+        for (final b in cancelled)
+          [
+            b.guestName ?? '',
+            b.roomNumber ?? '',
+            ReportPdfStyle.dateOnly(b.checkInDate),
+            ReportPdfStyle.dateOnly(b.checkOutDate),
+            b.cancelReason ?? '—',
+            b.advanceAmount > 0 ? ReportPdfStyle.amount(b.advanceAmount) : '—',
+            (b.refundAmount ?? 0) > 0 ? ReportPdfStyle.amount(b.refundAmount) : '—',
+            (b.cancellationCharge ?? 0) > 0 ? ReportPdfStyle.amount(b.cancellationCharge) : '—',
+          ],
+      ],
+      totals: [
+        'Total', '', '', '', '',
+        ReportPdfStyle.amount(held), ReportPdfStyle.amount(refunded), ReportPdfStyle.amount(charged),
+      ],
     );
   }
 }

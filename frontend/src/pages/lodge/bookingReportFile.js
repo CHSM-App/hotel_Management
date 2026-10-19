@@ -25,7 +25,7 @@ export const BOOKING_STATUS_LABEL = {
 const BOOKING_STATUS_SHORT = {
   BOOKED: 'Booked',
   CHECKED_IN: 'In house',
-  CHECKED_OUT: 'Departed',
+  CHECKED_OUT: 'Checkout',
   CANCELLED: 'Cancelled',
 };
 
@@ -99,6 +99,119 @@ export function formatDateOfTimestamp(value) {
   if (!value) return '';
   const d = new Date(value);
   return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// DD/MM/YYYY — the register's date columns, where a month name would cost
+// width better spent on the money columns beside it.
+export function formatDateNumeric(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+export function formatDateOfTimestampNumeric(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
+// A stay is worth listing only once money has moved on it — a bill issued, an
+// advance held, or, for a cancelled stay, a cancellation charge actually
+// taken. A stay that is merely booked or checked in with nothing paid yet is
+// left out: it carries nothing for an owner to reconcile against.
+function hasMoneyActivity(b) {
+  if (b.status === 'CANCELLED') return (b.cancellationCharge || 0) > 0;
+  if (b.invoiceNumber) return true;
+  return (b.advanceAmount || 0) > 0;
+}
+
+function round2(n) {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+// Totals footed from the rows actually listed, not from the server's summary
+// — the summary covers every stay checking in this period, but the register
+// now shows only the ones with money activity, so its footer has to foot
+// that narrower set.
+function registerRowTotals(bookings) {
+  let nights = 0, discount = 0, taxable = 0, roomTaxable = 0, foodTaxable = 0;
+  let cgst = 0, sgst = 0, roundOff = 0, billed = 0;
+  let advance = 0, balance = 0, cancelCharge = 0;
+  for (const b of bookings) {
+    if (b.status === 'CANCELLED') {
+      cancelCharge += b.cancellationCharge || 0;
+      continue;
+    }
+    nights += b.nights || 0;
+    advance += b.advanceAmount || 0;
+    if (b.billedAmount != null) {
+      discount += b.discountAmount || 0;
+      taxable += b.taxableValue || 0;
+      roomTaxable += b.roomTaxable || 0;
+      foodTaxable += b.foodTaxable || 0;
+      cgst += b.cgstAmount || 0;
+      sgst += b.sgstAmount || 0;
+      roundOff += b.roundOff || 0;
+      billed += b.billedAmount || 0;
+      balance += b.balanceCollected || 0;
+    }
+  }
+  return {
+    nights,
+    discount: round2(discount),
+    taxable: round2(taxable),
+    roomTaxable: round2(roomTaxable),
+    foodTaxable: round2(foodTaxable),
+    cgst: round2(cgst),
+    sgst: round2(sgst),
+    roundOff: round2(roundOff),
+    billed: round2(billed),
+    advance: round2(advance),
+    balance: round2(balance),
+    cancelCharge: round2(cancelCharge),
+  };
+}
+
+// Whole nights between two YYYY-MM-DD dates, read as calendar dates rather
+// than shifted by the viewer's timezone — mirrors how checkInDate/
+// checkOutDate are read everywhere else in this file.
+function nightsBetween(checkInIso, checkOutIso) {
+  const inD = new Date(`${checkInIso}T00:00:00Z`);
+  const outD = new Date(`${checkOutIso}T00:00:00Z`);
+  return Math.round((outD - inD) / 86400000);
+}
+
+// One Final-bills row per room a booking holds, not one row per booking — a
+// multi-room booking's rooms can sit on different dates, and a single row
+// forced them into one comma-joined, truncated room list that lost that
+// information. The bill's own figures (bill no., tax, billed, advance,
+// balance) ride on the first room's row only; the booking is billed once,
+// not once per room, so repeating them on every room row would overstate
+// the totals this table foots.
+function billRowsFor(b) {
+  const rooms = b.rooms && b.rooms.length ? b.rooms : [{ roomNumber: b.roomNumber, checkInDate: b.checkInDate, checkOutDate: b.checkOutDate }];
+  return rooms.map((room, i) => {
+    const first = i === 0;
+    return [
+      first ? b.invoiceNumber || '—' : '',
+      first ? DOCUMENT_TYPE_SHORT[b.documentType] || b.documentType || '—' : '',
+      first ? formatDateOfTimestampNumeric(b.invoiceDate) : '',
+      first ? b.guestName : '',
+      room.roomNumber || '',
+      formatDateNumeric(room.checkInDate),
+      formatDateNumeric(room.checkOutDate),
+      nightsBetween(room.checkInDate, room.checkOutDate),
+      first ? formatAmount(b.discountAmount) : '—',
+      first ? formatAmount(b.taxableValue) : '—',
+      first ? formatAmount(b.cgstAmount) : '—',
+      first ? formatAmount(b.sgstAmount) : '—',
+      first ? formatAmount(b.billedAmount) : '—',
+      first && b.advanceAmount ? formatAmount(b.advanceAmount) : '—',
+      first && b.balanceCollected ? formatAmount(b.balanceCollected) : '—',
+      first ? paidByLabel(b) || '—' : '',
+    ];
+  });
 }
 
 // The whole calendar month, or nothing — used to title a report "August 2026"
@@ -228,6 +341,7 @@ function detailColumns(servesFood) {
     { label: 'Balance collected', width: 15, kind: 'money', value: money((b) => b.balanceCollected) },
     { label: 'Balance paid by', width: 24, value: (b) => (b.balanceCollected ? tendersLabel(b.balanceTenders) : '') },
     { label: 'Balance due', width: 12, kind: 'money', value: money((b) => b.balanceDue) },
+    { label: 'Cancellation charge', width: 16, kind: 'money', value: money((b) => b.cancellationCharge) },
   ];
 }
 
@@ -457,8 +571,9 @@ function summarySheet(report) {
 function bookingsSheet(report) {
   const columns = detailColumns(report.servesFood);
   const rows = [headerRow(columns.map((c) => c.label))];
+  const listed = report.bookings.filter(hasMoneyActivity);
 
-  for (const b of report.bookings) {
+  for (const b of listed) {
     rows.push(
       columns.map((column) => {
         const raw = column.value(b);
@@ -469,28 +584,40 @@ function bookingsSheet(report) {
     );
   }
 
-  // Footed on the same basis as the PDF register: cancelled stays contribute
-  // nothing, unbilled stays contribute only their booked value and advance.
-  const { summary } = report;
-  const bills = summary.bills;
+  // Footed from the listed rows themselves — the stays with no money
+  // activity are left out of this sheet, so the server's summary (which
+  // covers every stay checking in this period) no longer foots it.
+  const t = registerRowTotals(listed);
+  let bookedValue = 0, roomGross = 0, roomNet = 0, advanceDeducted = 0, balanceDue = 0;
+  for (const b of listed) {
+    if (b.status === 'CANCELLED') continue;
+    bookedValue += b.totalPrice || 0;
+    if (b.billedAmount != null) {
+      roomGross += b.grossAmount || 0;
+      roomNet += b.netAmount || 0;
+      advanceDeducted += b.advancePaid || 0;
+      balanceDue += b.balanceDue || 0;
+    }
+  }
   const totals = {
     'Bill no.': bold('Total'),
-    Nights: count(summary.roomNights),
-    'Booked value': money(summary.bookedValue),
-    'Advance held': money(summary.stayAdvance),
-    'Gross amount': money(bills.grossAmount),
-    Discount: money(bills.discountAmount),
-    'Net amount': money(bills.netAmount),
-    'Taxable — rooms': money(bills.roomTaxable),
-    'Taxable — food': money(bills.foodTaxable),
-    'Taxable value': money(bills.taxableValue),
-    CGST: money(bills.cgstAmount),
-    SGST: money(bills.sgstAmount),
-    'Round off': money(bills.roundOff),
-    'Billed total': money(bills.totalAmount),
-    'Advance deducted on bill': money(bills.advanceDeducted),
-    'Balance collected': money(summary.stayBalance),
-    'Balance due': money(summary.stayBalanceDue),
+    Nights: count(t.nights),
+    'Booked value': money(round2(bookedValue)),
+    'Advance held': money(t.advance),
+    'Room gross': money(round2(roomGross)),
+    Discount: money(t.discount),
+    'Room net': money(round2(roomNet)),
+    'Taxable — rooms': money(t.roomTaxable),
+    'Taxable — food': money(t.foodTaxable),
+    'Taxable value': money(t.taxable),
+    CGST: money(t.cgst),
+    SGST: money(t.sgst),
+    'Round off': money(t.roundOff),
+    'Room billed total': money(t.billed),
+    'Advance deducted on bill': money(round2(advanceDeducted)),
+    'Balance collected': money(t.balance),
+    'Balance due': money(round2(balanceDue)),
+    'Cancellation charge': money(t.cancelCharge),
   };
   rows.push(totalsRow(columns.map((c) => totals[c.label] ?? text(''))));
 
@@ -554,61 +681,55 @@ const ZEBRA = 247;
 // anywhere in the app, so it identifies nothing an owner could look up. A row
 // with no bill yet is identified by guest, room and dates instead.
 //
-// Widths are absolute points and must total CONTENT_WIDTH exactly. Bill date
-// sits beside the number because a return is filed by it, and the guest column
-// is wide enough to identify the party; the actual arrival/departure times are
-// in the Excel register.
-//
-// The money columns are the bill's own figures in the order they reconcile:
-// discount off the gross, the taxable value that leaves, the tax on it, the
-// round off, and the total — then what the property holds and has collected.
-// Sized against the widest string each can carry at 7pt Helvetica with 2pt of
-// padding a side: a crore figure in the money columns ("12,34,567.00", 41pt
-// bold), a dated stamp in In/Out ("6 Aug 01:15", 40pt), a full date in
-// Check-in/out ("03 Aug 2026", 41pt bold). See scripts/renderReportSample.mjs.
-const REGISTER_COLUMNS = [
+// The register is three tables, not one, because a bill, an advance and a
+// cancellation settle on different documents and a reader checking one
+// against its source should not have to pick it out of a mixed list.
+// Widths are absolute points, sized against the widest string each column
+// carries at 7pt Helvetica with 2pt of padding a side.
+// Status and round off are dropped here — every row in this table has a
+// bill, so "billed" is a given, and round off is a paise-level rounding
+// memo that belongs in part 2's reconciliation, not a per-row column. A
+// multi-room booking gets one row per room (see billRowsFor()), so Rm never
+// has to carry a comma-joined, truncated room list.
+const FINAL_BILL_COLUMNS = [
   { label: 'Bill no.', width: 44 },
   { label: 'Type', width: 32 },
-  { label: 'Bill date', width: 46 },
-  { label: 'Guest', width: 98 },
-  { label: 'Rm', width: 22 },
-  { label: 'Check-in', width: 44 },
-  { label: 'Check-out', width: 44 },
-  { label: 'Nts', width: 18, align: 'right' },
-  { label: 'Status', width: 38 },
-  { label: 'Discount', width: 44, align: 'right' },
-  { label: 'Taxable', width: 48, align: 'right' },
-  { label: 'CGST', width: 45, align: 'right' },
-  { label: 'SGST', width: 45, align: 'right' },
-  { label: 'R/off', width: 30, align: 'right' },
-  { label: 'Billed', width: 48, align: 'right' },
-  { label: 'Advance', width: 46, align: 'right' },
-  { label: 'Balance', width: 46, align: 'right' },
-  { label: 'Paid by', width: 56 },
+  { label: 'Bill date', width: 48 },
+  { label: 'Guest', width: 94 },
+  { label: 'Rm', width: 36 },
+  { label: 'Check-in', width: 48 },
+  { label: 'Check-out', width: 48 },
+  { label: 'Nts', width: 20, align: 'right' },
+  { label: 'Discount', width: 46, align: 'right' },
+  { label: 'Taxable', width: 50, align: 'right' },
+  { label: 'CGST', width: 46, align: 'right' },
+  { label: 'SGST', width: 46, align: 'right' },
+  { label: 'Billed', width: 50, align: 'right' },
+  { label: 'Advance', width: 48, align: 'right' },
+  { label: 'Balance', width: 48, align: 'right' },
+  { label: 'Paid by', width: 66 },
 ];
 
-// Only the columns that legitimately sum are totalled — nights and the money
-// columns add up, a column of names does not. Keyed by label and projected
-// through REGISTER_COLUMNS so adding or reordering a column can never slide the
-// totals under the wrong headings.
-function registerTotals(summary) {
-  const bills = summary.bills;
-  return {
-    'Bill no.': 'Total',
-    Nts: summary.roomNights,
-    Discount: formatAmount(bills.discountAmount),
-    Taxable: formatAmount(bills.taxableValue),
-    CGST: formatAmount(bills.cgstAmount),
-    SGST: formatAmount(bills.sgstAmount),
-    'R/off': formatAmount(bills.roundOff),
-    Billed: formatAmount(bills.totalAmount),
-    // Foots the Advance column of the rows above it, so it must be the advance
-    // attached to these stays — not the period's cash-basis advance total,
-    // which covers a different set of bookings entirely.
-    Advance: formatAmount(summary.stayAdvance),
-    Balance: formatAmount(summary.stayBalance),
-  };
-}
+const ADVANCE_COLUMNS = [
+  { label: 'Guest', width: 160 },
+  { label: 'Rm', width: 30 },
+  { label: 'Check-in', width: 55 },
+  { label: 'Check-out', width: 55 },
+  { label: 'Status', width: 50 },
+  { label: 'Advance', width: 70, align: 'right' },
+  { label: 'Paid by', width: 110 },
+];
+
+const CANCELLED_COLUMNS = [
+  { label: 'Guest', width: 140 },
+  { label: 'Rm', width: 28 },
+  { label: 'Check-in', width: 50 },
+  { label: 'Check-out', width: 50 },
+  { label: 'Cancel reason', width: 180 },
+  { label: 'Advance held', width: 70, align: 'right' },
+  { label: 'Refunded', width: 70, align: 'right' },
+  { label: 'Cancel chg.', width: 80, align: 'right' },
+];
 
 // jsPDF's built-in fonts have no glyph fallback, so an over-long guest name
 // has to be clipped by measured width rather than character count.
@@ -728,7 +849,12 @@ export function createLayout(pdf, runningHead) {
       });
       pdf.setFont('helvetica', 'normal');
     },
-    table({ columns, rows, totals, fontSize = 7.5, rowHeight = 13, zebra = true }) {
+    // zebra defaults off: a shaded row's fill rect is painted flush against
+    // the row above it, exactly where that row's grid line sits — the fill
+    // silently erases the line underneath it, leaving every shaded row
+    // missing its top border. Grid lines plus zebra don't combine safely in
+    // this painter, and the grid lines are what the design actually wants.
+    table({ columns, rows, totals, fontSize = 7.5, rowHeight = 13, zebra = false }) {
       const width = columns.reduce((sum, c) => sum + c.width, 0);
       const paint = (cells, { bold = false, fill = null } = {}) => {
         if (fill !== null) {
@@ -744,8 +870,27 @@ export function createLayout(pdf, runningHead) {
           x += column.width;
         });
       };
+      // A full grid, like a spreadsheet — a rule under the row just painted
+      // and a line down every column boundary across it, so every cell is
+      // boxed rather than just every row.
+      const grid = (weight) => {
+        const boxTop = y - rowHeight + 4;
+        const boxBottom = y + 4;
+        pdf.setDrawColor(RULE).setLineWidth(weight);
+        pdf.line(MARGIN, boxBottom, MARGIN + width, boxBottom);
+        let x = MARGIN;
+        pdf.line(x, boxTop, x, boxBottom);
+        columns.forEach((column) => {
+          x += column.width;
+          pdf.line(x, boxTop, x, boxBottom);
+        });
+      };
 
       const columnHeader = () => {
+        // The header box's top edge lands exactly at y as it stood before
+        // this call — the increments below only move past it.
+        pdf.setDrawColor(RULE).setLineWidth(0.6);
+        pdf.line(MARGIN, y, MARGIN + width, y);
         y += rowHeight - 4;
         pdf.setFillColor(BAND);
         pdf.rect(MARGIN, y - rowHeight + 4, width, rowHeight, 'F');
@@ -754,6 +899,7 @@ export function createLayout(pdf, runningHead) {
           columns.map((c) => c.label),
           { bold: true }
         );
+        grid(0.6);
         y += rowHeight;
       };
 
@@ -768,6 +914,7 @@ export function createLayout(pdf, runningHead) {
           columnHeader();
         }
         paint(row, { fill: zebra && i % 2 === 1 ? ZEBRA : null });
+        grid(0.3);
         y += rowHeight;
       });
 
@@ -778,8 +925,9 @@ export function createLayout(pdf, runningHead) {
           columnHeader();
         }
         pdf.setDrawColor(RULE).setLineWidth(0.6);
-        pdf.line(MARGIN, y - rowHeight + 3, MARGIN + width, y - rowHeight + 3);
+        pdf.line(MARGIN, y - rowHeight + 4, MARGIN + width, y - rowHeight + 4);
         paint(totals, { bold: true });
+        grid(0.6);
         y += rowHeight;
       }
       y += 8;
@@ -831,11 +979,12 @@ export async function buildBookingReportPdf(rawReport) {
   // report are dated differently, and a reader who is not told that on page
   // one will spend the rest of it looking for a mismatch that is not there.
   layout.note(
-    'This report has three parts. Part 1 is money received in the period, counted on the date each payment ' +
-      'came in, whichever stay it was for. Part 2 is the stays that checked in during the period and the bills ' +
-      'issued for them, counted by check-in date. Part 3 is the register of those stays, one row each. Parts 1 ' +
-      'and 2 are dated differently and are not expected to agree. Cancelled bookings are listed but excluded ' +
-      'from every money figure, except the cancellation charges kept on them, which part 1 counts as income. ' +
+    'This report has three parts. Part 1 is the register — every stay checking in this period, split by what ' +
+      'settled its money. Part 2 is money received in the period, counted on the date each payment came in, ' +
+      'whichever stay it was for. Part 3 is the stays that checked in during the period and the bills issued ' +
+      'for them, counted by check-in date — the same stays listed in part 1. Parts 2 and 3 are dated ' +
+      'differently and are not expected to agree. Cancelled bookings are listed but excluded from every money ' +
+      'figure, except the cancellation charges kept on them, which part 2 counts as income. ' +
       'This is a room report: food is reported under Restaurant. For GST returns use the GST register, which ' +
       'lists every bill by bill date. All amounts in rupees.'
   );
@@ -854,7 +1003,114 @@ export async function buildBookingReportPdf(rawReport) {
   );
 
   // ---- Part 1 -------------------------------------------------------------
-  layout.heading(`1. Money received in ${period}`, { subtitle: 'Cash basis — dated by when the money came in' });
+  // Three registers, not one — a bill, an advance, and a cancellation settle
+  // differently and a reader checking one against its source document should
+  // not have to pick it out of a list mixing all three. Leads the report: it
+  // is the part that gets printed and filed, the reason an owner opens this
+  // PDF in the first place.
+  const billedBookings = report.bookings.filter((b) => b.status !== 'CANCELLED' && b.invoiceNumber);
+  const advanceOnlyBookings = report.bookings.filter(
+    (b) => b.status !== 'CANCELLED' && !b.invoiceNumber && (b.advanceAmount || 0) > 0
+  );
+  const cancelledBookings = report.bookings.filter((b) => b.status === 'CANCELLED');
+  layout.heading(`1. Register — stays checking in ${period}`, {
+    subtitle: 'Split by what settled the money — a bill, an advance, or a cancellation',
+  });
+
+  // ---- 1A. Final bills -----------------------------------------------------
+  layout.subheading(`A. Final bills — ${plural(billedBookings.length, 'bill')}`, { reserve: 60 });
+  layout.note(
+    'Every stay with a bill issued, billed or not yet checked out. Taxable + CGST + SGST + R/off = Billed. ' +
+      'Advance is the advance held against the stay; Balance is what else was collected on the bill.'
+  );
+  if (billedBookings.length === 0) {
+    pdf.setFont('helvetica', 'normal').setFontSize(8).setTextColor(MUTED);
+    pdf.text('No bills issued for stays checking in this period.', MARGIN, layout.y);
+    pdf.setTextColor(INK);
+    layout.y += 16;
+  } else {
+    const t = registerRowTotals(billedBookings);
+    layout.table({
+      columns: FINAL_BILL_COLUMNS,
+      fontSize: 7,
+      rowHeight: 12,
+      rows: billedBookings.flatMap(billRowsFor),
+      totals: [
+        'Total', '', '', '', '', '', '', t.nights,
+        formatAmount(t.discount), formatAmount(t.taxable), formatAmount(t.cgst), formatAmount(t.sgst),
+        formatAmount(t.billed), formatAmount(t.advance), formatAmount(t.balance), '',
+      ],
+    });
+  }
+
+  // ---- 1B. Advance payments ------------------------------------------------
+  layout.subheading(`B. Advance payments — ${plural(advanceOnlyBookings.length, 'stay')} not yet billed`, {
+    reserve: 60,
+  });
+  layout.note(
+    'Stays holding an advance with no bill issued yet. Once billed, the stay moves up into Final bills and ' +
+      'this advance shows in that row’s Advance column instead.'
+  );
+  if (advanceOnlyBookings.length === 0) {
+    pdf.setFont('helvetica', 'normal').setFontSize(8).setTextColor(MUTED);
+    pdf.text('No unbilled stays holding an advance.', MARGIN, layout.y);
+    pdf.setTextColor(INK);
+    layout.y += 16;
+  } else {
+    const advanceTotal = round2(advanceOnlyBookings.reduce((sum, b) => sum + (b.advanceAmount || 0), 0));
+    layout.table({
+      columns: ADVANCE_COLUMNS,
+      fontSize: 7,
+      rowHeight: 12,
+      rows: advanceOnlyBookings.map((b) => [
+        b.guestName,
+        b.roomNumber,
+        formatDate(b.checkInDate),
+        formatDate(b.checkOutDate),
+        BOOKING_STATUS_SHORT[b.status] || b.status,
+        formatAmount(b.advanceAmount),
+        tendersLabel(b.advanceTenders) || '—',
+      ]),
+      totals: ['Total', '', '', '', '', formatAmount(advanceTotal), ''],
+    });
+  }
+
+  // ---- 1C. Cancelled settlements -------------------------------------------
+  layout.subheading(`C. Cancelled settlements — ${plural(cancelledBookings.length, 'booking')}`, { reserve: 60 });
+  layout.note(
+    'Every cancelled booking that was checking in this period, and how the advance held on it was settled. ' +
+      'Any cancellation charge kept is income in part 2; a refund is not.'
+  );
+  if (cancelledBookings.length === 0) {
+    pdf.setFont('helvetica', 'normal').setFontSize(8).setTextColor(MUTED);
+    pdf.text('No cancelled bookings checking in this period.', MARGIN, layout.y);
+    pdf.setTextColor(INK);
+  } else {
+    const held = round2(cancelledBookings.reduce((sum, b) => sum + (b.advanceAmount || 0), 0));
+    const refunded = round2(cancelledBookings.reduce((sum, b) => sum + (b.refundAmount || 0), 0));
+    const charged = round2(cancelledBookings.reduce((sum, b) => sum + (b.cancellationCharge || 0), 0));
+    layout.table({
+      columns: CANCELLED_COLUMNS,
+      fontSize: 7,
+      rowHeight: 12,
+      rows: cancelledBookings.map((b) => [
+        b.guestName,
+        b.roomNumber,
+        formatDate(b.checkInDate),
+        formatDate(b.checkOutDate),
+        b.cancelReason || '—',
+        b.advanceAmount ? formatAmount(b.advanceAmount) : '—',
+        b.refundAmount ? formatAmount(b.refundAmount) : '—',
+        b.cancellationCharge ? formatAmount(b.cancellationCharge) : '—',
+      ]),
+      totals: ['Total', '', '', '', '', formatAmount(held), formatAmount(refunded), formatAmount(charged)],
+    });
+  }
+
+  layout.newPage();
+
+  // ---- Part 2 -------------------------------------------------------------
+  layout.heading(`2. Money received in ${period}`, { subtitle: 'Cash basis — dated by when the money came in' });
   const chargesKeptInPeriod = summary.cancellationChargesKept || 0;
   layout.tiles(
     chargesKeptInPeriod
@@ -920,7 +1176,7 @@ export async function buildBookingReportPdf(rawReport) {
   // cannot tell how much of it is this month's business and how much is money
   // held for stays that have not happened yet — the two behave completely
   // differently at month end, and the gap between them is what reads as a
-  // mismatch against the stay figures in part 2.
+  // mismatch against the stay figures in part 3.
   const stayPeriods = summary.collections?.byStayPeriod;
   if (stayPeriods) {
     const periodRow = (key, label) => [
@@ -943,8 +1199,8 @@ export async function buildBookingReportPdf(rawReport) {
     });
   }
 
-  // ---- Part 2 -------------------------------------------------------------
-  layout.heading(`2. Stays checking in ${period}`, { subtitle: 'By check-in date — the stays listed in part 3' });
+  // ---- Part 3 -------------------------------------------------------------
+  layout.heading(`3. Stays checking in ${period}`, { subtitle: 'By check-in date — the stays listed in part 1' });
   layout.tiles([
     ['Bookings', summary.totalBookings],
     ...Object.entries(BOOKING_STATUS_LABEL).map(([status, label]) => [label, summary.byStatus[status] || 0]),
@@ -1078,64 +1334,8 @@ export async function buildBookingReportPdf(rawReport) {
   ]);
   layout.note(
     'The advance a bill deducted is the advance held when it was issued. Money received on these bills ' +
-      'appears in part 1 only if it came in during this period.'
+      'appears in part 2 only if it came in during this period.'
   );
-
-  // ---- Part 3 -------------------------------------------------------------
-  // The register starts on its own page: it is the part that gets printed and
-  // filed, and it should not begin three rows above a page break.
-  layout.newPage();
-  layout.heading(`3. Register — ${plural(report.bookings.length, 'stay')} checking in ${period}`, {
-    subtitle: 'Money columns are the bill’s own figures; totals foot the rows above them',
-  });
-  layout.note(
-    'Taxable + CGST + SGST + R/off = Billed on every billed row. Advance is the advance held against the ' +
-      'stay; Balance is what was collected on the bill. A stay with no bill yet shows — in the bill columns; ' +
-      'its booked value is in part 2 under "Not yet billed".' +
-      (cancelled.count
-        ? ' Cancelled bookings are listed for the record with their money columns blank — they are excluded ' +
-          'from every total here; any cancellation charge kept on one is income in part 1.'
-        : '')
-  );
-
-  if (report.bookings.length === 0) {
-    pdf.setFont('helvetica', 'normal').setFontSize(8).setTextColor(MUTED);
-    pdf.text('No stays checked in during this period.', MARGIN, layout.y);
-    pdf.setTextColor(INK);
-  } else {
-    const totals = registerTotals(summary);
-    layout.table({
-      columns: REGISTER_COLUMNS,
-      fontSize: 7,
-      rowHeight: 12,
-      rows: report.bookings.map((b) => {
-        const isCancelled = b.status === 'CANCELLED';
-        const billed = !isCancelled && b.billedAmount != null;
-        const bill = (v) => (billed ? formatAmount(v) : '—');
-        return [
-          b.invoiceNumber || '—',
-          billed ? DOCUMENT_TYPE_SHORT[b.documentType] || b.documentType : '—',
-          billed ? formatDateOfTimestamp(b.invoiceDate) : '—',
-          b.guestName,
-          b.roomNumber,
-          formatDate(b.checkInDate),
-          formatDate(b.checkOutDate),
-          isCancelled ? '—' : b.nights,
-          BOOKING_STATUS_SHORT[b.status] || b.status,
-          bill(b.discountAmount),
-          bill(b.taxableValue),
-          bill(b.cgstAmount),
-          bill(b.sgstAmount),
-          bill(b.roundOff),
-          bill(b.billedAmount),
-          !isCancelled && b.advanceAmount ? formatAmount(b.advanceAmount) : '—',
-          billed && b.balanceCollected ? formatAmount(b.balanceCollected) : '—',
-          isCancelled ? '—' : paidByLabel(b) || '—',
-        ];
-      }),
-      totals: REGISTER_COLUMNS.map((column) => totals[column.label] ?? ''),
-    });
-  }
 
   const pageCount = pdf.internal.getNumberOfPages();
   for (let page = 1; page <= pageCount; page += 1) {

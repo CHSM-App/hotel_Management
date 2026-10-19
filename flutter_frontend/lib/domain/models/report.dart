@@ -60,6 +60,14 @@ class ReportBooking {
   final num? advancePaid;
   final num? balanceDue;
 
+  // How a cancellation settled the advance: refunded to the guest, and kept
+  // as the cancellation charge. Null on live stays, and on cancellations
+  // that never settled the money. Mirrors cancelReason/refundAmount/
+  // cancellationCharge in bookingReportFile.js.
+  final String? cancelReason;
+  final num? refundAmount;
+  final num? cancellationCharge;
+
   const ReportBooking({
     required this.id,
     this.guestName,
@@ -98,6 +106,9 @@ class ReportBooking {
     this.totalTax,
     this.advancePaid,
     this.balanceDue,
+    this.cancelReason,
+    this.refundAmount,
+    this.cancellationCharge,
   });
 
   factory ReportBooking.fromJson(Map<String, dynamic> json) => ReportBooking(
@@ -146,6 +157,9 @@ class ReportBooking {
     totalTax: asNumOrNull(json['totalTax']),
     advancePaid: asNumOrNull(json['advancePaid']),
     balanceDue: asNumOrNull(json['balanceDue']),
+    cancelReason: asStringOrNull(json['cancelReason']),
+    refundAmount: asNumOrNull(json['refundAmount']),
+    cancellationCharge: asNumOrNull(json['cancellationCharge']),
   );
 
   bool get isBilled => billedAmount != null;

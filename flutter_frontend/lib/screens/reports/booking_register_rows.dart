@@ -39,7 +39,7 @@ const List<RegisterColumn> kRegisterColumns = [
 const Map<String, String> kStatusShort = {
   'BOOKED': 'Booked',
   'CHECKED_IN': 'In house',
-  'CHECKED_OUT': 'Departed',
+  'CHECKED_OUT': 'Checkout',
   'CANCELLED': 'Cancelled',
 };
 

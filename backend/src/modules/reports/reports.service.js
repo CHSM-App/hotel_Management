@@ -26,6 +26,20 @@ function toIsoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
+// The rooms_json column from a FOR JSON PATH subquery — null when a booking
+// predates booking_rooms and was never backfilled, in which case the single
+// room this query already joined is the only one to report.
+function parseRoomsJson(json, fallback) {
+  if (!json) return [fallback];
+  const rows = JSON.parse(json);
+  if (rows.length === 0) return [fallback];
+  return rows.map((r) => ({
+    roomNumber: r.room_number,
+    checkInDate: toIsoDate(r.check_in_date),
+    checkOutDate: toIsoDate(r.check_out_date),
+  }));
+}
+
 // Inclusive of both ends — a report for "1 Aug to 3 Aug" covers all three
 // calendar days, matching how an owner reads a date-range picker.
 function datesInRange(fromDate, toDate) {
@@ -699,6 +713,16 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
                        WHERE brm.booking_id = b.id AND (brm.status <> 'CANCELLED' OR b.status = 'CANCELLED')),
                       r.room_number) AS room_number,
              c.name AS category_name,
+             -- Every room this booking holds, each with its own dates — a
+             -- multi-room booking need not have every room on the same
+             -- nights, and the register lists each one as its own line
+             -- rather than folding them into one row under a combined
+             -- room-number string.
+             (SELECT rr.room_number, brm.check_in_date, brm.check_out_date
+              FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
+              WHERE brm.booking_id = b.id AND (brm.status <> 'CANCELLED' OR b.status = 'CANCELLED')
+              ORDER BY brm.id
+              FOR JSON PATH) AS rooms_json,
              i.invoice_number, i.document_type, i.billing_side, i.created_at AS invoice_created_at,
              i.room_subtotal, i.food_subtotal,
              i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount,
@@ -772,6 +796,16 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
       checkInDate: toIsoDate(row.check_in_date),
       checkOutDate: toIsoDate(row.check_out_date),
       nights: row.nights,
+      // Each room this booking holds, with its own dates — one entry even on
+      // a single-room stay, so the register can always read a booking's
+      // rooms off this list rather than special-casing the common case.
+      // Falls back to the booking-level room/dates for a pre-multi-room
+      // booking that never got a booking_rooms row.
+      rooms: parseRoomsJson(row.rooms_json, {
+        roomNumber: row.room_number,
+        checkInDate: toIsoDate(row.check_in_date),
+        checkOutDate: toIsoDate(row.check_out_date),
+      }),
       status: row.status,
       // When the guest actually arrived and left, as against the dates the stay
       // was booked for. Null until it happens — a BOOKED reservation has neither,
