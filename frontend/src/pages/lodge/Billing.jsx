@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { apiGet, apiPost, apiPostForm, ApiError } from '../../lib/api';
+import { apiGet, apiGetBlob, apiPost, apiPostForm, ApiError } from '../../lib/api';
 import { useUrlState } from '../../lib/urlState';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
@@ -20,6 +20,8 @@ import {
 } from './paymentSplit';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
 import StayDetails from './StayDetails';
+import StaySummary from './StaySummary';
+import { BedIcon } from '../../components/StaySummaryIcons';
 import './forms.css';
 import './chartSections.css';
 import './stayDetails.css';
@@ -879,6 +881,57 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       );
   };
 
+  // The "View" button on a ready-to-bill row — the same read-only stay record
+  // as above, but reachable without first opening the bill modal. A desk
+  // checking what a figure is made of shouldn't have to start writing a bill
+  // to look.
+  const [viewStay, setViewStay] = useState(null);
+  const [viewStayError, setViewStayError] = useState('');
+  const openStayView = (bookingId) => {
+    setViewStay({ bookingId, booking: null });
+    setViewStayError('');
+    apiGet(`/bookings/${bookingId}`, { token })
+      .then((data) => setViewStay({ bookingId, booking: data.booking }))
+      .catch((err) =>
+        setViewStayError(err instanceof ApiError ? err.message : 'Could not load this stay.')
+      );
+  };
+  const closeStayView = () => {
+    setViewStay(null);
+    setViewStayError('');
+    setViewIdProofUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+  };
+
+  // The guest's uploaded ID document — same two endpoints and the same
+  // revoke-on-close handling as the booking detail modal's own ID-proof
+  // viewer (Bookings.jsx), since it is the identical document underneath.
+  const [viewIdProofUrl, setViewIdProofUrl] = useState('');
+  const [viewIdProofError, setViewIdProofError] = useState('');
+  const closeIdProofView = () => {
+    setViewIdProofUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+  };
+  const openIdProofView = async (guestId) => {
+    setViewIdProofError('');
+    try {
+      const path = guestId
+        ? `/bookings/${viewStay.bookingId}/guests/${guestId}/id-proof`
+        : `/bookings/${viewStay.bookingId}/id-proof`;
+      const blob = await apiGetBlob(path, { token });
+      setViewIdProofUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
+    } catch (err) {
+      setViewIdProofError(err instanceof ApiError ? err.message : 'Could not open the ID proof.');
+    }
+  };
+
   const [previewOpen, setPreviewOpen] = useState(false);
   // How the guest is paying, as a list — one row per way the money came in.
   // null until the desk touches it, which is what lets an untouched bill show
@@ -1448,30 +1501,39 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       {!modalOnly && (
         <>
       {!hideTabs && (
-      <div className="billing-panel__subtabs">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className="billing-panel__subtabs-item"
-            aria-current={activeTab === t.key ? 'page' : undefined}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-            {t.key === 'ready' && queue && queue.length > 0 && (
-              <span className="billing-panel__subtabs-count">{queue.length}</span>
-            )}
-            {t.key === 'functions' && eventQueue && eventQueue.length > 0 && (
-              <span className="billing-panel__subtabs-count">{eventQueue.length}</span>
-            )}
-            {t.key === 'services' && serviceUsages && serviceUsages.length > 0 && (
-              <span className="billing-panel__subtabs-count">{serviceUsages.length}</span>
-            )}
-            {t.key === 'tables' && foodTabs && foodTabs.length > 0 && (
-              <span className="billing-panel__subtabs-count">{foodTabs.length}</span>
-            )}
-          </button>
-        ))}
+      <div className="billing-panel__subtabs-row">
+        <div className="billing-panel__subtabs">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              className="billing-panel__subtabs-item"
+              aria-current={activeTab === t.key ? 'page' : undefined}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+              {t.key === 'ready' && queue && queue.length > 0 && (
+                <span className="billing-panel__subtabs-count">{queue.length}</span>
+              )}
+              {t.key === 'functions' && eventQueue && eventQueue.length > 0 && (
+                <span className="billing-panel__subtabs-count">{eventQueue.length}</span>
+              )}
+              {t.key === 'services' && serviceUsages && serviceUsages.length > 0 && (
+                <span className="billing-panel__subtabs-count">{serviceUsages.length}</span>
+              )}
+              {t.key === 'tables' && foodTabs && foodTabs.length > 0 && (
+                <span className="billing-panel__subtabs-count">{foodTabs.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        {/* Same spot the list/card toggle sits in the kitchen queue's own
+            tab strip (.orders-panel__toolbar) — one row, tabs on the left,
+            the view switch on the right, rather than its own header line
+            under each tab that needs it. */}
+        {(activeTab === 'ready' || activeTab === 'functions') && (
+          <ListViewToggle view={listView} onChange={setListView} />
+        )}
       </div>
       )}
 
@@ -1709,13 +1771,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       )}
 
       {activeTab === 'ready' && (
-        <div className="chart-section">
-          <div className="chart-section__header">
-            <h3>Ready to bill</h3>
-            <span className="chart-section__hint">Checked-out stays waiting for a bill.</span>
-            <ListViewToggle view={listView} onChange={setListView} />
-          </div>
-
+        <div className="chart-section chart-section--snug">
           {queueError && <div className="form-banner form-banner--error">{queueError}</div>}
           {!queueError && !queue && <PageLoader inline label="Loading" />}
           {!queueError && queue && queue.length === 0 && (
@@ -1748,20 +1804,21 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                           <td className="history-table__strong">{b.guestName}</td>
                           <td>
                             <span className="history-table__where">{b.roomNumber}</span>
-                            <span className="history-table__note">{b.categoryName}</span>
                           </td>
                           <td className="billing-sheet__stay">
                             <span>{shortDay(b.checkInDate)} → {shortDay(b.checkOutDate)}</span>
-                            <small>{nightsBetween(b.checkInDate, b.checkOutDate)} night{nightsBetween(b.checkInDate, b.checkOutDate) === 1 ? '' : 's'}</small>
                           </td>
-                          <td className="history-table__num">{formatPrice(b.totalPrice)}</td>
-                          {hasLate && <td className="history-table__num">{b.lateCheckoutCharge ? formatPrice(b.lateCheckoutCharge) : '—'}</td>}
-                          <td className="history-table__num">{b.foodTotal ? formatPrice(b.foodTotal) : '—'}</td>
+                          <td className="history-table__num billing-sheet__charge-col">{formatPrice(b.totalPrice)}</td>
+                          {hasLate && <td className="history-table__num billing-sheet__charge-col">{b.lateCheckoutCharge ? formatPrice(b.lateCheckoutCharge) : '—'}</td>}
+                          <td className="history-table__num billing-sheet__charge-col">{b.foodTotal ? formatPrice(b.foodTotal) : '—'}</td>
                           <td className="history-table__num history-table__strong">{formatPrice(sub)}</td>
-                          <td className="history-table__num">{b.advanceAmount ? `− ${formatPrice(b.advanceAmount)}` : '—'}</td>
+                          <td className="history-table__num billing-sheet__charge-col">{b.advanceAmount ? `− ${formatPrice(b.advanceAmount)}` : '—'}</td>
                           <td className="history-table__num billing-sheet__due-cell">{formatPrice(due)}</td>
                           <td className="history-table__actions">
                             <div className="history-table__actions-inner">
+                              <button type="button" className="history-table__btn" onClick={() => openStayView(b.id)}>
+                                View
+                              </button>
                               <button type="button" className="history-table__btn history-table__btn--primary" onClick={() => openBilling({ kind: 'STAY', bookingId: b.id })}>
                                 Bill
                               </button>
@@ -1774,12 +1831,12 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   <tfoot>
                     <tr>
                       <td colSpan={3}>{queue.length} stay{queue.length === 1 ? '' : 's'} to bill</td>
-                      <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + b.totalPrice, 0))}</td>
-                      {hasLate && <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + (b.lateCheckoutCharge || 0), 0))}</td>}
-                      <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + (b.foodTotal || 0), 0))}</td>
+                      <td className="history-table__num billing-sheet__charge-col">{formatPrice(queue.reduce((n, b) => n + b.totalPrice, 0))}</td>
+                      {hasLate && <td className="history-table__num billing-sheet__charge-col">{formatPrice(queue.reduce((n, b) => n + (b.lateCheckoutCharge || 0), 0))}</td>}
+                      <td className="history-table__num billing-sheet__charge-col">{formatPrice(queue.reduce((n, b) => n + (b.foodTotal || 0), 0))}</td>
                       <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0), 0))}</td>
-                      <td className="history-table__num">{queue.some((b) => b.advanceAmount) ? `− ${formatPrice(queue.reduce((n, b) => n + (b.advanceAmount || 0), 0))}` : '—'}</td>
-                      <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0) - (b.advanceAmount || 0), 0))}</td>
+                      <td className="history-table__num billing-sheet__charge-col">{queue.some((b) => b.advanceAmount) ? `− ${formatPrice(queue.reduce((n, b) => n + (b.advanceAmount || 0), 0))}` : '—'}</td>
+                      <td className="history-table__num billing-sheet__due-cell">{formatPrice(queue.reduce((n, b) => n + b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0) - (b.advanceAmount || 0), 0))}</td>
                       <td />
                     </tr>
                   </tfoot>
@@ -1860,13 +1917,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       )}
 
       {activeTab === 'functions' && (
-        <div className="chart-section">
-          <div className="chart-section__header">
-            <h3>Ready to bill</h3>
-            <span className="chart-section__hint">Confirmed functions waiting for a bill.</span>
-            <ListViewToggle view={listView} onChange={setListView} />
-          </div>
-
+        <div className="chart-section chart-section--snug">
           {eventQueueError && <div className="form-banner form-banner--error">{eventQueueError}</div>}
           {!eventQueueError && !eventQueue && <PageLoader inline label="Loading" />}
           {!eventQueueError && eventQueue && eventQueue.length === 0 && (
@@ -2319,6 +2370,71 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       )}
 
         </>
+      )}
+
+      {/* The same read-only StayDetails the bill modal's own "View full stay
+          details" uses, reached straight from the queue row instead — a desk
+          checking what a figure is made of shouldn't have to start writing a
+          bill first just to look. */}
+      {viewStay && (
+        <div className="glass-backdrop billing-panel__backdrop" onClick={closeStayView}>
+          <div className="glass-panel billing-panel__modal stay-view" onClick={(e) => e.stopPropagation()}>
+            <div className="billing-panel__detail-header">
+              <div className="stay-view__title">
+                <span className="stay-view__title-icon"><BedIcon /></span>
+                <h3>Stay Details</h3>
+              </div>
+              <button type="button" className="bill-close" onClick={closeStayView} aria-label="Close">
+                ×
+              </button>
+            </div>
+            {viewStayError && <div className="form-banner form-banner--error">{viewStayError}</div>}
+            {!viewStayError && !viewStay.booking && <PageLoader inline label="Loading" />}
+            {!viewStayError && viewStay.booking && (
+              <StaySummary
+                booking={viewStay.booking}
+                idProofError={viewIdProofError}
+                onViewIdProof={viewStay.booking.hasIdProofDocument ? () => openIdProofView() : undefined}
+                onViewGuestIdProof={openIdProofView}
+              />
+            )}
+            {viewIdProofUrl && (
+              <div className="glass-backdrop billing-panel__backdrop" onClick={closeIdProofView}>
+                <div className="glass-panel modal-form__panel" role="dialog" aria-modal="true" aria-label="ID proof" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-form">
+                    <div className="modal-form__head">
+                      <div className="modal-form__head-row">
+                        <h3>ID proof</h3>
+                        <button type="button" className="btn-secondary" onClick={closeIdProofView}>
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                    <iframe className="id-proof-preview__frame" src={viewIdProofUrl} title="ID proof" />
+                  </div>
+                </div>
+              </div>
+            )}
+            {!viewStayError && viewStay.booking && (
+              <div className="billing-panel__actions stay-view__actions">
+                <button type="button" className="btn-secondary" onClick={closeStayView}>
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="btn-accent"
+                  onClick={() => {
+                    const bookingId = viewStay.bookingId;
+                    closeStayView();
+                    openBilling({ kind: 'STAY', bookingId });
+                  }}
+                >
+                  Issue bill
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* One modal, two steps: take the payment, then hand over the document.

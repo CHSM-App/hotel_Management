@@ -1,0 +1,467 @@
+/* The billing queue's "View" modal — a richer, standalone read of a stay,
+   built for this one screen rather than folded into StayDetails (shared by
+   three denser contexts: Bookings' detail modal, the tape chart popup, the
+   bill modal's own collapsible). Those read a stay mid-task; this is the
+   whole answer to "what is this stay", read on its own, so it earns its own
+   hero summary and two-column layout instead of the stacked numbered
+   sections those screens need to stay compact.
+
+   Reads the --sd-* custom properties Billing.css sets on the modal's own
+   .stay-view wrapper — this component's own premium palette (deep navy, ice
+   blue, amber, green), not the app-wide brand/accent/success tokens, per the
+   hospitality client's exact spec for this one modal. */
+
+.stay-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* --- Hero: who, where, when, and what reception actually recorded --------- */
+
+.stay-summary__hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  padding: 16px 18px;
+  border-radius: var(--radius-card);
+  background: var(--sd-ice);
+  box-shadow: inset 0 0 0 1px var(--sd-border);
+}
+
+.stay-summary__hero-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stay-summary__hero-name {
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--sd-navy);
+}
+
+.stay-summary__hero-room {
+  font-size: 13px;
+  color: var(--sd-text-muted);
+  margin-top: -4px;
+}
+
+.stay-summary__hero-dates {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sd-text);
+}
+
+.stay-summary__hero-dates svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--sd-navy);
+}
+
+.stay-summary__hero-dates small {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--sd-text-muted);
+}
+
+.stay-summary__hero-time {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sd-text);
+}
+
+.stay-summary__hero-time svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--sd-navy);
+}
+
+.stay-summary__hero-time small {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--sd-text-muted);
+}
+
+/* Pale amber with dark amber text — the one warm note in an otherwise navy
+   and ice-blue card, so a late checkout stays the thing a desk's eye lands
+   on before it cuts a bill. */
+.stay-summary__late-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 2px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--sd-amber-pale);
+  color: var(--sd-amber-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.stay-summary__late-pill svg {
+  flex-shrink: 0;
+}
+
+/* --- Two-column body: facts on the left, the money on the right ----------- */
+
+.stay-summary__grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.stay-summary__col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.stay-summary__section {
+  padding: 14px 16px;
+  border: 1px solid var(--sd-border);
+  border-radius: var(--radius-tile);
+  background: var(--sd-white);
+}
+
+.stay-summary__section h4 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--sd-navy);
+}
+
+.stay-summary__section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--sd-ice);
+  color: var(--sd-navy);
+}
+
+/* --- Fact rows: icon, label, value — same grid a form field answers to ---- */
+
+.stay-summary__fact {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.stay-summary__fact + .stay-summary__fact {
+  border-top: 1px dashed var(--sd-border);
+}
+
+.stay-summary__fact-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--sd-navy);
+}
+
+.stay-summary__fact-label {
+  font-size: 12.5px;
+  color: var(--sd-text-muted);
+}
+
+.stay-summary__fact-value {
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sd-text);
+  overflow-wrap: anywhere;
+}
+
+.stay-summary__fact-value--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stay-summary__fact-muted {
+  font-weight: 500;
+  color: var(--sd-text-muted);
+}
+
+/* Extras as a row of chips rather than one "AC · blanket · extra bed" string
+   — several items joined with middots reads as a run-on sentence once a
+   stay has more than one or two, and wraps mid-word with no clean break.
+   Each extra now holds its own line if it needs one. */
+.stay-summary__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  max-width: 220px;
+}
+
+.stay-summary__chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--sd-ice);
+  color: var(--sd-navy);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* --- Guest party: one tile per person, primary first ---------------------- */
+
+.stay-summary__people {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stay-summary__person {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--sd-border);
+  border-radius: 10px;
+  background: var(--sd-white);
+}
+
+.stay-summary__person-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--sd-ice);
+  color: var(--sd-navy);
+}
+
+.stay-summary__person-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.stay-summary__person-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--sd-text);
+}
+
+.stay-summary__person-tag {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--sd-ice);
+  color: var(--sd-navy);
+}
+
+/* Child isn't a second identity worth its own colour — grey, the same "no
+   further emphasis needed" tone unpaid/unavailable facts take. */
+.stay-summary__person-tag--muted {
+  background: var(--sd-border);
+  color: var(--sd-text-muted);
+}
+
+.stay-summary__person-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12px;
+  color: var(--sd-text-muted);
+}
+
+.stay-summary__person-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stay-summary__person-meta svg {
+  flex-shrink: 0;
+  color: var(--sd-text-muted);
+}
+
+/* Money actually taken is the one genuinely successful state this card can
+   show — green, and only here. */
+.stay-summary__fact--received {
+  background: var(--sd-green-pale);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.stay-summary__fact--received .stay-summary__fact-icon,
+.stay-summary__fact--received .stay-summary__fact-value {
+  color: var(--sd-green);
+}
+
+/* "No advance taken" / "None on file" are absence, not a result — neutral
+   grey rather than green, so a settled payment reads as the only thing on
+   this card that gets to look reassuring. */
+.stay-summary__empty {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--sd-ice);
+  color: var(--sd-text-muted);
+  font-size: 12.5px;
+}
+
+/* --- Price breakdown -------------------------------------------------------- */
+
+.stay-summary__pb-group {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sd-text-muted);
+  margin-bottom: 4px;
+}
+
+.stay-summary__pb-room + .stay-summary__pb-room {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--sd-border);
+}
+
+.stay-summary__pb-room-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--sd-text);
+  margin-bottom: 2px;
+}
+
+.stay-summary__pb-room-head span {
+  color: var(--sd-text-muted);
+  font-size: 11.5px;
+}
+
+.stay-summary__pb-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 13px;
+  color: var(--sd-text);
+}
+
+.stay-summary__pb-nights {
+  font-size: 11px;
+  color: var(--sd-text-muted);
+  margin-left: 4px;
+}
+
+.stay-summary__pb-sub {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--sd-border);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--sd-text);
+}
+
+/* Amber, matching the hero's own late-checkout pill — the same fact, found
+   the same way twice. */
+.stay-summary__late-charge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--sd-amber-pale);
+  color: var(--sd-amber-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.stay-summary__late-charge svg {
+  flex-shrink: 0;
+}
+
+.stay-summary__late-charge span {
+  flex: 1;
+}
+
+/* The one figure the whole card has been building to — a pale blue panel
+   with the amount in bold navy, set apart from the lines above it so it
+   reads as the answer rather than one more row. */
+.stay-summary__total {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-tile);
+  background: var(--sd-ice);
+  box-shadow: inset 0 0 0 1px var(--sd-border);
+}
+
+.stay-summary__total svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--sd-navy);
+}
+
+.stay-summary__total div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stay-summary__total span {
+  font-size: 12px;
+  color: var(--sd-text-muted);
+  line-height: 1.4;
+}
+
+.stay-summary__total strong {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--sd-navy);
+}
+
+@media (max-width: 760px) {
+  .stay-summary__hero {
+    grid-template-columns: 1fr;
+  }
+
+  .stay-summary__grid {
+    grid-template-columns: 1fr;
+  }
+}

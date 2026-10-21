@@ -21,6 +21,14 @@
   font-size: 16px;
 }
 
+/* The title/hint pair dropped (the tab strip above already names the
+   section), so the one control left — the list/card view toggle — needs its
+   own rule to stay pinned right instead of space-between collapsing it to
+   the start with nothing left to distribute against. */
+.chart-section__header--end {
+  justify-content: flex-end;
+}
+
 .chart-section__hint {
   font-size: 12px;
   color: var(--text-muted);

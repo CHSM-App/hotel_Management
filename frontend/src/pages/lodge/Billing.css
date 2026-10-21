@@ -1,14 +1,33 @@
 .billing-panel {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
+}
+
+/* No header line left inside the Ready/Services-to-bill cards now that their
+   title moved into the tab strip above — the card's own 22px top padding was
+   sized for a heading that isn't there any more, and just reads as dead air
+   above the table. */
+.chart-section--snug {
+  padding-top: 10px;
+}
+
+/* Tabs on the left, the list/card toggle on the right, one row — the same
+   layout the kitchen queue's own toolbar uses (.orders-panel__toolbar) —
+   rather than the toggle repeating on its own header line under every tab
+   that has one. */
+.billing-panel__subtabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
 }
 
 .billing-panel__subtabs {
   display: flex;
   gap: 4px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
   /* Slides at every width, not just below a breakpoint — see the note on
      .subtabs in RoomsAndRates.css. These tabs carry a count badge, so they
      are the widest of the three strips and the first to run out of room. */
@@ -496,6 +515,21 @@
   padding: 22px;
 }
 
+/* Advance payment and Vehicles share a row inside StayDetails
+   (.booking-form__optional, see Bookings.css), each getting its own bordered
+   card there instead of the plain top-divider every other .form-section
+   uses — a divider reads as one flat line and breaks across two uneven-
+   height columns. Bookings.css only pairs that card treatment with its own
+   .bookings-panel__modal; this view (the billing flow's "View full stay
+   details" and the queue's own "View" modal) renders the same component
+   inside .billing-panel__modal instead and needs the same fix. */
+.billing-panel__modal .booking-form__optional > .form-section {
+  margin-top: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
 .billing-panel__modal h3 {
   margin-bottom: 18px;
 }
@@ -553,6 +587,104 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+/* The read-only "View" modal off the ready-to-bill queue: a guest name and
+   where/when they stayed, instead of the generic "Stay details" label, so
+   the header answers "whose record is this" at a glance the way every other
+   detail modal in the app does.
+
+   Its own small palette rather than the app-wide tokens: a hospitality
+   client asked for this modal specifically — deep navy, ice blue, amber and
+   green at these exact values — which read calmer and more premium here
+   than the app's own slightly brighter brand/accent/success. Scoped to
+   .stay-view so nothing outside this one modal shifts. StaySummary.jsx's own
+   stylesheet (staySummary.css) reads these same custom properties, since a
+   CSS variable set on an ancestor is visible to any stylesheet styling its
+   descendants, regardless of which file declared it. */
+.stay-view {
+  --sd-navy: #12345A;
+  --sd-ice: #EAF3FC;
+  --sd-white: #FFFFFF;
+  --sd-amber: #F59E0B;
+  --sd-amber-pale: #FFF3D6;
+  --sd-amber-ink: color-mix(in srgb, #F59E0B 55%, black);
+  --sd-green: #16794B;
+  --sd-green-pale: #E8F5EC;
+  --sd-border: #DCE4EF;
+  --sd-text: #1E293B;
+  --sd-text-muted: #64748B;
+}
+
+/* The two-column breakdown inside StaySummary wants real width — narrower
+   than the billing-steps modal's 720px and the two columns crush together. */
+.billing-panel__modal.stay-view {
+  max-width: 880px;
+  background: var(--sd-white);
+}
+
+.stay-view .billing-panel__detail-header {
+  margin-bottom: 14px;
+}
+
+.stay-view__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stay-view__title h3 {
+  margin: 0;
+  color: var(--sd-navy);
+}
+
+.stay-view__title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--sd-ice);
+  color: var(--sd-navy);
+}
+
+/* Set off from the last form-section with its own rule, rather than just
+   trailing it — the actions are a decision, not one more fact on the
+   record, and need their own visual weight to read as one. */
+.stay-view__actions {
+  border-top: 1px solid var(--sd-border);
+  padding-top: 16px;
+  margin-top: 18px;
+}
+
+/* Issue bill: solid amber with dark navy text, not white — amber is a light
+   fill, and white-on-amber fails contrast. Close: a secondary action stays
+   white with a visible slate outline, rather than the app-wide
+   .btn-secondary's shadow-only (no border) neumorphic treatment, per the
+   "secondary white outlined button" spec for this modal specifically. */
+.stay-view__actions .btn-accent {
+  background: var(--sd-amber);
+  color: var(--sd-navy);
+  box-shadow: none;
+}
+
+.stay-view__actions .btn-accent:hover {
+  background: color-mix(in srgb, var(--sd-amber) 88%, black);
+}
+
+.stay-view__actions .btn-secondary {
+  background: var(--sd-white);
+  border: 1px solid var(--sd-border);
+  color: var(--sd-navy);
+  box-shadow: none;
+}
+
+.stay-view__actions .btn-secondary:hover {
+  background: var(--sd-ice);
+  color: var(--sd-navy);
+  box-shadow: none;
 }
 
 .billing-panel__danger-link {
@@ -1781,19 +1913,27 @@
   line-height: 1.3;
 }
 
-.billing-sheet__stay small {
-  display: block;
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
 /* Amber, not brand — "to collect" is money still owed, the thing on this
    row that most wants a desk's attention, and amber is the palette's own
-   colour for exactly that: a highlight that needs to be findable. */
+   colour for exactly that: a highlight that needs to be findable. Bold text
+   plus a left rule rather than a filled cell: nine columns is already a lot
+   to scan in one row, and a solid amber block on every single one of them
+   competed with the figure instead of pointing at it. */
 .billing-sheet__due-cell {
   font-weight: 800;
+  font-size: 13.5px;
   color: var(--accent-ink);
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* The three charges that build the subtotal, plus the advance deducted from
+   it — de-emphasised so the eye reads the row left to right as "inputs,
+   then Subtotal, then To collect" without every column fighting for the
+   same weight. All nine values stay on the one row; only their emphasis
+   changes. */
+.billing-sheet__charge-col {
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
 .billing-sheet__note {
@@ -1821,10 +1961,6 @@
   line-height: 1.2;
 }
 
-.billing-sheet__ready td:nth-child(-n + 3) {
-  white-space: normal;
-}
-
 .billing-sheet__ready td.history-table__actions {
   width: 1%;
 }
@@ -1840,23 +1976,21 @@
   font-size: 10.5px;
 }
 
-.billing-sheet__ready td.history-table__strong {
-  min-width: 0;
-}
-
 .billing-sheet__ready .history-table__btn {
   margin-left: 0;
 }
 
-/* Alignment: number headings sit over their right-aligned figures, and every
-   column but Guest shrinks to its content so the spare width goes to the name
-   instead of being sprinkled between the amounts. */
+/* Alignment: number headings sit over their right-aligned figures. Every
+   column, Guest included, shrinks to its own content instead of one column
+   being stretched to soak up whatever width is left over — a short name
+   leaves a narrow column, a long one a wider one, same as every other
+   column already does. */
 .history-sheet .history-table.billing-sheet__ready th.history-table__num {
   text-align: right;
 }
 
-.history-sheet .history-table.billing-sheet__ready th:not(:first-child),
-.history-sheet .history-table.billing-sheet__ready td:not(:first-child) {
+.history-sheet .history-table.billing-sheet__ready th,
+.history-sheet .history-table.billing-sheet__ready td {
   width: 1%;
   white-space: nowrap;
 }
@@ -1907,18 +2041,18 @@
   padding: 9px 9px;
 }
 
-.billing-sheet__ready th {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
 @media (min-width: 1300px) {
   .history-sheet .history-table.billing-sheet__ready th,
   .history-sheet .history-table.billing-sheet__ready td {
     padding-left: 12px;
     padding-right: 12px;
   }
+}
+
+.billing-sheet__ready th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
 }
 
 /* The room pill was flat paper-on-border, the same neutral chip every other
