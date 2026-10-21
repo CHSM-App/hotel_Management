@@ -253,32 +253,18 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Text(
+                    'Checkout policy',
+                    style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 16),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'When a stay ends, and the late-checkout charge.',
+                    style: TextStyle(color: AppTheme.muted, fontSize: 11, height: 1.3),
+                  ),
+                  const SizedBox(height: AppTheme.s8),
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              'Checkout policy',
-                              style: TextStyle(
-                                color: AppTheme.heading,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'When a stay is due to end here, and what reception should '
-                              'charge a guest who stays past it.',
-                              style: const TextStyle(color: AppTheme.muted, fontSize: 11.5, height: 1.35),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: AppTheme.s8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -340,12 +326,13 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
                     )
                   : isCycle
                       ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: _TimeField(
                                 label: 'Check-in from',
                                 time: _checkInTime,
-                                hint: 'When rooms are ready. Quoted to the guest; it does not change the night count.',
+                                hint: 'When rooms are ready.',
                                 onTap: () => _pickTime(checkIn: true),
                               ),
                             ),
@@ -354,7 +341,7 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
                               child: _TimeField(
                                 label: 'Checkout by',
                                 time: _checkOutTime,
-                                hint: 'Every time a stay runs past this it has started another night.',
+                                hint: 'Past this starts another night.',
                                 onTap: () => _pickTime(checkIn: false),
                               ),
                             ),
@@ -443,7 +430,7 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
                   const SizedBox(height: AppTheme.s12),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(AppTheme.s12),
+                    padding: const EdgeInsets.all(AppTheme.s8 + 2),
                     decoration: BoxDecoration(
                       color: AppTheme.bg,
                       borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -461,42 +448,37 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
                             letterSpacing: 0.4,
                           ),
                         ),
-                        const SizedBox(height: AppTheme.s8),
+                        const SizedBox(height: 6),
                         for (final step in preview)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                            decoration: BoxDecoration(
+                              color: _toneColor[step.tone]!.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border(left: BorderSide(color: _toneColor[step.tone]!, width: 3)),
+                            ),
                             child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      color: _toneColor[step.tone],
-                                      shape: BoxShape.circle,
-                                    ),
+                                Expanded(
+                                  flex: 5,
+                                  child: Text(
+                                    step.when,
+                                    style: const TextStyle(color: AppTheme.muted, fontSize: 11, height: 1.25),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        step.when,
-                                        style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                                      ),
-                                      Text(
-                                        step.charge,
-                                        style: const TextStyle(
-                                          color: AppTheme.heading,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
+                                  flex: 4,
+                                  child: Text(
+                                    step.charge,
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(
+                                      color: AppTheme.heading,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                      height: 1.25,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -514,7 +496,7 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
               Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
             ],
 
-            const SizedBox(height: AppTheme.s16),
+            const SizedBox(height: AppTheme.s12),
             Row(
               children: [
                 if (_saved) ...[
@@ -545,7 +527,9 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
   }
 }
 
-class _PolicySection extends StatelessWidget {
+/// A settings card whose long explanation sits behind an (i) button, so the
+/// fields stay in view and the page stays short.
+class _PolicySection extends StatefulWidget {
   final IconData icon;
   final String title;
   final String note;
@@ -559,7 +543,18 @@ class _PolicySection extends StatelessWidget {
   });
 
   @override
+  State<_PolicySection> createState() => _PolicySectionState();
+}
+
+class _PolicySectionState extends State<_PolicySection> {
+  bool _showNote = false;
+
+  @override
   Widget build(BuildContext context) {
+    final icon = widget.icon;
+    final title = widget.title;
+    final note = widget.note;
+    final child = widget.child;
     return NeuCard(
       radius: AppTheme.rLarge,
       padding: const EdgeInsets.all(AppTheme.s12),
@@ -592,10 +587,33 @@ class _PolicySection extends StatelessWidget {
                   style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14),
                 ),
               ),
+              if (note.isNotEmpty)
+                InkResponse(
+                  onTap: () => setState(() => _showNote = !_showNote),
+                  radius: 18,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      _showNote ? Icons.info_rounded : Icons.info_outline_rounded,
+                      size: 18,
+                      color: _showNote ? AppTheme.accent : AppTheme.muted,
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: AppTheme.s8),
-          Text(note, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5, height: 1.4)),
+          if (_showNote) ...[
+            const SizedBox(height: AppTheme.s8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppTheme.s8 + 2),
+              decoration: BoxDecoration(
+                color: AppTheme.accent.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              ),
+              child: Text(note, style: const TextStyle(color: AppTheme.muted, fontSize: 11, height: 1.4)),
+            ),
+          ],
           const SizedBox(height: AppTheme.s12),
           child,
         ],
@@ -617,7 +635,7 @@ class _TimeField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        Text(label, style: AppTheme.fieldLabel(context)),
         const SizedBox(height: AppTheme.s8),
         GestureDetector(
           onTap: onTap,

@@ -43,7 +43,10 @@ class CustomerFeedbackPanel extends ConsumerWidget {
       onRefresh: () => ref.read(customersViewModelProvider.notifier).loadFeedback(force: true),
       color: AppTheme.accent,
       child: TablePageBody(
-        table: true,
+        // The pinned-table layout squeezes its last child into whatever
+        // height is left; the empty-state message doesn't fit there on a
+        // short phone screen, so it gets a plain scrolling list instead.
+        table: responses.isNotEmpty,
         padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
         children: [
           _FeedbackStatsRow(totals: result?.totals ?? const CustomerFeedbackTotals()),

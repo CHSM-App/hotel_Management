@@ -928,58 +928,33 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
+        title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _editing
+                          ? 'Edit booking · ${widget.editBooking!.roomNumber ?? ''}'
+                          : 'New booking',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    Text(
+                      _editing
+                          ? 'Update guest, stay and payment'
+                          : 'Guest, stay and payment details',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                    ),
+                  ],
                 ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x331457AD),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: Icon(
-                _editing
-                    ? Icons.edit_calendar_rounded
-                    : Icons.add_home_work_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            Expanded(
-              child: Text(
-                _editing
-                    ? 'Edit booking · ${widget.editBooking!.roomNumber ?? ''}'
-                    : 'New booking',
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x001457AD)],
-              ),
-            ),
-          ),
-        ),
       ),
       body: SafeArea(
         child: ListView(
@@ -2116,7 +2091,7 @@ class _DateBox extends StatelessWidget {
       children: [
         required
             ? _RequiredLabel(label)
-            : Text(label, style: Theme.of(context).textTheme.bodySmall),
+            : Text(label, style: AppTheme.fieldLabel(context)),
         const SizedBox(height: AppTheme.s4),
         GestureDetector(
           onTap: onTap,

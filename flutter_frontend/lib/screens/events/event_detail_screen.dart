@@ -9,6 +9,7 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/payment_row.dart';
 import '../billing/advance_receipt_screen.dart';
+import '../billing/bill_ui.dart';
 import '../billing/invoice_preview_screen.dart';
 import '../billing/issue_event_bill_screen.dart';
 import '../housekeeping/housekeeping_parts.dart';
@@ -81,7 +82,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   Widget build(BuildContext context) {
     final ev = _event;
     return Scaffold(
-      appBar: AppBar(title: Text(ev?.title ?? 'Function')),
+      backgroundColor: AppTheme.bg,
+      appBar: billAppBar(
+        title: 'Function',
+        subtitle: ev?.title,
+        onBack: () => Navigator.of(context).pop(),
+      ),
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -92,8 +98,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
             : RefreshIndicator(
                 onRefresh: _load,
                 color: AppTheme.accent,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+                    child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                  padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s24),
                   children: [
                     _Header(event: ev),
                     if (!ev.isClosed) ...[
@@ -216,7 +226,60 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       ),
                   ],
                 ),
+                  ),
+                ),
               ),
+      ),
+    );
+  }
+}
+
+/// A titled card — icon badge, caps title, optional action on the right —
+/// the same shell the room stay page's sections use.
+class _Section extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget? trailing;
+  final Widget child;
+
+  const _Section({required this.icon, required this.title, required this.child, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(AppTheme.s12, 10, AppTheme.s12, AppTheme.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium + 2),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: const [BoxShadow(color: Color(0x0A16212E), blurRadius: 10, offset: Offset(0, 3))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AppTheme.sidebarBrandWash, borderRadius: BorderRadius.circular(7)),
+                child: Icon(icon, size: 14, color: AppTheme.accent),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 11.5, fontWeight: FontWeight.w700, letterSpacing: 0.6),
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
       ),
     );
   }
@@ -236,54 +299,67 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
+    // Where the function is in time — not the status, which is about the
+    // money. Mirrors eventPhase/phaseTagClass in eventFormat.js.
+    final phase = eventPhase(event);
+    final phaseLabel = phase == null ? null : (kEventPhaseLabel[phase] ?? phase);
+    final venue = '${event.venueName}${event.venueCapacity != null ? ' (${event.venueCapacity})' : ''}';
+
+    Widget line(IconData icon, String text) => Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: AppTheme.muted),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.text, fontSize: 12.5))),
+        ],
+      ),
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  event.title,
-                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 17),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppTheme.heading, fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: -0.2),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      [kEventTypeLabel[event.eventType] ?? event.eventType, if (phaseLabel != null) phaseLabel].join(' · '),
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(width: AppTheme.s8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                 decoration: BoxDecoration(color: _statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
                 child: Text(kEventStatusLabel[event.status] ?? event.status, style: TextStyle(color: _statusColor, fontSize: 11, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
-          Builder(builder: (context) {
-            // Where the function is in time — not the status, which is about
-            // the money. Mirrors eventPhase/phaseTagClass in eventFormat.js.
-            final phase = eventPhase(event);
-            if (phase == null) return const SizedBox.shrink();
-            final color = switch (phase) {
-              'IN_PROGRESS' => AppTheme.checkedIn,
-              'COMPLETED' => AppTheme.muted,
-              _ => AppTheme.edit,
-            };
-            return Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
-                  child: Text(kEventPhaseLabel[phase] ?? phase, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
-                ),
-              ),
-            );
-          }),
-          Text(kEventTypeLabel[event.eventType] ?? event.eventType, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
-          const SizedBox(height: 6),
-          Text('${formatDateTime(event.startAt)} · ${event.venueName}${event.venueCapacity != null ? ' (up to ${event.venueCapacity})' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 13)),
-          const SizedBox(height: 2),
-          Text('${event.organiserName} · ${event.organiserPhone}${event.organiserAltPhone != null ? ' / ${event.organiserAltPhone}' : ''}', style: const TextStyle(color: AppTheme.text, fontSize: 13)),
+          const Padding(padding: EdgeInsets.only(top: 10), child: Divider(height: 1, color: AppTheme.border)),
+          line(Icons.event_rounded, formatDateTime(event.startAt)),
+          line(Icons.location_on_outlined, '$venue · ${event.expectedPax} guests'),
+          line(Icons.person_outline_rounded, '${event.organiserName} · ${event.organiserPhone}${event.organiserAltPhone != null ? ' / ${event.organiserAltPhone}' : ''}'),
         ],
       ),
     );
@@ -345,12 +421,12 @@ class _QuoteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lines = event.pricing?.lines ?? const [];
-    return NeuCard(
+    return _Section(
+      icon: Icons.request_quote_rounded,
+      title: 'Quote',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Quote', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: 6),
           for (final l in lines)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
@@ -409,12 +485,12 @@ class _HeadCountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
+    return _Section(
+      icon: Icons.groups_rounded,
+      title: 'Head count',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Head count', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: 6),
           _fact('Expected', '${event.expectedPax}'),
           if (event.hasCatering) ...[
             _fact('Guaranteed minimum', '${event.guaranteedPax}'),
@@ -539,14 +615,13 @@ class _ExtrasCardState extends ConsumerState<_ExtrasCard> {
   Widget build(BuildContext context) {
     final extras = widget.event.addons.where((a) => a.isExtra).toList();
     final unpriced = extras.where((a) => a.needsPricing).length;
-    return NeuCard(
-      padding: const EdgeInsets.all(AppTheme.s12),
+    return _Section(
+      icon: Icons.add_shopping_cart_rounded,
+      title: 'Extras on the day',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Extras on the day', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14)),
           if (unpriced > 0) ...[
-            const SizedBox(height: 4),
             Text('$unpriced extra${unpriced == 1 ? '' : 's'} still need a price before the bill can be issued.', style: const TextStyle(color: AppTheme.draft, fontSize: 11.5, fontWeight: FontWeight.w600)),
           ],
           const SizedBox(height: 6),
@@ -647,14 +722,15 @@ class _NotesCardState extends State<_NotesCard> {
       ('setupNotes', 'Setup', _setup, widget.event.setupNotes),
       ('scheduleNotes', 'Schedule', _schedule, widget.event.scheduleNotes),
     ];
-    return NeuCard(
-      padding: const EdgeInsets.all(AppTheme.s12),
+    return _Section(
+      icon: Icons.sticky_note_2_rounded,
+      title: 'Function sheet',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Expanded(child: Text('Function sheet', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14))),
+              const Spacer(),
               if (!_editing)
                 CompactActionButton(label: 'Edit', color: AppTheme.accent, onTap: () => setState(() => _editing = true))
               else
@@ -726,14 +802,15 @@ class _AdvancesCardState extends State<_AdvancesCard> {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
-      padding: const EdgeInsets.all(AppTheme.s12),
+    return _Section(
+      icon: Icons.account_balance_wallet_rounded,
+      title: 'Advances',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Expanded(child: Text('Advances', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14))),
+              const Spacer(),
               if (widget.canTake && !_taking)
                 CompactActionButton(
                   label: 'Take advance',
@@ -918,12 +995,12 @@ class _CancelCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
+    return _Section(
+      icon: Icons.cancel_outlined,
+      title: 'Cancel this function',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Cancel this function', style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: AppTheme.s8),
           NeuField(controller: reasonController, label: 'Reason', required: true),
           if (event.advanceAmount > 0) ...[
             const SizedBox(height: AppTheme.s8),

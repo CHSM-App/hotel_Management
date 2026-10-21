@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui' show FontFeature;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -189,6 +190,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
+      appBar: AppBar(title: const Text('Guest stay')),
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -217,17 +219,17 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                         ),
                         child: ListView(
                           padding: const EdgeInsets.fromLTRB(
-                            AppTheme.s16,
                             AppTheme.s12,
-                            AppTheme.s16,
-                            AppTheme.s32,
+                            AppTheme.s4,
+                            AppTheme.s12,
+                            AppTheme.s24,
                           ),
                           physics: const AlwaysScrollableScrollPhysics(
                             parent: BouncingScrollPhysics(),
                           ),
                           children: [
                             _TopBar(booking: booking),
-                            const SizedBox(height: AppTheme.s12),
+                            const SizedBox(height: AppTheme.s8),
                             _StayRoomSection(
                               booking: booking,
                               clearingLockout: _clearingLockout,
@@ -235,7 +237,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                               busy: _busy,
                               onCheckOutRoom: _checkOutRoom,
                             ),
-                            const SizedBox(height: AppTheme.s12),
+                            const SizedBox(height: AppTheme.s8),
                             _GuestSection(
                               booking: booking,
                               onViewIdProof: () => _viewIdProof(
@@ -244,7 +246,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                               onViewGuestIdProof: (g) =>
                                   _viewIdProof('ID proof · ${g.name}', guestId: g.id),
                             ),
-                            const SizedBox(height: AppTheme.s12),
+                            const SizedBox(height: AppTheme.s8),
                             Builder(
                               builder: (context) {
                                 // Side by side above a phone's own width, the
@@ -267,16 +269,16 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           advance,
-                                          const SizedBox(height: AppTheme.s12),
+                                          const SizedBox(height: AppTheme.s8),
                                           vehicles,
                                         ],
                                       );
                               },
                             ),
-                            const SizedBox(height: AppTheme.s12),
+                            const SizedBox(height: AppTheme.s8),
                             _ChargesSection(booking: booking),
                             if (booking.foodOrders.isNotEmpty) ...[
-                              const SizedBox(height: AppTheme.s12),
+                              const SizedBox(height: AppTheme.s8),
                               _FoodOrdersSection(
                                 orders: booking.foodOrders,
                                 canAdd:
@@ -287,16 +289,16 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                               ),
                             ],
                             if (booking.serviceUsages.isNotEmpty) ...[
-                              const SizedBox(height: AppTheme.s12),
+                              const SizedBox(height: AppTheme.s8),
                               _ServicesSection(usages: booking.serviceUsages),
                             ],
                             if (booking.invoice != null) ...[
-                              const SizedBox(height: AppTheme.s12),
+                              const SizedBox(height: AppTheme.s8),
                               _BillSection(invoice: booking.invoice!),
                             ],
                             if (booking.status == 'BOOKED' ||
                                 booking.status == 'CHECKED_IN') ...[
-                              const SizedBox(height: AppTheme.s24),
+                              const SizedBox(height: AppTheme.s12),
                               _actions(booking),
                             ],
                           ],
@@ -451,90 +453,215 @@ class _TopBar extends StatelessWidget {
 
   const _TopBar({required this.booking});
 
+  String get _name =>
+      (booking.guestName ?? '').trim().isEmpty ? 'Guest' : booking.guestName!;
+
+  String get _initials {
+    final parts = _name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
+    final letters = parts.take(2).map((p) => p[0].toUpperCase());
+    return letters.isEmpty ? '?' : letters.join();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final checkedIn = booking.status == 'CHECKED_IN';
     final statusColor = BookingActions.statusColor(booking.status);
+    final nights = booking.nights;
+    final room = booking.isMultiRoom
+        ? '${booking.roomCount} rooms · ${booking.roomNumbers ?? booking.roomNumber ?? '—'}'
+        : 'Room ${booking.roomNumber ?? '—'}'
+              '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}';
 
-    return NeuCard(
-      radius: AppTheme.rMedium,
-      shadow: AppTheme.extruded,
-      padding: const EdgeInsets.fromLTRB(
-        AppTheme.s16,
-        AppTheme.s12,
-        AppTheme.s8,
-        AppTheme.s12,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 32,
-            decoration: BoxDecoration(
-              color: statusColor,
-              borderRadius: BorderRadius.circular(999),
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.navbar, AppTheme.accent],
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.rMedium + 4),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.navbar.withValues(alpha: 0.25),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
-          const SizedBox(width: AppTheme.s12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+        ],
+      ),
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+            child: Row(
               children: [
-                Text(
-                  (booking.guestName ?? '').trim().isEmpty
-                      ? 'Guest'
-                      : booking.guestName!,
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
+                Container(
+                  width: 42,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
+                  child: Text(
+                    _initials,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  booking.isMultiRoom
-                      ? '${booking.roomCount} rooms · ${booking.roomNumbers ?? booking.roomNumber ?? '—'}'
-                      : 'Room ${booking.roomNumber ?? '—'}'
-                            '${booking.categoryName != null ? ' · ${booking.categoryName}' : ''}',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
-                  overflow: TextOverflow.ellipsis,
+                const SizedBox(width: AppTheme.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          room,
+                          if ((booking.guestPhone ?? '').isNotEmpty)
+                            booking.guestPhone!,
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        BookingActions.statusLabel(booking.status),
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: AppTheme.s8),
+          const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             decoration: BoxDecoration(
-              color: checkedIn
-                  ? const Color(0xFFE3F6E9)
-                  : statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppTheme.rMedium),
             ),
-            child: Text(
-              BookingActions.statusLabel(booking.status),
-              style: TextStyle(
-                color: checkedIn ? const Color(0xFF1E824C) : statusColor,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
+            child: IntrinsicHeight(
+              child: Row(
+                children: [
+                  _HeroStat(
+                    label: 'CHECK-IN',
+                    value: formatIsoDate(booking.checkInDate),
+                  ),
+                  const _HeroDivider(),
+                  _HeroStat(
+                    label: 'CHECK-OUT',
+                    value: formatIsoDate(booking.checkOutDate),
+                  ),
+                  const _HeroDivider(),
+                  _HeroStat(
+                    label: 'NIGHTS',
+                    value: nights == null ? '—' : '$nights',
+                  ),
+                ],
               ),
-            ),
-          ),
-          InkResponse(
-            onTap: () => Navigator.of(context).pop(),
-            radius: 20,
-            child: const Padding(
-              padding: EdgeInsets.all(6),
-              child: Icon(Icons.close_rounded, color: AppTheme.muted, size: 20),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _HeroStat extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _HeroStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroDivider extends StatelessWidget {
+  const _HeroDivider();
+
+  @override
+  Widget build(BuildContext context) =>
+      Container(width: 1, color: Colors.white.withValues(alpha: 0.2));
 }
 
 // ── 1 · Stay & room ──────────────────────────────────────────────────────────
@@ -899,11 +1026,11 @@ class _GuestSection extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(
               horizontal: AppTheme.s12,
-              vertical: AppTheme.s12,
+              vertical: 8,
             ),
             decoration: BoxDecoration(
               color: AppTheme.bg,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               children: [
@@ -926,7 +1053,6 @@ class _GuestSection extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: AppTheme.s8),
           _PersonRow(
             name: (booking.guestName ?? '').trim().isEmpty
                 ? 'Guest'
@@ -989,21 +1115,21 @@ class _PersonRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(top: AppTheme.s8),
+      margin: const EdgeInsets.only(top: 6),
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.s12,
-        vertical: AppTheme.s12,
+        vertical: 10,
       ),
       decoration: BoxDecoration(
         color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 30,
+            height: 30,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: AppTheme.accent.withValues(alpha: 0.14),
@@ -1216,78 +1342,122 @@ class _ChargesSection extends StatelessWidget {
 
   const _ChargesSection({required this.booking});
 
+  Widget _group(IconData icon, String title, List<Widget> rows, Widget total) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+      decoration: BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 13, color: AppTheme.muted),
+              const SizedBox(width: 6),
+              Text(
+                title.toUpperCase(),
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ...rows,
+          const Divider(height: 12, color: AppTheme.border),
+          total,
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final foodOpen = booking.foodOrdersOpen;
     final servicesOpen = booking.servicesOpen;
+    final due = booking.outstandingBeforeTax +
+        booking.foodOpenTotal +
+        booking.servicesOpenTotal;
+    final advance = booking.advanceAmount ?? 0;
+    final grand = due + advance;
+    final paidShare = grand > 0 ? (advance / grand).clamp(0.0, 1.0) : 0.0;
+
     return _Section(
       number: 5,
       icon: Icons.receipt_long_rounded,
       title: 'Price breakdown',
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(AppTheme.s16),
-        decoration: BoxDecoration(
-          color: AppTheme.bg,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final line in booking.roomCharges)
-              _MoneyLine(
-                label: line.nights > 1 && line.amount > 0
-                    ? '${line.label}  ×${line.nights} nights'
-                    : line.label,
-                value: formatPrice(line.amount),
-              ),
-            const Divider(height: AppTheme.s16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _group(
+            Icons.bed_rounded,
+            'Room',
+            [
+              for (final line in booking.roomCharges)
+                _MoneyLine(
+                  label: line.label,
+                  note: line.nights > 1 && line.amount > 0
+                      ? '${line.nights} nights'
+                      : null,
+                  value: formatPrice(line.amount),
+                ),
+              if (booking.lateCheckoutCharge > 0)
+                _MoneyLine(
+                  label: 'Agreed for leaving late',
+                  value: formatPrice(booking.lateCheckoutCharge),
+                ),
+            ],
             _MoneyLine(
               label: 'Room charge for '
                   '${(booking.nights ?? 0) == 1 ? 'the night' : 'all nights'}',
               value: formatPrice(booking.totalPrice),
               strong: true,
             ),
-            if (booking.lateCheckoutCharge > 0)
-              _MoneyLine(
-                label: 'Agreed for leaving late',
-                value: formatPrice(booking.lateCheckoutCharge),
-              ),
-            // Everything this stay has ordered that is not on a bill yet:
-            // room service, and table food moved onto the room. Orders still
-            // being cooked count too, and say so, because they will be on
-            // the bill — same as StayDetails.jsx's own foodOrdersOpen block.
-            if (foodOpen.isNotEmpty) ...[
-              const Divider(height: AppTheme.s16),
-              for (final o in foodOpen)
-                _MoneyLine(
-                  label: 'Order #${o.orderNumber}',
-                  note: o.origin == 'ROOM_SERVICE'
-                      ? 'room service'
-                      : 'from ${o.placedFrom ?? 'restaurant'}'
-                            '${o.status != 'DELIVERED' ? ' · in progress' : ''}',
-                  value: formatPrice(o.subtotal),
-                ),
+          ),
+          // Orders still being cooked count too, and say so, because they
+          // will be on the bill — same as StayDetails.jsx's foodOpen block.
+          if (foodOpen.isNotEmpty)
+            _group(
+              Icons.restaurant_rounded,
+              'Food',
+              [
+                for (final o in foodOpen)
+                  _MoneyLine(
+                    label: 'Order #${o.orderNumber}',
+                    note: o.origin == 'ROOM_SERVICE'
+                        ? 'room service'
+                        : 'from ${o.placedFrom ?? 'restaurant'}'
+                              '${o.status != 'DELIVERED' ? ' · in progress' : ''}',
+                    value: formatPrice(o.subtotal),
+                  ),
+              ],
               _MoneyLine(
                 label: 'Food ordered',
                 value: formatPrice(booking.foodOpenTotal),
                 strong: true,
               ),
-            ],
-            // Services used that aren't on a bill yet but are on the room
-            // bill — spa, pool, laundry, whatever the lodge sells beyond the
-            // room and food — same as StayDetails.jsx's own servicesOpen
-            // block.
-            if (servicesOpen.isNotEmpty) ...[
-              const Divider(height: AppTheme.s16),
-              for (final u in servicesOpen)
-                _MoneyLine(
-                  label: u.name,
-                  note:
-                      '${formatPrice(u.unitPrice ?? u.amount / u.quantity)} per ${u.unitLabel} × ${u.quantity}${u.headcount > 1 ? ' × ${u.headcount} people' : ''}'
-                      '${u.gstRatePercent > 0 ? ' · incl. ${u.gstRatePercent}% GST' : ''}',
-                  value: formatPrice(u.amount),
-                ),
+            ),
+          if (servicesOpen.isNotEmpty)
+            _group(
+              Icons.spa_rounded,
+              'Services',
+              [
+                for (final u in servicesOpen)
+                  _MoneyLine(
+                    label: u.name,
+                    note:
+                        '${formatPrice(u.unitPrice ?? u.amount / u.quantity)} per ${u.unitLabel} × ${u.quantity}${u.headcount > 1 ? ' × ${u.headcount} people' : ''}'
+                        '${u.gstRatePercent > 0 ? ' · incl. ${u.gstRatePercent}% GST' : ''}',
+                    value: formatPrice(u.amount),
+                  ),
+              ],
               _MoneyLine(
                 label:
                     'Services used · ${servicesOpen.length} '
@@ -1295,37 +1465,102 @@ class _ChargesSection extends StatelessWidget {
                 value: formatPrice(booking.servicesOpenTotal),
                 strong: true,
               ),
-            ],
-            if (booking.advanceAmount != null)
-              _MoneyLine(
-                label: booking.paidInFull
-                    ? 'Paid in full at booking'
-                    : 'Advance already paid',
-                note: booking.advanceDescription,
-                value: '− ${formatPrice(booking.advanceAmount)}',
+            ),
+          if (booking.advanceAmount != null)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: AppTheme.s8),
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+              decoration: BoxDecoration(
+                color: AppTheme.vacant.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
               ),
-            // Only while the stay is still unbilled. Once a bill exists it
-            // is the answer to "what is owed", and a pre-tax guess sitting
-            // beside it would be a second, wrong one.
-            if (booking.invoice == null) ...[
-              const Divider(height: AppTheme.s16),
-              _MoneyLine(
-                label: 'Still to collect',
-                note: 'Room'
-                    '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
-                    '${foodOpen.isNotEmpty ? ' + food' : ''}'
-                    '${servicesOpen.isNotEmpty ? ' + services' : ''}'
-                    ' − advance',
-                value: formatPrice(
-                  booking.outstandingBeforeTax +
-                      booking.foodOpenTotal +
-                      booking.servicesOpenTotal,
+              child: Column(
+                children: [
+                  _MoneyLine(
+                    label: booking.paidInFull
+                        ? 'Paid in full at booking'
+                        : 'Advance already paid',
+                    note: booking.advanceDescription,
+                    value: '− ${formatPrice(booking.advanceAmount)}',
+                  ),
+                  if (booking.invoice == null && grand > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: paidShare.toDouble(),
+                          minHeight: 5,
+                          backgroundColor: AppTheme.vacant.withValues(
+                            alpha: 0.15,
+                          ),
+                          valueColor: const AlwaysStoppedAnimation(
+                            AppTheme.vacant,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          // Only while the stay is still unbilled. Once a bill exists it is
+          // the answer to "what is owed", and a pre-tax guess sitting beside
+          // it would be a second, wrong one.
+          if (booking.invoice == null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s12,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppTheme.navbar, AppTheme.accent],
                 ),
-                strong: true,
+                borderRadius: BorderRadius.circular(10),
               ),
-            ],
-          ],
-        ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Still to collect',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'Room'
+                          '${booking.lateCheckoutCharge > 0 ? ' + late checkout' : ''}'
+                          '${foodOpen.isNotEmpty ? ' + food' : ''}'
+                          '${servicesOpen.isNotEmpty ? ' + services' : ''}'
+                          ' − advance',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    formatPrice(due),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -2045,40 +2280,49 @@ class _MoneyLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final deduction = value.startsWith('−') || value.startsWith('-');
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: strong ? 14 : 13,
-                  fontWeight: strong ? FontWeight.w700 : FontWeight.w400,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: strong ? 14 : 12.5,
+                    fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
+                    height: 1.25,
+                  ),
                 ),
-                children: [
-                  TextSpan(text: label),
-                  if (note != null && note!.isNotEmpty)
-                    TextSpan(
-                      text: '  · $note',
+                if (note != null && note!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      note!,
                       style: const TextStyle(
                         color: AppTheme.muted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
+                        fontSize: 11,
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
           ),
+          const SizedBox(width: AppTheme.s12),
           Text(
             value,
             style: TextStyle(
-              color: AppTheme.heading,
-              fontSize: strong ? 14 : 13,
-              fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
+              color: deduction ? AppTheme.vacant : AppTheme.heading,
+              fontSize: strong ? 14.5 : 13,
+              fontWeight: strong || deduction
+                  ? FontWeight.w700
+                  : FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
         ],
@@ -2109,29 +2353,38 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
-      radius: AppTheme.rMedium,
-      shadow: AppTheme.extruded,
-      padding: const EdgeInsets.all(AppTheme.s12),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.s12,
+        10,
+        AppTheme.s12,
+        AppTheme.s12,
+      ),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium + 2),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A16212E),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 26,
-                height: 26,
+                width: 24,
+                height: 24,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppTheme.accent.withValues(alpha: 0.18),
-                      AppTheme.sidebarBrand.withValues(alpha: 0.10),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(8),
+                  color: AppTheme.sidebarBrandWash,
+                  borderRadius: BorderRadius.circular(7),
                 ),
                 child: Icon(icon, size: 14, color: AppTheme.accent),
               ),
@@ -2141,35 +2394,15 @@ class _Section extends StatelessWidget {
                   title.toUpperCase(),
                   style: const TextStyle(
                     color: AppTheme.heading,
-                    fontSize: 12,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ),
-              Container(
-                width: 18,
-                height: 18,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: AppTheme.bg,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  '$number',
-                  style: const TextStyle(
-                    color: AppTheme.muted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
                   ),
                 ),
               ),
             ],
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: AppTheme.s8),
-            child: Divider(height: 1),
-          ),
+          const SizedBox(height: 10),
           child,
         ],
       ),
@@ -2187,17 +2420,21 @@ class _FactBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppTheme.s12),
-      decoration: BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Wrap(
-        spacing: AppTheme.s16,
-        runSpacing: AppTheme.s12,
-        children: [for (final f in facts) f],
+      child: LayoutBuilder(
+        builder: (context, c) {
+          const gap = AppTheme.s12;
+          final half = (c.maxWidth - gap) / 2;
+          return Wrap(
+            spacing: gap,
+            runSpacing: 8,
+            children: [
+              for (final f in facts)
+                SizedBox(width: f.wide ? c.maxWidth : half, child: f),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2209,8 +2446,7 @@ class _Fact extends StatelessWidget {
   final String? note;
 
   /// Takes the whole row rather than sharing it — a long value like a list
-  /// of extras would otherwise be squeezed into whatever width the wrap left
-  /// over.
+  /// of extras would otherwise be squeezed into half the width.
   final bool wide;
 
   const _Fact({
@@ -2222,33 +2458,34 @@ class _Fact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: wide ? double.infinity : 150,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: const TextStyle(
-              color: AppTheme.muted,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: AppTheme.muted,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
           ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            color: AppTheme.heading,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
           ),
-          if (note != null && note!.isNotEmpty)
-            Text(
-              note!,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-        ],
-      ),
+        ),
+        if (note != null && note!.isNotEmpty)
+          Text(
+            note!,
+            style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+          ),
+      ],
     );
   }
 }
@@ -2264,11 +2501,11 @@ class _EmptyBox extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.s12,
-        vertical: AppTheme.s16,
+        vertical: 10,
       ),
       decoration: BoxDecoration(
         color: AppTheme.bg,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
         message,

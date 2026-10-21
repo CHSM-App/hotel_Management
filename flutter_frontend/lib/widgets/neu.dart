@@ -685,6 +685,12 @@ class NeuField extends StatefulWidget {
   /// by onboarding and detail screens would waste space.
   final bool dense;
 
+  /// Colour of the label above the field; defaults to the theme's grey.
+  final Color? labelColor;
+
+  /// Weight of the label above the field; defaults to the theme's.
+  final FontWeight? labelWeight;
+
   const NeuField({
     super.key,
     required this.controller,
@@ -705,6 +711,8 @@ class NeuField extends StatefulWidget {
     this.forceCapitalizeWords = false,
     this.forceUppercase = false,
     this.dense = false,
+    this.labelColor,
+    this.labelWeight,
   });
 
   @override
@@ -767,7 +775,10 @@ class _NeuFieldState extends State<NeuField> {
                 child: Text.rich(
                   TextSpan(
                     text: widget.label,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: widget.labelColor ?? AppTheme.heading,
+                          fontWeight: widget.labelWeight ?? FontWeight.w700,
+                        ),
                     children: widget.required
                         ? const [
                             TextSpan(

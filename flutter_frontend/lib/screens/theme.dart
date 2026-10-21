@@ -33,6 +33,10 @@ class AppTheme {
   static const Color heading = Color(0xFF16212E);
   static const Color muted = Color(0xFF78859A);
 
+  /// The label above a form field — dark and bold so it reads clearly.
+  static TextStyle? fieldLabel(BuildContext context) =>
+      Theme.of(context).textTheme.bodySmall?.copyWith(color: heading, fontWeight: FontWeight.w700);
+
   // ── Accent ────────────────────────────────────────────────────────────────
   static const Color accent = Color(0xFF1457AD);
 
@@ -248,16 +252,21 @@ class AppTheme {
         ),
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: bg,
+        backgroundColor: card,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
+        toolbarHeight: 56,
+        titleSpacing: 0,
+        shape: AccentLineBorder(),
         titleTextStyle: TextStyle(
           color: heading,
-          fontSize: 20,
-          fontWeight: FontWeight.w500,
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.2,
         ),
-        iconTheme: IconThemeData(color: text),
+        iconTheme: IconThemeData(color: heading),
       ),
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
@@ -268,6 +277,22 @@ class AppTheme {
           borderRadius: BorderRadius.all(Radius.circular(rLarge)),
         ),
         elevation: 8,
+        titleTextStyle: TextStyle(
+          color: heading,
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.2,
+        ),
+        contentTextStyle: TextStyle(color: text, fontSize: 14, height: 1.4),
+        actionsPadding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: ButtonStyle(
+          foregroundColor: WidgetStatePropertyAll(accent),
+          textStyle: WidgetStatePropertyAll(
+            TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+          ),
+        ),
       ),
       // Every screen's date field now opens `showAppDatePicker` (see
       // widgets/compact_date_picker.dart) — a small custom calendar card
@@ -275,4 +300,42 @@ class AppTheme {
       // no call sites left to style and was removed.
     );
   }
+}
+
+
+/// The header every page shares: a hairline under the white bar plus a 3px
+/// accent stripe that fades out to the right. Set once as the app bar theme's
+/// shape so no screen has to draw its own underline.
+class AccentLineBorder extends ShapeBorder {
+  const AccentLineBorder();
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      Path()..addRect(rect);
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
+      Path()..addRect(rect);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+    canvas.drawRect(
+      Rect.fromLTWH(rect.left, rect.bottom - 1, rect.width, 1),
+      Paint()..color = AppTheme.border,
+    );
+    final stripe = Rect.fromLTWH(rect.left, rect.bottom - 3, rect.width, 3);
+    canvas.drawRect(
+      stripe,
+      Paint()
+        ..shader = const LinearGradient(
+          colors: [AppTheme.accent, Color(0x001457AD)],
+        ).createShader(stripe),
+    );
+  }
+
+  @override
+  ShapeBorder scale(double t) => this;
 }

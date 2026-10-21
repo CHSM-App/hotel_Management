@@ -122,52 +122,10 @@ class _RoleFormScreenState extends ConsumerState<RoleFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x331457AD),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: Icon(
-                _isEdit ? Icons.edit_rounded : Icons.admin_panel_settings_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            Expanded(
-              child: Text(
-                _isEdit ? 'Edit ${widget.role!.name}' : 'Add role',
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
-            ),
-          ),
+        title: Text(
+          _isEdit ? 'Edit ${widget.role!.name}' : 'Add role',
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
       ),
       body: SafeArea(

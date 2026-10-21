@@ -135,7 +135,7 @@ class RequiredLabel extends StatelessWidget {
     return Text.rich(
       TextSpan(
         text: label,
-        style: Theme.of(context).textTheme.bodySmall,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.heading, fontWeight: FontWeight.w700),
         children: const [
           TextSpan(
             text: ' *',
@@ -500,7 +500,10 @@ class FieldLabel extends StatelessWidget {
       children: [
         Icon(icon, size: 14, color: AppTheme.accent),
         const SizedBox(width: AppTheme.s8),
-        Text(text, style: Theme.of(context).textTheme.bodySmall),
+        Text(
+          text,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.heading, fontWeight: FontWeight.w700),
+        ),
       ],
     );
   }

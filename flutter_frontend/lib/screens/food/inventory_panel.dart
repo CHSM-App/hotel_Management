@@ -864,53 +864,10 @@ class _MaterialFormPageState extends ConsumerState<_MaterialFormPage> {
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x331457AD),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: Icon(
-                _editing ? Icons.edit_rounded : Icons.inventory_2_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            Expanded(
-              child: Text(
-                _editing ? 'Edit material' : 'New raw material',
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x001457AD)],
-              ),
-            ),
-          ),
+        title: Text(
+          _editing ? 'Edit material' : 'New raw material',
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
       ),
       body: SafeArea(
@@ -958,7 +915,7 @@ class _MaterialFormPageState extends ConsumerState<_MaterialFormPage> {
                       const SizedBox(height: AppTheme.s12),
                       Text(
                         'Group',
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: AppTheme.fieldLabel(context),
                       ),
                       const SizedBox(height: AppTheme.s8),
                       OptionDropdown(
@@ -1147,77 +1104,77 @@ class _AdjustStockSheetState extends ConsumerState<_AdjustStockSheet> {
         color: AppTheme.bg,
         borderRadius: BorderRadius.circular(AppTheme.rLarge),
         clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: AppTheme.s16,
-            right: AppTheme.s16,
-            top: AppTheme.s16,
-            bottom: AppTheme.s16 + MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: AppTheme.accent.withValues(alpha: 0.10),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.inventory_2_rounded,
-                        size: 18,
-                        color: AppTheme.accent,
-                      ),
-                    ),
-                    const SizedBox(width: AppTheme.s12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.material.name,
-                            style: Theme.of(context).textTheme.titleMedium,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s16,
+                AppTheme.s12,
+                AppTheme.s12,
+                AppTheme.s12,
+              ),
+              decoration: const BoxDecoration(
+                color: AppTheme.card,
+                border: Border(bottom: BorderSide(color: AppTheme.border)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.material.name,
+                          style: const TextStyle(
+                            color: AppTheme.heading,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
                           ),
-                          Text(
-                            '${_fmtQty(widget.material.quantity)} $unit on the books.',
-                            style: const TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 12.5,
-                            ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${_fmtQty(widget.material.quantity)} $unit on the books.',
+                          style: const TextStyle(
+                            color: AppTheme.muted,
+                            fontSize: 12,
                           ),
-                        ],
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        alignment: Alignment.center,
-                        decoration: const BoxDecoration(
-                          color: AppTheme.card,
-                          shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.close_rounded,
-                          size: 16,
-                          color: AppTheme.muted,
-                        ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    color: AppTheme.muted,
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              height: 3,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppTheme.accent, Color(0x001457AD)],
                 ),
-                const SizedBox(height: AppTheme.s16),
+              ),
+            ),
+            Flexible(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: AppTheme.s16,
+                  right: AppTheme.s16,
+                  top: AppTheme.s16,
+                  bottom: AppTheme.s16 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                 if (_error != null) ...[
                   _ErrorBanner(_error!),
                   const SizedBox(height: AppTheme.s12),
@@ -1315,6 +1272,9 @@ class _AdjustStockSheetState extends ConsumerState<_AdjustStockSheet> {
               ],
             ),
           ),
+        ),
+            ),
+          ],
         ),
       ),
     );

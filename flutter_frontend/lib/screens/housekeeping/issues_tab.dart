@@ -339,9 +339,19 @@ class _CloseIssueDialog extends StatefulWidget {
 
 class _CloseIssueDialogState extends State<_CloseIssueDialog> {
   final _note = TextEditingController();
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
 
   @override
   void dispose() {
+    _focus.dispose();
     _note.dispose();
     super.dispose();
   }
@@ -349,29 +359,95 @@ class _CloseIssueDialogState extends State<_CloseIssueDialog> {
   @override
   Widget build(BuildContext context) {
     final issue = widget.issue;
+    final closeLabel = kIssueKindCloseLabel[issue.kind] ?? 'Close';
     return AlertDialog(
-      backgroundColor: AppTheme.bg,
-      title: Text('${issue.spaceLabel} · ${(kIssueKindCloseLabel[issue.kind] ?? '').toLowerCase()}?', style: const TextStyle(color: AppTheme.heading)),
+      backgroundColor: AppTheme.card,
+      insetPadding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rLarge)),
+      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      title: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppTheme.vacant.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.build_circle_rounded, color: AppTheme.vacant, size: 22),
+          ),
+          const SizedBox(width: AppTheme.s12),
+          Expanded(
+            child: Text(
+              '${issue.spaceLabel} · ${closeLabel.toLowerCase()}?',
+              style: const TextStyle(color: AppTheme.heading, fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.2),
+            ),
+          ),
+        ],
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(issue.text, style: const TextStyle(color: AppTheme.text, fontSize: 12.5)),
-          const SizedBox(height: AppTheme.s12),
-          TextField(
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+            decoration: BoxDecoration(
+              color: AppTheme.bg,
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Text(issue.text, style: const TextStyle(color: AppTheme.text, fontSize: 13)),
+          ),
+          const SizedBox(height: AppTheme.s16),
+          NeuField(
             controller: _note,
-            autofocus: true,
-            decoration: InputDecoration(labelText: kIssueKindQuestion[issue.kind], hintText: issueCloseHint(issue), border: const OutlineInputBorder()),
+            label: kIssueKindQuestion[issue.kind] ?? 'Note (optional)',
+            hint: issueCloseHint(issue),
+            focusNode: _focus,
           ),
           if (issue.roomBlocked) ...[
-            const SizedBox(height: AppTheme.s8),
-            Text('${issue.spaceLabel} is held under repair for this. Marking it fixed sends it to the cleaning list.', style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+            const SizedBox(height: AppTheme.s12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.info_outline_rounded, size: 16, color: AppTheme.muted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '${issue.spaceLabel} is held under repair for this. Marking it fixed sends it to the cleaning list.',
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 12, height: 1.35),
+                  ),
+                ),
+              ],
+            ),
           ],
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Not yet')),
-        TextButton(onPressed: () => Navigator.pop(context, _note.text.trim()), child: Text(kIssueKindCloseLabel[issue.kind] ?? 'Close')),
+        Row(
+          children: [
+            Expanded(
+              child: NeuButton(
+                onPressed: () => Navigator.pop(context),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: const Text('Not yet', style: TextStyle(fontSize: 13)),
+              ),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            Expanded(
+              flex: 2,
+              child: NeuButton(
+                primary: true,
+                onPressed: () => Navigator.pop(context, _note.text.trim()),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text(closeLabel, style: const TextStyle(fontSize: 13)),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }

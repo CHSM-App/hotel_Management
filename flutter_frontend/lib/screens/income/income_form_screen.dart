@@ -403,64 +403,10 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
     final state = ref.watch(incomeViewModelProvider);
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
-            ),
-          ),
-        ),
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x331457AD),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: Icon(
-                _isEdit ? Icons.edit_rounded : Icons.savings_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            Expanded(
-              child: !_viewMode
-                  ? Text(
-                      _isEdit ? 'Edit income' : (_isLogging ? 'Log this month' : 'New income'),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(widget.income!.title, overflow: TextOverflow.ellipsis),
-                        Text(
-                          [widget.income!.categoryName, widget.income!.payerName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-            ),
-          ],
+        title: Text(
+          _isEdit ? 'Edit income' : (_isLogging ? 'Log this month' : 'New income'),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
       ),
       body: SafeArea(
@@ -632,7 +578,7 @@ class _IncomeFormScreenState extends ConsumerState<IncomeFormScreen> {
                     const SizedBox(height: AppTheme.s12),
                     NeuField(dense: true, controller: _description, label: 'Notes', maxLength: 400),
                     const SizedBox(height: AppTheme.s12),
-                    Text('Receipt / proof (image or PDF)', style: Theme.of(context).textTheme.bodySmall),
+                    Text('Receipt / proof (image or PDF)', style: AppTheme.fieldLabel(context)),
                     const SizedBox(height: AppTheme.s8),
                     Row(
                       children: [

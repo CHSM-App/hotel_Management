@@ -158,7 +158,11 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   }
 
   void _onScroll() {
-    final threshold = _thresholdY();
+    // A few pixels of slack: after a tab tap, [_scrollToAnchor] parks the
+    // heading exactly on the threshold, and sub-pixel rounding (or a clamp
+    // at the scroll end) can leave it a hair below — which used to keep the
+    // previous section's tab highlighted after jumping to the next one.
+    final threshold = _thresholdY() + 6;
 
     // The last diet group (in rendered order, across every section) whose
     // heading has climbed past the threshold is the one currently under
@@ -186,9 +190,28 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       }
     }
 
-    final dietChanged = nextDiet != _dietTab;
+    final dietChanged = !_dietLocked && nextDiet != _dietTab;
+    // Right after a jump to a section, its own heading is under the tabs but
+    // its first Veg/Non-veg label sits a few pixels lower, so the groups
+    // passed so far all belong to the *previous* section — which read as
+    // "Non-veg" while looking at a Veg list. Until this section's first
+    // group has passed, that first group's kind is the one in view.
+    if (nextSection != null) {
+      final vegTop = _anchorTop(_vegGroupKey(nextSection));
+      final nonVegTop = _anchorTop(_nonVegGroupKey(nextSection));
+      final firstTop = vegTop ?? nonVegTop;
+      if (firstTop != null && firstTop > threshold) {
+        nextDiet = vegTop != null ? 'VEG' : 'NON_VEG';
+      }
+    }
+
+    // While a tapped section tab is still scrolling into place, the tapped
+    // tab stays selected — otherwise the sections the list passes on the way
+    // flip the highlight back and forth, and the last one wins.
     final sectionChanged =
-        nextSection != null && nextSection != _activeSectionId;
+        _tabLock == null &&
+        nextSection != null &&
+        nextSection != _activeSectionId;
     if (dietChanged || sectionChanged) {
       setState(() {
         if (dietChanged) _dietTab = nextDiet;
@@ -201,7 +224,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   /// than [Scrollable.ensureVisible]'s own idea of "visible" — which is
   /// happy to park it right at the very top of the viewport, underneath
   /// the header, where a pinned sliver would hide it.
-  void _scrollToAnchor(GlobalKey? key) {
+  Future<void> _scrollToAnchor(GlobalKey? key) async {
     if (key == null || !_scrollController.hasClients) return;
     final renderObject = key.currentContext?.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.attached) return;
@@ -212,14 +235,20 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       position.minScrollExtent,
       position.maxScrollExtent,
     );
-    _scrollController.animateTo(
+    await _scrollController.animateTo(
       newOffset,
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeInOut,
     );
   }
 
-  void _selectDietTab(String tab) {
+  int? _tabLock;
+
+  bool _dietLocked = false;
+
+  Future<void> _selectDietTab(String tab) async {
+    _dietLocked = false;
+    _tabLock = null;
     setState(() => _dietTab = tab);
     if (tab == 'ALL') {
       _scrollController.animateTo(
@@ -229,20 +258,56 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       );
       return;
     }
-    // Jumps to the first section that has this kind — later sections' own
-    // Veg/Non-veg groups are what the scroll listener picks up once the
-    // desk scrolls past them, not where a tap on the tab lands.
-    for (final (type, key) in _renderedDietGroups) {
-      if (type == tab) {
-        _scrollToAnchor(key);
+    // Stays inside the section the desk is on: starting from the active
+    // section, then the ones after it, then the ones before, the first with
+    // this kind is where the tap lands — so Main Course + Non-veg means Main
+    // Course's Non-veg dishes, not the first section's.
+    final ids = _renderedSectionIds;
+    final start = ids.indexOf(_activeSectionId ?? -1);
+    final order = [
+      if (start > 0) ...ids.sublist(start) else ...ids,
+      if (start > 0) ...ids.sublist(0, start),
+    ];
+    for (final id in order) {
+      final key = tab == 'VEG' ? _vegGroupKey(id) : _nonVegGroupKey(id);
+      if (_anchorTop(key) != null) {
+        // The tapped tab and its section stay selected until the scroll
+        // lands, same as [_selectSectionTab] — the scroll listener only
+        // takes over again once the jump is done.
+        _tabLock = id;
+        _dietLocked = true;
+        setState(() {
+          _dietTab = tab;
+          _activeSectionId = id;
+        });
+        await _scrollToAnchor(key);
+        if (!mounted) return;
+        if (_tabLock == id) {
+          setState(() {
+            _tabLock = null;
+            _dietLocked = false;
+            _dietTab = tab;
+            _activeSectionId = id;
+          });
+        }
         return;
       }
     }
   }
 
-  void _selectSectionTab(MenuSection section) {
+  Future<void> _selectSectionTab(MenuSection section) async {
+    _dietLocked = false;
+    _tabLock = section.id;
     setState(() => _activeSectionId = section.id);
-    _scrollToAnchor(_sectionAnchorKeys[section.id]);
+    await _scrollToAnchor(_sectionAnchorKeys[section.id]);
+    if (!mounted) return;
+    // Released only if no newer tap has taken over the lock meanwhile.
+    if (_tabLock == section.id) {
+      setState(() {
+        _tabLock = null;
+        _activeSectionId = section.id;
+      });
+    }
   }
 
   /// Guest name/phone are only asked for a true counter order, same rule
@@ -419,61 +484,35 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       // app bar carries, so the two full-page forms this desk fills in most
       // read as one system rather than two different styles.
       appBar: AppBar(
-        backgroundColor: AppTheme.bg,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: AppTheme.heading,
-        titleSpacing: AppTheme.s4,
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
+        title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _editing
+                          ? 'Edit order #${_editingOrder!.orderNumber}'
+                          : 'Take an order',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    Text(
+                      _editing
+                          ? 'Update items and note'
+                          : (_step == 0
+                                ? 'Step 1 of 2 · Where it goes'
+                                : 'Step 2 of 2 · Pick dishes'),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                    ),
+                  ],
                 ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x331457AD),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.restaurant_menu_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            Expanded(
-              child: Text(
-                _editing
-                    ? 'Edit order #${_editingOrder!.orderNumber}'
-                    : 'Take an order',
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x001457AD)],
-              ),
-            ),
-          ),
-        ),
       ),
       body: SafeArea(child: _body()),
     );
@@ -725,20 +764,14 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                       ],
                       SectionLabel('Menu', number: menuNumber, icon: Icons.restaurant_menu_rounded),
                       const SizedBox(height: AppTheme.s8),
-                      NeuField(
+                      _MenuSearchBar(
                         controller: _search,
-                        hint: 'Search every section…',
-                        label: '',
-                        suffix: const Padding(
-                          padding: EdgeInsets.only(right: AppTheme.s12),
-                          child: Icon(
-                            Icons.search_rounded,
-                            size: 18,
-                            color: AppTheme.muted,
-                          ),
-                        ),
                         onChanged: (v) =>
                             setState(() => _query = v.trim().toLowerCase()),
+                        onClear: () => setState(() {
+                          _search.clear();
+                          _query = '';
+                        }),
                       ),
                     ],
                   ),
@@ -794,15 +827,6 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      NeuField(
-                        controller: _note,
-                        label: 'Note for the kitchen',
-                        hint: 'Less spicy, no onion',
-                        labelAction: Text(
-                          'optional',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
                       if (_lines.isNotEmpty) ...[
                         const SectionDivider(),
                         SectionLabel(
@@ -837,6 +861,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
           ),
         ),
         _OrderBar(
+          note: _note,
           lines: _lines,
           total: _total,
           working: working,
@@ -898,14 +923,35 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       widgets.add(
         Padding(
           key: _sectionAnchorKey(section.id),
-          padding: const EdgeInsets.only(top: AppTheme.s8, bottom: AppTheme.s4),
-          child: Text(
-            section.name,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: AppTheme.heading,
-              fontWeight: FontWeight.w700,
-            ),
-            overflow: TextOverflow.ellipsis,
+          padding: const EdgeInsets.only(top: AppTheme.s8, bottom: 4),
+          child: Row(
+            children: [
+              Container(
+                width: 4,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: AppTheme.accent,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Flexible(
+                child: Text(
+                  section.name,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Text(
+                '${section.items.length} dishes',
+                style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              ),
+            ],
           ),
         ),
       );
@@ -1415,6 +1461,144 @@ class _OccupancyCard extends StatelessWidget {
   }
 }
 
+// ── Search ──────────────────────────────────────────────────────────────────
+
+/// Rounded search bar with a tinted icon chip, a soft accent glow while
+/// focused, and a clear button once something is typed.
+class _MenuSearchBar extends StatefulWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  const _MenuSearchBar({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  @override
+  State<_MenuSearchBar> createState() => _MenuSearchBarState();
+}
+
+class _MenuSearchBarState extends State<_MenuSearchBar> {
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = _focus.hasFocus;
+    final hasText = widget.controller.text.isNotEmpty;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      height: 44,
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: focused ? AppTheme.accent : AppTheme.border,
+          width: focused ? 1.6 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: focused
+                ? AppTheme.accent.withValues(alpha: 0.18)
+                : Colors.black.withValues(alpha: 0.05),
+            blurRadius: focused ? 14 : 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 6),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              gradient: focused
+                  ? const LinearGradient(
+                      colors: [AppTheme.accent, Color(0xFF10499A)],
+                    )
+                  : null,
+              color: focused ? null : AppTheme.sidebarBrandWash,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.search_rounded,
+              size: 20,
+              color: focused ? Colors.white : AppTheme.accent,
+            ),
+          ),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(
+            child: TextField(
+              controller: widget.controller,
+              focusNode: _focus,
+              onChanged: widget.onChanged,
+              textInputAction: TextInputAction.search,
+              cursorColor: AppTheme.accent,
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+              decoration: const InputDecoration(
+                hintText: 'Search dishes across every section…',
+                hintStyle: TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                ),
+                isDense: true,
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ),
+          if (hasText)
+            InkWell(
+              customBorder: const CircleBorder(),
+              onTap: widget.onClear,
+              child: Container(
+                width: 24,
+                height: 24,
+                margin: const EdgeInsets.only(right: AppTheme.s12),
+                decoration: const BoxDecoration(
+                  color: AppTheme.border,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close_rounded,
+                  size: 14,
+                  color: AppTheme.text,
+                ),
+              ),
+            )
+          else
+            const SizedBox(width: AppTheme.s12),
+        ],
+      ),
+    );
+  }
+}
+
 // ── The pinned tab header above the dish list ───────────────────────────────
 
 /// Pins the section strip and the All/Veg/Non-veg strip to the top of the
@@ -1779,9 +1963,21 @@ class _MenuRow extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: off ? AppTheme.muted : null,
                 ),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (!item.hasPortions)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    formatPrice(item.price),
+                    style: TextStyle(
+                      color: off ? AppTheme.muted : AppTheme.accent,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
               if (off)
                 Text(
                   'Off today',
@@ -1793,22 +1989,35 @@ class _MenuRow extends StatelessWidget {
       ],
     );
 
+    Widget card(Widget child, bool selected) => Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s12,
+        vertical: 5,
+      ),
+      decoration: BoxDecoration(
+        color: selected ? AppTheme.sidebarBrandWash : AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(
+          color: selected ? AppTheme.sidebarBrandWashEdge : AppTheme.border,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: child,
+    );
+
     if (!item.hasPortions) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: AppTheme.s8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      return card(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(child: nameRow),
-            const SizedBox(width: AppTheme.s8),
-            SizedBox(
-              width: 56,
-              child: Text(
-                formatPrice(item.price),
-                textAlign: TextAlign.right,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
-              ),
-            ),
             const SizedBox(width: AppTheme.s8),
             _Stepper(
               qty: qtyFor(null),
@@ -1817,15 +2026,15 @@ class _MenuRow extends StatelessWidget {
             ),
           ],
         ),
+        qtyFor(null) > 0,
       );
     }
 
     // Each size gets its own stepper: the server refuses a line that names a
     // dish with sizes but no size, so there is nothing sensible to add
     // without choosing one.
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s8),
-      child: Column(
+    return card(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           nameRow,
@@ -1865,6 +2074,7 @@ class _MenuRow extends StatelessWidget {
             ),
         ],
       ),
+      item.portions.any((p) => qtyFor(p) > 0),
     );
   }
 }
@@ -1885,52 +2095,58 @@ class _Stepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 32,
+    final active = qty > 0;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      height: 28,
       decoration: BoxDecoration(
-        border: Border.all(color: AppTheme.border),
-        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        color: active ? AppTheme.accent : AppTheme.card,
+        border: Border.all(color: active ? AppTheme.accent : AppTheme.border),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _btn(Icons.remove_rounded, enabled && qty > 0 ? () => onChanged(qty - 1) : null),
-          Container(
+          _btn(
+            Icons.remove_rounded,
+            enabled && active ? () => onChanged(qty - 1) : null,
+            active,
+          ),
+          SizedBox(
             width: 26,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              border: Border(
-                left: BorderSide(color: AppTheme.border),
-                right: BorderSide(color: AppTheme.border),
-              ),
-            ),
             child: Text(
               '$qty',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppTheme.heading,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+              style: TextStyle(
+                color: active ? Colors.white : AppTheme.muted,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
-          _btn(Icons.add_rounded, enabled ? () => onChanged(qty + 1) : null),
+          _btn(
+            Icons.add_rounded,
+            enabled ? () => onChanged(qty + 1) : null,
+            active,
+          ),
         ],
       ),
     );
   }
 
-  Widget _btn(IconData icon, VoidCallback? onTap) {
+  Widget _btn(IconData icon, VoidCallback? onTap, bool active) {
     return InkWell(
+      borderRadius: BorderRadius.circular(10),
       onTap: onTap,
       child: SizedBox(
         width: 28,
-        height: 30,
+        height: 28,
         child: Icon(
           icon,
           size: 16,
-          color: onTap == null ? AppTheme.border : AppTheme.text,
+          color: onTap == null
+              ? (active ? Colors.white54 : AppTheme.border)
+              : (active ? Colors.white : AppTheme.accent),
         ),
       ),
     );
@@ -1979,6 +2195,7 @@ class _DietMark extends StatelessWidget {
 /// clearly at any screen width, rather than a [FittedBox] shrinking both
 /// down to fit beside a total chip.
 class _OrderBar extends StatelessWidget {
+  final TextEditingController note;
   final List<OrderLineDraft> lines;
   final num total;
   final bool working;
@@ -1988,6 +2205,7 @@ class _OrderBar extends StatelessWidget {
   final VoidCallback? onPlace;
 
   const _OrderBar({
+    required this.note,
     required this.lines,
     required this.total,
     required this.working,
@@ -2002,45 +2220,92 @@ class _OrderBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(
         AppTheme.s12,
-        AppTheme.s4,
+        6,
         AppTheme.s12,
-        AppTheme.s4,
+        6,
       ),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppTheme.card,
-        border: Border(top: BorderSide(color: AppTheme.border)),
+        border: const Border(top: BorderSide(color: AppTheme.border)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Text(
-                lines.isEmpty
-                    ? 'Total'
-                    : '${lines.length} item${lines.length == 1 ? '' : 's'}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontSize: 11),
-              ),
-              const Spacer(),
-              Text(
-                formatPrice(total),
-                style: const TextStyle(
+          SizedBox(
+            child: TextField(
+              controller: note,
+              textInputAction: TextInputAction.done,
+              style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Add a note for the kitchen (optional)',
+                hintStyle: const TextStyle(color: AppTheme.text, fontSize: 13),
+                prefixIcon: const Icon(
+                  Icons.edit_note_rounded,
+                  size: 22,
                   color: AppTheme.accent,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
+                ),
+                prefixIconConstraints: const BoxConstraints(minWidth: 40),
+                isDense: true,
+                filled: true,
+                fillColor: AppTheme.card,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 14,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppTheme.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppTheme.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: AppTheme.accent,
+                    width: 1.5,
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: AppTheme.s4),
+          const SizedBox(height: 6),
           Row(
             children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    lines.isEmpty
+                        ? 'Total'
+                        : '${lines.length} item${lines.length == 1 ? '' : 's'}',
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 10),
+                  ),
+                  Text(
+                    formatPrice(total),
+                    style: const TextStyle(
+                      color: AppTheme.accent,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: AppTheme.s12),
               Expanded(
                 child: NeuButton(
                   onPressed: onCancel,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
                   child: Text(cancelLabel, style: const TextStyle(fontSize: 13)),
                 ),
               ),
@@ -2050,7 +2315,7 @@ class _OrderBar extends StatelessWidget {
                 child: NeuButton(
                   primary: true,
                   onPressed: onPlace,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
                   child: working
                       ? const SizedBox(
                           height: 14,

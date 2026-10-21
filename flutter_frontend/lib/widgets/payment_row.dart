@@ -21,11 +21,16 @@ class PaymentRow extends StatefulWidget {
 
   final VoidCallback onChanged;
 
+  /// Method and amount side by side on one line, for screens where the rows
+  /// share the page with a lot else.
+  final bool compact;
+
   const PaymentRow({
     super.key,
     required this.line,
     required this.onRemove,
     required this.onChanged,
+    this.compact = false,
   });
 
   @override
@@ -54,7 +59,7 @@ class _PaymentRowState extends State<PaymentRow> {
 
   Widget _methodDropdown() {
     return SizedBox(
-      height: 44,
+      height: widget.compact ? 40 : 44,
       child: NeuPressed(
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
         child: DropdownButtonHideUnderline(
@@ -138,8 +143,83 @@ class _PaymentRowState extends State<PaymentRow> {
     );
   }
 
+  Widget _compactBuild() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(flex: 5, child: _methodDropdown()),
+            const SizedBox(width: 6),
+            Expanded(
+              flex: 4,
+              child: SizedBox(
+                height: 40,
+                child: NeuPressed(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+                  child: Center(
+                    child: TextField(
+                      controller: _amount,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.right,
+                      onTap: () => _amount.selection = TextSelection(
+                        baseOffset: 0,
+                        extentOffset: _amount.text.length,
+                      ),
+                      onChanged: (v) {
+                        widget.line.amount = v;
+                        widget.onChanged();
+                      },
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      decoration: const InputDecoration(
+                        prefixText: '₹ ',
+                        prefixStyle: TextStyle(color: AppTheme.muted, fontSize: 13),
+                        hintText: '0',
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 36,
+              width: 32,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded, size: 18),
+                color: widget.onRemove == null
+                    ? AppTheme.muted.withValues(alpha: 0.35)
+                    : AppTheme.danger,
+                onPressed: widget.onRemove,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ),
+          ],
+        ),
+        if (needsPaymentReference(widget.line.method)) ...[
+          const SizedBox(height: 6),
+          NeuField(
+            controller: _reference,
+            label: 'Transaction number (optional)',
+            hint: widget.line.method == 'UPI' ? 'UPI reference / UTR' : 'Approval code',
+            maxLength: 64,
+            dense: true,
+            onChanged: (v) => widget.line.reference = v,
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.compact) return _compactBuild();
     return Column(
       children: [
         Row(

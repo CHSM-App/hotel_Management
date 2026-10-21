@@ -73,35 +73,10 @@ class _LinenLossScreenState extends ConsumerState<LinenLossScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [BoxShadow(color: Color(0x331457AD), offset: Offset(0, 3), blurRadius: 8)],
-              ),
-              child: const Icon(Icons.report_problem_rounded, color: Colors.white, size: 18),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            const Expanded(child: Text('Lost or damaged linen', overflow: TextOverflow.ellipsis, maxLines: 1)),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
-            ),
-          ),
+        title: Text(
+          'Lost or damaged linen',
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
       ),
       body: SafeArea(
