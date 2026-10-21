@@ -180,39 +180,10 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        title: Row(
-          children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x331457AD), offset: Offset(0, 3), blurRadius: 8),
-                ],
-              ),
-              child: const Icon(Icons.room_service_rounded, color: Colors.white, size: 16),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: Text(_isEditing ? 'Edit service use' : 'Start a service', overflow: TextOverflow.ellipsis, maxLines: 1),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
-            ),
-          ),
+        title: Text(
+          _isEditing ? 'Edit service use' : 'Start a service',
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
       ),
       body: SafeArea(

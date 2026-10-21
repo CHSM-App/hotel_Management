@@ -66,7 +66,7 @@ class _CategoryComboFieldState extends State<CategoryComboField> {
               Text.rich(
                 TextSpan(
                   text: label,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: AppTheme.fieldLabel(context),
                   children: required
                       ? const [TextSpan(text: ' *', style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w700))]
                       : null,
@@ -147,7 +147,7 @@ class _VendorComboFieldState extends State<VendorComboField> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
+            Text(label, style: AppTheme.fieldLabel(context)),
             const SizedBox(height: AppTheme.s8),
             _ComboWell(controller: fieldController, focusNode: focusNode, hint: 'Vendor name or phone…'),
           ],

@@ -119,90 +119,31 @@ class _CheckInPageState extends State<_CheckInPage> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x331457AD),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.how_to_reg_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    (b.guestName ?? '').trim().isEmpty
-                        ? 'Guest'
-                        : b.guestName!,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                  Text(
-                    'Room ${b.roomNumber ?? '—'}',
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ],
-              ),
-            ),
-          ],
+        title: Text(
+          (b.guestName ?? '').trim().isEmpty
+                                ? 'Guest'
+                                : b.guestName!,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
         actions: [
-          Container(
-            margin: const EdgeInsets.only(right: AppTheme.s12),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              BookingActions.statusLabel(b.status),
-              style: TextStyle(
-                color: statusColor,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x001457AD)],
-              ),
-            ),
-          ),
-        ),
+                  Container(
+                    margin: const EdgeInsets.only(right: AppTheme.s12),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      BookingActions.statusLabel(b.status),
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(

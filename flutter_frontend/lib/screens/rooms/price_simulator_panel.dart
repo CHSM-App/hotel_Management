@@ -466,11 +466,27 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
           ],
         ),
         const SizedBox(height: AppTheme.s8),
-        Text(
-          sim.nights > 0
-              ? '${sim.nights} night${sim.nights == 1 ? '' : 's'} — checkout morning is not charged'
-              : 'The to date must be after the from date.',
-          style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: (sim.nights > 0 ? color : AppTheme.danger).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                sim.nights > 0 ? '${sim.nights} night${sim.nights == 1 ? '' : 's'}' : 'Check dates',
+                style: TextStyle(color: sim.nights > 0 ? color : AppTheme.danger, fontSize: 11, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                sim.nights > 0 ? 'Checkout morning is not charged' : 'The to date must be after the from date.',
+                style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+              ),
+            ),
+          ],
         ),
 
         if (activeCharges.isNotEmpty) ...[
@@ -608,15 +624,15 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
     final hasGuest = _guestNameController.text.trim().isNotEmpty || _guestPhoneController.text.trim().isNotEmpty;
     return NeuCard(
       radius: AppTheme.rLarge,
-      padding: const EdgeInsets.all(AppTheme.s16),
+      padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 28,
+                height: 28,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.14), shape: BoxShape.circle),
                 child: const Icon(Icons.description_rounded, size: 16, color: AppTheme.accent),
@@ -634,34 +650,43 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.s16),
-          NeuField(
-            controller: _guestNameController,
-            label: 'Guest name',
-            maxLength: 80,
-            onChanged: (_) => setState(() {}),
-          ),
           const SizedBox(height: AppTheme.s12),
-          NeuField(
-            controller: _guestPhoneController,
-            focusNode: _guestPhoneFocus,
-            label: 'Phone number',
-            hint: '10-digit mobile',
-            keyboardType: TextInputType.number,
-            maxLength: 10,
-            errorText: _phoneChecked && _phoneInvalid ? 'Enter a valid 10-digit mobile number.' : null,
-            onChanged: (value) {
-              final digits = _toMobileDigits(value);
-              if (digits != value) {
-                _guestPhoneController.value = TextEditingValue(
-                  text: digits,
-                  selection: TextSelection.collapsed(offset: digits.length),
-                );
-              }
-              setState(() {});
-            },
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: NeuField(
+                  controller: _guestNameController,
+                  label: 'Guest name',
+                  maxLength: 80,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: NeuField(
+                  controller: _guestPhoneController,
+                  focusNode: _guestPhoneFocus,
+                  label: 'Phone',
+                  hint: '10-digit',
+                  keyboardType: TextInputType.number,
+                  maxLength: 10,
+                  errorText: _phoneChecked && _phoneInvalid ? 'Enter 10 digits.' : null,
+                  onChanged: (value) {
+                    final digits = _toMobileDigits(value);
+                    if (digits != value) {
+                      _guestPhoneController.value = TextEditingValue(
+                        text: digits,
+                        selection: TextSelection.collapsed(offset: digits.length),
+                      );
+                    }
+                    setState(() {});
+                  },
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: AppTheme.s12),
+          const SizedBox(height: AppTheme.s8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -683,10 +708,10 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
             const SizedBox(height: AppTheme.s8),
             Text(_pdfError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
           ],
-          const SizedBox(height: AppTheme.s16),
+          const SizedBox(height: AppTheme.s12),
           SizedBox(
             width: double.infinity,
-            height: 50,
+            height: 44,
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.accent,
@@ -760,44 +785,47 @@ class _DateField extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(14),
         highlightColor: AppTheme.accent.withValues(alpha: 0.05),
         splashColor: AppTheme.accent.withValues(alpha: 0.08),
+        // No fixed height: the box grows with the text (and the phone's
+        // font scale) instead of overflowing by a fraction of a pixel.
         child: Container(
-          height: 46,
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+          constraints: const BoxConstraints(minHeight: 52),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: AppTheme.card,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: AppTheme.accent.withValues(alpha: 0.4), width: 1.3),
-            boxShadow: AppTheme.subtle,
+            color: AppTheme.accent.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.accent.withValues(alpha: 0.35)),
           ),
           child: Row(
             children: [
-              Container(
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppTheme.accent.withValues(alpha: 0.14), shape: BoxShape.circle),
-                child: const Icon(Icons.calendar_today_rounded, size: 13, color: AppTheme.accent),
-              ),
-              const SizedBox(width: AppTheme.s8),
+              const Icon(Icons.calendar_today_rounded, size: 15, color: AppTheme.accent),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 9, fontWeight: FontWeight.w600)),
                     Text(
-                      parsed == null ? value : '${parsed.day} ${_months[parsed.month]} ${parsed.year}',
+                      label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w700),
+                      style: const TextStyle(color: AppTheme.muted, fontSize: 9.5, fontWeight: FontWeight.w600, height: 1.2),
+                    ),
+                    const SizedBox(height: 1),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        parsed == null ? value : '${parsed.day} ${_months[parsed.month]} ${parsed.year}',
+                        maxLines: 1,
+                        style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w700, height: 1.2),
+                      ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: AppTheme.s4),
             ],
           ),
         ),

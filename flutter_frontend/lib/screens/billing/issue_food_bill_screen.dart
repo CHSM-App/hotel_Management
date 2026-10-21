@@ -9,6 +9,7 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'bill_receipt_screen.dart';
+import 'bill_ui.dart';
 
 /// The food side of billing: a table, a room, or a takeaway with delivered
 /// food nobody has paid for. Same shape as [IssueBillScreen] — what it says,
@@ -24,15 +25,14 @@ class IssueFoodBillScreen extends ConsumerWidget {
     final preview = state.foodPreview;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(state.foodTarget?.tableLabel ?? 'Bill', overflow: TextOverflow.ellipsis),
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded),
-          onPressed: () {
-            vm.closeFood();
-            Navigator.of(context).pop();
-          },
-        ),
+      backgroundColor: AppTheme.bg,
+      appBar: billAppBar(
+        title: 'Bill food',
+        subtitle: state.foodTarget?.tableLabel,
+        onBack: () {
+          vm.closeFood();
+          Navigator.of(context).pop();
+        },
       ),
       body: SafeArea(
         child: Align(
@@ -80,235 +80,102 @@ class _Body extends ConsumerWidget {
       ),
       children: [
         // ── The document ────────────────────────────────────────────────────
-        NeuCard(
-          radius: AppTheme.rMedium,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        BillCard(
+          children: [
+            BillHero(
+              label: kDocumentLabels[amounts?.documentType] ?? 'Food bill',
+              chip: preview.isGstRegistered ? 'GST' : 'Non-GST',
+              // Who a takeaway is for — a table or a room tab has nobody
+              // behind it, the same split the web bill modal makes.
+              title: preview.customerName ?? preview.tableLabel,
+              subtitle: preview.customerName != null
+                  ? [
+                      if (preview.customerPhone != null) preview.customerPhone!,
+                      if (preview.tableLabel != null) preview.tableLabel!,
+                    ].join('  ·  ')
+                  : null,
+              total: amounts?.totalAmount ?? 0,
+            ),
+            Padding(
+              padding: const EdgeInsets.all(AppTheme.s12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          AppTheme.accent.withValues(alpha: 0.16),
-                          AppTheme.accent.withValues(alpha: 0.06),
-                        ],
+                  // What's being swept onto this bill, itemised — read back
+                  // against what actually went out before committing to a
+                  // document that can only be voided, not edited.
+                  const BillSectionLabel('Items'),
+                  for (final item in preview.foodItems)
+                    BillItemRow(
+                      name: item.name,
+                      detail: '${item.quantity} × ${formatPrice(item.unitPrice)}',
+                      value: item.lineTotal,
+                    ),
+                  if (preview.orderNumbers.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        'From order${preview.orderNumbers.length == 1 ? '' : 's'} '
+                        '${preview.orderNumbers.map((n) => '#$n').join(', ')}',
+                        style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
                       ),
-                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
                     ),
-                    child: const Icon(
-                      Icons.restaurant_rounded,
-                      color: AppTheme.accent,
-                      size: 16,
+                  billHairline,
+
+                  // Food is its own taxed block — the same split GSTR-1
+                  // reports on — so it prints on its own.
+                  if ((amounts?.foodSubtotal ?? 0) > 0)
+                    BillRowLine(label: 'Food', value: amounts!.foodSubtotal),
+                  if ((amounts?.discountAmount ?? 0) > 0)
+                    BillRowLine(
+                      label: 'Discount (${amounts!.discountPercent}%)',
+                      value: -amounts.discountAmount,
                     ),
+                  if ((amounts?.foodCgstAmount ?? 0) > 0 ||
+                      (amounts?.foodSgstAmount ?? 0) > 0) ...[
+                    const BillSectionLabel('Tax included in total'),
+                    BillRowLine(
+                      label: 'CGST (${amounts?.foodCgstRatePercent ?? 0}%)',
+                      value: amounts?.foodCgstAmount ?? 0,
+                      muted: true,
+                    ),
+                    BillRowLine(
+                      label: 'SGST (${amounts?.foodSgstRatePercent ?? 0}%)',
+                      value: amounts?.foodSgstAmount ?? 0,
+                      muted: true,
+                    ),
+                  ],
+                  if ((amounts?.roundOff ?? 0) != 0)
+                    BillRowLine(label: 'Round off', value: amounts!.roundOff, muted: true),
+                  billHairline,
+                  BillRowLine(
+                    label: 'Grand total',
+                    value: amounts?.totalAmount ?? 0,
+                    strong: true,
                   ),
-                  const SizedBox(width: AppTheme.s8),
+                  const SizedBox(height: 4),
+                  BillBalanceBox(balance: preview.balanceDue),
+                  const SizedBox(height: 8),
                   Text(
-                    (preview.tableLabel ?? '—').toUpperCase(),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.4,
-                    ),
+                    preview.isGstRegistered
+                        ? 'Issued under GSTIN ${preview.gstin ?? '—'}.'
+                        : "This property isn't GST registered — every bill is a "
+                              'cash receipt.',
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
                   ),
                 ],
               ),
-              const SizedBox(height: AppTheme.s12),
-
-              // Who a takeaway is for — a table or a room tab has nobody
-              // behind it, the same split the web bill modal makes.
-              if (preview.customerName != null) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Customer',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    Flexible(
-                      child: Text(
-                        preview.customerPhone != null
-                            ? '${preview.customerName} · ${preview.customerPhone}'
-                            : preview.customerName!,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppTheme.s12),
-              ],
-
-              // What's being swept onto this bill, itemised — read back
-              // against what actually went out before committing to a
-              // document that can only be voided, not edited.
-              for (final item in preview.foodItems)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.name,
-                              style: const TextStyle(
-                                color: AppTheme.heading,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                            Text(
-                              '${item.quantity} × ${formatPrice(item.unitPrice)}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: AppTheme.s8),
-                      Text(
-                        formatPrice(item.lineTotal),
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                ),
-              if (preview.orderNumbers.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                  child: Text(
-                    'From order${preview.orderNumbers.length == 1 ? '' : 's'} '
-                    '${preview.orderNumbers.map((n) => '#$n').join(', ')}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-
-              const Divider(height: AppTheme.s24),
-
-              Text(
-                'BILL',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                ),
-              ),
-              const SizedBox(height: AppTheme.s8),
-              Text(
-                preview.isGstRegistered
-                    ? 'Issued under GSTIN ${preview.gstin ?? '—'}.'
-                    : "This property isn't GST registered — every bill is a "
-                          'cash receipt.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: AppTheme.s12),
-
-              // Food is its own taxed block — the same split GSTR-1 reports
-              // on — so it prints on its own rather than folded into a
-              // generic subtotal, exactly as the web bill does.
-              if ((amounts?.foodSubtotal ?? 0) > 0)
-                _Row(label: 'Food', value: amounts!.foodSubtotal),
-
-              if ((amounts?.discountAmount ?? 0) > 0)
-                _Row(
-                  label: 'Discount (${amounts!.discountPercent}%)',
-                  value: -amounts.discountAmount,
-                ),
-
-              // A food bill's own tax rides on the food-specific fields, not
-              // the room ones — those are always zero here (see
-              // priceFoodBill/buildBreakdown on the server, which passes
-              // roomSubtotal/cgstAmount/sgstAmount as 0 for a table tab).
-              if ((amounts?.foodCgstAmount ?? 0) > 0 ||
-                  (amounts?.foodSgstAmount ?? 0) > 0) ...[
-                _Row(
-                  label: 'CGST (${amounts?.foodCgstRatePercent ?? 0}%) on food',
-                  value: amounts?.foodCgstAmount ?? 0,
-                  muted: true,
-                ),
-                _Row(
-                  label: 'SGST (${amounts?.foodSgstRatePercent ?? 0}%) on food',
-                  value: amounts?.foodSgstAmount ?? 0,
-                  muted: true,
-                ),
-              ],
-              if ((amounts?.roundOff ?? 0) != 0)
-                _Row(
-                  label: 'Round off',
-                  value: amounts!.roundOff,
-                  muted: true,
-                ),
-
-              const Divider(height: AppTheme.s16),
-              _Row(
-                label: kDocumentLabels[amounts?.documentType] ?? 'Total',
-                value: amounts?.totalAmount ?? 0,
-                strong: true,
-              ),
-
-              const SizedBox(height: AppTheme.s4),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s12,
-                  vertical: AppTheme.s8,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.accent.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      'Balance due',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const Spacer(),
-                    Text(
-                      formatPrice(preview.balanceDue),
-                      style: const TextStyle(
-                        color: AppTheme.accent,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 17,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
 
         // ── How it was paid ─────────────────────────────────────────────────
         const SizedBox(height: AppTheme.s16),
-        Row(
-          children: [
-            const Icon(Icons.payments_outlined, color: AppTheme.accent, size: 18),
-            const SizedBox(width: AppTheme.s8),
-            Text(
-              'Record how the guest paid',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ],
-        ),
-        const SizedBox(height: AppTheme.s4),
-        Text(
-          state.nothingDue
-              ? 'Nothing is left to collect — issue it as it stands.'
-              : '${formatPrice(state.balanceDue)} is due. Choose the payment '
-                    'type for each amount taken.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: AppTheme.s12),
-        if (!state.nothingDue) _PaymentRows(state: state),
+        BillPaymentHeader(nothingDue: state.nothingDue, balanceDue: state.balanceDue),
+        if (!state.nothingDue) ...[
+          const SizedBox(height: AppTheme.s8),
+          BillPanel(child: _PaymentRows(state: state)),
+        ],
 
         if (preview.liveOrderCount > 0) ...[
           const SizedBox(height: AppTheme.s16),
@@ -471,58 +338,6 @@ class _Body extends ConsumerWidget {
               : const Text('Issue bill'),
         ),
       ],
-    );
-  }
-}
-
-// ── One line of the document ────────────────────────────────────────────────
-
-class _Row extends StatelessWidget {
-  final String label;
-  final num value;
-  final bool strong;
-  final bool muted;
-
-  const _Row({
-    required this.label,
-    required this.value,
-    this.strong = false,
-    this.muted = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colour = strong
-        ? AppTheme.heading
-        : muted
-        ? AppTheme.muted
-        : AppTheme.text;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: colour,
-                fontSize: strong ? 15 : 13,
-                fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: AppTheme.s8),
-          Text(
-            formatPrice(value),
-            style: TextStyle(
-              color: colour,
-              fontSize: strong ? 16 : 13,
-              fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

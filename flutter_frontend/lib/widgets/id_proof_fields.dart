@@ -100,7 +100,7 @@ class IdProofFields extends StatelessWidget {
       children: [
         required
             ? const RequiredLabel('ID proof')
-            : Text('ID proof', style: Theme.of(context).textTheme.bodySmall),
+            : Text('ID proof', style: AppTheme.fieldLabel(context)),
         const SizedBox(height: AppTheme.s4),
         SizedBox(
           height: 40,
@@ -197,7 +197,7 @@ class IdProofFields extends StatelessWidget {
           ],
           if (onFile != null) ...[
             const SizedBox(height: AppTheme.s4),
-            Text('Document photo (optional)', style: Theme.of(context).textTheme.bodySmall),
+            Text('Document photo (optional)', style: AppTheme.fieldLabel(context)),
             const SizedBox(height: AppTheme.s4),
             if (file != null)
               PhotoThumb(

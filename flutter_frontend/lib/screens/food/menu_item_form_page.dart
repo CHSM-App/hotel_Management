@@ -113,53 +113,10 @@ class _MenuItemFormPageState extends ConsumerState<MenuItemFormPage> {
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x331457AD),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: Icon(
-                _editing ? Icons.edit_rounded : Icons.restaurant_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            Expanded(
-              child: Text(
-                _editing ? 'Edit dish' : 'Add a dish',
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.accent, Color(0x001457AD)],
-              ),
-            ),
-          ),
+        title: Text(
+          _editing ? 'Edit dish' : 'Add a dish',
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
       ),
       body: SafeArea(
@@ -225,7 +182,7 @@ class _MenuItemFormPageState extends ConsumerState<MenuItemFormPage> {
                         dense: true,
                       ),
                       const SizedBox(height: AppTheme.s12),
-                      Text('Type', style: Theme.of(context).textTheme.bodySmall),
+                      Text('Type', style: AppTheme.fieldLabel(context)),
                       const SizedBox(height: AppTheme.s8),
                       Row(
                         children: [
@@ -255,7 +212,7 @@ class _MenuItemFormPageState extends ConsumerState<MenuItemFormPage> {
                         dense: true,
                       ),
                       const SizedBox(height: AppTheme.s12),
-                      Text('Photo', style: Theme.of(context).textTheme.bodySmall),
+                      Text('Photo', style: AppTheme.fieldLabel(context)),
                       const SizedBox(height: AppTheme.s8),
                       _photoPicker(),
 

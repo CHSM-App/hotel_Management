@@ -142,10 +142,12 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(_asset!.name, overflow: TextOverflow.ellipsis),
+                  Text(_asset!.name, overflow: TextOverflow.ellipsis, maxLines: 1),
                   Text(
                     [_asset!.assetTag, _asset!.categoryName].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                    style: Theme.of(context).textTheme.bodySmall,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
@@ -1116,22 +1118,24 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: Text(
-          renewing ? 'Renew coverage' : 'Add coverage',
-          style: const TextStyle(fontWeight: FontWeight.w700),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              renewing ? 'Renew coverage' : 'Add coverage',
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+            if (asset != null)
+              Text(
+                [asset.name, asset.assetTag].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: const TextStyle(color: AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+          ],
         ),
-        bottom: asset != null
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(22),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                  child: Text(
-                    [asset.name, asset.assetTag].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
-                  ),
-                ),
-              )
-            : null,
       ),
       body: SafeArea(
         child: ListView(

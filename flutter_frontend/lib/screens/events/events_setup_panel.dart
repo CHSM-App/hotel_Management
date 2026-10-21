@@ -816,16 +816,56 @@ class _AddonDialogState extends ConsumerState<_AddonDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          NeuField(controller: _name, label: 'Name', hint: 'DJ', required: true, forceCapitalizeWords: true, dense: true),
+          NeuField(controller: _name, label: 'Name', hint: 'DJ', labelColor: AppTheme.heading, labelWeight: FontWeight.w700, required: true, forceCapitalizeWords: true, dense: true),
           const SizedBox(height: AppTheme.s8),
-          NeuField(controller: _amount, label: 'Price', hint: '5000', keyboardType: TextInputType.number, dense: true),
-          const SizedBox(height: AppTheme.s4),
-          CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            value: _perUnit,
-            onChanged: (v) => setState(() => _perUnit = v ?? false),
-            title: const Text('Per unit', style: TextStyle(color: AppTheme.text, fontSize: 13)),
+          NeuField(controller: _amount, label: 'Price', hint: '5000', labelColor: AppTheme.heading, labelWeight: FontWeight.w700, keyboardType: TextInputType.number, dense: true),
+          const SizedBox(height: AppTheme.s12),
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => setState(() => _perUnit = !_perUnit),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: _perUnit ? AppTheme.sidebarBrandWash : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _perUnit ? AppTheme.accent : AppTheme.border2,
+                  width: _perUnit ? 1.5 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.layers_rounded,
+                    size: 20,
+                    color: _perUnit ? AppTheme.accent : AppTheme.muted,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Per unit',
+                          style: TextStyle(color: AppTheme.heading, fontSize: 13.5, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Price is charged for each unit (chair, drink…)',
+                          style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: _perUnit,
+                    activeTrackColor: AppTheme.accent,
+                    onChanged: (v) => setState(() => _perUnit = v),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),

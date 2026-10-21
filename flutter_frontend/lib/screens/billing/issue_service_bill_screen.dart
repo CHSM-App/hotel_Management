@@ -10,6 +10,7 @@ import '../../widgets/payment_row.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 import 'bill_receipt_screen.dart';
+import 'bill_ui.dart';
 
 /// The service side of billing: one or more completed laundry/pool/gaming
 /// uses, selected on the Services tab, billed on their own document. Same
@@ -25,52 +26,14 @@ class IssueServiceBillScreen extends ConsumerWidget {
     final preview = state.servicePreview;
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded),
-          onPressed: () {
-            vm.closeServiceBill();
-            Navigator.of(context).pop();
-          },
-        ),
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x331457AD),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.room_service_rounded, color: Colors.white, size: 18),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            const Expanded(
-              child: Text('Bill services', overflow: TextOverflow.ellipsis, maxLines: 1),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
-            ),
-          ),
-        ),
+      backgroundColor: AppTheme.bg,
+      appBar: billAppBar(
+        title: 'Bill services',
+        subtitle: preview?.customerName,
+        onBack: () {
+          vm.closeServiceBill();
+          Navigator.of(context).pop();
+        },
       ),
       body: SafeArea(
         child: Align(
@@ -119,248 +82,93 @@ class _Body extends ConsumerWidget {
       ),
       children: [
         // ── The document ────────────────────────────────────────────────────
-        NeuCard(
-          radius: AppTheme.rLarge,
-          shadow: AppTheme.elevated,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        BillCard(
+          children: [
+            BillHero(
+              label: kDocumentLabels[amounts?.documentType] ?? 'Service bill',
+              chip: preview.isGstRegistered ? 'GST' : 'Non-GST',
+              title: preview.customerName ?? (preview.tableLabel ?? 'Services'),
+              subtitle: preview.customerName != null
+                  ? [
+                      if (preview.customerPhone != null) preview.customerPhone!,
+                      '${usages.length} ${usages.length == 1 ? 'service' : 'services'}',
+                    ].join('  ·  ')
+                  : '${usages.length} ${usages.length == 1 ? 'service' : 'services'}',
+              total: amounts?.totalAmount ?? 0,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s12,
+                AppTheme.s12,
+                AppTheme.s12,
+                AppTheme.s12,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [AppTheme.accent, Color(0xFF10499A)],
-                      ),
-                      borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x331457AD),
-                          offset: Offset(0, 3),
-                          blurRadius: 8,
-                        ),
-                      ],
+                  // The selected uses, itemised — read back against what was
+                  // ticked on the Services tab before committing to a document
+                  // that can only be voided, not edited.
+                  const BillSectionLabel('Services'),
+                  for (final u in usages)
+                    BillItemRow(
+                      name: u.serviceName,
+                      detail: '${u.quantity} × ${formatPrice(u.unitPrice)}',
+                      value: u.lineTotal,
                     ),
-                    child: const Icon(
-                      Icons.room_service_rounded,
-                      color: Colors.white,
-                      size: 18,
+                  billHairline,
+                  if ((amounts?.serviceSubtotal ?? 0) > 0)
+                    BillRowLine(label: 'Services', value: amounts!.serviceSubtotal),
+                  if ((amounts?.discountAmount ?? 0) > 0)
+                    BillRowLine(
+                      label: 'Discount (${amounts!.discountPercent}%)',
+                      value: -amounts.discountAmount,
                     ),
+                  if ((amounts?.serviceCgstAmount ?? 0) > 0 ||
+                      (amounts?.serviceSgstAmount ?? 0) > 0) ...[
+                    const BillSectionLabel('Tax included in total'),
+                    BillRowLine(
+                      label: 'CGST (${amounts?.serviceCgstRatePercent ?? 0}%)',
+                      value: amounts?.serviceCgstAmount ?? 0,
+                      muted: true,
+                    ),
+                    BillRowLine(
+                      label: 'SGST (${amounts?.serviceSgstRatePercent ?? 0}%)',
+                      value: amounts?.serviceSgstAmount ?? 0,
+                      muted: true,
+                    ),
+                  ],
+                  if ((amounts?.roundOff ?? 0) != 0)
+                    BillRowLine(label: 'Round off', value: amounts!.roundOff, muted: true),
+                  billHairline,
+                  BillRowLine(
+                    label: 'Grand total',
+                    value: amounts?.totalAmount ?? 0,
+                    strong: true,
                   ),
-                  const SizedBox(width: AppTheme.s12),
-                  Expanded(
-                    child: Text(
-                      (preview.tableLabel ?? 'SERVICES').toUpperCase(),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.4,
-                        color: AppTheme.heading,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  const SizedBox(height: 4),
+                  BillBalanceBox(balance: preview.balanceDue),
+                  const SizedBox(height: 8),
+                  Text(
+                    preview.isGstRegistered
+                        ? 'Issued under GSTIN ${preview.gstin ?? '—'}.'
+                        : "This property isn't GST registered — every bill is a "
+                              'cash receipt.',
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
                   ),
                 ],
               ),
-              const SizedBox(height: AppTheme.s16),
-
-              if (preview.customerName != null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.s12,
-                    vertical: AppTheme.s8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.bg,
-                    borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.person_outline_rounded, size: 16, color: AppTheme.muted),
-                      const SizedBox(width: AppTheme.s8),
-                      Expanded(
-                        child: Text(
-                          preview.customerPhone != null
-                              ? '${preview.customerName} · ${preview.customerPhone}'
-                              : preview.customerName!,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppTheme.s12),
-              ],
-
-              // The selected uses, itemised — read back against what was
-              // ticked on the Services tab before committing to a document
-              // that can only be voided, not edited.
-              for (final u in usages)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppTheme.accent.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                        ),
-                        child: const Icon(Icons.spa_outlined, color: AppTheme.accent, size: 14),
-                      ),
-                      const SizedBox(width: AppTheme.s8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              u.serviceName,
-                              style: const TextStyle(
-                                color: AppTheme.heading,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                            Text(
-                              '${u.quantity} × ${formatPrice(u.unitPrice)}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: AppTheme.s8),
-                      Text(
-                        formatPrice(u.lineTotal),
-                        style: const TextStyle(
-                          color: AppTheme.heading,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              const SectionDivider(),
-
-              Text(
-                preview.isGstRegistered
-                    ? 'Issued under GSTIN ${preview.gstin ?? '—'}.'
-                    : "This property isn't GST registered — every bill is a "
-                          'cash receipt.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: AppTheme.s12),
-
-              if ((amounts?.serviceSubtotal ?? 0) > 0)
-                _Row(label: 'Services', value: amounts!.serviceSubtotal),
-
-              if ((amounts?.discountAmount ?? 0) > 0)
-                _Row(
-                  label: 'Discount (${amounts!.discountPercent}%)',
-                  value: -amounts.discountAmount,
-                ),
-
-              if ((amounts?.serviceCgstAmount ?? 0) > 0 ||
-                  (amounts?.serviceSgstAmount ?? 0) > 0) ...[
-                _Row(
-                  label: 'CGST (${amounts?.serviceCgstRatePercent ?? 0}%)',
-                  value: amounts?.serviceCgstAmount ?? 0,
-                  muted: true,
-                ),
-                _Row(
-                  label: 'SGST (${amounts?.serviceSgstRatePercent ?? 0}%)',
-                  value: amounts?.serviceSgstAmount ?? 0,
-                  muted: true,
-                ),
-              ],
-              if ((amounts?.roundOff ?? 0) != 0)
-                _Row(
-                  label: 'Round off',
-                  value: amounts!.roundOff,
-                  muted: true,
-                ),
-
-              const Divider(height: AppTheme.s16),
-              _Row(
-                label: kDocumentLabels[amounts?.documentType] ?? 'Total',
-                value: amounts?.totalAmount ?? 0,
-                strong: true,
-              ),
-
-              const SizedBox(height: AppTheme.s8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.s16,
-                  vertical: AppTheme.s12,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppTheme.accent.withValues(alpha: 0.14),
-                      AppTheme.accent.withValues(alpha: 0.05),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                  border: Border.all(color: AppTheme.accent.withValues(alpha: 0.18)),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      'Balance due',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const Spacer(),
-                    Text(
-                      formatPrice(preview.balanceDue),
-                      style: const TextStyle(
-                        color: AppTheme.accent,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 19,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
 
         // ── How it was paid ─────────────────────────────────────────────────
         const SizedBox(height: AppTheme.s16),
-        NeuCard(
-          radius: AppTheme.rLarge,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SectionLabel('Record how the guest paid', icon: Icons.payments_rounded),
-              const SizedBox(height: AppTheme.s8),
-              Text(
-                state.nothingDue
-                    ? 'Nothing is left to collect — issue it as it stands.'
-                    : '${formatPrice(state.balanceDue)} is due. Choose the payment '
-                          'type for each amount taken.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              if (!state.nothingDue) ...[
-                const SizedBox(height: AppTheme.s12),
-                _PaymentRows(state: state),
-              ],
-            ],
-          ),
-        ),
+        BillPaymentHeader(nothingDue: state.nothingDue, balanceDue: state.balanceDue),
+        if (!state.nothingDue) ...[
+          const SizedBox(height: AppTheme.s8),
+          BillPanel(child: _PaymentRows(state: state)),
+        ],
 
         const SizedBox(height: AppTheme.s16),
         if (state.error != null) ...[
@@ -490,58 +298,6 @@ class _Body extends ConsumerWidget {
   }
 }
 
-// ── One line of the document ────────────────────────────────────────────────
-
-class _Row extends StatelessWidget {
-  final String label;
-  final num value;
-  final bool strong;
-  final bool muted;
-
-  const _Row({
-    required this.label,
-    required this.value,
-    this.strong = false,
-    this.muted = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colour = strong
-        ? AppTheme.heading
-        : muted
-        ? AppTheme.muted
-        : AppTheme.text;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.s8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: colour,
-                fontSize: strong ? 15 : 13,
-                fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: AppTheme.s8),
-          Text(
-            formatPrice(value),
-            style: TextStyle(
-              color: colour,
-              fontSize: strong ? 16 : 13,
-              fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ── How the balance arrived ─────────────────────────────────────────────────
 
 class _PaymentRows extends ConsumerWidget {
@@ -561,6 +317,7 @@ class _PaymentRows extends ConsumerWidget {
             padding: const EdgeInsets.only(bottom: AppTheme.s12),
             child: PaymentRow(
               key: ValueKey(i),
+              compact: true,
               line: state.payment[i],
               onRemove: state.payment.length == 1
                   ? null

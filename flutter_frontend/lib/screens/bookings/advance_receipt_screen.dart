@@ -221,88 +221,38 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
       child: Scaffold(
         backgroundColor: AppTheme.bg,
         appBar: AppBar(
-          backgroundColor: AppTheme.bg,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          foregroundColor: AppTheme.heading,
-          titleSpacing: 0,
-          title: Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                margin: const EdgeInsets.only(right: AppTheme.s12),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppTheme.accent, Color(0xFF10499A)],
-                  ),
-                  borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x331457AD),
-                      offset: Offset(0, 3),
-                      blurRadius: 8,
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.receipt_long_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-              ),
-              Flexible(
-                child: Text(
-                  existing
-                      ? (shown.receiptNumber ?? 'Receipt')
-                      : 'Advance receipt',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ],
+          title: Text(
+            existing
+                                ? (shown.receiptNumber ?? 'Receipt')
+                                : 'Advance receipt',
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
           ),
           actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: AppTheme.s16),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.accent.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Room ${b.roomNumber ?? '—'}',
-                    style: const TextStyle(
-                      color: AppTheme.accent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(3),
-            child: Container(
-              height: 3,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
-              ),
-            ),
-          ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: AppTheme.s16),
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Room ${b.roomNumber ?? '—'}',
+                              style: const TextStyle(
+                                color: AppTheme.accent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
         ),
         body: SafeArea(
           child: (!loaded && _loadError == null)

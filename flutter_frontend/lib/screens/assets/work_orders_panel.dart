@@ -539,64 +539,22 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        titleSpacing: AppTheme.s4,
-        title: Row(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppTheme.accent, Color(0xFF10499A)],
-                ),
-                borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x331457AD),
-                    offset: Offset(0, 3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: Icon(
-                _isEdit ? Icons.build_rounded : Icons.report_problem_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
+            Text(
+              _isEdit ? 'Work order' : (_bulk ? 'Bulk work order' : 'Report an issue'),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
-            const SizedBox(width: AppTheme.s12),
-            Expanded(
-              child: Text(
-                _isEdit ? 'Work order' : (_bulk ? 'Bulk work order' : 'Report an issue'),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
+            if (_isEdit) Text(
+              widget.workOrder!.assetName,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w500),
             ),
           ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(_isEdit ? 22 + 3 : 3),
-          child: Column(
-            children: [
-              if (_isEdit)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                  child: Text(
-                    widget.workOrder!.assetName,
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
-                  ),
-                ),
-              Container(
-                height: 3,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(colors: [AppTheme.accent, Color(0x001457AD)]),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
       body: SafeArea(
@@ -718,7 +676,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                 children: [
                   SectionLabel('Issue', number: _bulk || !_isEdit ? 2 : 1, icon: Icons.report_problem_rounded),
                   const SizedBox(height: AppTheme.s12),
-                  Text('Type', style: Theme.of(context).textTheme.bodySmall),
+                  Text('Type', style: AppTheme.fieldLabel(context)),
                   const SizedBox(height: 6),
                   ModeToggle(
                     options: {for (final t in issueTypes) t: kIssueTypeLabel[t] ?? t},
@@ -740,7 +698,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                   ),
                   if (_isEdit) ...[
                     const SizedBox(height: AppTheme.s12),
-                    Text('Status', style: Theme.of(context).textTheme.bodySmall),
+                    Text('Status', style: AppTheme.fieldLabel(context)),
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: AppTheme.s8,
@@ -772,7 +730,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                   const SizedBox(height: AppTheme.s12),
                   NeuField(dense: true, controller: _assignedTo, label: 'Assigned to (optional)', hint: 'In-house handyman name', forceCapitalizeWords: true),
                   const SizedBox(height: AppTheme.s8),
-                  Text('Vendor', style: Theme.of(context).textTheme.bodySmall),
+                  Text('Vendor', style: AppTheme.fieldLabel(context)),
                   const SizedBox(height: 4),
                   NeuPressed(
                     padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
@@ -818,7 +776,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                     // paymentMethod/amountPaid/referenceNumber in
                     // AssetsPanel.jsx.
                     const SizedBox(height: AppTheme.s12),
-                    Text('Payment status', style: Theme.of(context).textTheme.bodySmall),
+                    Text('Payment status', style: AppTheme.fieldLabel(context)),
                     const SizedBox(height: 4),
                     OptionDropdown(
                       values: kPaymentStatuses,
@@ -828,7 +786,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
                     ),
                     if (_paymentStatus != 'PENDING') ...[
                       const SizedBox(height: AppTheme.s12),
-                      Text('Paid via', style: Theme.of(context).textTheme.bodySmall),
+                      Text('Paid via', style: AppTheme.fieldLabel(context)),
                       const SizedBox(height: 4),
                       OptionDropdown(
                         values: kPaymentMethods,

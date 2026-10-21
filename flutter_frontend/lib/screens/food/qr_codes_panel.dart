@@ -88,7 +88,7 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
                 _copiesField(context, 'Copies of each table code (${activeTables.length} tables)', _tableCopies, (v) => setState(() => _tableCopies = v)),
               ],
               const SizedBox(height: AppTheme.s8),
-              Text('Size on the page', style: Theme.of(context).textTheme.bodySmall),
+              Text('Size on the page', style: AppTheme.fieldLabel(context)),
               const SizedBox(height: 4),
               Row(
                 children: [
