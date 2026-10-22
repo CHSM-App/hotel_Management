@@ -10,7 +10,7 @@ import { describeAdvance } from './paymentSplit';
 import BillDocument from './BillDocument';
 import IconButton from '../../components/IconButton';
 import { EyeIcon } from '../../components/ActionIcons';
-import Bookings from './Bookings';
+import StayViewModal from './StayViewModal';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
 import './InventoryPanel.css';
@@ -234,10 +234,7 @@ function formatLateBy(minutes) {
   return mins === 0 ? `${hours} hours` : `${hours}h ${mins}m`;
 }
 
-// onOpenSection moves the dashboard to another section, for the tiles whose
-// subject is another screen's. Optional — the register works without it, and
-// every tile that has one falls back to filtering in place.
-export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }) {
+export default function GuestRegister({ onOpenDraft }) {
   const session = getSession();
   const token = session?.token;
 
@@ -670,9 +667,8 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
   const [fullBookingId, setFullBookingId] = useState(null);
 
   const openDetail = (bookingId) => {
-    // The one full detail modal lives in Bookings (same details and actions
-    // as the tape chart); it is mounted here modal-only so the register stays
-    // where it is.
+    // The read-only Stay Details modal, the same one Billing opens from a
+    // Ready to bill row.
     setFullBookingId(bookingId);
   };
 
@@ -763,33 +759,56 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
           narrowed by, in the order they're reached for. */}
       <div className="dash-card guest-register__toolbar">
         <div className="guest-register__toolbar-top">
-          <div className="guest-register__range">
-            <div className="field guest-register__range-field">
-              <label htmlFor="fromDate">From</label>
-              <input
-                id="fromDate"
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-              />
+          <div className="guest-register__section guest-register__section--range">
+              <span className="guest-register__section-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
+              </span>
+            <div className="guest-register__section-body">
+              <span className="guest-register__section-label">Date Range</span>
+              <div className="guest-register__range">
+                <input
+                  id="fromDate"
+                  type="date"
+                  aria-label="From"
+                  value={fromDate}
+                  max={toDate || undefined}
+                  onChange={(e) => setFromDate(e.target.value)}
+                />
+                <span className="guest-register__range-dash" aria-hidden="true">
+                  –
+                </span>
+                <input
+                  id="toDate"
+                  type="date"
+                  aria-label="To"
+                  value={toDate}
+                  min={fromDate || undefined}
+                  onChange={(e) => setToDate(e.target.value)}
+                />
+              </div>
             </div>
-            <span className="guest-register__range-dash" aria-hidden="true">
-              –
-            </span>
-            <div className="field guest-register__range-field">
-              <label htmlFor="toDate">To</label>
-              <input
-                id="toDate"
-                type="date"
-                value={toDate}
-                min={fromDate || undefined}
-                onChange={(e) => setToDate(e.target.value)}
-              />
+            <div className="guest-register__presets">
+              {RANGE_PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  className="guest-register__preset"
+                  aria-pressed={activePreset?.key === p.key}
+                  onClick={() => applyPreset(p)}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="field guest-register__search">
-            <label htmlFor="search">Find a guest</label>
+          <div className="guest-register__section guest-register__section--search">
+              <span className="guest-register__section-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8" /></svg>
+              </span>
+            <div className="guest-register__section-body">
+          <div className="guest-register__search">
+            <label htmlFor="search" className="guest-register__section-label">Find a guest</label>
             <div className="guest-register__search-box">
               <svg
                 className="guest-register__search-icon"
@@ -823,22 +842,11 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
               )}
             </div>
           </div>
+            </div>
+          </div>
         </div>
 
         <div className="guest-register__toolbar-bottom">
-          <div className="guest-register__presets">
-            {RANGE_PRESETS.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                className="guest-register__preset"
-                aria-pressed={activePreset?.key === p.key}
-                onClick={() => applyPreset(p)}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
 
           {/* Several cuts can be on at once, so the chips are checkboxes rather
               than a one-of-many choice, and the group is named as one. All is
@@ -986,28 +994,18 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
             hint="Show only the guests currently in house"
             onClick={() => applyCut({ status: 'CHECKED_IN', billed: 'ALL' })}
           />
-          {/* The one tile whose subject lives on another screen. It counts money
-              raised on invoices, and invoices are billing's — so it goes there
-              rather than filtering the register down to the stays those bills
-              were raised against, which is a list of guests, not of bills.
-
-              Falls back to filtering in place when nothing was passed to move
-              sections with, so the tile still answers rather than going dead if
-              the register is ever mounted on its own. */}
+          {/* Filters the register to the stays a bill has been raised for, in
+              place — the same way the Pending tile filters to the unbilled
+              ones. It used to jump to the billing screen, which answered a
+              different question than the one the tile's list-mates ask. */}
           <StatTile
             className="guest-register__stat--money"
             label="Billed"
             value={formatPrice(stats.amount)}
             note={`${stats.billedCount} ${stats.billedCount === 1 ? 'bill' : 'bills'} issued`}
-            active={!onOpenSection && billedFilter === 'YES'}
-            hint={onOpenSection ? 'Open billing and invoices' : 'Show only the stays a bill has been raised for'}
-            onClick={() => {
-              if (onOpenSection) {
-                onOpenSection('billing');
-                return;
-              }
-              applyCut({ status: 'ALL', billed: 'YES' });
-            }}
+            active={billedFilter === 'YES'}
+            hint="Show only the stays a bill has been raised for"
+            onClick={() => applyCut({ status: 'ALL', billed: 'YES' })}
           />
 
           {/* Only when there is something left to bill — an empty pending tile
@@ -1264,11 +1262,14 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
                         </span>
                       </td>
                       <td className="dash-table__actions">
-                        <IconButton
-                          label={`View details for ${b.guestName}`}
-                          icon={<EyeIcon />}
+                        <button
+                          type="button"
+                          className="guest-register__view-details-btn"
+                          aria-label={`View details for ${b.guestName}`}
                           onClick={() => openDetail(b.id)}
-                        />
+                        >
+                          View
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1360,17 +1361,7 @@ export default function GuestRegister({ onOpenDraft, onOpenSection, onBillStay }
         </div>
       )}
 
-      {fullBookingId && (
-        <Bookings
-          modalOnly
-          openBookingId={fullBookingId}
-          onBillStay={onBillStay}
-          onModalClose={() => {
-            setFullBookingId(null);
-            load();
-          }}
-        />
-      )}
+      {fullBookingId && <StayViewModal bookingId={fullBookingId} onClose={() => setFullBookingId(null)} />}
 
       {detailBookingId && (
         <div className="glass-backdrop guest-register__backdrop" onClick={closeDetail} role="presentation">

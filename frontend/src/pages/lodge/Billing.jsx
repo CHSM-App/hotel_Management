@@ -547,6 +547,30 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // A column only earns its place when some stay has something in it.
   const hasLate = Boolean(queue?.some((b) => b.lateCheckoutCharge > 0));
   const [queueError, setQueueError] = useState('');
+  const [readySort, setReadySort] = useState({ key: null, dir: 1 });
+  const toggleReadySort = (key) => setReadySort((cur) => (cur.key === key ? { key, dir: -cur.dir } : { key, dir: 1 }));
+  const readyColumn = READY_COLUMNS.find((c) => c.key === readySort.key);
+  const [readySearch, setReadySearch] = useState('');
+  const [readyFilter, setReadyFilter] = useState('ALL');
+  const readyTerm = readySearch.trim().toLowerCase();
+  const readyMatchesSearch = (b) =>
+    !readyTerm || [b.guestName, b.roomNumber, b.categoryName, b.guestPhone].some((v) => String(v ?? '').toLowerCase().includes(readyTerm));
+  const readyFilters = [
+    { key: 'food', label: 'Has food', test: (b) => (b.foodTotal || 0) > 0 },
+    { key: 'advance', label: 'Advance paid', test: (b) => (b.advanceAmount || 0) > 0 },
+    ...(hasLate ? [{ key: 'late', label: 'Late checkout', test: (b) => (b.lateCheckoutCharge || 0) > 0 }] : []),
+  ];
+  const activeReadyFilter = readyFilters.find((f) => f.key === readyFilter);
+  const filteredQueue = queue?.filter((b) => readyMatchesSearch(b) && (!activeReadyFilter || activeReadyFilter.test(b)));
+  const sortedQueue =
+    filteredQueue && readyColumn
+      ? [...filteredQueue].sort((a, b) => {
+          const x = readyColumn.value(a);
+          const y = readyColumn.value(b);
+          const order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true });
+          return order * readySort.dir;
+        })
+      : filteredQueue;
   const [foodTabs, setFoodTabs] = useState(() => readCache('/billing/food-tabs'));
   const [foodTabsError, setFoodTabsError] = useState('');
   const [invoices, setInvoices] = useState(() => readCache('/billing/invoices'));
@@ -653,22 +677,56 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     const byOrder = new Map();
     for (const u of serviceUsages) {
       if (!u.laundryOrderId) {
-        groups.push({ ...u, usageIds: [u.id] });
+        groups.push({ ...u, usageIds: [u.id], lines: [u] });
         continue;
       }
       const existing = byOrder.get(u.laundryOrderId);
       if (existing) {
         existing.usageIds.push(u.id);
+        existing.lines.push(u);
         existing.quantity += u.quantity;
         existing.lineTotal += u.lineTotal;
       } else {
-        const group = { ...u, serviceName: 'Laundry', usageIds: [u.id] };
+        const group = { ...u, serviceName: 'Laundry', usageIds: [u.id], lines: [u] };
         byOrder.set(u.laundryOrderId, group);
         groups.push(group);
       }
     }
     return groups;
   }, [serviceUsages]);
+
+  const [serviceSearch, setServiceSearch] = useState('');
+  const [serviceFilter, setServiceFilter] = useState('ALL');
+  const [serviceType, setServiceType] = useState('ALL');
+  const serviceTerm = serviceSearch.trim().toLowerCase();
+  const serviceMatchesSearch = (u) =>
+    !serviceTerm || [u.serviceName, u.roomNumber, u.guestName, u.note].some((v) => String(v ?? '').toLowerCase().includes(serviceTerm));
+  const serviceFilters = [
+    { key: 'room', label: 'Room guests', test: (u) => Boolean(u.roomNumber) },
+    { key: 'walkin', label: 'Walk-in', test: (u) => !u.roomNumber },
+  ];
+  const activeServiceFilter = serviceFilters.find((f) => f.key === serviceFilter);
+  // Laundry first, then every other service the desk has waiting, by name.
+  const serviceTypes = [...new Set((groupedServiceUsages ?? []).map((u) => u.serviceName))].sort((a, b) =>
+    a === 'Laundry' ? -1 : b === 'Laundry' ? 1 : a.localeCompare(b),
+  );
+  const activeServiceType = serviceTypes.includes(serviceType) ? serviceType : 'ALL';
+  const matchesServiceType = (u) => activeServiceType === 'ALL' || u.serviceName === activeServiceType;
+  const [serviceSort, setServiceSort] = useState({ key: null, dir: 1 });
+  const toggleServiceSort = (key) => setServiceSort((cur) => (cur.key === key ? { key, dir: -cur.dir } : { key, dir: 1 }));
+  const serviceColumn = SERVICE_COLUMNS.find((c) => c.key === serviceSort.key);
+  const filteredServiceUsages = groupedServiceUsages?.filter(
+    (u) => serviceMatchesSearch(u) && matchesServiceType(u) && (!activeServiceFilter || activeServiceFilter.test(u)),
+  );
+  const shownServiceUsages =
+    filteredServiceUsages && serviceColumn
+      ? [...filteredServiceUsages].sort((a, b) => {
+          const x = serviceColumn.value(a);
+          const y = serviceColumn.value(b);
+          const order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true });
+          return order * serviceSort.dir;
+        })
+      : filteredServiceUsages;
 
   // "Add to room bill" on a service row: a use already tied to a stay shows
   // that guest so the desk can confirm who it's going on, same as the room
@@ -804,14 +862,19 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // isn't GST registered only ever writes cash receipts, and should not be
   // offered a "Tax invoice" filter that matches nothing. Same rule retires the
   // advance/final split on a property that has only ever issued one of them.
+  //
+  // Which chips exist is decided from every document, not the ones the dates and
+  // search currently leave — otherwise narrowing to a week that happens to hold
+  // one type made the chips vanish and the toolbar jump. The counts still follow
+  // the dates and search, so a chip can read 0.
   const billFilters = documents
-    ? BILL_FILTERS.map((f) => ({
+    ? BILL_FILTERS.filter((f) => documents.some((i) => f.match(i))).map((f) => ({
         ...f,
         count: documents.filter((i) => f.match(i) && matchesDate(i) && matchesSearch(i)).length,
-      })).filter((f) => f.count > 0)
+      }))
     : [];
-  // Looked up rather than trusted: voiding the last bill of a type empties its
-  // chip, and the list falls back to everything instead of going blank.
+  // Looked up rather than trusted: a type that is no longer issued at all drops
+  // its chip, and the list falls back to everything instead of going blank.
   const activeFilter = billFilters.find((f) => f.key === billFilter) ?? null;
 
   const visibleInvoices =
@@ -1531,7 +1594,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             tab strip (.orders-panel__toolbar) — one row, tabs on the left,
             the view switch on the right, rather than its own header line
             under each tab that needs it. */}
-        {(activeTab === 'ready' || activeTab === 'functions') && (
+        {activeTab === 'functions' && (
           <ListViewToggle view={listView} onChange={setListView} />
         )}
       </div>
@@ -1629,35 +1692,162 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       )}
 
       {activeTab === 'services' && (
-        <div className="chart-section">
-          <div className="chart-section__header">
-            <h3>Services to bill</h3>
-            <span className="chart-section__hint">
-              Laundry, pool, gaming and other services that are completed but not yet paid for. Each
-              bills on its own document, or goes onto a guest’s room bill instead.
-            </span>
-          </div>
-
+        <div className="chart-section chart-section--snug">
           {serviceError && <div className="form-banner form-banner--error">{serviceError}</div>}
           {!serviceError && !serviceUsages && <PageLoader inline label="Loading" />}
           {!serviceError && serviceUsages && serviceUsages.length === 0 && (
             <div className="dash-state">Nothing waiting — every completed service has been billed.</div>
           )}
           {!serviceError && serviceUsages && serviceUsages.length > 0 && (
+            <div className="billing-panel__bill-search-row billing-panel__bill-search-row--compact">
+              <div className="field billing-panel__bill-search">
+                <svg className="billing-panel__bill-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.5-3.5" />
+                </svg>
+                <input
+                  aria-label="Search services to bill"
+                  value={serviceSearch}
+                  onChange={(e) => setServiceSearch(e.target.value)}
+                  placeholder="Service, room or guest"
+                />
+                {serviceSearch && (
+                  <button type="button" className="billing-panel__bill-search-clear" onClick={() => setServiceSearch('')} aria-label="Clear search">
+                    ×
+                  </button>
+                )}
+              </div>
+              <div className="billing-panel__filters">
+                <button type="button" className="billing-panel__filter" aria-pressed={!activeServiceFilter} onClick={() => setServiceFilter('ALL')}>
+                  All
+                  <span className="billing-panel__filter-count">{groupedServiceUsages.filter((u) => serviceMatchesSearch(u) && matchesServiceType(u)).length}</span>
+                </button>
+                {serviceFilters.map((f) => (
+                  <button type="button" key={f.key} className="billing-panel__filter" aria-pressed={activeServiceFilter?.key === f.key} onClick={() => setServiceFilter(f.key)}>
+                    {f.label}
+                    <span className="billing-panel__filter-count">{groupedServiceUsages.filter((u) => serviceMatchesSearch(u) && matchesServiceType(u) && f.test(u)).length}</span>
+                  </button>
+                ))}
+              </div>
+              {serviceTypes.length > 1 && (
+                <select
+                  className="billing-panel__type-select"
+                  aria-label="Filter by service"
+                  value={activeServiceType}
+                  onChange={(e) => setServiceType(e.target.value)}
+                >
+                  <option value="ALL">All services</option>
+                  {serviceTypes.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <span className="billing-panel__ready-view">
+                <ListViewToggle view={listView} onChange={setListView} />
+              </span>
+            </div>
+          )}
+          {!serviceError && serviceUsages && serviceUsages.length > 0 && shownServiceUsages.length === 0 && (
+            <div className="dash-state">No services match your search or filter.</div>
+          )}
+          {!serviceError && serviceUsages && shownServiceUsages.length > 0 && listView === 'cards' && (
+            <div className="orders-grid">
+              {shownServiceUsages.map((u) => (
+                <div className="order-card order-card--ready billing-card" key={u.usageIds.join('-')}>
+                  <div className="order-card__head">
+                    <span className="order-card__number billing-card__guest">{u.serviceName}</span>
+                    {u.laundryOrderId && <span className="order-card__badge">Laundry</span>}
+                  </div>
+                  <div className="order-card__meta">
+                    <span className="order-card__target">{u.roomNumber ? `Room ${u.roomNumber}` : 'Walk-in'}{u.guestName ? ` · ${u.guestName}` : ''}</span>
+                  </div>
+                  <ul className="order-card__items">
+                    {u.laundryOrderId ? (
+                      u.lines.map((l) => (
+                        <li className="order-card__item" key={l.id}>
+                          <span className="order-card__item-name">
+                            {l.quantity} × {l.serviceName === 'Laundry' ? 'Item' : l.serviceName} @ {formatPrice(l.unitPrice)}
+                          </span>
+                          <span className="order-card__item-price">{formatPrice(l.lineTotal)}</span>
+                        </li>
+                      ))
+                    ) : (
+                      <>
+                        <li className="order-card__item">
+                          <span className="order-card__item-name">Rate</span>
+                          <span className="order-card__item-price">
+                            {formatPrice(u.unitPrice)} / {u.unitLabel}
+                          </span>
+                        </li>
+                        <li className="order-card__item">
+                          <span className="order-card__item-name">Quantity</span>
+                          <span className="order-card__item-price">
+                            {u.quantity} {u.unitLabel}{u.quantity === 1 ? '' : 's'}
+                          </span>
+                        </li>
+                        {u.headcount > 1 && (
+                          <li className="order-card__item">
+                            <span className="order-card__item-name">People</span>
+                            <span className="order-card__item-price">× {u.headcount}</span>
+                          </li>
+                        )}
+                      </>
+                    )}
+                    {u.laundryOrderId && u.note && (
+                      <li className="order-card__item"><span className="order-card__item-name">{u.note}</span></li>
+                    )}
+                    {u.onRoomBill && (
+                      <li className="order-card__item"><span className="order-card__item-name">its stay bill was already issued</span></li>
+                    )}
+                  </ul>
+                  <div className="order-card__foot">
+                    <span className="order-card__count">Amount (before GST)</span>
+                    <span className="order-card__total billing-card__due">{formatPrice(u.lineTotal)}</span>
+                  </div>
+                  <div className="order-card__actions">
+                    <button type="button" className="order-btn billing-card__view" onClick={() => openServicePick(u)}>
+                      Add to room bill
+                    </button>
+                    <button type="button" className="order-btn" onClick={() => openBilling({ kind: 'SERVICE', usageIds: u.usageIds })}>
+                      Bill
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!serviceError && serviceUsages && shownServiceUsages.length > 0 && listView === 'sheet' && (
             <section className="history-sheet billing-sheet billing-sheet__page-scroll">
               <div className="history-table-wrap">
                 <table className="history-table billing-sheet__services">
                   <thead>
                     <tr>
-                      <th>Service</th>
-                      <th>Room / Guest</th>
-                      <th className="history-table__num">Qty</th>
-                      <th className="history-table__num">Amount</th>
+                      {SERVICE_COLUMNS.map((column) => (
+                        <th
+                          key={column.key}
+                          className={column.className}
+                          aria-sort={serviceSort.key === column.key ? (serviceSort.dir === 1 ? 'ascending' : 'descending') : undefined}
+                        >
+                          <button
+                            type="button"
+                            className="billing-sheet__sort"
+                            onClick={() => toggleServiceSort(column.key)}
+                            title={`Sort by ${column.label}`}
+                          >
+                            {column.label}
+                            <span className="billing-sheet__sort-icon" aria-hidden="true">
+                              {serviceSort.key === column.key ? (serviceSort.dir === 1 ? '▲' : '▼') : '⇅'}
+                            </span>
+                          </button>
+                        </th>
+                      ))}
                       <th aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody>
-                    {groupedServiceUsages.map((u) => (
+                    {shownServiceUsages.map((u) => (
                       <tr key={u.usageIds.join('-')} className="history-table__row">
                         <td className="history-table__strong">
                           {u.serviceName}
@@ -1777,26 +1967,75 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           {!queueError && queue && queue.length === 0 && (
             <div className="dash-state">Nothing waiting — every checked-out stay has a bill.</div>
           )}
-          {!queueError && queue && queue.length > 0 && listView === 'sheet' && (
+          {!queueError && queue && queue.length > 0 && (
+            <div className="billing-panel__bill-search-row billing-panel__bill-search-row--compact">
+              <div className="field billing-panel__bill-search">
+                <svg className="billing-panel__bill-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.5-3.5" />
+                </svg>
+                <input
+                  aria-label="Search stays ready to bill"
+                  value={readySearch}
+                  onChange={(e) => setReadySearch(e.target.value)}
+                  placeholder="Guest, room or category"
+                />
+                {readySearch && (
+                  <button type="button" className="billing-panel__bill-search-clear" onClick={() => setReadySearch('')} aria-label="Clear search">
+                    ×
+                  </button>
+                )}
+              </div>
+              <div className="billing-panel__filters">
+                <button type="button" className="billing-panel__filter" aria-pressed={!activeReadyFilter} onClick={() => setReadyFilter('ALL')}>
+                  All
+                  <span className="billing-panel__filter-count">{queue.filter(readyMatchesSearch).length}</span>
+                </button>
+                {readyFilters.map((f) => (
+                  <button type="button" key={f.key} className="billing-panel__filter" aria-pressed={activeReadyFilter?.key === f.key} onClick={() => setReadyFilter(f.key)}>
+                    {f.label}
+                    <span className="billing-panel__filter-count">{queue.filter((b) => readyMatchesSearch(b) && f.test(b)).length}</span>
+                  </button>
+                ))}
+              </div>
+              <span className="billing-panel__ready-view">
+                <ListViewToggle view={listView} onChange={setListView} />
+              </span>
+            </div>
+          )}
+          {!queueError && queue && queue.length > 0 && filteredQueue.length === 0 && (
+            <div className="dash-state">No stays match your search or filter.</div>
+          )}
+          {!queueError && queue && filteredQueue.length > 0 && listView === 'sheet' && (
             <section className="history-sheet billing-sheet">
               <div className="history-table-wrap">
                 <table className="history-table billing-sheet__ready">
                   <thead>
                     <tr>
-                      <th>Guest</th>
-                      <th>Room</th>
-                      <th>Stay</th>
-                      <th className="history-table__num">Room charge</th>
-                      {hasLate && <th className="history-table__num">Late checkout</th>}
-                      <th className="history-table__num">Food</th>
-                      <th className="history-table__num">Subtotal</th>
-                      <th className="history-table__num">Advance paid</th>
-                      <th className="history-table__num">To collect</th>
+                      {READY_COLUMNS.filter((column) => hasLate || column.key !== 'late').map((column) => (
+                        <th
+                          key={column.key}
+                          className={column.className}
+                          aria-sort={readySort.key === column.key ? (readySort.dir === 1 ? 'ascending' : 'descending') : undefined}
+                        >
+                          <button
+                            type="button"
+                            className="billing-sheet__sort"
+                            onClick={() => toggleReadySort(column.key)}
+                            title={`Sort by ${column.label}`}
+                          >
+                            {column.label}
+                            <span className="billing-sheet__sort-icon" aria-hidden="true">
+                              {readySort.key === column.key ? (readySort.dir === 1 ? '▲' : '▼') : '⇅'}
+                            </span>
+                          </button>
+                        </th>
+                      ))}
                       <th aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody>
-                    {queue.map((b) => {
+                    {sortedQueue.map((b) => {
                       const sub = b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0);
                       const due = sub - (b.advanceAmount || 0);
                       return (
@@ -1830,13 +2069,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={3}>{queue.length} stay{queue.length === 1 ? '' : 's'} to bill</td>
-                      <td className="history-table__num billing-sheet__charge-col">{formatPrice(queue.reduce((n, b) => n + b.totalPrice, 0))}</td>
-                      {hasLate && <td className="history-table__num billing-sheet__charge-col">{formatPrice(queue.reduce((n, b) => n + (b.lateCheckoutCharge || 0), 0))}</td>}
-                      <td className="history-table__num billing-sheet__charge-col">{formatPrice(queue.reduce((n, b) => n + (b.foodTotal || 0), 0))}</td>
-                      <td className="history-table__num">{formatPrice(queue.reduce((n, b) => n + b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0), 0))}</td>
-                      <td className="history-table__num billing-sheet__charge-col">{queue.some((b) => b.advanceAmount) ? `− ${formatPrice(queue.reduce((n, b) => n + (b.advanceAmount || 0), 0))}` : '—'}</td>
-                      <td className="history-table__num billing-sheet__due-cell">{formatPrice(queue.reduce((n, b) => n + b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0) - (b.advanceAmount || 0), 0))}</td>
+                      <td colSpan={3}>{sortedQueue.length} stay{sortedQueue.length === 1 ? '' : 's'} to bill</td>
+                      <td className="history-table__num billing-sheet__charge-col">{formatPrice(sortedQueue.reduce((n, b) => n + b.totalPrice, 0))}</td>
+                      {hasLate && <td className="history-table__num billing-sheet__charge-col">{formatPrice(sortedQueue.reduce((n, b) => n + (b.lateCheckoutCharge || 0), 0))}</td>}
+                      <td className="history-table__num billing-sheet__charge-col">{formatPrice(sortedQueue.reduce((n, b) => n + (b.foodTotal || 0), 0))}</td>
+                      <td className="history-table__num">{formatPrice(sortedQueue.reduce((n, b) => n + b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0), 0))}</td>
+                      <td className="history-table__num billing-sheet__charge-col">{sortedQueue.some((b) => b.advanceAmount) ? `− ${formatPrice(sortedQueue.reduce((n, b) => n + (b.advanceAmount || 0), 0))}` : '—'}</td>
+                      <td className="history-table__num billing-sheet__due-cell">{formatPrice(sortedQueue.reduce((n, b) => n + b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0) - (b.advanceAmount || 0), 0))}</td>
                       <td />
                     </tr>
                   </tfoot>
@@ -1853,9 +2092,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
               dishes a cook works through; here it's the charges that make
               up the bill, named section by section instead of left for the
               desk to reconstruct from one lump sum. */}
-          {!queueError && queue && queue.length > 0 && listView === 'cards' && (
+          {!queueError && queue && filteredQueue.length > 0 && listView === 'cards' && (
             <div className="orders-grid">
-              {queue.map((b) => {
+              {sortedQueue.map((b) => {
                 const nights = nightsBetween(b.checkInDate, b.checkOutDate);
                 const due = b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0) - (b.advanceAmount || 0);
                 return (
@@ -1904,6 +2143,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     </div>
 
                     <div className="order-card__actions">
+                      <button type="button" className="order-btn billing-card__view" onClick={() => openStayView(b.id)}>
+                        View
+                      </button>
                       <button type="button" className="order-btn" onClick={() => openBilling({ kind: 'STAY', bookingId: b.id })}>
                         Bill
                       </button>
@@ -2075,7 +2317,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                         aria-label="Bills issued from"
                         value={billFrom}
                         max={billTo || undefined}
-                        onChange={(e) => setBillFrom(e.target.value)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setBillFrom(v);
+                          // A start after the current end drags the end along, so the
+                          // range can never be backwards.
+                          if (v && billTo && v > billTo) setBillTo(v);
+                        }}
                       />
                     </div>
                     <span className="billing-panel__bill-range-dash" aria-hidden="true">
@@ -2087,7 +2335,12 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                         aria-label="Bills issued up to"
                         value={billTo}
                         min={billFrom || undefined}
-                        onChange={(e) => setBillTo(e.target.value)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          // Typed dates bypass the picker's min, so refuse an end before the start.
+                          if (v && billFrom && v < billFrom) return;
+                          setBillTo(v);
+                        }}
                       />
                     </div>
                   </div>
@@ -2119,8 +2372,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   </div>
 
                   <div className="billing-panel__bill-tools-right">
-                    <ListViewToggle view={listView} onChange={setListView} />
-
                     {billsFiltered && (
                       <span className="billing-panel__bill-count">
                         {visibleInvoices.length} of {documents.length}
@@ -2139,7 +2390,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   </p>
                 )}
 
-                <div className="billing-panel__bill-search-row">
+                <div className="billing-panel__bill-search-row billing-panel__bill-search-row--compact billing-panel__bill-search-row--first">
                   <div className="field billing-panel__bill-search">
                     <svg
                       className="billing-panel__bill-search-icon"
@@ -2159,7 +2410,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       aria-label="Search bills"
                       value={billSearch}
                       onChange={(e) => setBillSearch(e.target.value)}
-                      placeholder="Bill number, guest, room, table or phone"
+                      placeholder="Bill no., guest, room or phone"
                     />
                     {billSearch && (
                       <button
@@ -2206,21 +2457,41 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       ))}
                     </div>
                   )}
+                  <span className="billing-panel__ready-view">
+                    <ListViewToggle view={listView} onChange={setListView} />
+                  </span>
                 </div>
               </div>
 
               {/* Nothing left after filtering is a different thing from having
                   issued no bills, and says so — with the way out beside it. */}
               {visibleInvoices.length === 0 && (
-                <div className="dash-state">
-                  No bills match these filters.{' '}
-                  <button type="button" className="billing-panel__bill-clear" onClick={clearBillFilters}>
+                <div className="billing-empty">
+                  <span className="billing-empty__icon" aria-hidden="true">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                      <path d="M14 3v5h5M9 13h6M9 17h4" />
+                    </svg>
+                  </span>
+                  <h4 className="billing-empty__title">No bills found</h4>
+                  <p className="billing-empty__text">
+                    {invalidRange
+                      ? 'The “to” date is before the “from” date.'
+                      : `Nothing matches ${[
+                          (billFrom || billTo) && 'the selected dates',
+                          billQuery && `“${billSearch.trim()}”`,
+                          activeFilter && activeFilter.label.toLowerCase(),
+                        ]
+                          .filter(Boolean)
+                          .join(', ') || 'these filters'}. Try a wider date range or clear the filters.`}
+                  </p>
+                  <button type="button" className="billing-empty__btn" onClick={clearBillFilters}>
                     Clear filters
                   </button>
                 </div>
               )}
 
-              {listView === 'sheet' && (
+              {visibleInvoices.length > 0 && listView === 'sheet' && (
                 <section className="history-sheet billing-sheet billing-sheet__bills billing-sheet__page-scroll">
                   <div className="history-table-wrap">
                     <table className="history-table">
@@ -3505,6 +3776,28 @@ const REPORT_COLUMNS = [
   { key: 'document', label: 'Document', value: (inv) => DOCUMENT_LABEL[inv.documentType] ?? '' },
   { key: 'status', label: 'Status', value: (inv) => invoiceStatusLabel(inv) },
   { key: 'amount', label: 'Amount', value: (inv) => Number(inv.totalAmount || 0), className: 'history-table__num' },
+];
+
+// Services to bill table: columns and what each sorts on.
+const SERVICE_COLUMNS = [
+  { key: 'service', label: 'Service', value: (u) => u.serviceName ?? '' },
+  { key: 'guest', label: 'Room / Guest', value: (u) => `${u.roomNumber ?? ''} ${u.guestName ?? ''}`.trim() },
+  { key: 'qty', label: 'Qty', value: (u) => Number(u.quantity || 0), className: 'history-table__num' },
+  { key: 'amount', label: 'Amount', value: (u) => Number(u.lineTotal || 0), className: 'history-table__num' },
+];
+
+// Ready to bill table: columns and what each sorts on.
+const readySub = (b) => b.totalPrice + (b.lateCheckoutCharge || 0) + (b.foodTotal || 0);
+const READY_COLUMNS = [
+  { key: 'guest', label: 'Guest', value: (b) => b.guestName ?? '' },
+  { key: 'room', label: 'Room', value: (b) => b.roomNumber ?? '' },
+  { key: 'stay', label: 'Stay', value: (b) => String(b.checkInDate ?? '') },
+  { key: 'charge', label: 'Room charge', value: (b) => Number(b.totalPrice || 0), className: 'history-table__num' },
+  { key: 'late', label: 'Late checkout', value: (b) => Number(b.lateCheckoutCharge || 0), className: 'history-table__num' },
+  { key: 'food', label: 'Food', value: (b) => Number(b.foodTotal || 0), className: 'history-table__num' },
+  { key: 'subtotal', label: 'Subtotal', value: (b) => readySub(b), className: 'history-table__num' },
+  { key: 'advance', label: 'Advance paid', value: (b) => Number(b.advanceAmount || 0), className: 'history-table__num' },
+  { key: 'due', label: 'To collect', value: (b) => readySub(b) - (b.advanceAmount || 0), className: 'history-table__num' },
 ];
 
 export function BillsReport({ lodge }) {

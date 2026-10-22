@@ -2286,3 +2286,505 @@ th[aria-sort] .billing-sheet__sort-icon {
     flex-basis: 100%;
   }
 }
+
+/* Ready to bill: one toolbar row — search on the left, a segmented filter
+   track beside it, and the result count pushed to the far right. */
+.billing-panel__bill-search-row--compact {
+  margin: 0 0 12px;
+  padding: 0;
+  border-top: 0;
+  gap: 12px;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__bill-search {
+  flex: 0 1 300px;
+  min-width: 200px;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__bill-search input {
+  height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 13px;
+  border-radius: 10px;
+  background: var(--paper);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__bill-search input:focus {
+  background: var(--surface);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+  outline: none;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__filters {
+  gap: 2px;
+  padding: 3px;
+  background: var(--paper);
+  border-radius: 999px;
+  box-shadow: var(--shadow-inset);
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__filter {
+  padding: 7px 12px;
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__filter:hover {
+  box-shadow: none;
+  color: var(--ink);
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__filter[aria-pressed='true'] {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__filter:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__filter-count {
+  min-width: 18px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+  opacity: 1;
+}
+
+.billing-panel__ready-view {
+  margin-left: auto;
+  display: flex;
+}
+
+/* Card view's View button: an outlined secondary beside the solid Bill button,
+   in the same purple the table's View uses — a calm "look, don't act" that
+   fills in on hover instead of turning danger-red like .order-btn--cancel. */
+.billing-card .billing-card__view {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: color-mix(in srgb, var(--secondary) 8%, var(--surface));
+  border: 1.5px solid var(--secondary);
+  color: var(--secondary-ink);
+  box-shadow: none;
+}
+
+.billing-card .billing-card__view:hover {
+  background: var(--secondary);
+  border-color: var(--secondary);
+  color: #fff;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--secondary) 35%, transparent);
+}
+
+.billing-card .billing-card__view:active {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.billing-card .billing-card__view:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: 2px;
+}
+
+/* --- Ready to bill toolbar: one height, one radius, one material ----------
+   Search, the filter track and the view switch were three different sizes and
+   corner shapes side by side. All three are now 40px tall, 10px-cornered and
+   sit on the same hairline-bordered grey; the selected state inside each is
+   an 8px brand-filled segment. */
+.billing-panel__bill-search-row--compact {
+  gap: 12px;
+  margin-bottom: 14px;
+  align-items: center;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__bill-search input {
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__filters,
+.billing-panel__ready-view .billing-view-toggle {
+  box-sizing: border-box;
+  height: 40px;
+  padding: 3px;
+  gap: 2px;
+  margin: 0;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__filter {
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.billing-panel__bill-search-row--compact .billing-panel__filter[aria-pressed='true'] {
+  box-shadow: 0 1px 2px rgba(10, 58, 107, 0.3);
+}
+
+.billing-panel__ready-view .billing-view-toggle__btn {
+  width: 36px;
+  height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.billing-panel__ready-view .billing-view-toggle__btn:hover {
+  color: var(--ink);
+}
+
+.billing-panel__ready-view .billing-view-toggle__btn--on {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(10, 58, 107, 0.3);
+}
+
+@media (max-width: 640px) {
+  .billing-panel__bill-search-row--compact .billing-panel__bill-search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
+/* Service-type dropdown in the compact toolbar: same 40px / 10px-corner box as
+   the search field beside it, with its own chevron in place of the OS one. */
+.billing-panel__type-select {
+  box-sizing: border-box;
+  height: 40px;
+  min-width: 150px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7686' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    no-repeat right 12px center;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.billing-panel__type-select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+/* --- Bills tab toolbar: same layout and controls as the other two tabs -----
+   Search, type chips and the view switch lead on one row exactly as in Ready
+   to bill and Services to bill; the date range and its presets follow on a
+   second row built from the same 40px / 10px-corner pieces. The carved panel
+   is gone — the controls sit straight on the card like the others. */
+.billing-panel__toolbar {
+  display: flex;
+  flex-direction: column;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 14px;
+}
+
+.billing-panel__toolbar .billing-panel__bill-search-row--first {
+  order: -1;
+  margin-bottom: 10px;
+}
+
+.billing-panel__toolbar .billing-panel__bill-tools {
+  gap: 12px;
+}
+
+.billing-panel__toolbar .billing-panel__bill-range input[type='date'] {
+  box-sizing: border-box;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.billing-panel__toolbar .billing-panel__bill-presets {
+  box-sizing: border-box;
+  height: 40px;
+  gap: 2px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: none;
+  flex-wrap: nowrap;
+}
+
+.billing-panel__toolbar .billing-panel__bill-preset {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.billing-panel__toolbar .billing-panel__bill-preset[aria-pressed='true'] {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(10, 58, 107, 0.3);
+}
+
+.billing-panel__toolbar .billing-panel__bill-tools-right {
+  padding-left: 0;
+  border-left: 0;
+}
+
+/* The chip dots (advance / final) sit on the brand-filled chip too. */
+.billing-panel__bill-search-row--compact .billing-panel__filter[aria-pressed='true'] .bill-tag__dot {
+  background: #fff;
+}
+
+@media (max-width: 640px) {
+  .billing-panel__toolbar .billing-panel__bill-presets {
+    flex-wrap: wrap;
+    height: auto;
+  }
+}
+
+/* --- Bills tab: tidy pass --------------------------------------------------
+   Two rows on one grid. Row one: search (fixed, readable width) · type chips ·
+   view switch at the far right. Row two: the date range as ONE joined control,
+   the presets, and the result count at the far right. Everything is 40px. */
+.billing-panel__toolbar .billing-panel__bill-search-row--first {
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.billing-panel__toolbar .billing-panel__bill-search {
+  flex: 0 1 340px;
+  min-width: 220px;
+}
+
+/* Two date inputs and the dash share one bordered box. */
+.billing-panel__toolbar .billing-panel__bill-range {
+  box-sizing: border-box;
+  height: 40px;
+  gap: 0;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.billing-panel__toolbar .billing-panel__bill-range:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.billing-panel__toolbar .billing-panel__bill-range input[type='date'] {
+  min-width: 128px;
+  height: 36px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  color: var(--ink);
+}
+
+.billing-panel__toolbar .billing-panel__bill-range-dash {
+  padding: 0 2px;
+  color: var(--text-muted);
+}
+
+/* Result count: a quiet pill that only appears while something is filtering. */
+.billing-panel__toolbar .billing-panel__bill-count {
+  height: 32px;
+  padding: 0 6px 0 12px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.billing-panel__toolbar .billing-panel__bill-clear {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  text-decoration: none;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.billing-panel__toolbar .billing-panel__bill-clear:hover {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .billing-panel__toolbar .billing-panel__bill-search {
+    flex: 1 1 100%;
+  }
+  .billing-panel__toolbar .billing-panel__bill-range {
+    width: 100%;
+  }
+  .billing-panel__toolbar .billing-panel__bill-range .field {
+    flex: 1;
+  }
+  .billing-panel__toolbar .billing-panel__bill-range input[type='date'] {
+    min-width: 0;
+  }
+}
+
+/* Empty result: a compact, centred card instead of a stray line above an empty
+   table. */
+.billing-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 36px 16px 40px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.billing-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-raised);
+}
+
+.billing-empty__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.billing-empty__text {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.billing-empty__btn {
+  margin-top: 10px;
+  height: 36px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.billing-empty__btn:hover {
+  background: var(--brand-ink);
+}
+
+/* The inner date inputs kept their own border inside the joined range box —
+   .field input out-specified the earlier rule. */
+.billing-panel__toolbar .billing-panel__bill-range .field input[type='date'] {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Date range chip: one clean box, the two dates sit in it without boxes of
+   their own. The global .field input hover/focus rules (border + well shadow)
+   are more specific than a plain override, so they are matched here. */
+.billing-panel__toolbar .billing-panel__bill-range {
+  padding: 0 6px 0 4px;
+  gap: 2px;
+}
+
+.billing-panel__toolbar .billing-panel__bill-range .field input[type='date'],
+.billing-panel__toolbar .billing-panel__bill-range .field input[type='date']:hover:not(:disabled):not([readonly]),
+.billing-panel__toolbar .billing-panel__bill-range .field input[type='date']:focus-visible {
+  min-width: 0;
+  width: 132px;
+  height: 34px;
+  min-height: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.billing-panel__toolbar .billing-panel__bill-range .field input[type='date']:hover:not(:disabled):not([readonly]),
+.billing-panel__toolbar .billing-panel__bill-range .field input[type='date']:focus-visible {
+  background: var(--paper);
+}
+
+.billing-panel__toolbar .billing-panel__bill-range input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.billing-panel__toolbar .billing-panel__bill-range input[type='date']:hover::-webkit-calendar-picker-indicator {
+  opacity: 0.9;
+}
+
+.billing-panel__toolbar .billing-panel__bill-range-dash {
+  padding: 0;
+  font-size: 13px;
+}
+
+/* Stay Details header stays at the top while the body scrolls. The modal is the
+   scroll container and has 22px of padding, so the bar pulls itself out over
+   that padding (negative margin / top) and re-pads its own content — it then
+   sits flush with the panel's top and side edges. */
+.stay-view .billing-panel__detail-header {
+  position: sticky;
+  top: -22px;
+  z-index: 5;
+  margin: -22px -22px 14px;
+  padding: 14px 22px;
+  background: var(--sd-white);
+  border-bottom: 1px solid var(--sd-border);
+}
+
+@media (max-width: 640px) {
+  .stay-view .billing-panel__detail-header {
+    top: -20px;
+    margin: -20px -16px 14px;
+    padding: 12px 16px;
+  }
+}

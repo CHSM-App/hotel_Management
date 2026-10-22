@@ -465,3 +465,275 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Food PIN: the number is the point, so it is set large and spaced like a code. */
+.stay-summary__pins {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.stay-summary__pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stay-summary__pin-room {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.stay-summary__pin-value {
+  padding: 2px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+  color: var(--brand-ink);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Price breakdown: Payments and the figure still to collect, as in the full
+   stay record. */
+.stay-summary__pb-group--gap {
+  margin-top: 12px;
+}
+
+.stay-summary__due {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-tile);
+  background: #ede9fb;
+}
+
+.stay-summary__due > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stay-summary__due span {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sd-navy);
+}
+
+.stay-summary__due small {
+  font-size: 11px;
+  color: var(--sd-text-muted);
+}
+
+.stay-summary__due strong {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--sd-navy);
+}
+
+.stay-summary__pb-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--sd-text-muted);
+}
+
+/* Food PIN gets a block of its own rather than a squeezed fact row: the label,
+   the code and the hint stack, so nothing can overlap. */
+.stay-summary__pin-box {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sd-ice);
+  box-shadow: inset 0 0 0 1px var(--sd-border);
+}
+
+.stay-summary__pin-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sd-navy);
+}
+
+.stay-summary__pin-box .stay-summary__pins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+
+.stay-summary__pin-hint {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--sd-text-muted);
+}
+
+/* Every guest as a small labelled grid: phone, ID type, ID number, document. */
+.stay-summary__person-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 14px;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+}
+
+.stay-summary__person-details dt {
+  color: var(--sd-text-muted);
+}
+
+.stay-summary__person-details dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-weight: 600;
+  color: var(--sd-text);
+  overflow-wrap: anywhere;
+}
+
+/* Compact guest card: the four details sit in a 2 x 2 grid, label over value,
+   instead of a four-row list. */
+.stay-summary__person-details {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+  margin-top: 4px;
+}
+
+.stay-summary__person-details > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.stay-summary__person-details dt {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stay-summary__person-details dd {
+  font-size: 13px;
+}
+
+.stay-summary__person-head {
+  margin-bottom: 0;
+}
+
+/* Food & services taken: one block per order / service, each with where it came
+   from, when, and whether it is on the room bill. */
+.stay-summary__taken {
+  padding: 8px 0;
+}
+
+.stay-summary__taken + .stay-summary__taken {
+  border-top: 1px dashed var(--sd-border);
+}
+
+.stay-summary__taken-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin-bottom: 2px;
+  font-size: 13px;
+  color: var(--sd-text);
+}
+
+.stay-summary__taken-where {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--sd-text-muted);
+}
+
+.stay-summary__taken-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--sd-green-pale);
+  color: var(--sd-green);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.stay-summary__taken-tag--warn {
+  background: var(--sd-amber-pale);
+  color: var(--sd-amber-ink);
+}
+
+/* Compact taken-list: one title row (name, billing tag, amount), a single line of
+   items, a single muted line of where/when. */
+.stay-summary__taken {
+  padding: 6px 0;
+}
+
+.stay-summary__taken-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.stay-summary__taken-head strong {
+  flex: 1;
+  min-width: 0;
+}
+
+.stay-summary__taken-amount {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--sd-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.stay-summary__taken-items {
+  margin-top: 1px;
+  font-size: 12.5px;
+  color: var(--sd-text);
+}
+
+.stay-summary__taken > .stay-summary__taken-where {
+  display: block;
+  margin-top: 1px;
+}
+
+/* Cards sit on a shared row grid so each pair lines up at the same level and
+   height, instead of two independent columns ending at different points.
+   Row 1: Stay & Room | Guest Details · Row 2: Advance | Vehicles ·
+   Row 3: Price Breakdown | Food & Services. The column wrappers dissolve
+   (display: contents) so the cards become grid cells. */
+.stay-summary__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.stay-summary__col {
+  display: contents;
+}
+
+.stay-summary__grid > .stay-summary__col:first-child > .stay-summary__section:nth-child(1) { grid-column: 1; grid-row: 1; }
+.stay-summary__grid > .stay-summary__col:first-child > .stay-summary__section:nth-child(2) { grid-column: 2; grid-row: 1; }
+.stay-summary__grid > .stay-summary__col:first-child > .stay-summary__section:nth-child(3) { grid-column: 1; grid-row: 2; }
+.stay-summary__grid > .stay-summary__col:first-child > .stay-summary__section:nth-child(4) { grid-column: 2; grid-row: 2; }
+.stay-summary__grid > .stay-summary__col:last-child > .stay-summary__section:nth-child(1) { grid-column: 1; grid-row: 3; }
+.stay-summary__grid > .stay-summary__col:last-child > .stay-summary__section:nth-child(2) { grid-column: 2; grid-row: 3; }
+.stay-summary__grid > .stay-summary__col:last-child > .stay-summary__section:only-child { grid-column: 1 / -1; }
+
+@media (max-width: 760px) {
+  .stay-summary__grid {
+    grid-template-columns: 1fr;
+  }
+  .stay-summary__grid > .stay-summary__col > .stay-summary__section {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+  }
+}

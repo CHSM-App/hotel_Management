@@ -252,7 +252,7 @@
 }
 
 .guest-register__status-swatch--draft {
-  background: var(--tape-draft-deep, #d4a70c);
+  background: var(--tape-draft, var(--accent, #f2c31d));
 }
 
 /* The swatch stays at full strength whether or not the cut has rows behind it:
@@ -1806,4 +1806,469 @@
     min-width: 0;
     width: 100%;
   }
+}
+
+/* --- Filter bar --------------------------------------------------------------
+   Line 1: [icon · Date Range · joined date box · presets] | [icon · Find a
+   guest · search]. Line 2: [icon · Booking Status · pills]. 34px controls, one
+   hairline between the two lines, nothing else. */
+.guest-register__toolbar {
+  padding: 10px 14px 12px;
+}
+
+.guest-register__toolbar-top {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0;
+}
+
+.guest-register__section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.guest-register__section--range {
+  flex: none;
+  padding-right: 16px;
+  margin-right: 16px;
+  border-right: 1px solid var(--border);
+}
+
+.guest-register__section--search {
+  flex: 1 1 0;
+  min-width: 200px;
+}
+
+.guest-register__section-icon,
+.guest-register__status-label-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+  color: var(--brand);
+}
+
+.guest-register__section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.guest-register__section--search .guest-register__section-body {
+  flex: 1;
+}
+
+.guest-register__section-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+/* The two dates as one bordered box. */
+.guest-register__section .guest-register__range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: 34px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.guest-register__section .guest-register__range input[type='date'],
+.guest-register__section .guest-register__range input[type='date']:hover:not(:disabled):not([readonly]),
+.guest-register__section .guest-register__range input[type='date']:focus-visible {
+  width: 124px;
+  min-height: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 0 !important;
+  border-radius: 6px;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.guest-register__section .guest-register__range input[type='date']:hover,
+.guest-register__section .guest-register__range input[type='date']:focus-visible {
+  background: var(--paper) !important;
+}
+
+.guest-register__section .guest-register__range-dash {
+  padding: 0;
+  color: var(--text-muted);
+}
+
+/* Presets: plain text buttons; the live one gets a pale brand pill. */
+.guest-register__section--range .guest-register__presets {
+  align-self: flex-end;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.guest-register__section--range .guest-register__preset {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.guest-register__section--range .guest-register__preset[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--border));
+  color: var(--brand-ink);
+}
+
+.guest-register__section .guest-register__search {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.guest-register__section .guest-register__search-box input {
+  height: 34px;
+  min-height: 0;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+
+/* Status line. */
+.guest-register__toolbar-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.guest-register__toolbar-bottom > .guest-register__status-filters:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 6px 8px;
+  padding: 0;
+  border: 0;
+}
+
+.guest-register__status-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 2px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.guest-register__toolbar-bottom .guest-register__status-chip {
+  gap: 7px;
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.guest-register__toolbar-bottom .guest-register__status-chip:hover {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+  box-shadow: none;
+}
+
+.guest-register__toolbar-bottom .guest-register__status-chip[aria-pressed='true'] {
+  border-color: #2f6fb5;
+  background: #eaf2fd;
+  color: #1c4f8a;
+  box-shadow: none;
+}
+
+.guest-register__toolbar-bottom .guest-register__status-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+.guest-register__toolbar-bottom .guest-register__status-count {
+  margin-left: 2px;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.guest-register__toolbar-bottom .guest-register__status-chip[aria-pressed='true'] .guest-register__status-count {
+  background: none;
+  color: #1c4f8a;
+}
+
+@media (max-width: 1000px) {
+  .guest-register__toolbar-top {
+    flex-wrap: wrap;
+    gap: 10px 0;
+  }
+  .guest-register__section--range {
+    flex-wrap: wrap;
+    padding-right: 0;
+    margin-right: 0;
+    border-right: 0;
+  }
+  .guest-register__section--search {
+    flex: 1 1 100%;
+  }
+}
+
+/* The search input used to inherit its look from .field; the wrapper is plain
+   now, so it carries the same field styling itself. */
+.guest-register__section .guest-register__search-box input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 34px 0 36px;
+  border: 1px solid var(--field-border);
+  background: var(--field);
+  color: var(--ink);
+  box-shadow: var(--shadow-well);
+  transition: box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.guest-register__section .guest-register__search-box input:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: var(--shadow-well-focus);
+}
+
+/* The record view's ".section + .section" divider rule shares this class name
+   and was drawing a line and a 22px gap above the search section. Neutralised
+   here, and the two sections are centred on the same axis so the icon tiles,
+   labels and 34px controls line up across the row. */
+.guest-register__toolbar-top > .guest-register__section + .guest-register__section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.guest-register__toolbar-top {
+  align-items: flex-end;
+}
+
+.guest-register__toolbar-top > .guest-register__section {
+  align-items: flex-end;
+}
+
+.guest-register__toolbar-top .guest-register__section-icon {
+  margin-bottom: 2px;
+}
+
+.guest-register__section--range {
+  align-self: stretch;
+}
+
+/* Date presets: outlined pills in the same language as the status pills —
+   hairline border, white fill, blue wash when chosen. */
+.guest-register__section--range .guest-register__presets {
+  gap: 6px;
+}
+
+.guest-register__section--range .guest-register__preset {
+  height: 30px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, transform 100ms ease;
+}
+
+.guest-register__section--range .guest-register__preset:hover {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+  background: color-mix(in srgb, var(--brand) 4%, var(--surface));
+}
+
+.guest-register__section--range .guest-register__preset:active {
+  transform: translateY(1px);
+}
+
+.guest-register__section--range .guest-register__preset:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.guest-register__section--range .guest-register__preset[aria-pressed='true'] {
+  border-color: #2f6fb5;
+  background: #eaf2fd;
+  color: #1c4f8a;
+}
+
+/* Date box and period shortcuts are two different controls: a thin vertical
+   rule and a wider gap now sit between them so the shortcuts don't read as part
+   of the dates. */
+.guest-register__section--range .guest-register__presets {
+  margin-left: 14px;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  gap: 6px;
+}
+
+/* Header row in the same light lavender band as the Ready to bill / bills
+   tables (.history-sheet .history-table th) instead of the solid navy slab. */
+.guest-register__table thead th {
+  background: #f1eefc;
+  color: var(--brand);
+  border-bottom: 2px solid #ddd6f7;
+  box-shadow: none;
+}
+
+.guest-register__table .asset-table__sort-btn {
+  color: var(--brand);
+}
+
+.guest-register__table .asset-table__sort-btn:hover,
+.guest-register__table .asset-table__sort-btn[aria-sort='ascending'],
+.guest-register__table .asset-table__sort-btn[aria-sort='descending'] {
+  color: var(--brand-ink);
+}
+
+.guest-register__table .asset-table__sort-icon {
+  opacity: 0.55;
+}
+
+.guest-register__table .asset-table__sort-btn[aria-sort] .asset-table__sort-icon {
+  opacity: 1;
+}
+
+/* Column titles outweigh the data under them: titles go to 800 and a size up,
+   the cells step down a notch (room 600, names/amounts 500-600) so the header
+   is the heaviest line in the table, as a header should be. */
+.guest-register__table thead th,
+.guest-register__table .asset-table__sort-btn {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.guest-register__table tbody td:first-child .guest-register__cell-main {
+  font-weight: 600;
+}
+
+.guest-register__table .guest-register__cell-main {
+  font-weight: 500;
+}
+
+.guest-register__table .guest-register__amount {
+  font-weight: 600;
+}
+
+/* View button: the same outlined secondary the Ready to bill table's View uses
+   (purple border and tint, fills on hover) — a labelled button rather than a
+   bare icon, with a comfortable 30px target. */
+.guest-register__view-details-btn {
+  min-width: 64px;
+  height: 30px;
+  padding: 0 16px;
+  border: 1.5px solid var(--secondary);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--secondary) 8%, var(--surface));
+  color: var(--secondary-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  box-shadow: none;
+  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.guest-register__view-details-btn:hover {
+  background: var(--secondary);
+  border-color: var(--secondary);
+  color: #fff;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--secondary) 35%, transparent);
+}
+
+.guest-register__view-details-btn:active {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.guest-register__view-details-btn:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: 2px;
+}
+
+/* Vertical column rules, header and body, so each column reads as its own lane.
+   The last column (the View button) is left open on the right edge. */
+.guest-register__table th,
+.guest-register__table td {
+  border-right: 1px solid var(--border);
+}
+
+.guest-register__table thead th {
+  border-right-color: #ddd6f7;
+}
+
+.guest-register__table th:last-child,
+.guest-register__table td:last-child {
+  border-right: 0;
+}
+
+/* Column widths follow the data. The fixed-percentage layout gave the View
+   column 6% — less than the button — so it spilled out of the card. The table
+   now sizes columns from their content (spare width is shared out in
+   proportion), with the View column pinned to exactly its button's width and
+   Room kept wide enough for a multi-room list. */
+.guest-register__table {
+  table-layout: auto;
+  width: 100%;
+}
+
+.guest-register__table th:nth-child(n),
+.guest-register__table td:nth-child(n) {
+  width: auto;
+}
+
+.guest-register__table th:nth-child(1),
+.guest-register__table td:nth-child(1) {
+  min-width: 84px;
+}
+
+.guest-register__table th:nth-child(3),
+.guest-register__table td:nth-child(3) {
+  min-width: 160px;
+}
+
+.guest-register__table th:last-child,
+.guest-register__table td:last-child {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
 }
