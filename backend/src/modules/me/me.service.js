@@ -21,7 +21,7 @@ async function getMe(userId) {
     .query(`
       SELECT
         u.id, u.name, u.email, u.phone, u.role,
-        l.id AS lodge_id, l.name AS lodge_name, l.slug, l.phone AS lodge_phone,
+        l.id AS lodge_id, l.name AS lodge_name, l.slug, l.booking_code, l.phone AS lodge_phone,
         l.whatsapp_number, l.address, l.city, l.state, l.checkin_mode,
         l.name_mr, l.address_mr, l.latitude, l.longitude,
         l.is_gst_registered, l.gstin, l.is_specified_premises,
@@ -56,6 +56,8 @@ async function getMe(userId) {
       id: row.lodge_id,
       name: row.lodge_name,
       slug: row.slug,
+      // Read-only for the owner: the hotel's piece of every booking number.
+      bookingCode: row.booking_code ?? null,
       phone: row.lodge_phone,
       whatsappNumber: row.whatsapp_number,
       address: row.address,

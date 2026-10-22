@@ -19,7 +19,6 @@ import {
   toPaymentLines,
 } from './paymentSplit';
 import AdvanceReceiptModal from './AdvanceReceiptModal';
-import StayDetails from './StayDetails';
 import StaySummary from './StaySummary';
 import { BedIcon } from '../../components/StaySummaryIcons';
 import './forms.css';
@@ -290,7 +289,7 @@ function formatBillDate(value) {
 // phone number the guest is quoting down the line.
 function billMatchesSearch(inv, query) {
   if (!query) return true;
-  return [inv.invoiceNumber, inv.guestName, inv.roomNumber, inv.tableLabel, inv.guestPhone].some(
+  return [inv.invoiceNumber, inv.bookingNumber, inv.guestName, inv.roomNumber, inv.tableLabel, inv.guestPhone].some(
     (field) => field && String(field).toLowerCase().includes(query)
   );
 }
@@ -554,7 +553,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const [readyFilter, setReadyFilter] = useState('ALL');
   const readyTerm = readySearch.trim().toLowerCase();
   const readyMatchesSearch = (b) =>
-    !readyTerm || [b.guestName, b.roomNumber, b.categoryName, b.guestPhone].some((v) => String(v ?? '').toLowerCase().includes(readyTerm));
+    !readyTerm || [b.guestName, b.bookingNumber, b.roomNumber, b.categoryName, b.guestPhone].some((v) => String(v ?? '').toLowerCase().includes(readyTerm));
   const readyFilters = [
     { key: 'food', label: 'Has food', test: (b) => (b.foodTotal || 0) > 0 },
     { key: 'advance', label: 'Advance paid', test: (b) => (b.advanceAmount || 0) > 0 },
@@ -925,25 +924,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
 
-  // The stay behind a queue row, read-only. Billing decides what to charge for
-  // a stay it can't see otherwise — the queue row carries a name, a room and a
-  // total, and every question beyond that ("how many nights", "what advance did
-  // they leave", "what were the extras") needed another screen until now.
-  const [detailStay, setDetailStay] = useState(null);
-  const [detailStayError, setDetailStayError] = useState('');
-
-  // Fetched the first time the section is opened, not when the bill modal is —
-  // most bills are issued without anyone needing to ask, and the queue row
-  // already carries the name, the room and the total.
-  const loadStayDetails = () => {
-    if (detailStay || detailStayError || billTarget?.kind !== 'STAY') return;
-    apiGet(`/bookings/${billTarget.bookingId}`, { token })
-      .then((data) => setDetailStay(data.booking))
-      .catch((err) =>
-        setDetailStayError(err instanceof ApiError ? err.message : 'Could not load this stay.')
-      );
-  };
-
   // The "View" button on a ready-to-bill row — the same read-only stay record
   // as above, but reachable without first opening the bill modal. A desk
   // checking what a figure is made of shouldn't have to start writing a bill
@@ -996,6 +976,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   };
 
   const [previewOpen, setPreviewOpen] = useState(false);
+  const previewDetailsRef = useRef(null);
   // How the guest is paying, as a list — one row per way the money came in.
   // null until the desk touches it, which is what lets an untouched bill show
   // the balance due; see payLines below.
@@ -1065,8 +1046,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     setIncludeLateCheckout(true);
     setDiscountInput('');
     setDiscountReason('');
-    setDetailStay(null);
-    setDetailStayError('');
     setPreviewOpen(false);
     setIssuePaperOpen(false);
   };
@@ -1978,7 +1957,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   aria-label="Search stays ready to bill"
                   value={readySearch}
                   onChange={(e) => setReadySearch(e.target.value)}
-                  placeholder="Guest, room or category"
+                  placeholder="Guest, booking ID, room or category"
                 />
                 {readySearch && (
                   <button type="button" className="billing-panel__bill-search-clear" onClick={() => setReadySearch('')} aria-label="Clear search">
@@ -2040,7 +2019,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       const due = sub - (b.advanceAmount || 0);
                       return (
                         <tr key={b.id} className="history-table__row">
-                          <td className="history-table__strong">{b.guestName}</td>
+                          <td className="history-table__strong">
+                            {b.guestName}
+                            {b.bookingNumber && <div className="history-table__note">{b.bookingNumber}</div>}
+                          </td>
                           <td>
                             <span className="history-table__where">{b.roomNumber}</span>
                           </td>
@@ -2101,6 +2083,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   <div className="order-card order-card--ready billing-card" key={b.id}>
                     <div className="order-card__head">
                       <span className="order-card__number billing-card__guest">{b.guestName}</span>
+                      {b.bookingNumber && <span className="order-card__elapsed">{b.bookingNumber}</span>}
                       <span className="order-card__badge">{nights} night{nights === 1 ? '' : 's'}</span>
                     </div>
 
@@ -2542,6 +2525,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                                     : inv.kind === 'EVENT'
                                       ? `${inv.guestName} · ${inv.venueName || 'Function'}`
                                       : inv.guestName}
+                                {inv.bookingNumber && <div className="history-table__note">{inv.bookingNumber}</div>}
                               </td>
                               <td>{inv.kind === 'FOOD' || inv.kind === 'EVENT' || inv.kind === 'SERVICE' ? '—' : inv.roomNumber || '—'}</td>
                               <td>
@@ -2610,6 +2594,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                               : inv.kind === 'EVENT'
                                 ? `${inv.guestName} · ${inv.venueName || 'Function'}`
                                 : `${inv.guestName} · ${inv.roomNumber}`}
+                          {inv.bookingNumber && ` · ${inv.bookingNumber}`}
                           {inv.createdAt && ` · ${formatBillDate(inv.createdAt)}`}
                           {/* Why anybody looks a receipt up again: what is
                               still to come on the stay it was taken against,
@@ -2648,7 +2633,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           checking what a figure is made of shouldn't have to start writing a
           bill first just to look. */}
       {viewStay && (
-        <div className="glass-backdrop billing-panel__backdrop" onClick={closeStayView}>
+        <div className="glass-backdrop billing-panel__backdrop" style={{ zIndex: 110 }} onClick={closeStayView}>
           <div className="glass-panel billing-panel__modal stay-view" onClick={(e) => e.stopPropagation()}>
             <div className="billing-panel__detail-header">
               <div className="stay-view__title">
@@ -2740,7 +2725,21 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                 contents in place and the slide never plays. */}
             {billTarget ? (
               <div className="billing-steps__pane" key="collect">
-            <h3>Issue bill</h3>
+            <div className="issue-bill__head">
+              <span className="issue-bill__icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                  <path d="M14 3v5h5M9 13h6M9 17h4" />
+                </svg>
+              </span>
+              <div className="issue-bill__titles">
+                <h3>Issue Bill</h3>
+                <p>Review charges and collect payment</p>
+              </div>
+              <button type="button" className="bill-close" onClick={closeBilling} disabled={submitting} aria-label="Close">
+                ×
+              </button>
+            </div>
 
             {previewError && <div className="form-banner form-banner--error">{previewError}</div>}
             {!previewError && !preview && <PageLoader inline label="Loading" />}
@@ -2812,19 +2811,47 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
                 {billTarget.kind === 'STAY' && (
                   <div className="form-section">
-                    <div className="form-section__title">Stay</div>
+                    <div className="issue-bill__summary">
+                      <div className="issue-bill__summary-head">
+                        <span className="issue-bill__label">Stay summary</span>
+                        <button type="button" className="issue-bill__link" onClick={() => openStayView(billTarget.bookingId)}>
+                          View stay details <span aria-hidden="true">›</span>
+                        </button>
+                      </div>
+                      <div className="issue-bill__summary-grid">
+                        <div>
+                          <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg></span>
+                          <span className="issue-bill__cell">
+                            <small>Guest</small>
+                            <strong>{preview.guestName}</strong>
+                          </span>
+                        </div>
+                        <div>
+                          <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7M3 18h18M3 14h18M7 9V6h4v3" /></svg></span>
+                          <span className="issue-bill__cell">
+                            <small>Room</small>
+                            <strong>{preview.roomNumber} · {preview.categoryName}</strong>
+                          </span>
+                        </div>
+                        <div>
+                          <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" /></svg></span>
+                          <span className="issue-bill__cell">
+                            <small>Duration</small>
+                            <strong>{preview.nights} night{preview.nights === 1 ? '' : 's'}</strong>
+                          </span>
+                        </div>
+                        {preview.checkInDate && preview.checkOutDate && (
+                          <div>
+                            <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg></span>
+                            <span className="issue-bill__cell">
+                              <small>Dates</small>
+                              <strong>{billDay(preview.checkInDate)} – {billDay(preview.checkOutDate)}</strong>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <div className="chart-list">
-                      <div className="chart-row">
-                        <span className="chart-row__name">Guest</span>
-                        <span className="chart-row__value">{preview.guestName}</span>
-                      </div>
-                      <div className="chart-row">
-                        <span className="chart-row__name">Room</span>
-                        <span className="chart-row__value">
-                          {preview.roomNumber} · {preview.categoryName} · {preview.nights} night
-                          {preview.nights === 1 ? '' : 's'}
-                        </span>
-                      </div>
                       {/* Only when reception agreed one at the desk. The
                           amount stays legible even when it is being dropped —
                           the decision here is whether to bill it, and that
@@ -2950,31 +2977,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       </div>
                     )}
 
-                    {/* Shut by default and loaded only when opened. Most bills
-                        are issued off the three rows above; this is for the
-                        one where the guest queries a figure and the desk needs
-                        the whole stay — the party, the extras, the advance,
-                        night by night — without leaving the bill it is halfway
-                        through writing.
-
-                        The same component the tape chart renders, so a stay
-                        read here and read there is one record, not two
-                        summaries of it. Its own "still to collect" line is
-                        turned off: the real balance due, with tax, is a few
-                        rows further down this very modal. */}
-                    <details
-                      className="form-section--collapsible billing-panel__stay-details"
-                      onToggle={(e) => e.currentTarget.open && loadStayDetails()}
-                    >
-                      <summary>View full stay details</summary>
-                      {detailStayError && (
-                        <div className="form-banner form-banner--error">{detailStayError}</div>
-                      )}
-                      {!detailStayError && !detailStay && <PageLoader inline label="Loading" />}
-                      {!detailStayError && detailStay && (
-                        <StayDetails booking={detailStay} showOutstanding={false} />
-                      )}
-                    </details>
                   </div>
                 )}
 
@@ -3062,8 +3064,8 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     only invited a cash receipt to be cut by mistake, which
                     would open a second, parallel invoice series and produce a
                     document sitting outside the GST returns. */}
-                <div className="form-section">
-                  <div className="form-section__title">Bill</div>
+                <div className="form-section issue-bill__breakdown">
+                  <div className="form-section__title">Bill breakdown</div>
                   <p className="billing-panel__hint">
                     {preview.isGstRegistered
                       ? `Issued under GSTIN ${preview.gstin}.`
@@ -3072,6 +3074,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
                   {activeAmounts && (
                     <div className="sim-result">
+                      <div className="issue-bill__thead">
+                        <span>Description</span>
+                        <span>Amount</span>
+                      </div>
                       {/* Room and food are shown as separate taxed blocks
                           because they are separate supplies on different SACs
                           at different rates — merging them would hide the very
@@ -3154,12 +3160,12 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                           computed on the amounts left after it. */}
                       {(activeAmounts.cgstAmount > 0 || activeAmounts.sgstAmount > 0) && (
                         <>
-                          <div className="sim-result__line">
-                            <span>CGST ({activeAmounts.cgstRatePercent}%)</span>
+                          <div className="sim-result__line sim-result__line--incl">
+                            <span>CGST ({activeAmounts.cgstRatePercent}%) <em>included</em></span>
                             <span>{formatPrice(activeAmounts.cgstAmount)}</span>
                           </div>
-                          <div className="sim-result__line">
-                            <span>SGST ({activeAmounts.sgstRatePercent}%)</span>
+                          <div className="sim-result__line sim-result__line--incl">
+                            <span>SGST ({activeAmounts.sgstRatePercent}%) <em>included</em></span>
                             <span>{formatPrice(activeAmounts.sgstAmount)}</span>
                           </div>
                         </>
@@ -3167,24 +3173,24 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
                       {(activeAmounts.foodCgstAmount > 0 || activeAmounts.foodSgstAmount > 0) && (
                         <>
-                          <div className="sim-result__line">
-                            <span>CGST ({activeAmounts.foodCgstRatePercent}%) on food</span>
+                          <div className="sim-result__line sim-result__line--incl">
+                            <span>CGST ({activeAmounts.foodCgstRatePercent}%) on food <em>included</em></span>
                             <span>{formatPrice(activeAmounts.foodCgstAmount)}</span>
                           </div>
-                          <div className="sim-result__line">
-                            <span>SGST ({activeAmounts.foodSgstRatePercent}%) on food</span>
+                          <div className="sim-result__line sim-result__line--incl">
+                            <span>SGST ({activeAmounts.foodSgstRatePercent}%) on food <em>included</em></span>
                             <span>{formatPrice(activeAmounts.foodSgstAmount)}</span>
                           </div>
                         </>
                       )}
                       {(activeAmounts.serviceCgstAmount > 0 || activeAmounts.serviceSgstAmount > 0) && (
                         <>
-                          <div className="sim-result__line">
-                            <span>CGST ({activeAmounts.serviceCgstRatePercent}%) on services</span>
+                          <div className="sim-result__line sim-result__line--incl">
+                            <span>CGST ({activeAmounts.serviceCgstRatePercent}%) on services <em>included</em></span>
                             <span>{formatPrice(activeAmounts.serviceCgstAmount)}</span>
                           </div>
-                          <div className="sim-result__line">
-                            <span>SGST ({activeAmounts.serviceSgstRatePercent}%) on services</span>
+                          <div className="sim-result__line sim-result__line--incl">
+                            <span>SGST ({activeAmounts.serviceSgstRatePercent}%) on services <em>included</em></span>
                             <span>{formatPrice(activeAmounts.serviceSgstAmount)}</span>
                           </div>
                         </>
@@ -3220,20 +3226,23 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     reads as a rule ("Leaving early") and not a favour. */}
                 {isCycleStay && (
                   <div className="form-section billing-panel__discount">
-                    <div className="form-section__title">Discount</div>
+                    <div className="form-section__title">Discount <span className="issue-bill__optional">(optional)</span></div>
                     <div className="field-row">
                       <div className="field">
                         <label htmlFor="cycleDiscount">Amount</label>
-                        <input
-                          id="cycleDiscount"
-                          type="number"
-                          min="0"
-                          step="1"
-                          inputMode="decimal"
-                          placeholder="0"
-                          value={discountInput}
-                          onChange={(e) => setDiscountInput(e.target.value)}
-                        />
+                        <div className="issue-bill__money">
+                          <span aria-hidden="true">₹</span>
+                          <input
+                            id="cycleDiscount"
+                            type="number"
+                            min="0"
+                            step="1"
+                            inputMode="decimal"
+                            placeholder="0"
+                            value={discountInput}
+                            onChange={(e) => setDiscountInput(e.target.value)}
+                          />
+                        </div>
                       </div>
                       <div className="field">
                         <label htmlFor="cycleDiscountReason">Reason (printed on bill)</label>
@@ -3274,7 +3283,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       form the desk still has to answer. The rows below it went
                       unnoticed until the bill was refused for them. */}
                   <div className="form-section__title">
-                    Record how the guest paid
+                    Payment collection
                     {/* The rows below are the one thing on this form the desk
                         must answer, and they carry no label of their own to
                         hang the mark on — so it goes on the heading that names
@@ -3289,7 +3298,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   <p className="billing-panel__hint billing-panel__collect-hint">
                     {nothingDue
                       ? 'The advance already covers this bill. Nothing is left to collect — issue it as it stands.'
-                      : `${formatPrice(balanceDue)} is due. Choose the payment type for each amount taken.`}
+                      : `Balance due ${formatPrice(balanceDue)}. Add each payment received below.`}
                   </p>
                   {/* No Amount box: what the guest handed over is however much
                       these rows add up to. The discount the bill has to give up
@@ -3334,10 +3343,16 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     impression of it. */}
                 {preview.document && (
                   <details
+                    ref={previewDetailsRef}
                     className="form-section--collapsible billing-panel__bill-preview"
                     onToggle={(e) => setPreviewOpen(e.currentTarget.open)}
                   >
-                    <summary>Preview the bill</summary>
+                    <summary>
+                      <span className="issue-bill__sum-icon" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+                      </span>
+                      Preview bill
+                    </summary>
                     {previewOpen && (
                       <>
                         <p className="billing-panel__hint">
@@ -3372,6 +3387,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     onToggle={(e) => setIssuePaperOpen(e.currentTarget.open)}
                   >
                     <summary>
+                      <span className="issue-bill__sum-icon" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+                      </span>
                       Paper size
                       <span className="billing-panel__paper-current">{paperById(paperSize).label}</span>
                     </summary>
@@ -3423,10 +3441,25 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   </div>
                 )}
 
-                <div className="billing-panel__actions">
+                <div className="billing-panel__actions issue-bill__foot">
                   <button type="button" className="btn-secondary" onClick={closeBilling} disabled={submitting}>
                     Cancel
                   </button>
+                  <span className="issue-bill__foot-spacer" />
+                  {preview.document && (
+                    <button
+                      type="button"
+                      className="btn-secondary issue-bill__preview-btn"
+                      onClick={() => {
+                        const d = previewDetailsRef.current;
+                        if (!d) return;
+                        d.open = true;
+                        d.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }}
+                    >
+                      Preview bill
+                    </button>
+                  )}
                   <button
                     className="btn-accent"
                     type="submit"
@@ -3741,6 +3774,10 @@ const REPORT_TYPES = [
   ['event', 'Events'],
 ];
 const isoDay = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+// "1 Oct 2026" — the stay's dates on the issue form's summary card.
+const billDay = (iso) =>
+  new Date(`${String(iso).slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 // Who a bill is for, as the Guest / Table column shows it — and sorts by it.
 const billParty = (inv) =>

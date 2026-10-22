@@ -15,7 +15,7 @@ import PageLoader from '../../components/PageLoader';
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const emptyCategoryForm = { name: '', basePrice: '', tapeOrder: '' };
-const emptyChargeForm = { name: '', chargePerNight: '', isCounter: false };
+const emptyChargeForm = { name: '', chargePerNight: '', isCounter: false, hiddenWhenChargeId: '' };
 const emptySeasonForm = () => ({ name: '', startDate: todayIso(), endDate: todayIso(), adjustmentPercent: '' });
 
 function ChartSection({ title, hint, children }) {
@@ -282,7 +282,7 @@ export default function PriceChartPanel() {
 
   const openEditCharge = (c) => {
     setEditingChargeId(c.id);
-    setChargeForm({ name: c.name, chargePerNight: String(c.chargePerNight), isCounter: Boolean(c.isCounter) });
+    setChargeForm({ name: c.name, chargePerNight: String(c.chargePerNight), isCounter: Boolean(c.isCounter), hiddenWhenChargeId: c.hiddenWhenChargeId == null ? '' : String(c.hiddenWhenChargeId) });
     setChargeError('');
     chargeErrors.clear();
     setChargeModalOpen(true);
@@ -311,7 +311,7 @@ export default function PriceChartPanel() {
     }
     setChargeSubmitting(true);
     try {
-      const body = { name: chargeForm.name.trim(), chargePerNight: Number(chargeForm.chargePerNight), isCounter: chargeForm.isCounter };
+      const body = { name: chargeForm.name.trim(), chargePerNight: Number(chargeForm.chargePerNight), isCounter: chargeForm.isCounter, hiddenWhenChargeId: chargeForm.hiddenWhenChargeId ? Number(chargeForm.hiddenWhenChargeId) : null };
       if (editingChargeId) {
         await apiPatch(`/switchable-charges/${editingChargeId}`, body, { token: session?.token });
       } else {
@@ -605,6 +605,8 @@ export default function PriceChartPanel() {
                 <span className="chart-row__value">
                   {formatPrice(c.chargePerNight)}
                   {c.isCounter ? ' per unit/night' : '/night'}
+                  {c.hiddenWhenChargeId != null &&
+                    ` · hidden when ${switchableCharges.find((o) => o.id === c.hiddenWhenChargeId)?.name ?? 'another extra'} is ticked`}
                   <span className="chart-row__actions">
                     <IconButton
                       label={`Edit ${c.name}`}
@@ -763,6 +765,23 @@ export default function PriceChartPanel() {
                 <small>Tick if a guest can take more than one (like extra beds); the amount is multiplied by the quantity entered at booking.</small>
               </span>
             </label>
+            {/* One-way: this extra disappears from booking while the chosen
+                extra is ticked. */}
+            <div className="field">
+              <label htmlFor="chargeHiddenWhen">Hide this extra when… (optional)</label>
+              <select
+                id="chargeHiddenWhen"
+                value={chargeForm.hiddenWhenChargeId}
+                onChange={(e) => setChargeForm((f) => ({ ...f, hiddenWhenChargeId: e.target.value }))}
+              >
+                <option value="">Never hide</option>
+                {switchableCharges
+                  .filter((c) => c.isActive && c.id !== editingChargeId)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} is ticked</option>
+                  ))}
+              </select>
+            </div>
           </form>
         </Modal>
       )}

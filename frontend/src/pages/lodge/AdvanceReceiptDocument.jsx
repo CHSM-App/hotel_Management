@@ -1,5 +1,6 @@
 import { forwardRef } from 'react';
 import { amountInWords } from './numberToWords';
+import { formatHeadCount } from './stayFormat';
 import { API_BASE } from '../../lib/api';
 import './BillDocument.css';
 
@@ -39,12 +40,17 @@ const STRINGS_EN = {
   doc: DOCUMENT_LABEL,
   mob: 'Mob.',
   no: 'No.-',
+  bookingId: 'Booking ID',
   date: 'Date -',
   onIssue: 'allocated on issue',
   name: 'Name',
   mobNo: 'Mob. No.',
   roomNo: 'Room No.',
   persons: 'Persons -',
+  adult: 'Adult',
+  adults: 'Adults',
+  child: 'Child',
+  children: 'Children',
   // Same strings and same rule as BillDocument.jsx's bed line: bedLabel null
   // means a whole-room buyout, not "not a dormitory" — isDormitory decides
   // whether this line shows at all.
@@ -107,6 +113,11 @@ const STRINGS = {
   en: STRINGS_EN,
   mr: {
     ...STRINGS_EN,
+    bookingId: 'बुकिंग आयडी',
+    adult: 'प्रौढ',
+    adults: 'प्रौढ',
+    child: 'मूल',
+    children: 'मुले',
     sumOfRupees: 'रक्कम रुपये',
     by: 'द्वारे',
     txnNo: 'व्यवहार क्र.',
@@ -226,7 +237,7 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
     receipt.roomNumber ? `${T.roomNo} ${receipt.roomNumber}` : null,
     formatDate(receipt.checkInDate) ? `dt. ${formatDate(receipt.checkInDate)}` : null,
     nights ? `(${nights} ${T.days})` : null,
-    receipt.numGuests ? `${T.persons} ${receipt.numGuests}` : null,
+    receipt.numGuests ? `${T.persons} ${formatHeadCount(receipt.numGuests, receipt.childCount, T)}` : null,
   ]
     .filter(Boolean)
     .join('  ');
@@ -297,6 +308,13 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
           {formatDate(receipt.createdAt) || (isPreview ? <em className="memo__pending">{T.onIssue}</em> : null)}
         </Filled>
       </div>
+
+      {receipt.bookingNumber && (
+        <div className="memo__row">
+          <span className="memo__label">{T.bookingId}</span>
+          <Filled>{receipt.bookingNumber}</Filled>
+        </div>
+      )}
 
       <div className="memo__row">
         <span className="memo__label">{T.receivedFrom}</span>

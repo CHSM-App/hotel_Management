@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../../config/connection');
+const { allocateEventNumber } = require('../bookings/bookingNumbers');
 const { ApiError } = require('../../middleware/errorHandler');
 const { priceEvent, billablePax, round2 } = require('./eventPricing');
 const eventConfirmation = require('../notifications/eventConfirmation');
@@ -478,6 +479,8 @@ function mapEvent(row) {
   const totalAmount = Number(row.total_amount);
   return {
     id: row.id,
+    // The function's own number (E-SKR2610001), never reused or recalculated.
+    eventNumber: row.event_number ?? null,
     venueId: row.venue_id,
     venueName: row.venue_name,
     // The bill will not issue while any of these stand — the reminder the
@@ -661,8 +664,13 @@ async function createEventBooking(lodgeId, userId, input) {
       if (clashes.length > 0) throw clashError(clashes);
     }
 
+    // Taken in this transaction, so an event that fails below gives its number
+    // back rather than leaving a hole in the month's sequence.
+    const eventNumber = await allocateEventNumber(transaction, lodgeId);
+
     const inserted = await bindRooms(bindPricing(new sql.Request(transaction), pricing, input), input, capabilities)
       .input('lodgeId', sql.BigInt, lodgeId)
+      .input('eventNumber', sql.NVarChar, eventNumber)
       .input('venueId', sql.BigInt, input.venueId)
       .input('eventType', sql.NVarChar(20), input.eventType)
       .input('title', sql.NVarChar(200), input.title)
@@ -679,7 +687,7 @@ async function createEventBooking(lodgeId, userId, input) {
       .input('createdBy', sql.BigInt, userId ?? null)
       .query(`
         INSERT INTO dbo.event_bookings
-          (lodge_id, venue_id, event_type, title, organiser_name, organiser_phone, organiser_alt_phone,
+          (lodge_id, event_number, venue_id, event_type, title, organiser_name, organiser_phone, organiser_alt_phone,
            start_at, end_at, slot, expected_pax, guaranteed_pax, final_pax,
            venue_charge, per_plate_rate, catering_amount, addons_total, discount_amount, discount_reason,
            total_amount, pricing_breakdown, menu_notes, setup_notes, schedule_notes,
@@ -687,7 +695,7 @@ async function createEventBooking(lodgeId, userId, input) {
            status, created_by)
         OUTPUT inserted.id
         VALUES
-          (@lodgeId, @venueId, @eventType, @title, @organiserName, @organiserPhone, @organiserAltPhone,
+          (@lodgeId, @eventNumber, @venueId, @eventType, @title, @organiserName, @organiserPhone, @organiserAltPhone,
            @startAt, @endAt, @slot, @expectedPax, @guaranteedPax, @finalPax,
            @venueCharge, @perPlateRate, @cateringAmount, @addonsTotal, @discountAmount, @discountReason,
            @totalAmount, @breakdown, @menuNotes, @setupNotes, @scheduleNotes,

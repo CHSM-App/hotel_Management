@@ -28,6 +28,12 @@ const PERMISSIONS = [
     capability: ['hasRooms', 'hasEvents'],
   },
   {
+    key: 'enquiries.manage',
+    label: 'Enquiries',
+    description: 'See enquiries guests send from the public page, follow them up and turn them into bookings.',
+    capability: ['hasRooms', 'hasEvents'],
+  },
+  {
     key: 'rooms.manage',
     label: 'Rooms & rates',
     description: 'Add rooms, categories, seasonal pricing and booking extras.',

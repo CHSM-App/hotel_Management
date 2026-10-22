@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { logger } = require('../../config/logger');
+const { suggestBookingCode } = require('./bookingCode');
 const { UPLOAD_DIR: LOGO_DIR } = require('../../middleware/logoUpload');
 const { UPLOAD_DIR: HERO_IMAGE_DIR } = require('../../middleware/heroImageUpload');
 
@@ -21,9 +22,26 @@ async function createLodgeWithOwner(input) {
       throw new ApiError('That slug is already taken.', 409, 'slug');
     }
 
+    const codeTaken = async (code) =>
+      (
+        await new sql.Request(transaction)
+          .input('code', sql.NVarChar, code)
+          .query('SELECT 1 AS taken FROM dbo.lodges WHERE booking_code = @code')
+      ).recordset.length > 0;
+    let bookingCode = input.bookingCode || null;
+    if (bookingCode) {
+      if (await codeTaken(bookingCode)) {
+        throw new ApiError('That booking code is already used by another property.', 409, 'bookingCode');
+      }
+    } else {
+      bookingCode = await suggestBookingCode(input.lodgeName, codeTaken);
+      if (!bookingCode) throw new ApiError('Could not pick a booking code automatically. Enter one.', 409, 'bookingCode');
+    }
+
     const lodgeResult = await new sql.Request(transaction)
       .input('name', sql.NVarChar, input.lodgeName)
       .input('slug', sql.NVarChar, input.slug)
+      .input('bookingCode', sql.NVarChar, bookingCode)
       .input('phone', sql.NVarChar, input.phone || null)
       .input('whatsappNumber', sql.NVarChar, input.whatsappNumber || null)
       .input('address', sql.NVarChar, input.address || null)
@@ -49,14 +67,14 @@ async function createLodgeWithOwner(input) {
       .input('hasLaundry', sql.Bit, input.hasLaundry)
       .query(`
         INSERT INTO dbo.lodges
-          (name, slug, phone, whatsapp_number, address, name_mr, address_mr, city, state,
+          (name, slug, booking_code, phone, whatsapp_number, address, name_mr, address_mr, city, state,
            latitude, longitude, checkin_mode,
            is_gst_registered, gstin, is_specified_premises,
            has_rooms, serves_food, food_room_service, food_table_service, has_events,
            has_assets, has_expenses, has_other_services, has_housekeeping, has_laundry)
         OUTPUT inserted.id
         VALUES
-          (@name, @slug, @phone, @whatsappNumber, @address, @nameMr, @addressMr, @city, @state,
+          (@name, @slug, @bookingCode, @phone, @whatsappNumber, @address, @nameMr, @addressMr, @city, @state,
            @latitude, @longitude, @checkinMode,
            @isGstRegistered, @gstin, @isSpecifiedPremises,
            @hasRooms, @servesFood, @foodRoomService, @foodTableService, @hasEvents,
@@ -95,7 +113,7 @@ async function createLodgeWithOwner(input) {
     }
 
     await transaction.commit();
-    return { lodgeId, slug: input.slug };
+    return { lodgeId, slug: input.slug, bookingCode };
   } catch (err) {
     await transaction.rollback();
     throw err;
@@ -139,12 +157,12 @@ async function getLodgeDetail(id) {
 
   const result = await pool.request().input('id', sql.BigInt, id).query(`
     SELECT
-      id, name, slug, phone, whatsapp_number, address, name_mr, address_mr, city, state,
+      id, name, slug, booking_code, phone, whatsapp_number, address, name_mr, address_mr, city, state,
       latitude, longitude,
       checkin_mode, is_gst_registered, gstin, is_specified_premises,
       has_rooms, serves_food, food_room_service, food_table_service, has_events,
       has_assets, has_expenses, has_other_services, has_housekeeping, has_laundry,
-      check_out_time, check_in_time, late_grace_minutes, late_half_day_percent,
+      check_out_time, check_in_time, early_arrival_from, late_grace_minutes, late_half_day_percent,
       late_full_day_after_minutes, late_full_day_percent,
       logo_path, show_logo_on_receipt, hero_image_path,
       is_active, created_at
@@ -250,6 +268,7 @@ async function updateLodge(id, input) {
   const next = {
     name: input.lodgeName ?? current.name,
     slug: input.slug ?? current.slug,
+    booking_code: input.bookingCode ?? current.booking_code,
     phone: text('phone', 'phone'),
     whatsapp_number: text('whatsappNumber', 'whatsapp_number'),
     address: text('address', 'address'),
@@ -307,11 +326,37 @@ async function updateLodge(id, input) {
     if (taken.recordset.length > 0) throw new ApiError('A property with that slug already exists.', 409, 'edit-slug');
   }
 
+  // The code is baked into every number already issued, so it can only change
+  // while the property has issued none. Compared against the stored value, so
+  // re-sending the same code alongside other edits is fine.
+  if (next.booking_code !== current.booking_code) {
+    const clash = await pool
+      .request()
+      .input('code', sql.NVarChar, next.booking_code)
+      .input('id', sql.BigInt, id)
+      .query('SELECT id FROM dbo.lodges WHERE booking_code = @code AND id <> @id');
+    if (clash.recordset.length > 0) {
+      throw new ApiError('That booking code is already used by another property.', 409, 'edit-bookingCode');
+    }
+    const issued = await pool
+      .request()
+      .input('id', sql.BigInt, id)
+      .query('SELECT COUNT(*) AS n FROM dbo.bookings WHERE lodge_id = @id AND booking_number IS NOT NULL');
+    if (issued.recordset[0].n > 0) {
+      throw new ApiError(
+        'This property already has booking numbers, so its code can no longer be changed.',
+        409,
+        'edit-bookingCode'
+      );
+    }
+  }
+
   await pool
     .request()
     .input('id', sql.BigInt, id)
     .input('name', sql.NVarChar, next.name)
     .input('slug', sql.NVarChar, next.slug)
+    .input('bookingCode', sql.NVarChar, next.booking_code)
     .input('phone', sql.NVarChar, next.phone)
     .input('whatsappNumber', sql.NVarChar, next.whatsapp_number)
     .input('address', sql.NVarChar, next.address)
@@ -339,7 +384,7 @@ async function updateLodge(id, input) {
     .input('showLogoOnReceipt', sql.Bit, next.show_logo_on_receipt)
     .query(`
       UPDATE dbo.lodges
-      SET name = @name, slug = @slug, phone = @phone, whatsapp_number = @whatsappNumber,
+      SET name = @name, slug = @slug, booking_code = @bookingCode, phone = @phone, whatsapp_number = @whatsappNumber,
           address = @address, name_mr = @nameMr, address_mr = @addressMr, city = @city, state = @state,
           latitude = @latitude, longitude = @longitude,
           checkin_mode = @checkinMode, is_gst_registered = @isGstRegistered, gstin = @gstin,

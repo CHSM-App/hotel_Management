@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './modalClose.css'
 import App from './App.jsx'
 
 // A focused <input type="number"> treats the mouse wheel as a value control, so

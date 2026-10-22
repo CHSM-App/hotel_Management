@@ -32,6 +32,7 @@ const { sendDueFeedbackRequests } = require('./modules/bookings/feedbackRequests
 const { sendDueBirthdayWishes } = require('./modules/customers/birthdayWishes.service');
 const { sendDueEventReminders } = require('./modules/events/eventReminders.service');
 const { sendDueEventFeedbackRequests } = require('./modules/events/eventFeedbackRequests.service');
+const { purgeOldEnquiries } = require('./modules/enquiries/enquiries.service');
 
 const port = process.env.PORT || 5000;
 
@@ -155,6 +156,15 @@ cron.schedule(
   '0 9 * * *',
   () => {
     sendDueEventReminders().catch((err) => logger.error({ err }, 'Event reminder sweep failed'));
+  },
+  { timezone: 'Asia/Kolkata' }
+);
+
+// Enquiries are a short-lived inbox, not a record — drop anything past 30 days.
+cron.schedule(
+  '30 3 * * *',
+  () => {
+    purgeOldEnquiries().catch((err) => logger.error({ err }, 'Enquiry purge failed'));
   },
   { timezone: 'Asia/Kolkata' }
 );

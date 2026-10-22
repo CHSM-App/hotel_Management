@@ -2,6 +2,7 @@ import { forwardRef } from 'react';
 import { amountInWords } from './numberToWords';
 import { API_BASE } from '../../lib/api';
 import { roomSections } from './multiRoom';
+import { formatHeadCount } from './stayFormat';
 import './BillDocument.css';
 
 const DOCUMENT_LABEL = {
@@ -36,6 +37,11 @@ const STRINGS_EN = {
   dormitory: 'Dormitory bed',
   dormitoryWhole: 'Dormitory (whole room)',
   persons: 'Persons -',
+  bookingId: 'Booking ID',
+  adult: 'Adult',
+  adults: 'Adults',
+  child: 'Child',
+  children: 'Children',
   rs: 'Rs.',
   ps: 'Ps.',
   forStay: 'For',
@@ -100,11 +106,16 @@ const STRINGS = {
   en: STRINGS_EN,
   mr: {
     ...STRINGS_EN,
+    bookingId: 'बुकिंग आयडी',
     // Standard GST Marathi terms for the document types.
     doc: { TAX_INVOICE: 'कर बीजक', BILL_OF_SUPPLY: 'पुरवठा बीजक', CASH_RECEIPT: 'अंतिम देयक' },
     cashMemo: 'कॅश मेमो',
     mob: 'मो.',
     gstin: 'जीएसटीआयएन क्र.',
+    adult: 'प्रौढ',
+    adults: 'प्रौढ',
+    child: 'मूल',
+    children: 'मुले',
   },
 };
 
@@ -942,6 +953,18 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
         <Filled narrow>{invoice.guestPhone}</Filled>
       </div>
 
+      {/* The stay's own number, so a printed bill can be traced back to its
+          booking. Null on food, function and service bills — they have no
+          booking behind them — and on stays taken before numbering existed
+          and not yet backfilled. This is not the guest-register "Reg. No."
+          below: that rule stays out for the reason given there. */}
+      {invoice.bookingNumber && (
+        <div className="memo__row">
+          <span className="memo__label">{T.bookingId}</span>
+          <Filled>{invoice.bookingNumber}</Filled>
+        </div>
+      )}
+
       {/* The register strip. A food bill has no room or stay behind it, so it
           names the table and covers instead of leaving two rules blank.
           The printed book has a "Reg. No." rule here for the guest register
@@ -974,7 +997,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
                 : null}
             </Filled>
             <span className="memo__label">{T.persons}</span>
-            <Filled narrow>{invoice.numGuests}</Filled>
+            <Filled narrow>{formatHeadCount(invoice.numGuests, invoice.childCount, T) ?? invoice.numGuests}</Filled>
           </>
         )}
       </div>

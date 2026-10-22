@@ -27,6 +27,7 @@ const CHECKIN_MODES = [
   { value: 'HOUR_24', label: '24-hour cycle (from check-in time)' },
   { value: 'NIGHT_BASED', label: 'Night-based (fixed checkout time)' },
   { value: 'CYCLE', label: 'Fixed cycle (check-in / checkout times, whole nights)' },
+  { value: 'HYBRID', label: 'Hybrid (early arrival gets 24 hours, later arrival fixed checkout)' },
 ];
 
 // Support correcting a property after onboarding. Everything the registration
@@ -40,6 +41,7 @@ function formFromLodge(lodge) {
   return {
     lodgeName: lodge.name ?? '',
     slug: lodge.slug ?? '',
+    bookingCode: lodge.booking_code ?? '',
     phone: lodge.phone ?? '',
     whatsappNumber: lodge.whatsapp_number ?? '',
     address: lodge.address ?? '',
@@ -141,6 +143,10 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
     }
     if (!form.slug.trim()) {
       failOn('edit-slug', 'Enter a slug.');
+      return;
+    }
+    if (!/^[A-Z]{3,4}$/.test(form.bookingCode.trim().toUpperCase())) {
+      failOn('edit-bookingCode', 'Enter a booking code of 3 or 4 letters.');
       return;
     }
     if (form.isGstRegistered && !form.gstin.trim()) {
@@ -264,6 +270,20 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
                 onChange={update('slug')}
               />
               {fieldErr('edit-slug')}
+            </div>
+            <div className="field">
+              <label htmlFor="edit-bookingCode">Booking code</label>
+              <input
+                id="edit-bookingCode"
+                aria-invalid={invalid('edit-bookingCode')}
+                value={form.bookingCode}
+                maxLength={4}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, bookingCode: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') }))
+                }
+              />
+              <p className="reg-card__hint">Starts every booking number. Locked once the first booking is taken.</p>
+              {fieldErr('edit-bookingCode')}
             </div>
           </div>
           <div className="field-row">

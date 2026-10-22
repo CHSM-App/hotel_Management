@@ -34,10 +34,25 @@ export function sameCharge(a, b) {
   return Number(a) === Number(b);
 }
 
-export function toggleSelection(selections, chargeId) {
-  return selections.some((c) => sameCharge(c.id, chargeId))
-    ? selections.filter((c) => c.id !== chargeId)
+// An extra with hiddenWhenChargeId is hidden while that other extra is ticked
+// (Extra Person Non AC disappears once AC is ticked); unticking brings it back.
+export function isHiddenExtra(selections, charge) {
+  return (
+    charge.hiddenWhenChargeId != null &&
+    selections.some((s) => sameCharge(s.id, charge.hiddenWhenChargeId))
+  );
+}
+
+// `charges` is optional: pass the list the form renders and any extra the new
+// tick has just hidden is dropped, so a hidden extra is never still booked.
+export function toggleSelection(selections, chargeId, charges = []) {
+  const next = selections.some((c) => sameCharge(c.id, chargeId))
+    ? selections.filter((c) => !sameCharge(c.id, chargeId))
     : [...selections, { id: chargeId, quantity: '1', agreedAmount: '' }];
+  return next.filter((s) => {
+    const charge = charges.find((c) => sameCharge(c.id, s.id));
+    return !charge || !isHiddenExtra(next, charge);
+  });
 }
 
 export function withQuantity(selections, chargeId, quantity) {

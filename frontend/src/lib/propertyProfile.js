@@ -125,6 +125,15 @@ export const FEATURES = [
     group: 'Customers',
   },
   {
+    key: 'enquiries',
+    title: 'Enquiries',
+    description: 'Enquiries guests send from your public page — follow up and convert them.',
+    permission: 'enquiries.manage',
+    capability: ['hasRooms', 'hasEvents'],
+    icon: 'idcard',
+    group: 'Customers',
+  },
+  {
     key: 'food',
     title: 'Food orders & Billing',
     description: 'The live kitchen queue, taking orders, and table and takeaway bills.',

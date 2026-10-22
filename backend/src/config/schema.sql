@@ -18,7 +18,7 @@ CREATE TABLE dbo.lodges (
     city                   NVARCHAR(100) NULL,
     state                  NVARCHAR(100) NULL,
     checkin_mode           NVARCHAR(20) NOT NULL DEFAULT 'HOUR_24'
-        CONSTRAINT ck_lodges_checkin_mode CHECK (checkin_mode IN ('HOUR_24', 'NIGHT_BASED', 'CYCLE')),
+        CONSTRAINT ck_lodges_checkin_mode CHECK (checkin_mode IN ('HOUR_24', 'NIGHT_BASED', 'CYCLE', 'HYBRID')),
     is_gst_registered      BIT NOT NULL DEFAULT 0,
     gstin                  NVARCHAR(15) NULL,
     is_specified_premises  BIT NOT NULL DEFAULT 0,
@@ -239,6 +239,17 @@ IF OBJECT_ID('dbo.switchable_charges', 'U') IS NOT NULL
    AND COL_LENGTH('dbo.switchable_charges', 'is_counter') IS NULL
     EXEC('ALTER TABLE dbo.switchable_charges ADD is_counter BIT NOT NULL
           CONSTRAINT df_switchable_charges_is_counter DEFAULT 0');
+
+-- exclusive_group was added briefly and then dropped in favour of
+-- hidden_when_charge_id below; removed here wherever it already exists.
+IF COL_LENGTH('dbo.switchable_charges', 'exclusive_group') IS NOT NULL
+    EXEC('ALTER TABLE dbo.switchable_charges DROP COLUMN exclusive_group');
+
+-- hidden_when_charge_id — this extra is not offered while the extra it points
+-- at is on the booking (one-way). NULL means never.
+IF OBJECT_ID('dbo.switchable_charges', 'U') IS NOT NULL
+   AND COL_LENGTH('dbo.switchable_charges', 'hidden_when_charge_id') IS NULL
+    EXEC('ALTER TABLE dbo.switchable_charges ADD hidden_when_charge_id BIGINT NULL');
 
 -- The Extra bed rows themselves are seeded further down, after the migration
 -- that adds lodges.has_rooms — the seed reads that column, and this file runs
@@ -1528,6 +1539,12 @@ IF COL_LENGTH('dbo.lodges', 'check_out_time') IS NULL
 -- checkout time.
 IF COL_LENGTH('dbo.lodges', 'check_in_time') IS NULL
     EXEC('ALTER TABLE dbo.lodges ADD check_in_time TIME(0) NOT NULL CONSTRAINT df_lodges_check_in_time DEFAULT ''11:00:00''');
+
+-- The HYBRID mode (migration 155): arrivals between early_arrival_from (NULL =
+-- any time) and check_in_time get 24 hours from arrival; later arrivals go by
+-- the fixed check_out_time.
+IF COL_LENGTH('dbo.lodges', 'early_arrival_from') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD early_arrival_from TIME(0) NULL');
 
 IF COL_LENGTH('dbo.lodges', 'late_grace_minutes') IS NULL
     EXEC('ALTER TABLE dbo.lodges ADD late_grace_minutes INT NOT NULL CONSTRAINT df_lodges_late_grace DEFAULT 60');
@@ -3274,3 +3291,91 @@ IF COL_LENGTH('dbo.users', 'last_seen') IS NULL
 -- logo_path.
 IF COL_LENGTH('dbo.lodges', 'hero_image_path') IS NULL
     EXEC('ALTER TABLE dbo.lodges ADD hero_image_path NVARCHAR(500) NULL');
+
+-- lodge_enquiries (147): what the public page's Enquire modal stores instead
+-- of only opening WhatsApp. reference_code is shown to the guest; rows are
+-- purged after 30 days by the sweep in server.js.
+IF OBJECT_ID('dbo.lodge_enquiries', 'U') IS NULL
+CREATE TABLE dbo.lodge_enquiries (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    reference_code NVARCHAR(16) NOT NULL,
+    kind           NVARCHAR(10) NOT NULL CONSTRAINT ck_lodge_enquiries_kind CHECK (kind IN ('ROOM', 'EVENT', 'GENERAL', 'SERVICE')),
+    name           NVARCHAR(120) NOT NULL,
+    phone          NVARCHAR(20) NOT NULL,
+    check_in_date  DATE NULL,
+    check_out_date DATE NULL,
+    event_date     DATE NULL,
+    event_type     NVARCHAR(60) NULL,
+    room_type_id   BIGINT NULL,
+    venue_id       BIGINT NULL,
+    guests         INT NULL,
+    addon_ids      NVARCHAR(500) NULL,
+    summary        NVARCHAR(1000) NULL,
+    notes          NVARCHAR(1000) NULL,
+    status         NVARCHAR(12) NOT NULL CONSTRAINT df_lodge_enquiries_status DEFAULT 'NEW'
+                   CONSTRAINT ck_lodge_enquiries_status CHECK (status IN ('NEW', 'CONTACTED', 'CONVERTED', 'CLOSED')),
+    created_at     DATETIMEOFFSET NOT NULL CONSTRAINT df_lodge_enquiries_created DEFAULT SYSDATETIMEOFFSET(),
+    handled_by     BIGINT NULL,
+    handled_at     DATETIMEOFFSET NULL
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_lodge_enquiries_ref' AND object_id = OBJECT_ID('dbo.lodge_enquiries'))
+CREATE UNIQUE INDEX uq_lodge_enquiries_ref ON dbo.lodge_enquiries(reference_code);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_lodge_enquiries_lodge_status' AND object_id = OBJECT_ID('dbo.lodge_enquiries'))
+CREATE INDEX ix_lodge_enquiries_lodge_status ON dbo.lodge_enquiries(lodge_id, status, created_at DESC);
+
+-- enquiries.manage granted to whichever role already holds bookings.manage
+-- (migration 148).
+UPDATE dbo.roles
+SET permissions = REPLACE(permissions, '"bookings.manage"', '"bookings.manage","enquiries.manage"')
+WHERE permissions LIKE '%"bookings.manage"%' AND permissions NOT LIKE '%"enquiries.manage"%';
+
+-- Booking numbers (149, reshaped by 150): <HOTEL><YY><MM><SEQ>, e.g.
+-- SKR2610001. lodges.booking_code is the hotel's platform-unique code, 3-4
+-- LETTERS (set by Vengurla Tech staff); booking_sequences hands out each
+-- hotel's running number atomically inside the booking's transaction, one row
+-- per hotel per MONTH (seq_date holds the month's first day); and
+-- bookings.booking_number is written once and never recalculated. Migrations
+-- 149 and 150 also backfill codes and numbers for databases that already hold
+-- hotels and bookings — a database built from this file has none yet.
+IF COL_LENGTH('dbo.lodges', 'booking_code') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD booking_code NVARCHAR(4) NULL');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_lodges_booking_code' AND object_id = OBJECT_ID('dbo.lodges'))
+    EXEC('CREATE UNIQUE INDEX uq_lodges_booking_code ON dbo.lodges(booking_code) WHERE booking_code IS NOT NULL');
+
+IF OBJECT_ID('dbo.booking_sequences', 'U') IS NULL
+CREATE TABLE dbo.booking_sequences (
+    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    seq_date    DATE NOT NULL,
+    next_number INT NOT NULL,
+    CONSTRAINT pk_booking_sequences PRIMARY KEY (lodge_id, seq_date)
+);
+
+IF COL_LENGTH('dbo.bookings', 'booking_number') IS NULL
+    EXEC('ALTER TABLE dbo.bookings ADD booking_number NVARCHAR(32) NULL');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_bookings_booking_number' AND object_id = OBJECT_ID('dbo.bookings'))
+    EXEC('CREATE UNIQUE INDEX uq_bookings_booking_number ON dbo.bookings(booking_number) WHERE booking_number IS NOT NULL');
+
+-- Event numbers (151): E-<HOTEL><YY><MM><SEQ>, e.g. E-SKR2610001. Same shape
+-- as a stay's number but on their own counter (event_sequences, one row per
+-- hotel per month, seq_date = the month's first day) and with an "E-" in
+-- front, which only event numbers carry, so the two can never collide.
+-- event_bookings.event_number is written once at creation and never
+-- recalculated. Migration 151 backfills existing events.
+IF OBJECT_ID('dbo.event_sequences', 'U') IS NULL
+CREATE TABLE dbo.event_sequences (
+    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    seq_date    DATE NOT NULL,
+    next_number INT NOT NULL,
+    CONSTRAINT pk_event_sequences PRIMARY KEY (lodge_id, seq_date)
+);
+
+IF COL_LENGTH('dbo.event_bookings', 'event_number') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD event_number NVARCHAR(32) NULL');
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_event_bookings_event_number' AND object_id = OBJECT_ID('dbo.event_bookings'))
+    EXEC('CREATE UNIQUE INDEX uq_event_bookings_event_number ON dbo.event_bookings(event_number) WHERE event_number IS NOT NULL');

@@ -172,14 +172,29 @@ async function loadCharges(pool, lodgeId, selections) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, charge_per_night, is_counter
+      SELECT id, name, charge_per_night, is_counter, hidden_when_charge_id
       FROM dbo.switchable_charges
       WHERE lodge_id = @lodgeId AND is_active = 1
     `);
 
   const selectionById = new Map(wanted.map((s) => [s.id, s]));
-  return chargesResult.recordset
-    .filter((row) => selectionById.has(Number(row.id)))
+  const picked = chargesResult.recordset.filter((row) => selectionById.has(Number(row.id)));
+
+  // A "hide when" extra can't ride along with the extra that hides it. The
+  // booking form never sends both, so this guards anything else that does.
+  for (const row of picked) {
+    if (row.hidden_when_charge_id == null) continue;
+    const hider = picked.find((p) => Number(p.id) === Number(row.hidden_when_charge_id));
+    if (hider) {
+      throw new ApiError(
+        `“${row.name}” can't be combined with “${hider.name}”.`,
+        400,
+        'switchableCharges'
+      );
+    }
+  }
+
+  return picked
     .map((row) => {
       const selection = selectionById.get(Number(row.id));
       const quantity = selection.quantity;

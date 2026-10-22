@@ -344,7 +344,7 @@ async function loadBookingForBilling(lodgeId, bookingId) {
                 JOIN dbo.dormitory_beds bed ON bed.id = bb.bed_id
                 WHERE bb.booking_id = b.id
               ) all_db) AS bed_labels,
-             l.is_gst_registered, l.gstin, l.is_specified_premises, l.checkin_mode, l.check_out_time,
+             l.is_gst_registered, l.gstin, l.is_specified_premises, l.checkin_mode, l.check_out_time, l.check_in_time, l.early_arrival_from,
              l.late_grace_minutes,
              l.name AS lodge_name, l.phone AS lodge_phone, l.address AS lodge_address,
              l.name_mr AS lodge_name_mr, l.address_mr AS lodge_address_mr,
@@ -510,7 +510,7 @@ async function listBillableBookings(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT b.id, b.guest_name, b.guest_phone, b.check_in_date, b.check_out_date,
+      SELECT b.id, b.booking_number, b.guest_name, b.guest_phone, b.check_in_date, b.check_out_date,
              b.total_price, b.advance_amount, b.actual_check_out_at,
              (SELECT COALESCE(SUM(brl.late_checkout_charge), 0) FROM dbo.booking_rooms brl
               WHERE brl.booking_id = b.id AND brl.status <> 'CANCELLED') AS late_charge,
@@ -535,6 +535,7 @@ async function listBillableBookings(lodgeId) {
     `);
   return result.recordset.map((row) => ({
     id: row.id,
+    bookingNumber: row.booking_number ?? null,
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
     roomNumber: row.room_number,
@@ -635,10 +636,21 @@ async function loadPricingContext(pool, booking, foodOrders) {
 
 // How many nights a stay actually used, counted the way its mode counts a
 // night: HOUR_24 in 24-hour blocks from arrival, CYCLE and NIGHT_BASED by the
-// clock-time boundary they share (see checkoutDeadline).
+// clock-time boundary they share (see checkoutDeadline), HYBRID by whichever of
+// the two its guest's arrival time put them on.
 function actualNightsOf(booking) {
   if (booking.checkin_mode === 'HOUR_24') {
     return lateCheckout.hourlyNights({
+      actualCheckInAt: booking.actual_check_in_at,
+      at: new Date(booking.actual_check_out_at),
+      graceMinutes: booking.late_grace_minutes,
+    });
+  }
+  if (booking.checkin_mode === 'HYBRID') {
+    return lateCheckout.hybridNights({
+      checkOutTime: toClockTime(booking.check_out_time),
+      checkInTime: toClockTime(booking.check_in_time),
+      earlyArrivalFrom: booking.early_arrival_from == null ? null : toClockTime(booking.early_arrival_from),
       actualCheckInAt: booking.actual_check_in_at,
       at: new Date(booking.actual_check_out_at),
       graceMinutes: booking.late_grace_minutes,
@@ -730,6 +742,8 @@ async function previewBill(
     guestName: booking.guest_name,
     roomNumber: booking.room_number,
     categoryName: booking.category_name,
+    checkInDate: isoDate(booking.check_in_date),
+    checkOutDate: isoDate(booking.check_out_date),
     nights: grossNights.length,
     // Split out of the accommodation subtotal so the bill can show what the
     // nights cost and what the overstay cost as two separate lines.
@@ -1263,6 +1277,11 @@ function mapInvoice(row) {
     guestName: row.customer_name ?? row.guest_name,
     guestPhone: row.customer_phone ?? row.guest_phone,
     numGuests: row.num_guests,
+    // The stay's own number (SKR2610001) — null on food and event bills.
+    bookingNumber: row.booking_number ?? null,
+    // Of numGuests, how many are children — stays only; null on food and event
+    // bills, which have no such split.
+    childCount: row.child_count ?? null,
     roomNumber: row.room_number,
     categoryName: row.category_name,
     // Both getInvoice and listInvoices join dormitory_beds for this — the
@@ -1419,6 +1438,8 @@ function buildPreviewDocument({
     guestName: guestName ?? row.guest_name ?? null,
     guestPhone: guestPhone ?? row.guest_phone ?? null,
     numGuests: row.num_guests ?? null,
+    bookingNumber: row.booking_number ?? null,
+    childCount: row.num_children ?? null,
     roomNumber: row.room_number ?? null,
     categoryName: row.category_name ?? null,
     // A dormitory bill is for one or more beds, not the room — printed
@@ -1493,6 +1514,7 @@ async function getInvoice(lodgeId, invoiceId) {
              COALESCE(b.guest_phone, eb.organiser_phone, rb.guest_phone, fo.guest_phone) AS guest_phone,
              COALESCE(b.num_guests, CASE WHEN eb.id IS NULL THEN NULL
                  ELSE (SELECT MAX(x) FROM (VALUES (ISNULL(eb.final_pax, eb.expected_pax)), (eb.guaranteed_pax)) AS t(x)) END, rb.num_guests) AS num_guests,
+             b.num_children AS child_count, b.booking_number,
              b.check_in_date, b.check_out_date,
              eb.title AS event_title, eb.event_type, ev.name AS venue_name,
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
@@ -1601,6 +1623,7 @@ async function listInvoices(lodgeId) {
              COALESCE(b.guest_phone, eb.organiser_phone, rb.guest_phone, fo.guest_phone) AS guest_phone,
              COALESCE(b.num_guests, CASE WHEN eb.id IS NULL THEN NULL
                  ELSE (SELECT MAX(x) FROM (VALUES (ISNULL(eb.final_pax, eb.expected_pax)), (eb.guaranteed_pax)) AS t(x)) END, rb.num_guests) AS num_guests,
+             b.num_children AS child_count, b.booking_number,
              b.check_in_date, b.check_out_date,
              eb.title AS event_title, eb.event_type, ev.name AS venue_name,
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,

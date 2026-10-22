@@ -102,3 +102,19 @@ test('a check-in fires the welcome, fire-and-forget rather than awaited', () => 
 test('.env.example documents the template switch', () => {
   assert.match(read('.env.example'), /^WHATSAPP_CHECKIN_TEMPLATE_ID=/m);
 });
+
+test('check-out slot carries the guest’s actual checkout time when known', () => {
+  const { checkoutDeadline } = require('../src/modules/bookings/lateCheckout');
+  const early = checkoutDeadline({
+    checkinMode: 'HYBRID',
+    checkOutTime: '12:00:00',
+    checkInTime: '12:00',
+    checkInDate: '2026-10-22',
+    checkOutDate: '2026-10-23',
+    actualCheckInAt: new Date('2026-10-22T10:00:00+05:30'),
+  });
+  const booking = { guestName: 'Ravi', roomNumbers: '204', checkOutDate: '2026-10-23' };
+  const lodge = { name: 'Lodge', phone: '9999999999' };
+  assert.equal(buildCheckinSample(booking, lodge, [early])[3], '23 Oct 2026 10:00 AM');
+  assert.equal(buildCheckinSample(booking, lodge)[3], '23 Oct 2026');
+});

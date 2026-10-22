@@ -21,6 +21,8 @@ import Bookings from './Bookings';
 import Billing from './Billing';
 import GuestRegister from './GuestRegister';
 import Customers from './Customers';
+import Enquiries from './Enquiries';
+import { useEnquiryAlerts } from './useEnquiryAlerts';
 import ReportsPanel from './ReportsPanel';
 import { REPORT_SECTIONS, reportSectionOf } from '../../lib/reportSections';
 import StaffAndRoles from './StaffAndRoles';
@@ -361,18 +363,39 @@ export default function OwnerDashboard() {
   // render, so calling them in sequence would have the second overwrite the
   // first and land on the register with no status chosen.
   const [, setSearchParams] = useSearchParams();
-  const showRegisterWithStatus = (status) => {
+  const showRegisterWithStatus = (status, range) => {
     setBillNowBookingId(null);
     setBillNowEventId(null);
     setSearchParams(
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'guests');
+        // 'today' opens the register on today alone instead of the month.
+        if (range) updated.set('range', range);
+        else updated.delete('range');
         // See showSection: a sub-tab belongs to the section that drew it, and
         // the register has none of its own to carry.
         updated.delete('tab');
         if (status) updated.set('status', status);
         else updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
+  // The bell's "View" on an enquiry alert: straight to the Enquiries section,
+  // written in one go with the section for the same reason as above.
+  const openEnquiries = () => {
+    setBillNowBookingId(null);
+    setBillNowEventId(null);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('section', 'enquiries');
+        updated.delete('tab');
+        updated.delete('view');
+        updated.delete('status');
         return updated;
       },
       { replace: true }
@@ -444,6 +467,7 @@ export default function OwnerDashboard() {
         updated.delete('status');
         updated.delete('billed');
         updated.delete('sort');
+        updated.delete('range');
         return updated;
       },
       { replace: true }
@@ -552,12 +576,14 @@ export default function OwnerDashboard() {
   // that's gone stale, not just the kitchen.
   const canManageOrders = permissions.includes('orders.manage') || permissions.includes('orders.take');
   const canViewReports = permissions.includes('reports.view');
+  const canManageEnquiries = permissions.includes('enquiries.manage');
 
   const checkoutAlerts = useCheckoutAlerts(session?.token, canManageBookings);
   const checkinAlerts = useCheckinAlerts(session?.token, canManageBookings);
   const workOrderAlerts = useWorkOrderAlerts(session?.token, canManageAssets);
   const coverageAlerts = useCoverageAlerts(session?.token, canManageAssets);
   const pendingOrderAlerts = usePendingOrderAlerts(session?.token, canManageOrders);
+  const { alerts: enquiryAlerts, refresh: refreshEnquiryAlerts } = useEnquiryAlerts(session?.token, canManageEnquiries);
   const reportsReminder = useReportsReminder(canViewReports);
 
   const housekeepingAlerts = housekeepingIssues.map((i) => ({
@@ -568,6 +594,7 @@ export default function OwnerDashboard() {
   }));
 
   const staffAlerts = [
+    ...enquiryAlerts.map((a) => ({ ...a, action: { label: 'View', onSelect: openEnquiries } })),
     ...checkinAlerts,
     ...checkoutAlerts,
     ...pendingOrderAlerts,
@@ -577,7 +604,7 @@ export default function OwnerDashboard() {
     ...reportsReminder,
   ];
   const canSeeStaffAlerts =
-    canManageBookings || canManageAssets || canManageOrders || canViewReports || canSeeHousekeeping;
+    canManageBookings || canManageAssets || canManageOrders || canViewReports || canSeeHousekeeping || canManageEnquiries;
 
   return (
     <div className="dash-shell">
@@ -984,6 +1011,8 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'customers' && <Customers />}
 
+              {activeFeature && activeFeature.key === 'enquiries' && <Enquiries onChanged={refreshEnquiryAlerts} />}
+
               {activeFeature && activeFeature.key.startsWith('report-') && (
                 <ReportsPanel
                   key={activeFeature.key}
@@ -1026,7 +1055,7 @@ export default function OwnerDashboard() {
 
               {activeFeature &&
                 !activeFeature.key.startsWith('report-') &&
-                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'staff', 'billNumbering', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
+                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'enquiries', 'staff', 'billNumbering', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

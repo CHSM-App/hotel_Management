@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { apiGet, ApiError, API_BASE } from '../../lib/api';
+import { apiGet, apiPost, ApiError, API_BASE } from '../../lib/api';
 import { formatPrice } from '../lodge/priceFormat';
 import './LodgePublicPage.css';
 
@@ -43,6 +43,7 @@ const CHECKIN_MODE_LABEL = {
   HOUR_24: '24-hour',
   NIGHT_BASED: 'Night-based',
   CYCLE: 'Fixed cycle',
+  HYBRID: 'Early arrival 24-hour, else fixed checkout',
 };
 
 // Where to send a guest who taps "Get directions": the pin when the property
@@ -155,13 +156,9 @@ function VenueCard({ lodge, venue, onOpenPhotos, onEnquireEvent }) {
 
 // Something sold per use rather than per night or per function — a private
 // pool slot, a round on the games table. No dates or booking behind it, so
-// the card is the same shape as a venue's but the enquiry is a single
-// pre-filled WhatsApp message rather than the full room/event form.
-function ServiceCard({ lodge, service, onOpenPhotos }) {
-  const message = `Hi! I'd like to know more about ${service.name} at ${lodge.name}.`;
-  const whatsappLink = buildWhatsAppLink(lodge.whatsappNumber, message);
-  const telLink = lodge.phone ? `tel:${lodge.phone}` : null;
-
+// the card is the same shape as a venue's but the enquiry is just name,
+// phone and a message rather than the full room/event form.
+function ServiceCard({ service, onOpenPhotos, onEnquire }) {
   return (
     <div className="lodge-public__room">
       <div className="lodge-public__room-cover">
@@ -174,7 +171,7 @@ function ServiceCard({ lodge, service, onOpenPhotos }) {
           >
             <img
               src={serviceImageUrl(service.image)}
-              alt={`${service.name} at ${lodge.name}`}
+              alt={service.name}
               className="lodge-public__room-img"
               loading="lazy"
               decoding="async"
@@ -197,17 +194,9 @@ function ServiceCard({ lodge, service, onOpenPhotos }) {
           </div>
         </div>
 
-        {whatsappLink ? (
-          <a className="site-btn site-btn--whatsapp" href={whatsappLink} target="_blank" rel="noopener noreferrer">
-            Enquire on WhatsApp
-          </a>
-        ) : telLink ? (
-          <a className="site-btn site-btn--whatsapp" href={telLink}>
-            Call {lodge.phone}
-          </a>
-        ) : (
-          <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the property'} to enquire.</p>
-        )}
+        <button type="button" className="site-btn site-btn--whatsapp" onClick={() => onEnquire(service.name)}>
+          Enquire about this
+        </button>
       </div>
     </div>
   );
@@ -468,9 +457,9 @@ function RoomTypeCard({ lodge, type, onOpenPhotos, onEnquireRoom }) {
 const EVENT_TYPES = ['Wedding', 'Reception', 'Birthday', 'Anniversary', 'Corporate event', 'Other'];
 
 // One modal for every "Enquire" entry point on the page, room and event alike.
-// It never talks to a server — the site has no enquiry storage — it only
-// gathers the details a WhatsApp message would otherwise miss and folds them
-// into the same pre-filled wa.me link the rest of the page already uses.
+// Submitting stores the enquiry on the server (it lands in the lodge's
+// dashboard inbox) and shows the guest a reference code. WhatsApp is only an
+// optional follow-up link on the success screen, never the transport.
 function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuAvailable, initial, onClose, onViewMenu }) {
   // `initial.kind` is 'room' | 'event' | null. Null means the lodge offers
   // both and the visitor hasn't said which one they want yet.
@@ -491,6 +480,11 @@ function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuA
   const [eventGuests, setEventGuests] = useState('');
   const [eventAddonIds, setEventAddonIds] = useState([]);
 
+  const [website, setWebsite] = useState(''); // honeypot — real guests never see it
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [referenceCode, setReferenceCode] = useState('');
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
@@ -505,6 +499,12 @@ function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuA
 
   const buildMessage = () => {
     const who = name.trim() ? `My name is ${name.trim()}. ` : '';
+    if (kind === 'service') {
+      const lines = [`Hi! I'd like to know more about ${initial.serviceName} at ${lodge.name}.`, who];
+      if (notes.trim()) lines.push(`Note: ${notes.trim()}`);
+      if (phone.trim()) lines.push(`My phone: ${phone.trim()}.`);
+      return lines.filter(Boolean).join('\n');
+    }
     if (kind === 'room') {
       const type = roomTypes.find((t) => String(t.id) === roomTypeId);
       const lines = [
@@ -540,20 +540,47 @@ function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuA
     return lines.filter(Boolean).join('\n');
   };
 
-  const whatsappLink = buildWhatsAppLink(lodge.whatsappNumber, buildMessage());
-  const telLink = lodge.phone ? `tel:${lodge.phone}` : null;
+  const message = buildMessage();
+  const whatsappLink = buildWhatsAppLink(
+    lodge.whatsappNumber,
+    referenceCode ? `${message}\nReference: ${referenceCode}` : message
+  );
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (whatsappLink) {
-      window.open(whatsappLink, '_blank', 'noopener,noreferrer');
-    } else if (telLink) {
-      window.location.href = telLink;
+    if (submitting) return;
+    setError('');
+    setSubmitting(true);
+    const isRoom = kind === 'room';
+    const isService = kind === 'service';
+    const type = isRoom ? roomTypes.find((t) => String(t.id) === roomTypeId) : null;
+    const venue = kind === 'event' ? venues.find((v) => String(v.id) === venueId) : null;
+    try {
+      const result = await apiPost(`/public/lodges/${lodge.slug}/enquiries`, {
+        kind: isService ? 'SERVICE' : isRoom ? 'ROOM' : 'EVENT',
+        name: name.trim(),
+        phone: phone.trim(),
+        checkInDate: isRoom ? checkInDate : null,
+        checkOutDate: isRoom ? checkOutDate : null,
+        eventDate: kind === 'event' && eventDate ? eventDate : null,
+        eventType: kind === 'event' ? eventType : null,
+        roomTypeId: type ? type.id : null,
+        venueId: venue ? venue.id : null,
+        guests: isService ? null : (isRoom ? guests : eventGuests) || null,
+        addonIds: isService ? [] : isRoom ? roomAddonIds : eventAddonIds,
+        summary: message,
+        notes: notes.trim() || null,
+        website,
+      });
+      setReferenceCode(result.referenceCode);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send your enquiry. Please try again or call the lodge.');
+    } finally {
+      setSubmitting(false);
     }
-    onClose();
   };
 
-  const title = kind === 'room' ? 'Room enquiry' : kind === 'event' ? 'Event enquiry' : 'What are you enquiring about?';
+  const title = kind === 'room' ? 'Room enquiry' : kind === 'event' ? 'Event enquiry' : kind === 'service' ? initial.serviceName : 'What are you enquiring about?';
 
   return (
     <div className="lodge-public__modal-overlay" onClick={onClose}>
@@ -565,7 +592,27 @@ function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuA
           </button>
         </div>
 
-        {!kind ? (
+        {referenceCode ? (
+          <div className="lodge-public__modal-success">
+            <p>
+              <strong>Thank you{name.trim() ? `, ${name.trim()}` : ''}!</strong> {lodge.name} has received your enquiry and will
+              contact you on {phone.trim()}.
+            </p>
+            <p>
+              Your reference: <strong>{referenceCode}</strong>
+            </p>
+            <div className="lodge-public__modal-actions">
+              {whatsappLink && (
+                <a className="site-btn site-btn--ghost" href={whatsappLink} target="_blank" rel="noopener noreferrer">
+                  Also message on WhatsApp
+                </a>
+              )}
+              <button type="button" className="site-btn site-btn--primary" onClick={onClose}>
+                Done
+              </button>
+            </div>
+          </div>
+        ) : !kind ? (
           <div className="lodge-public__modal-choice">
             <button type="button" className="lodge-public__modal-choice-btn" onClick={() => setKind('room')}>
               <span className="lodge-public__modal-choice-title">Room enquiry</span>
@@ -581,15 +628,15 @@ function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuA
             <div className="lodge-public__modal-row">
               <div className="lodge-public__date-field">
                 <label htmlFor="enqName">Your name</label>
-                <input id="enqName" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
+                <input id="enqName" type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
               </div>
               <div className="lodge-public__date-field">
                 <label htmlFor="enqPhone">Phone number</label>
-                <input id="enqPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile" />
+                <input id="enqPhone" type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile" />
               </div>
             </div>
 
-            {kind === 'room' ? (
+            {kind === 'service' ? null : kind === 'room' ? (
               <>
                 <div className="lodge-public__modal-row">
                   <div className="lodge-public__date-field">
@@ -751,12 +798,29 @@ function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuA
               />
             </div>
 
+            <input
+              type="text"
+              name="website"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
+            />
+
+            {error && (
+              <p className="lodge-public__modal-error" role="alert">
+                {error}
+              </p>
+            )}
+
             <div className="lodge-public__modal-actions">
               <button type="button" className="site-btn site-btn--ghost lodge-public__modal-back" onClick={() => (initial.kind ? onClose() : setKind(null))}>
                 {initial.kind ? 'Cancel' : 'Back'}
               </button>
-              <button type="submit" className="site-btn site-btn--whatsapp" disabled={!whatsappLink && !telLink}>
-                {whatsappLink ? 'Send on WhatsApp' : 'Call to enquire'}
+              <button type="submit" className="site-btn site-btn--primary" disabled={submitting}>
+                {submitting ? 'Sending…' : 'Send enquiry'}
               </button>
             </div>
           </form>
@@ -990,7 +1054,6 @@ export default function LodgePublicPage() {
     setAvailableOnly(false);
   };
   const generalWhatsappLink = buildWhatsAppLink(lodge.whatsappNumber, generalMessage);
-  const canEnquireAtAll = Boolean(lodge.whatsappNumber) || Boolean(lodge.phone);
   const menuAvailable = lodge.servesFood && menu.length > 0;
 
   // The navbar CTA only asks "room or event?" when the lodge actually offers
@@ -1013,6 +1076,7 @@ export default function LodgePublicPage() {
     });
   };
   const openEventEnquire = (venueId) => setEnquireModal({ kind: 'event', venueId });
+  const openServiceEnquire = (serviceName) => setEnquireModal({ kind: 'service', serviceName });
   const closeEnquireModal = () => setEnquireModal(null);
   const jumpToMenu = () => {
     closeEnquireModal();
@@ -1039,11 +1103,9 @@ export default function LodgePublicPage() {
               </a>
             ))}
           </div>
-          {canEnquireAtAll ? (
-            <button type="button" className="site-btn site-btn--accent site-nav__cta" onClick={openNavEnquire}>
-              Enquire
-            </button>
-          ) : null}
+          <button type="button" className="site-btn site-btn--accent site-nav__cta" onClick={openNavEnquire}>
+            Enquire
+          </button>
         </div>
       </nav>
 
@@ -1366,7 +1428,7 @@ export default function LodgePublicPage() {
           </div>
           <div className="lodge-public__room-grid">
             {otherServices.map((service) => (
-              <ServiceCard key={service.id} lodge={lodge} service={service} onOpenPhotos={openLightbox} />
+              <ServiceCard key={service.id} service={service} onOpenPhotos={openLightbox} onEnquire={openServiceEnquire} />
             ))}
           </div>
           </div>

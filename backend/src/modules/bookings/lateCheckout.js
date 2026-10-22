@@ -17,16 +17,60 @@ function round2(n) {
 // CYCLE is the same deadline — out by check_out_time on the departure date —
 // but prices an overstay differently: see cycleNights below.
 //
+// HYBRID is both, split on when the guest arrived: before check_in_time (and
+// not earlier than early_arrival_from) they get HOUR_24's full 24 hours, so a
+// 10am arrival is out at 10am the next day; arriving at or after check_in_time
+// they get NIGHT_BASED's fixed checkout time. Late fees follow the property's
+// percentage bands, which charge nothing when the percentages are set to 0.
+//
 // HOUR_24 sells 24 hours per night from the moment of arrival, so a guest who
 // checked in at 8pm for two nights is due out at 8pm two days later. It falls
 // back to the night-based deadline when there is no arrival timestamp — a
 // booking that was never formally checked in has no clock to count from.
-function checkoutDeadline({ checkinMode, checkOutTime, checkInDate, checkOutDate, actualCheckInAt }) {
+function checkoutDeadline({
+  checkinMode,
+  checkOutTime,
+  checkInTime,
+  earlyArrivalFrom,
+  checkInDate,
+  checkOutDate,
+  actualCheckInAt,
+}) {
   if (checkinMode === 'HOUR_24' && actualCheckInAt) {
     const nights = nightsBetween(checkInDate, checkOutDate);
     return new Date(new Date(actualCheckInAt).getTime() + nights * 24 * 60 * 60 * 1000);
   }
+  if (checkinMode === 'HYBRID' && isEarlyArrival({ actualCheckInAt, checkInTime, earlyArrivalFrom })) {
+    const nights = nightsBetween(checkInDate, checkOutDate);
+    return new Date(new Date(actualCheckInAt).getTime() + nights * 24 * 60 * 60 * 1000);
+  }
   return atLocalTime(checkOutDate, checkOutTime);
+}
+
+// HYBRID's early-arrival test: the guest walked in at or after the earliest
+// time the property honours (earlyArrivalFrom, null = any time of day) and
+// before the standard check-in time. Such a guest gets a full 24 hours from
+// arrival; anyone else — on or after the check-in time, or before the earliest
+// time, where they are really still in the previous night — goes by the fixed
+// checkout time. Wall-clock comparison at the property, same as everywhere here.
+function isEarlyArrival({ actualCheckInAt, checkInTime, earlyArrivalFrom }) {
+  if (!actualCheckInAt || !checkInTime) return false;
+  const arrived = new Date(actualCheckInAt);
+  if (Number.isNaN(arrived.getTime())) return false;
+
+  const arrivedMinutes = minutesIntoLodgeDay(arrived);
+  const from = earlyArrivalFrom ? clockToMinutes(earlyArrivalFrom) : 0;
+  return arrivedMinutes >= from && arrivedMinutes < clockToMinutes(checkInTime);
+}
+
+// The HYBRID night count, boundary by boundary like cycleNights, but the first
+// boundary is 24 hours after arrival for an early arrival and the next checkout
+// time otherwise. Every later boundary is a further day on.
+function hybridNights({ checkOutTime, checkInTime, earlyArrivalFrom, actualCheckInAt, at, graceMinutes = 0 }) {
+  if (!isEarlyArrival({ actualCheckInAt, checkInTime, earlyArrivalFrom })) {
+    return cycleNights({ checkOutTime, actualCheckInAt, at, graceMinutes });
+  }
+  return hourlyNights({ actualCheckInAt, at, graceMinutes });
 }
 
 // The CYCLE rule: a stay costs one night for every checkout-time boundary it
@@ -119,6 +163,16 @@ function isoDateInLodgeZone(instant) {
   return shifted.toISOString().slice(0, 10);
 }
 
+function clockToMinutes(clock) {
+  const [hh, mm] = String(clock).split(':').map(Number);
+  return (hh || 0) * 60 + (mm || 0);
+}
+
+function minutesIntoLodgeDay(instant) {
+  const shifted = new Date(instant.getTime() + LODGE_UTC_OFFSET_MINUTES * 60000);
+  return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+}
+
 function addDays(date, days) {
   return new Date(date.getTime() + days * 86400000);
 }
@@ -165,8 +219,10 @@ function lateLabel(minutesLate) {
 
 module.exports = {
   checkoutDeadline,
+  isEarlyArrival,
   cycleNights,
   hourlyNights,
+  hybridNights,
   suggestCycleCharge,
   atLocalTime,
   isoDateInLodgeZone,

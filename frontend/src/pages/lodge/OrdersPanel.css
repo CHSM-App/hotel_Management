@@ -3051,3 +3051,212 @@ label.order-card__item { padding: 3px 6px; }
   background: #fbeceb;
   text-decoration: line-through;
 }
+
+/* Kitchen queue table: no horizontal scroll. Every column keeps its content on
+   one line (headers, names, times, buttons) and stays only as wide as it needs;
+   the Dishes column takes the slack and is the one that wraps, its chips flowing
+   onto more lines. Buttons stack vertically in the action cell instead of
+   squeezing sideways. */
+.history-sheet--queue .history-table-wrap {
+  overflow-x: hidden;
+}
+
+.history-sheet--queue .history-table {
+  min-width: 0;
+  width: 100%;
+  table-layout: auto;
+}
+
+.history-sheet--queue .history-table th,
+.history-sheet--queue .history-table td {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.history-sheet--queue .history-table th:nth-child(1) {
+  width: auto;
+}
+
+.history-sheet--queue .history-table td.history-table__items,
+.history-sheet--queue .history-table__items {
+  min-width: 200px;
+  white-space: normal;
+}
+
+.history-sheet--queue .history-table__items {
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+}
+
+/* Customer: a name and a phone can run long — let that one cell wrap, at word
+   boundaries. */
+.history-sheet--queue .history-table td:nth-child(4) {
+  white-space: normal;
+  min-width: 90px;
+  max-width: 130px;
+  overflow-wrap: break-word;
+}
+
+.history-sheet--queue .history-table td:nth-child(6) {
+  white-space: nowrap;
+}
+
+/* Action buttons: whole words, stacked. */
+.history-sheet--queue .history-table td:last-child {
+  white-space: nowrap;
+}
+
+.history-sheet--queue .history-table td:last-child .history-table__btn,
+.history-sheet--queue .history-table__btn {
+  display: block;
+  width: 100%;
+  margin: 0 0 4px;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+  text-align: center;
+}
+
+.history-sheet--queue .history-table td:last-child .history-table__btn:last-child {
+  margin-bottom: 0;
+}
+
+/* Cancel (and any lone action) no longer stretches across the whole cell: buttons
+   size to their label, sit on one right-aligned line, and a lone Cancel is a
+   compact danger-outline pill that fills red on hover. */
+.history-sheet--queue .history-table td:last-child .history-table__btn,
+.history-sheet--queue .history-table__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: 30px;
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 8px;
+}
+
+.history-sheet--queue .history-table__actions-inner {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.history-sheet--queue .history-table__btn--danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--surface));
+  background: var(--surface);
+  color: var(--danger);
+}
+
+.history-sheet--queue .history-table__btn--danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+/* Restaurant order history: no horizontal scroll. No minimum width; columns size
+   to their content, the dishes cell (the one with chips) takes the slack and its
+   chips wrap, the date can break between date and time, and the action buttons
+   stay whole labels on a single line. */
+.history-sheet--orders .history-table-wrap {
+  overflow-x: hidden;
+}
+
+.history-sheet--orders .history-table {
+  min-width: 0;
+  width: 100%;
+  table-layout: auto;
+}
+
+.history-sheet--orders .history-table th,
+.history-sheet--orders .history-table td {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.history-sheet--orders .history-table th {
+  white-space: nowrap;
+}
+
+.history-sheet--orders .history-table td {
+  white-space: normal;
+}
+
+.history-sheet--orders .history-table td.history-table__actions,
+.history-sheet--orders .history-table td.history-table__num,
+.history-sheet--orders .history-table td:nth-child(1) {
+  white-space: nowrap;
+}
+
+.history-sheet--orders .history-table__actions-inner {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.history-sheet--orders .history-table__btn {
+  white-space: nowrap;
+}
+
+.history-sheet--orders .history-table__items {
+  min-width: 0;
+}
+
+/* Order history scrolls with the page, one long list like the guest register —
+   no scroll box of its own — and the header row stays pinned under the top bar
+   while the rows pass beneath it. */
+.history-sheet--orders .history-table-wrap {
+  max-height: none;
+  overflow: visible;
+}
+
+.history-sheet--orders .history-table th {
+  position: sticky;
+  top: var(--dash-topbar-h, 0);
+  z-index: 2;
+}
+
+.history-sheet--orders .history-table thead th:first-child {
+  border-top-left-radius: var(--radius-tile);
+}
+
+.history-sheet--orders .history-table thead th:last-child {
+  border-top-right-radius: var(--radius-tile);
+}
+
+.history-sheet--orders .history-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-tile);
+}
+
+.history-sheet--orders .history-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-tile);
+}
+
+/* The header was pinned a top-bar's height down inside a scroll area that already
+   starts below the bar, leaving a strip above it where rows showed through.
+   Pinned to the very top of the scroll area instead, with a solid backing. */
+.history-sheet--orders .history-table th {
+  top: 0;
+  background: #f1eefc;
+}
+
+/* .history-sheet clips its contents (overflow: hidden), and a clipping ancestor
+   stops position: sticky from ever engaging — which is why the title row scrolled
+   away with the rows. Left unclipped here; the corners are rounded on the cells
+   instead. */
+.history-sheet--orders {
+  overflow: visible;
+}
+
+/* Pinned just below the top bar. The bar is part of the page flow here (the page
+   itself scrolls), so the header sticks at the bar's height, not at 0. */
+.history-sheet--orders .history-table th {
+  top: var(--dash-topbar-h, 64px);
+}
+
+/* `overflow: clip` rounds the card's corners like `hidden` did, but unlike
+   `hidden` it doesn't turn the card into a scroll container, so the sticky title
+   row keeps working and no square white corners poke out. */
+.history-sheet--orders {
+  overflow: clip;
+  border-radius: var(--radius-tile);
+}

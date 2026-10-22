@@ -505,6 +505,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
             <div>
               <h3 id="event-detail-title">
                 {event.title}
+                {event.eventNumber && <span className="events-modal__sub"> · {event.eventNumber}</span>}
                 <span className="events-modal__badges">
                   <span className="badge badge--accent">{EVENT_TYPE_LABEL[event.eventType] || event.eventType}</span>
                   <span className={statusBadgeClass(status)}>{EVENT_STATUS_LABEL[status] || status}</span>

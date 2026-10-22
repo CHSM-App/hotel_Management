@@ -28,7 +28,6 @@ import {
   isClosedStatus,
   isWeekend,
   monthRuns,
-  phaseTagClass,
   statusBadgeClass,
   toDateKey,
 } from './eventFormat';
@@ -41,6 +40,7 @@ import './GuestRegister.css';
 import './InventoryPanel.css';
 import './MenuPanel.css';
 import './RoomsPanel.css';
+import './Bookings.css';
 import './Events.css';
 
 const TABS = [
@@ -64,7 +64,7 @@ const MAX_WINDOW_DAYS = 180;
 // How close to an edge counts as "at the edge" — a little over three columns.
 const GROW_WITHIN_PX = 90;
 // The order the legend reads in — the walk a booking takes.
-const DIARY_STATUSES = ['CONFIRMED', 'SETTLED', 'DRAFT', 'CANCELLED'];
+const DIARY_STATUSES = ['CONFIRMED', 'SETTLED', 'DRAFT'];
 // The housekeeping statuses that mean a venue is not ready, as on the room chart.
 const NOT_READY = {
   DIRTY: 'Needs cleaning',
@@ -72,7 +72,7 @@ const NOT_READY = {
   OUT_OF_ORDER: 'Under repair',
 };
 
-function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, refreshKey }) {
+function Diary({ venues, onOpen, onNew, onShowList, refreshKey }) {
   const token = getSession()?.token;
   const today = toDateKey(new Date());
   const [windowStart, setWindowStart] = useState(() => addDays(today, -WINDOW_PAST_DAYS));
@@ -80,6 +80,19 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
   const [events, setEvents] = useState([]);
   const [error, setError] = useState('');
   const [hover, setHover] = useState(null);
+  // Functions still in DRAFT, whatever the dates on screen — like the room chart's
+  // Drafts chip, so a desk sees at a glance that something is parked.
+  // Search, the way the room chart does it: matches are ringed on the chart and
+  // the arrows (or Enter / Shift+Enter) walk through them.
+  const [search, setSearch] = useState('');
+  const [hitIndex, setHitIndex] = useState(0);
+  const [drafts, setDrafts] = useState([]);
+  const [showDrafts, setShowDrafts] = useState(false);
+  useEffect(() => {
+    apiGet('/events?status=DRAFT', { token })
+      .then((data) => setDrafts((data.events || []).filter((e) => e.status === 'DRAFT')))
+      .catch(() => setDrafts([]));
+  }, [token, refreshKey]);
   // Venues housekeeping says are not ready right now, by venue id. null until
   // the board answers, and for good where Housekeeping is off and the request
   // is refused.
@@ -133,7 +146,8 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
     const map = new Map();
     const sorted = [...events].sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
     for (const ev of sorted) {
-      if (!showClosed && isClosedStatus(ev.status)) continue;
+      // Cancelled functions never appear on the diary.
+      if (isClosedStatus(ev.status)) continue;
       const days = eventDayKeys(ev.startAt, ev.endAt);
       if (!map.has(ev.venueId)) map.set(ev.venueId, new Map());
       const byDay = map.get(ev.venueId);
@@ -143,7 +157,48 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
       });
     }
     return map;
-  }, [events, showClosed]);
+  }, [events]);
+
+  const hits = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return [];
+    const squashed = needle.replace(/[^a-z0-9]/g, '');
+    return [...events]
+      .filter((ev) => !isClosedStatus(ev.status))
+      .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))
+      .filter((ev) => {
+        const fields = [ev.title, ev.eventNumber, ev.organiserName, ev.organiserPhone, ev.organiserAltPhone, ev.venueName]
+          .filter(Boolean)
+          .map((f) => String(f).toLowerCase());
+        return (
+          fields.some((f) => f.includes(needle)) ||
+          (squashed.length > 0 && fields.some((f) => f.replace(/[^a-z0-9]/g, '').includes(squashed)))
+        );
+      })
+      .map((ev) => ({ ev, date: eventDayKeys(ev.startAt, ev.endAt)[0] }));
+  }, [events, search]);
+  const hitIds = useMemo(() => new Set(hits.map((h) => h.ev.id)), [hits]);
+  const activeHit = hits.length > 0 ? hits[Math.min(hitIndex, hits.length - 1)] : null;
+  useEffect(() => {
+    if (!activeHit) return undefined;
+    const frame = requestAnimationFrame(() => {
+      document.querySelector('.events-tape__seg--hit-current')?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeHit]);
+  const stepHit = (n) => {
+    if (hits.length === 0) return;
+    setHover(null);
+    setHitIndex((i) => (Math.min(i, hits.length - 1) + n + hits.length) % hits.length);
+  };
+  const onSearchChange = (text) => {
+    setSearch(text);
+    setHitIndex(0);
+  };
+  const clearSearch = () => {
+    setSearch('');
+    setHitIndex(0);
+  };
 
   // Today's functions, asked for on their own: the chart's window can be
   // stepped months away, and "what is on now" still has to be answered. Asked
@@ -314,6 +369,13 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
           if (first) classes.push('events-tape__seg--start');
           if (last) classes.push('events-tape__seg--end');
           if (hover?.ev?.id === ev.id) classes.push('events-tape__seg--active');
+          if (hitIds.has(ev.id)) {
+            classes.push('events-tape__seg--hit');
+            if (activeHit?.ev.id === ev.id) {
+              classes.push('events-tape__seg--hit-active');
+              if (activeHit.date === d) classes.push('events-tape__seg--hit-current');
+            }
+          }
           if (awaitingClean.has(ev.id)) classes.push('events-tape__seg--notready');
           // In time, as well as in money. The colour stays the status at full
           // strength; the function in the hall now carries a dot on today's.
@@ -358,14 +420,137 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
             Today
           </button>
         </div>
-        <label className="events__toggle">
-          <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
-          Show cancelled
-        </label>
-        <button type="button" className="btn-accent" onClick={() => onNew(null, null)}>
-          + New event
-        </button>
+        <div className={`tape-search${hits.length > 0 ? ' tape-search--found' : ''}`}>
+          <div className="tape-search__box">
+            <svg className="tape-search__icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              type="search"
+              className="tape-search__input"
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  clearSearch();
+                  return;
+                }
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                stepHit(e.shiftKey ? -1 : 1);
+              }}
+              placeholder="Search function, event no, organiser or phone"
+              aria-label="Search the diary for a function, event number, organiser or phone"
+            />
+            {search !== '' && (
+              <button type="button" className="tape-search__clear" onClick={clearSearch} aria-label="Clear search">
+                &times;
+              </button>
+            )}
+          </div>
+
+          {search.trim() !== '' && (
+            <div className="tape-search__result" role="status" aria-live="polite">
+              {hits.length === 0 ? (
+                <span className="tape-search__empty">No function matching &ldquo;{search.trim()}&rdquo;</span>
+              ) : (
+                <>
+                  <span className="tape-search__count">
+                    <strong>{Math.min(hitIndex, hits.length - 1) + 1}</strong>
+                    <span className="tape-search__count-sep">/</span>
+                    {hits.length}
+                  </span>
+                  <span className="tape-search__who">
+                    <strong>{activeHit?.ev.title}</strong>
+                    {activeHit && (
+                      <>
+                        <span className="tape-search__where">
+                          {activeHit.ev.venueName} · {formatEventDate(`${activeHit.date}T00:00:00`)}
+                        </span>
+                        {activeHit.ev.organiserName && <span className="tape-search__where">{activeHit.ev.organiserName}</span>}
+                      </>
+                    )}
+                  </span>
+                  <div className="tape-search__stepper">
+                    <button type="button" className="tape-search__arrow" onClick={() => stepHit(-1)} disabled={hits.length < 2} aria-label="Previous match" title="Previous match (Shift+Enter)">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                    </button>
+                    <button type="button" className="tape-search__arrow" onClick={() => stepHit(1)} disabled={hits.length < 2} aria-label="Next match" title="Next match (Enter)">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="events__toolbar-actions bookings-panel__toolbar-actions">
+          <button
+            type="button"
+            className={`bookings-panel__draft-chip${drafts.length === 0 ? ' bookings-panel__draft-chip--empty' : ''}`}
+            onClick={() => setShowDrafts(true)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+              <path d="M14 3v5h5" />
+            </svg>
+            {drafts.length === 0 ? 'No Drafts' : `${drafts.length} Draft${drafts.length === 1 ? '' : 's'}`}
+          </button>
+          <button type="button" className="btn-accent" onClick={() => onNew(null, null)}>
+            + New event
+          </button>
+        </div>
       </div>
+
+      {showDrafts && (
+        <div className="glass-backdrop bookings-panel__backdrop" onClick={() => setShowDrafts(false)}>
+          <div className="glass-panel bookings-panel__modal" onClick={(e) => e.stopPropagation()}>
+            <div className="bookings-panel__detail-header">
+              <h3>Draft functions</h3>
+              <span className="badge badge--off">{drafts.length}</span>
+            </div>
+            <p className="bookings-panel__hint">
+              Started but not confirmed. A draft is held on the diary until it is confirmed or cancelled.
+            </p>
+            {drafts.length === 0 && (
+              <div className="dash-state">Nothing parked right now. Save a function as a draft and it is listed here.</div>
+            )}
+            <div className="detail-people">
+              {drafts.map((d) => (
+                <div className="detail-person" key={d.id}>
+                  <span className="detail-person__name">
+                    {d.title || 'Untitled function'}
+                    {d.organiserName && <span className="detail-person__role">{d.organiserName}</span>}
+                  </span>
+                  <span className="detail-person__meta">
+                    {d.venueName}
+                    {d.startAt ? ` · ${formatEventTime(d.startAt)}` : ''}
+                    {d.startAt ? ` · ${new Date(d.startAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                  </span>
+                  <span className="detail-person__meta">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        setShowDrafts(false);
+                        onOpen(d.id);
+                      }}
+                    >
+                      Open
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="bookings-panel__actions">
+              <button type="button" className="btn-secondary" onClick={() => setShowDrafts(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* What is on now and what is next today, in words, so nobody has to
           read it off the chart. Nothing on a day with no functions left. */}
@@ -422,7 +607,6 @@ function Diary({ venues, showClosed, setShowClosed, onOpen, onNew, onShowList, r
           <i className="tape-legend__swatch events-legend__mark events-legend__mark--live" />
           In progress
         </span>
-        <span className="tape-legend__hint">Click a colour to list those functions · hover a tile to see the function · click to open · click a vacant day to start a new event</span>
       </div>
 
       {error && <div className="form-banner form-banner--error">{error}</div>}
@@ -675,6 +859,7 @@ function EventList({ venues, onOpen, refreshKey }) {
         (!status || e.status === status) &&
         (!needle ||
         e.title?.toLowerCase().includes(needle) ||
+        e.eventNumber?.toLowerCase().includes(needle) ||
         e.organiserName?.toLowerCase().includes(needle) ||
         e.organiserPhone?.includes(needle))
     );
@@ -726,7 +911,7 @@ function EventList({ venues, onOpen, refreshKey }) {
 
   return (
     <div className="events">
-      <div className="dash-card guest-register__toolbar">
+      <div className="dash-card guest-register__toolbar events-filter">
         <div className="guest-register__toolbar-top">
           <div className="guest-register__range">
             <div className="field guest-register__range-field">
@@ -772,7 +957,7 @@ function EventList({ venues, onOpen, refreshKey }) {
                 id="evSearch"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Type a title, organiser name or phone"
+                placeholder="Type a title, event ID, organiser name or phone"
               />
               {search && (
                 <button type="button" className="guest-register__search-clear" onClick={() => setSearch('')} aria-label="Clear search">
@@ -949,7 +1134,10 @@ function EventList({ venues, onOpen, refreshKey }) {
                     </td>
                     <td>
                       <span className="dash-lodge-name">{ev.title}</span>
-                      <span className="events-list__sub">{EVENT_TYPE_LABEL[ev.eventType] || ev.eventType}</span>
+                      <span className="events-list__sub">
+                        {EVENT_TYPE_LABEL[ev.eventType] || ev.eventType}
+                        {ev.eventNumber ? ` · ${ev.eventNumber}` : ''}
+                      </span>
                     </td>
                     <td className="events-sheet__venue">{ev.venueName}</td>
                     <td>
@@ -968,21 +1156,10 @@ function EventList({ venues, onOpen, refreshKey }) {
                     </td>
                     <td>
                       <span className={statusBadgeClass(ev.status)}>{EVENT_STATUS_LABEL[ev.status] || ev.status}</span>
-                      {eventPhase(ev) && <span className={phaseTagClass(eventPhase(ev))}>{eventPhaseLabel(ev)}</span>}
                     </td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={4}>{shown.length} function{shown.length === 1 ? '' : 's'}</td>
-                  <td className="events-list__num">{shown.reduce((n, e) => n + Number(e.finalPax ?? e.expectedPax ?? 0), 0)}</td>
-                  <td className="events-list__num">{formatPrice(shown.reduce((n, e) => n + Number(e.totalAmount || 0), 0))}</td>
-                  <td className="events-list__num">{formatPrice(shown.reduce((n, e) => n + Number(e.advanceAmount || 0), 0))}</td>
-                  <td className="events-list__num">{formatPrice(shown.reduce((n, e) => n + Number(e.balanceDue || 0), 0))}</td>
-                  <td />
-                </tr>
-              </tfoot>
             </table>
           </div>
         )}
@@ -1586,7 +1763,6 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, only = null,
   const tab = only ?? urlTab;
   const [venues, setVenues] = useState([]);
   const [addons, setAddons] = useState([]);
-  const [showClosed, setShowClosed] = useState(false);
   // Which event is open, and whether the form is up (with a prefilled date).
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(null);
@@ -1669,8 +1845,6 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, only = null,
       {tab === 'diary' && (
         <Diary
           venues={venues}
-          showClosed={showClosed}
-          setShowClosed={setShowClosed}
           onOpen={setOpenId}
           onNew={(date, venueId) => setCreating({ date, venueId })}
           onShowList={showListWithStatus}

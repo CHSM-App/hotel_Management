@@ -20,6 +20,7 @@ function mapPolicy(row) {
     checkinMode: row.checkin_mode,
     checkInTime: toClockTime(row.check_in_time),
     checkOutTime: toClockTime(row.check_out_time),
+    earlyArrivalFrom: row.early_arrival_from == null ? null : toClockTime(row.early_arrival_from),
     lateGraceMinutes: row.late_grace_minutes,
     lateHalfDayPercent: Number(row.late_half_day_percent),
     lateFullDayAfterMinutes: row.late_full_day_after_minutes,
@@ -33,7 +34,7 @@ async function getCheckoutPolicy(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT checkin_mode, check_out_time, check_in_time, late_grace_minutes,
+      SELECT checkin_mode, check_out_time, check_in_time, early_arrival_from, late_grace_minutes,
              late_half_day_percent, late_full_day_after_minutes, late_full_day_percent
       FROM dbo.lodges WHERE id = @lodgeId
     `);
@@ -55,6 +56,9 @@ async function updateCheckoutPolicy(lodgeId, input) {
     // Optional so a policy screen that predates the field keeps saving; NULL
     // leaves the stored value alone.
     .input('checkInTime', sql.NVarChar, input.checkInTime ? `${input.checkInTime}:00` : null)
+    // Unlike checkInTime, null here is a real answer — "any time of day" — so
+    // it is written as given rather than left alone.
+    .input('earlyArrivalFrom', sql.NVarChar, input.earlyArrivalFrom ? `${input.earlyArrivalFrom}:00` : null)
     .input('lateGraceMinutes', sql.Int, input.lateGraceMinutes)
     .input('lateHalfDayPercent', sql.Decimal(5, 2), input.lateHalfDayPercent)
     .input('lateFullDayAfterMinutes', sql.Int, input.lateFullDayAfterMinutes)
@@ -63,11 +67,13 @@ async function updateCheckoutPolicy(lodgeId, input) {
       UPDATE dbo.lodges
       SET check_out_time = CAST(@checkOutTime AS TIME(0)),
           check_in_time = COALESCE(CAST(@checkInTime AS TIME(0)), check_in_time),
+          early_arrival_from = CAST(@earlyArrivalFrom AS TIME(0)),
           late_grace_minutes = @lateGraceMinutes,
           late_half_day_percent = @lateHalfDayPercent,
           late_full_day_after_minutes = @lateFullDayAfterMinutes,
           late_full_day_percent = @lateFullDayPercent
-      OUTPUT inserted.checkin_mode, inserted.check_out_time, inserted.check_in_time, inserted.late_grace_minutes,
+      OUTPUT inserted.checkin_mode, inserted.check_out_time, inserted.check_in_time, inserted.early_arrival_from,
+             inserted.late_grace_minutes,
              inserted.late_half_day_percent, inserted.late_full_day_after_minutes,
              inserted.late_full_day_percent
       WHERE id = @lodgeId

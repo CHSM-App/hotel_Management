@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiPost, ApiError } from '../../lib/api';
+import { suggestBookingCode, BOOKING_CODE_PATTERN } from '../../lib/bookingCode';
 import { getSession } from '../../lib/auth';
 import LocationPicker from '../../components/LocationPicker';
 import { validateCoordinates } from '../../lib/coordinates';
@@ -21,6 +22,7 @@ const CHECKIN_MODES = [
   { value: 'HOUR_24', label: '24-hour cycle (from check-in time)' },
   { value: 'NIGHT_BASED', label: 'Night-based (fixed checkout time)' },
   { value: 'CYCLE', label: 'Fixed cycle (check-in / checkout times, whole nights)' },
+  { value: 'HYBRID', label: 'Hybrid (early arrival gets 24 hours, later arrival fixed checkout)' },
 ];
 
 function slugify(name) {
@@ -34,6 +36,7 @@ function slugify(name) {
 const initialForm = {
   lodgeName: '',
   slug: '',
+  bookingCode: '',
   phone: '',
   whatsappNumber: '',
   city: '',
@@ -76,6 +79,7 @@ function capabilitiesFor(propertyType, foodServiceStyle) {
 export default function LodgeRegistration() {
   const [form, setForm] = useState(initialForm);
   const [slugTouched, setSlugTouched] = useState(false);
+  const [codeTouched, setCodeTouched] = useState(false);
   const [error, setError] = useState('');
   const [fieldError, setFieldError] = useState(null);
   const errorRef = useRef(null);
@@ -159,7 +163,12 @@ export default function LodgeRegistration() {
 
   const handleNameChange = (e) => {
     const lodgeName = e.target.value;
-    setForm((f) => ({ ...f, lodgeName, slug: slugTouched ? f.slug : slugify(lodgeName) }));
+    setForm((f) => ({
+      ...f,
+      lodgeName,
+      slug: slugTouched ? f.slug : slugify(lodgeName),
+      bookingCode: codeTouched ? f.bookingCode : suggestBookingCode(lodgeName),
+    }));
   };
 
   const generatePassword = () => {
@@ -177,6 +186,10 @@ export default function LodgeRegistration() {
     }
     if (!form.slug.trim()) {
       failOn('slug', 'Enter a public link slug.');
+      return;
+    }
+    if (!BOOKING_CODE_PATTERN.test(form.bookingCode.trim().toUpperCase())) {
+      failOn('bookingCode', 'Enter a booking code of 3 or 4 letters.');
       return;
     }
     if (form.isGstRegistered && !form.gstin.trim()) {
@@ -229,6 +242,7 @@ export default function LodgeRegistration() {
       setSuccess(true);
       setForm(initialForm);
       setSlugTouched(false);
+      setCodeTouched(false);
     } catch (err) {
       if (err instanceof ApiError && err.field && document.getElementById(err.field)) {
         failOn(err.field, err.message);
@@ -383,6 +397,28 @@ export default function LodgeRegistration() {
                   placeholder={type.examples.slug}
                 />
                 {fieldErr('slug')}
+              </div>
+
+              <div className="field">
+                <label htmlFor="bookingCode">
+                  Booking code<Req />
+                </label>
+                <input
+                  id="bookingCode"
+                  aria-invalid={invalid('bookingCode')}
+                  value={form.bookingCode}
+                  maxLength={4}
+                  onChange={(e) => {
+                    setCodeTouched(true);
+                    setForm((f) => ({ ...f, bookingCode: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') }));
+                  }}
+                  placeholder="SKR"
+                />
+                <p className="reg-card__hint">
+                  3 or 4 letters, unique to this {type.noun}. It starts every booking number, e.g.
+                  {form.bookingCode || 'SKR'}2610001. It can't be changed once the first booking is taken.
+                </p>
+                {fieldErr('bookingCode')}
               </div>
 
               <div className="field-row">

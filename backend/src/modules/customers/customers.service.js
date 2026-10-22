@@ -273,7 +273,7 @@ async function getCustomer(lodgeId, id) {
     .input('customerId', sql.BigInt, id)
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT b.id, b.check_in_date, b.check_out_date, b.status, b.total_price, r.room_number
+      SELECT b.id, b.booking_number, b.check_in_date, b.check_out_date, b.status, b.total_price, r.room_number
       FROM dbo.bookings b
       LEFT JOIN dbo.rooms r ON r.id = b.room_id
       WHERE b.customer_id = @customerId AND b.lodge_id = @lodgeId
@@ -285,7 +285,7 @@ async function getCustomer(lodgeId, id) {
     .input('customerId', sql.BigInt, id)
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT eb.id, eb.title, eb.event_type, eb.start_at, eb.end_at, eb.status, eb.total_amount, v.name AS venueName
+      SELECT eb.id, eb.event_number, eb.title, eb.event_type, eb.start_at, eb.end_at, eb.status, eb.total_amount, v.name AS venueName
       FROM dbo.event_bookings eb
       LEFT JOIN dbo.event_venues v ON v.id = eb.venue_id
       WHERE eb.customer_id = @customerId AND eb.lodge_id = @lodgeId
@@ -299,6 +299,7 @@ async function getCustomer(lodgeId, id) {
       date: s.check_in_date,
       endDate: s.check_out_date,
       label: s.room_number ? `Room ${s.room_number}` : 'Room stay',
+      bookingNumber: s.booking_number ?? null,
       status: s.status,
       amount: Number(s.total_price),
     })),
@@ -308,6 +309,7 @@ async function getCustomer(lodgeId, id) {
       date: e.start_at,
       endDate: e.end_at,
       label: e.venueName ? `${e.title} — ${e.venueName}` : e.title,
+      bookingNumber: e.event_number ?? null,
       status: e.status,
       amount: Number(e.total_amount),
     })),

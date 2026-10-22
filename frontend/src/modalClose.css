@@ -1,0 +1,106 @@
+/* One look for every modal's top-right close button: a filled circle with a
+   hairline border, turning danger-red on hover.
+
+   The app grew eight differently named close buttons, each styled in its own
+   panel's CSS (bare glyph, raised pill, flat square...). They are listed here
+   rather than renamed so each panel keeps its own markup. `button:is(...)`
+   out-ranks the single-class rules in those files regardless of which
+   stylesheet loads last, and the :hover/:active/:disabled rules below do the
+   same for their own state variants.
+
+   Deliberately not in the list: photo lightboxes (dark surface, their own
+   treatment) and the public page's modals (a separate design system). */
+button:is(
+    .modal-form__close,
+    .bill-close,
+    .inv-modal__close,
+    .menu-modal__close,
+    .booking-form__close,
+    .bookings-panel__close,
+    .events-modal__close,
+    .guest-register__record-close
+  ) {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  box-shadow: none;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+button:is(
+    .modal-form__close,
+    .bill-close,
+    .inv-modal__close,
+    .menu-modal__close,
+    .booking-form__close,
+    .bookings-panel__close,
+    .events-modal__close,
+    .guest-register__record-close
+  ):hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  box-shadow: none;
+}
+
+button:is(
+    .modal-form__close,
+    .bill-close,
+    .inv-modal__close,
+    .menu-modal__close,
+    .booking-form__close,
+    .bookings-panel__close,
+    .events-modal__close,
+    .guest-register__record-close
+  ):active:not(:disabled) {
+  box-shadow: none;
+  filter: brightness(0.92);
+}
+
+button:is(
+    .modal-form__close,
+    .bill-close,
+    .inv-modal__close,
+    .menu-modal__close,
+    .booking-form__close,
+    .bookings-panel__close,
+    .events-modal__close,
+    .guest-register__record-close
+  ):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+button:is(
+    .modal-form__close,
+    .bill-close,
+    .inv-modal__close,
+    .menu-modal__close,
+    .booking-form__close,
+    .bookings-panel__close,
+    .events-modal__close,
+    .guest-register__record-close
+  ):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Bookings' forms fill the screen on a phone and their × is the only way out —
+   keep the 40px touch target that panel already gave it. */
+@media (max-width: 640px) {
+  button:is(.booking-form__close, .bookings-panel__close) {
+    width: 40px;
+    height: 40px;
+  }
+}

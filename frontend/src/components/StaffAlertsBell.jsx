@@ -7,6 +7,15 @@ import './StaffAlertsBell.css';
 // it. Order here is also display order; a category with nothing to show
 // simply never appears.
 const CATEGORY_META = {
+  enquiry: {
+    label: 'Enquiries',
+    color: '#db2777',
+    icon: (
+      <>
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </>
+    ),
+  },
   checkin: {
     label: 'Arrivals today',
     color: '#2563eb',
@@ -66,7 +75,7 @@ const CATEGORY_META = {
     icon: <path d="M18 20V10M12 20V4M6 20v-6" />,
   },
 };
-const CATEGORY_ORDER = ['checkin', 'checkout', 'order', 'workOrder', 'coverage', 'housekeeping', 'reports'];
+const CATEGORY_ORDER = ['enquiry', 'checkin', 'checkout', 'order', 'workOrder', 'coverage', 'housekeeping', 'reports'];
 
 function CategoryIcon({ category, size = 15 }) {
   return (
@@ -91,6 +100,9 @@ function CategoryIcon({ category, size = 15 }) {
 // by its own hook upstream (see OwnerDashboard) gated on whatever permission
 // that category actually needs — a role only ever sees sections it can act
 // on, and the bell itself only renders at all once at least one applies.
+//
+// An alert may carry `action: { label, onSelect }` — a small button on its row
+// that takes staff to the screen where it is handled.
 export default function StaffAlertsBell({ alerts }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -178,6 +190,18 @@ export default function StaffAlertsBell({ alerts }) {
                           <CategoryIcon category={section.category} />
                         </span>
                         <span className="staff-bell__row-text">{a.message}</span>
+                        {a.action && (
+                          <button
+                            type="button"
+                            className="staff-bell__row-action"
+                            onClick={() => {
+                              a.action.onSelect();
+                              setOpen(false);
+                            }}
+                          >
+                            {a.action.label}
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

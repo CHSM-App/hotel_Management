@@ -202,11 +202,19 @@ const checkoutPolicySchema = z
     checkOutTime: z
       .string()
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Enter a checkout time as HH:MM, e.g. 11:00.'),
-    // Only meaningful on a CYCLE property; harmless elsewhere.
+    // Only meaningful on a CYCLE or HYBRID property; harmless elsewhere.
     checkInTime: z
       .string()
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Enter a check-in time as HH:MM, e.g. 11:00.')
       .optional(),
+    // HYBRID only: the earliest arrival that still gets 24 hours from arrival.
+    // Empty or null means any time before check-in counts.
+    earlyArrivalFrom: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Enter a time as HH:MM, e.g. 06:00.')
+      .nullable()
+      .optional()
+      .transform((v) => v || null),
     lateGraceMinutes: z.coerce
       .number()
       .int()

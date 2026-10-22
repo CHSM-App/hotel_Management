@@ -10,6 +10,7 @@ import { describeAdvance } from './paymentSplit';
 import BillDocument from './BillDocument';
 import IconButton from '../../components/IconButton';
 import { EyeIcon } from '../../components/ActionIcons';
+import Bookings from './Bookings';
 import StayViewModal from './StayViewModal';
 import '../internal/LodgesDashboard.css';
 import './forms.css';
@@ -234,11 +235,15 @@ function formatLateBy(minutes) {
   return mins === 0 ? `${hours} hours` : `${hours}h ${mins}m`;
 }
 
-export default function GuestRegister({ onOpenDraft }) {
+export default function GuestRegister({ onOpenDraft, onBillStay }) {
   const session = getSession();
   const token = session?.token;
 
-  const [fromDate, setFromDate] = useState(startOfMonthIso());
+  // The tape chart's Checked-in legend links here with range=today, so the
+  // register opens on today's stays instead of the month-to-date default.
+  const [initialParams] = useSearchParams();
+  const [opensOnToday] = useState(() => initialParams.get('range') === 'today');
+  const [fromDate, setFromDate] = useState(opensOnToday ? todayIso() : startOfMonthIso());
   const [toDate, setToDate] = useState(todayIso());
   const [search, setSearch] = useState('');
   // In the query string rather than component state, so the cut can be linked
@@ -429,6 +434,7 @@ export default function GuestRegister({ onOpenDraft }) {
   // load on. Only stretches — it never pulls 'To' earlier than today — and
   // only runs once, so it doesn't fight a range the desk has since chosen.
   useEffect(() => {
+    if (opensOnToday) return undefined;
     let active = true;
     apiGet('/bookings', { token })
       .then((data) => {
@@ -467,6 +473,7 @@ export default function GuestRegister({ onOpenDraft }) {
       b.guestName.toLowerCase().includes(query) ||
       (b.roomNumbers || b.roomNumber).toLowerCase().includes(query) ||
       (b.invoiceNumber || '').toLowerCase().includes(query) ||
+      (b.bookingNumber || '').toLowerCase().includes(query) ||
       (b.guestPhone || '').includes(query) ||
       // A party is booked under one name but the desk is as likely to be asked
       // for anyone travelling on it — the person at the counter is not always
@@ -665,6 +672,8 @@ export default function GuestRegister({ onOpenDraft }) {
   const [detailTab, setDetailTab] = useState('stay');
 
   const [fullBookingId, setFullBookingId] = useState(null);
+  // A step chosen in the stay card — runs in the booking screen's own modal.
+  const [stayAction, setStayAction] = useState(null);
 
   const openDetail = (bookingId) => {
     // The read-only Stay Details modal, the same one Billing opens from a
@@ -1212,6 +1221,7 @@ export default function GuestRegister({ onOpenDraft }) {
                           {b.guestPhone || 'No phone'}
                           {b.numGuests > 1 ? ` · ${b.numGuests} people` : ''}
                         </div>
+                        {b.bookingNumber && <div className="guest-register__cell-sub">{b.bookingNumber}</div>}
                         {matchedCoGuest && !b.guestName.toLowerCase().includes(query) && (
                           <div className="guest-register__cell-match">
                             with {matchedCoGuest}
@@ -1361,7 +1371,27 @@ export default function GuestRegister({ onOpenDraft }) {
         </div>
       )}
 
-      {fullBookingId && <StayViewModal bookingId={fullBookingId} onClose={() => setFullBookingId(null)} />}
+      {fullBookingId && !stayAction && (
+        <StayViewModal
+          bookingId={fullBookingId}
+          onClose={() => setFullBookingId(null)}
+          onAction={(action) => setStayAction(action)}
+        />
+      )}
+
+      {fullBookingId && stayAction && (
+        <Bookings
+          modalOnly
+          openBookingId={fullBookingId}
+          initialAction={stayAction}
+          onBillStay={onBillStay}
+          onModalClose={() => {
+            setStayAction(null);
+            setFullBookingId(null);
+            load();
+          }}
+        />
+      )}
 
       {detailBookingId && (
         <div className="glass-backdrop guest-register__backdrop" onClick={closeDetail} role="presentation">
@@ -1476,6 +1506,7 @@ export default function GuestRegister({ onOpenDraft }) {
                 {head && (
                   <p className="guest-register__record-sub">
                     Room {head.roomNumbers || head.roomNumber} · {head.categoryName}
+                    {detailRow?.bookingNumber ? ` · ${detailRow.bookingNumber}` : ''}
                     {detailRow?.invoiceNumber ? ` · Bill ${detailRow.invoiceNumber}` : ''}
                   </p>
                 )}

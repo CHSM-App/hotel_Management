@@ -293,3 +293,11 @@
   border-color: #e0a63f;
   color: #a16a12;
 }
+
+/* A stay's booking number under its room, quiet like the secondary lines
+   elsewhere in the history table. */
+.cust-history-table__sub {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}

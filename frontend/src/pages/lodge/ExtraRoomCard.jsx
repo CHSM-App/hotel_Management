@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
 import { formatPrice } from './priceFormat';
-import { selectionOf, toggleSelection, withQuantity } from './chargeSelections';
+import { isHiddenExtra, selectionOf, toggleSelection, withQuantity } from './chargeSelections';
 import PageLoader from '../../components/PageLoader';
 import QtyStepper from '../../components/QtyStepper';
 
@@ -280,12 +280,13 @@ export default function ExtraRoomCard({
           <div className="checkbox-grid checkbox-grid--fit">
             {selected.switchableCharges.map((charge) => {
               const selection = selectionOf(room.switchableCharges, charge.id);
+              if (isHiddenExtra(room.switchableCharges, charge)) return null;
               return (
                 <label className="checkbox-chip" key={charge.id}>
                   <input
                     type="checkbox"
                     checked={Boolean(selection)}
-                    onChange={() => onChange({ switchableCharges: toggleSelection(room.switchableCharges, charge.id) })}
+                    onChange={() => onChange({ switchableCharges: toggleSelection(room.switchableCharges, charge.id, selected.switchableCharges) })}
                   />
                   {charge.name} ({formatPrice(charge.chargePerNight)}/night)
                   {selection && charge.isCounter && (

@@ -116,7 +116,7 @@ function SeriesCard({ series, data, token, onSaved }) {
 
       <button
         type="button"
-        className="btn btn--primary"
+        className="btn-accent numbering__save"
         disabled={saving || !isWhole || tooLow || unchanged}
         onClick={handleSave}
       >

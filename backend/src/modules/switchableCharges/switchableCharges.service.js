@@ -8,7 +8,7 @@ async function listSwitchableCharges(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, charge_per_night, is_active, is_counter, created_at
+      SELECT id, name, charge_per_night, is_active, is_counter, hidden_when_charge_id, created_at
       FROM dbo.switchable_charges
       WHERE lodge_id = @lodgeId
       ORDER BY name ASC
@@ -18,6 +18,8 @@ async function listSwitchableCharges(lodgeId) {
     id: row.id,
     name: row.name,
     chargePerNight: Number(row.charge_per_night),
+    // Hidden from booking while this other extra is ticked.
+    hiddenWhenChargeId: row.hidden_when_charge_id == null ? null : Number(row.hidden_when_charge_id),
     isActive: !!row.is_active,
     // Charged per unit: booking screens put a count box beside the extra. Set
     // by the "Charge per unit" tick on the rates screen.
@@ -26,8 +28,26 @@ async function listSwitchableCharges(lodgeId) {
   }));
 }
 
+// The extra a "hide when" rule points at must be one of this lodge's own, and
+// not the extra itself.
+async function assertHiddenWhenTarget(pool, lodgeId, chargeId, targetId) {
+  if (!targetId) return;
+  if (chargeId != null && Number(targetId) === Number(chargeId)) {
+    throw new ApiError('An extra can’t be hidden by itself.', 400, 'hiddenWhenChargeId');
+  }
+  const found = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('targetId', sql.BigInt, targetId)
+    .query('SELECT id FROM dbo.switchable_charges WHERE id = @targetId AND lodge_id = @lodgeId');
+  if (found.recordset.length === 0) {
+    throw new ApiError('Choose one of your own extras.', 400, 'hiddenWhenChargeId');
+  }
+}
+
 async function createSwitchableCharge(lodgeId, input) {
   const pool = await getPool();
+  await assertHiddenWhenTarget(pool, lodgeId, null, input.hiddenWhenChargeId);
 
   const existing = await pool
     .request()
@@ -45,10 +65,11 @@ async function createSwitchableCharge(lodgeId, input) {
     .input('name', sql.NVarChar, input.name)
     .input('chargePerNight', sql.Decimal(10, 2), input.chargePerNight)
     .input('isCounter', sql.Bit, input.isCounter ? 1 : 0)
+    .input('hiddenWhen', sql.BigInt, input.hiddenWhenChargeId || null)
     .query(`
-      INSERT INTO dbo.switchable_charges (lodge_id, name, charge_per_night, is_counter)
+      INSERT INTO dbo.switchable_charges (lodge_id, name, charge_per_night, is_counter, hidden_when_charge_id)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @name, @chargePerNight, @isCounter)
+      VALUES (@lodgeId, @name, @chargePerNight, @isCounter, @hiddenWhen)
     `);
 
   return { id: result.recordset[0].id };
@@ -65,6 +86,7 @@ async function updateSwitchableCharge(lodgeId, chargeId, input) {
   if (existing.recordset.length === 0) {
     throw new ApiError('Charge not found.', 404);
   }
+  await assertHiddenWhenTarget(pool, lodgeId, chargeId, input.hiddenWhenChargeId);
 
   const nameConflict = await pool
     .request()
@@ -83,9 +105,14 @@ async function updateSwitchableCharge(lodgeId, chargeId, input) {
     .input('chargePerNight', sql.Decimal(10, 2), input.chargePerNight)
     // Null when the caller did not say: the extra keeps how it is charged.
     .input('isCounter', sql.Bit, input.isCounter === undefined ? null : input.isCounter ? 1 : 0)
+    // Absent means the caller predates the rule (an older app editing the
+    // price): keep it. An explicit null is "Never hide" and clears it.
+    .input('hiddenGiven', sql.Bit, input.hiddenWhenChargeId === undefined ? 0 : 1)
+    .input('hiddenWhen', sql.BigInt, input.hiddenWhenChargeId || null)
     .query(`
       UPDATE dbo.switchable_charges
-      SET name = @name, charge_per_night = @chargePerNight, is_counter = ISNULL(@isCounter, is_counter)
+      SET name = @name, charge_per_night = @chargePerNight, is_counter = ISNULL(@isCounter, is_counter),
+          hidden_when_charge_id = CASE WHEN @hiddenGiven = 1 THEN @hiddenWhen ELSE hidden_when_charge_id END
       WHERE id = @chargeId
     `);
 

@@ -275,6 +275,10 @@ const createBookingSchema = z
     guestName: z.string({ error: 'Enter the guest name.' }).trim().min(1, 'Enter the guest name.'),
     guestPhone: requiredMobileField(),
     numGuests: z.coerce.number().int().positive().optional().default(1),
+    // How many of numGuests are children, whether or not each has a row in
+    // `guests`. Optional: clients that only send numGuests (the mobile app, older
+    // browsers) get the children named in `guests` counted, as before.
+    numChildren: z.coerce.number().int().nonnegative('Children can’t be negative.').optional(),
     discountAmount: discountAmountField(),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
     idProofNumber: idProofNumberField(),
@@ -322,6 +326,19 @@ const createBookingSchema = z
     message: 'Guest details can’t exceed the number of guests.',
     path: ['guests'],
   })
+  .refine((data) => data.numChildren == null || data.numChildren <= data.numGuests - 1, {
+    message: 'There has to be at least one adult — the primary guest.',
+    path: ['numChildren'],
+  })
+  .refine(
+    (data) => {
+      if (data.numChildren == null) return true;
+      const namedChildren = data.guests.filter((g) => g.isChild).length;
+      const namedAdults = data.guests.length - namedChildren + 1;
+      return namedChildren <= data.numChildren && namedAdults <= data.numGuests - data.numChildren;
+    },
+    { message: 'Guest details can’t exceed the number of adults or children.', path: ['guests'] }
+  )
   .refine(
     (data) => (data.advanceAmount == null) === (data.advancePaymentMethod == null),
     { message: 'Choose a payment method for the advance amount.', path: ['advancePaymentMethod'] }
@@ -424,6 +441,7 @@ const updateBookingSchema = z
     bedId: clearableField(z.coerce.number().int().positive('Choose a valid bed.')),
     bedIds: z.array(z.coerce.number().int().positive('Choose a valid bed.')).optional(),
     numGuests: z.coerce.number().int().positive('Enter a guest count greater than 0.').optional(),
+    numChildren: z.coerce.number().int().nonnegative('Children can’t be negative.').optional(),
     guestName: z.string().trim().min(1, 'Enter the guest name.').optional(),
     guestPhone: requiredMobileField().optional(),
     switchableCharges: z.array(chargeSelectionSchema).optional(),

@@ -49,6 +49,7 @@ import {
   chargesPayload,
   selectionOf,
   toggleSelection,
+  isHiddenExtra,
   withAgreedAmount,
   withQuantity,
 } from './chargeSelections';
@@ -188,6 +189,7 @@ function searchFields(booking) {
     booking.guestName,
     booking.guestPhone,
     booking.invoiceNumber,
+    booking.bookingNumber,
     booking.idProofNumber,
     ...(booking.coGuestNames || []),
     ...(booking.coGuestIdNumbers || []),
@@ -542,12 +544,14 @@ const initialBookingForm = {
   // Which box the desk typed into. Never rendered — it exists so that only the
   // derived box is ever rewritten. See the setters.
   discountSource: '',
-  // The party is the guest count — adults[0] is the primary guest, and the
-  // total is however many names reception actually types in, plus whatever
-  // extraGuests bumps it by for occupants whose details aren't being taken.
+  // The party is two counts — adults (the primary guest included) and children —
+  // set with the steppers. adults[0] is the primary guest; the other rows in
+  // adults / children are optional details for some of those heads, and a row
+  // past the count raises it, so the counts are never below the rows.
   adults: [{ ...emptyGuest }],
   children: [],
-  extraGuests: '0',
+  adultCount: '1',
+  childCount: '0',
   // The nightly rate reception agreed for this stay, blank where it is the
   // category's own — which is most stays. Held as the per-night figure because
   // that is what the booking stores; the box on screen shows it across the
@@ -642,7 +646,7 @@ const NOT_READY = {
   OUT_OF_ORDER: 'Under repair',
 };
 
-export default function Bookings({ onBillStay, onShowRegister, modalOnly = false, openBookingId = null, onModalClose }) {
+export default function Bookings({ onBillStay, onShowRegister, modalOnly = false, openBookingId = null, initialAction = null, onModalClose }) {
   const session = getSession();
   const token = session?.token;
   const toast = useToast();
@@ -1605,7 +1609,14 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     setEditTarget(null);
     setRoomsNonce((n) => n + 1);
     setShowDrafts(false);
-    beginForm('CREATE', parked.form);
+    // A draft parked before the party was kept as two counts carries only the
+    // rows and a bump for undetailed adults; the counts come from those.
+    beginForm('CREATE', {
+      ...parked.form,
+      adultCount:
+        parked.form.adultCount ?? String(parked.form.adults.length + (Number(parked.form.extraGuests) || 0)),
+      childCount: parked.form.childCount ?? String(parked.form.children.length),
+    });
     setDraftNote(
       parked.form.droppedFiles > 0
         ? `${parked.form.droppedFiles} ID proof document${
@@ -1955,10 +1966,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   }, [availableRooms, bookingForm.multiRoom, bookingForm.sameDates, bookingForm.extraRooms, showBookingForm]);
 
   const selectedBeds = availableBeds?.beds?.filter((b) => bookingForm.bedIds.some((id) => String(id) === String(b.id))) ?? [];
-  // extraGuests bumps the head count for occupants reception isn't taking
-  // names for — cleared or garbage input counts as 0 rather than crashing.
-  const extraGuestCount = Math.max(0, Math.floor(Number(bookingForm.extraGuests)) || 0);
-  const numGuests = bookingForm.adults.length + bookingForm.children.length + extraGuestCount;
+  // The head count is the two stepper counts, never below the detail rows —
+  // cleared or garbage input counts as the minimum rather than crashing.
+  const adultN = Math.max(Math.floor(Number(bookingForm.adultCount)) || 1, bookingForm.adults.length, 1);
+  const childN = Math.max(Math.floor(Number(bookingForm.childCount)) || 0, bookingForm.children.length);
+  const numGuests = adultN + childN;
   // Advice against the rooms' combined capacity — a party of five over two
   // rooms that sleep three each is fine. A room whose capacity isn't recorded
   // can't be counted, so no warning rather than a wrong one.
@@ -2029,7 +2041,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       delete next[chargeId];
       return next;
     });
-    setBookingForm((f) => ({ ...f, switchableCharges: toggleSelection(f.switchableCharges, chargeId) }));
+    setBookingForm((f) => ({ ...f, switchableCharges: toggleSelection(f.switchableCharges, chargeId, selectedRoom?.switchableCharges) }));
   };
 
   const setChargeQuantity = (chargeId, quantity) => {
@@ -2145,7 +2157,8 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     }));
   };
 
-  const setExtraGuests = (value) => setBookingForm((f) => ({ ...f, extraGuests: value }));
+  const setAdultCount = (value) => setBookingForm((f) => ({ ...f, adultCount: value }));
+  const setChildCount = (value) => setBookingForm((f) => ({ ...f, childCount: value }));
 
   const addVehicle = () => {
     setBookingForm((f) => ({ ...f, vehicles: [...f.vehicles, { ...emptyVehicle }] }));
@@ -2355,11 +2368,6 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       failOn(`newAdultName-${blankAdult}`, 'Enter a name for this adult, or remove the row.');
       return;
     }
-    const blankChild = bookingForm.children.findIndex((g) => !g.name.trim());
-    if (blankChild !== -1) {
-      failOn(`newChildName-${blankChild}`, 'Enter a name for this child, or remove the row.');
-      return;
-    }
     const oversizedAdult = bookingForm.adults.findIndex(
       (g) => g.idProofFile && g.idProofFile.size > ID_PROOF_MAX_BYTES
     );
@@ -2396,7 +2404,12 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       // first, each tagged so the split survives into the booking record.
       const otherGuests = [
         ...bookingForm.adults.slice(1).map((g) => ({ ...g, isChild: false })),
-        ...bookingForm.children.map((g) => ({ ...g, phone: '', isChild: true })),
+        // A child needs no details: a row left empty is dropped (the count already
+        // holds that child), and one with only an ID typed gets a placeholder name
+        // so the record still has something to show.
+        ...bookingForm.children
+          .filter((g) => g.name.trim() || g.idProofType || g.idProofNumber?.trim() || g.idProofFile)
+          .map((g, i) => ({ ...g, name: g.name.trim() || `Child ${i + 1}`, phone: '', isChild: true })),
       ];
 
       // More than one room now, or an edit taking a booking that has several back
@@ -2407,6 +2420,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       formData.append('guestName', capitalizeName(primary.name.trim()));
       formData.append('guestPhone', primary.phone.trim());
       formData.append('numGuests', String(numGuests));
+      formData.append('numChildren', String(childN));
       formData.append('switchableCharges', JSON.stringify(chargesPayload(bookingForm.switchableCharges)));
       if (primary.idProofType) formData.append('idProofType', primary.idProofType);
       if (primary.idProofNumber.trim()) formData.append('idProofNumber', primary.idProofNumber.trim());
@@ -2758,9 +2772,10 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         ...bookingDetail.guests.filter((g) => !g.isChild).map(partyRowOf),
       ],
       children: bookingDetail.guests.filter((g) => g.isChild).map(partyRowOf),
-      // A head count on file above the named rows was recorded without every
-      // guest's details — preserve it rather than silently dropping it here.
-      extraGuests: String(Math.max(0, (bookingDetail.numGuests ?? 0) - (1 + bookingDetail.guests.length))),
+      // The counts on file, which can sit above the named rows: heads whose
+      // details weren't taken are kept rather than silently dropped here.
+      childCount: String(bookingDetail.childCount ?? 0),
+      adultCount: String(Math.max(1, (bookingDetail.numGuests ?? 1) - (bookingDetail.childCount ?? 0))),
       vehicles: bookingDetail.vehicles.map((v) => ({ number: v.number, type: v.type ?? '' })),
       basePriceOverride: (() => {
         const rate = first ? first.basePriceOverride : bookingDetail.basePriceOverride;
@@ -2827,9 +2842,17 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   // two turning up as three is an ordinary evening, so check-in counts the
   // party rather than holding it to the number booked — the server raises
   // num_guests to match on save.
-  const checkInPartySize = bookingDetail
-    ? 1 + bookingDetail.guests.length + checkInForm.guests.length
-    : 0;
+  const checkInPartySize = (() => {
+    if (!bookingDetail) return 0;
+    const newChildren = checkInForm.guests.filter((g) => g.isChild).length;
+    const newAdults = checkInForm.guests.length - newChildren;
+    const bookedChildren = bookingDetail.childCount ?? 0;
+    const namedChildren = bookingDetail.guests.filter((g) => g.isChild).length;
+    const children = Math.max(bookedChildren, namedChildren + newChildren);
+    const namedAdults = 1 + bookingDetail.guests.length - namedChildren;
+    const adults = Math.max((bookingDetail.numGuests ?? 1) - bookedChildren, namedAdults + newAdults);
+    return adults + children;
+  })();
   // Worth saying out loud, because it is the desk's decision and nobody else's:
   // the room sleeps four and five people have arrived.
   const overRoomOccupancy = Boolean(
@@ -3174,6 +3197,33 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       reason: '',
     });
   };
+
+  // `initialAction` lets a caller that already showed the stay (the guest
+  // register's own detail card) land straight on the step the desk chose —
+  // each runs exactly what the matching button in this modal's footer runs.
+  const initialActionDone = useRef(false);
+  /* eslint-disable react-hooks/set-state-in-effect -- runs the chosen footer step once the stay has loaded */
+  useEffect(() => {
+    if (!initialAction || initialActionDone.current || !bookingDetail) return;
+    initialActionDone.current = true;
+    if (initialAction === 'cancel') openCancelSettle();
+    else if (initialAction === 'advance') setShowAdvanceReceipt(true);
+    else if (initialAction === 'edit') openEditBooking();
+    else if (initialAction === 'checkout') openCheckOutAll();
+    else if (initialAction === 'checkin') {
+      if (!canCheckInNow) {
+        setActionError(
+          `This stay is reserved for ${formatDateLong(bookingDetail.checkInDate)} — check-in opens on that date.`
+        );
+        return;
+      }
+      setActionError('');
+      setCheckInRoomId(null);
+      setShowCheckInForm(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingDetail]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleCancel = async () => {
     const advance = Number(bookingDetail?.advanceAmount) || 0;
@@ -3685,6 +3735,13 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
               ›
             </button>
           </div>
+          <button
+            type="button"
+            className="chart-row__link-btn"
+            onClick={() => goToMonth(windowStartFor(todayIso()))}
+          >
+            Today
+          </button>
         </div>
 
         {/* Search shares the top row with the stepper and the actions now —
@@ -3869,7 +3926,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                 key={item.status}
                 type="button"
                 className="tape-legend__item tape-legend__item--link"
-                onClick={() => onShowRegister?.(item.status)}
+                onClick={() => onShowRegister?.(item.status, item.status === 'CHECKED_IN' ? 'today' : undefined)}
                 title={`Show ${item.label.toLowerCase()} stays in Booking Details`}
               >
                 <i className={`tape-legend__swatch tape-legend__swatch--${item.swatch}`} />
@@ -4802,6 +4859,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                       <div className="checkbox-grid checkbox-grid--fit">
                         {selectedRoom.switchableCharges.map((charge) => {
                           const selection = selectionOf(bookingForm.switchableCharges, charge.id);
+                          if (isHiddenExtra(bookingForm.switchableCharges, charge)) return null;
                           return (
                             <label className="checkbox-chip" key={charge.id}>
                               <input
@@ -4963,12 +5021,35 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
 
                   {/* The party count is whatever reception typed in, not a
                       number they set separately and then contradict. */}
-                  <div className="booking-form__party-summary">
-                    <span className="booking-form__party-total">
-                      {numGuests} guest{numGuests === 1 ? '' : 's'}
+                  <div className={`booking-form__party-summary${overOccupancy ? ' booking-form__party-summary--over' : ''}`}>
+                    <span className="booking-form__party-count" aria-hidden="true">{numGuests}</span>
+                    <span className="booking-form__party-text">
+                      <span className="booking-form__party-total">
+                        Total head count: {numGuests} guest{numGuests === 1 ? '' : 's'}
+                      </span>
+                      <span className="booking-form__party-split">
+                        Including the primary guest · {describeParty(adultN, childN)}
+                      </span>
                     </span>
-                    <span className="booking-form__party-split">
-                      {describeParty(bookingForm.adults.length + extraGuestCount, bookingForm.children.length)}
+                    <span className="booking-form__party-steppers">
+                      <span className="booking-form__party-stepper">
+                        <span className="booking-form__party-stepper-label">Adults</span>
+                        <QtyStepper
+                          label="adult"
+                          min={Math.max(1, bookingForm.adults.length)}
+                          value={String(adultN)}
+                          onChange={setAdultCount}
+                        />
+                      </span>
+                      <span className="booking-form__party-stepper">
+                        <span className="booking-form__party-stepper-label">Children</span>
+                        <QtyStepper
+                          label="child"
+                          min={bookingForm.children.length}
+                          value={String(childN)}
+                          onChange={setChildCount}
+                        />
+                      </span>
                     </span>
                   </div>
                   {overOccupancy && (
@@ -4999,8 +5080,6 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                     // whole of it to check-in, which asks for it there.
                     idRequired={!editing && bookingForm.bookingType === 'WALK_IN'}
                     fieldErr={fieldErr}
-                    extraGuests={bookingForm.extraGuests}
-                    onExtraGuestsChange={setExtraGuests}
                   />
                 </div>
 
@@ -5225,6 +5304,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                     ×
                   </button>
                 </div>
+                {bookingDetail.bookingNumber && (
+                  <p className="bookings-panel__hint">Booking ID {bookingDetail.bookingNumber}</p>
+                )}
 
                 {/* The same five sections the booking was taken through, in the
                     same order — read-only, because reading a record and
@@ -6367,8 +6449,6 @@ function PartyEditor({
   // stopped on those.
   idRequired = false,
   fieldErr,
-  extraGuests,
-  onExtraGuestsChange,
 }) {
   // Adding a row and then having to click into it is two actions for one
   // intention. The new row's name field takes the cursor instead, so the desk
@@ -6597,7 +6677,7 @@ function PartyEditor({
           className="booking-form__add-inline booking-form__add-below"
           onClick={() => addRow('adults', emptyGuest)}
         >
-          + Add adult
+          + Add adult details (optional)
         </button>
 
         {/* Beside the button rather than on a line of its own. The tick on the
@@ -6626,9 +6706,7 @@ function PartyEditor({
               key={child.id ?? `new-${index}`}
             >
               <div className="field">
-                <label htmlFor={`${idPrefix}ChildName-${index}`}>
-                  Name<Req />
-                </label>
+                <label htmlFor={`${idPrefix}ChildName-${index}`}>Name (optional)</label>
                 <input
                   id={`${idPrefix}ChildName-${index}`}
                   value={child.name}
@@ -6686,17 +6764,8 @@ function PartyEditor({
         className="booking-form__add-inline booking-form__add-below"
         onClick={() => addRow('children', emptyChild)}
       >
-        + Add child
+        + Add child details (optional)
       </button>
-      {onExtraGuestsChange && (
-        // A bump to the head count for occupants reception isn't taking
-        // names for — counted as adults, same convention the stay-detail
-        // view already uses for numGuests.
-        <span className="booking-form__party-extra">
-          <span className="booking-form__party-extra-label">+ more guests (no details taken)</span>
-          <QtyStepper label="extra guest" min={0} value={extraGuests} onChange={onExtraGuestsChange} />
-        </span>
-      )}
       <p className="bookings-panel__hint">
         {/* The bracket over the two fields says one of them is enough; this
             says which stay is asking and what else it wants alongside — the

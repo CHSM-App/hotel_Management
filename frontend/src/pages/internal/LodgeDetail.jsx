@@ -18,6 +18,7 @@ const CHECKIN_LABEL = {
   HOUR_24: '24-hour cycle, counted from check-in',
   NIGHT_BASED: 'Night-based, fixed checkout time',
   CYCLE: 'Fixed check-in / checkout cycle, whole nights',
+  HYBRID: 'Hybrid: early arrivals get 24 hours, later ones a fixed checkout',
 };
 
 const money = new Intl.NumberFormat('en-IN', {
@@ -557,6 +558,7 @@ export default function LodgeDetail() {
                 )}
                 <div className="detail-mini__name">{lodge.name}</div>
                 <div className="detail-mini__slug">/{lodge.slug}</div>
+                {lodge.booking_code && <div className="detail-mini__slug">Booking code {lodge.booking_code}</div>}
                 <div className="detail-mini__badges">
                   {type && <span className="badge badge--accent">{type.label}</span>}
                   <span className={`badge ${lodge.is_gst_registered ? 'badge--on' : 'badge--off'}`}>
@@ -932,7 +934,7 @@ export default function LodgeDetail() {
                       {lodge.checkin_mode === 'NIGHT_BASED' && (
                         <Row label="Checkout time">{formatTime(lodge.check_out_time)}</Row>
                       )}
-                      {lodge.checkin_mode === 'CYCLE' && (
+                      {(lodge.checkin_mode === 'CYCLE' || lodge.checkin_mode === 'HYBRID') && (
                         <>
                           <Row label="Check-in from">{formatTime(lodge.check_in_time)}</Row>
                           <Row label="Checkout by">{formatTime(lodge.check_out_time)}</Row>

@@ -2834,3 +2834,78 @@
   font-size: 12.5px;
   color: var(--danger);
 }
+
+/* Head count, highlighted: a brand-tinted bar with the number in a solid badge,
+   so the party total (primary guest included) is the first thing read in the
+   guest section. Turns amber when the party is over the room's capacity. */
+.booking-form__party-summary {
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--border));
+  border-left: 4px solid var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+}
+
+.booking-form__party-count {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.booking-form__party-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.booking-form__party-summary .booking-form__party-total {
+  font-size: 14.5px;
+  color: var(--brand-ink);
+}
+
+.booking-form__party-summary--over {
+  border-color: #e0a526;
+  border-left-color: #e0a526;
+  background: #fff6e0;
+}
+
+.booking-form__party-summary--over .booking-form__party-count {
+  background: #c98a0b;
+}
+
+/* Adults / Children steppers inside the head-count bar: pushed to the right,
+   each a small label over a minus-count-plus control. */
+.booking-form__party-summary {
+  flex-wrap: wrap;
+}
+
+.booking-form__party-steppers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-left: auto;
+}
+
+.booking-form__party-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.booking-form__party-stepper-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--brand-ink);
+}

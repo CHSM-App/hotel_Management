@@ -13,6 +13,7 @@ const CHECKIN_LABEL = {
   HOUR_24: '24-hour cycle',
   NIGHT_BASED: 'Night-based',
   CYCLE: 'Fixed check-in / checkout',
+  HYBRID: 'Hybrid (24 hours if early, else fixed checkout)',
 };
 
 // What this screen lets an owner change: the facts printed on a bill's
@@ -376,6 +377,17 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
                 </div>
                 <code>{publicUrl}</code>
               </div>
+
+              {lodge.bookingCode && (
+                <div className="hotel-profile__link">
+                  <div className="hotel-profile__link-head">
+                    <span>Booking code</span>
+                  </div>
+                  <code>
+                    {lodge.bookingCode} — bookings are numbered {lodge.bookingCode}YYMM001
+                  </code>
+                </div>
+              )}
 
               <p className="modal-form__hint">
                 Check-in cycle, GST registration and what the property sells are set up by Vengurla Tech —

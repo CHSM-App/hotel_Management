@@ -7,6 +7,11 @@ const createSwitchableChargeSchema = z.object({
   // mattress). Optional so a caller that never sends it leaves an existing
   // extra as it is on an update, and creates a plain per-night one.
   isCounter: z.boolean().optional(),
+  // Another extra that, once ticked, hides this one (one-way). Blank = never.
+  hiddenWhenChargeId: z.preprocess(
+    (v) => (v === '' || v == null ? null : v),
+    z.coerce.number().int().positive().nullable()
+  ).optional(),
 });
 
 const statusSchema = z.object({ isActive: z.boolean({ error: 'isActive must be true or false.' }) });

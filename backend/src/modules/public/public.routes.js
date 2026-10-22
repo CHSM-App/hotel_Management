@@ -1,5 +1,6 @@
 const { Router } = require('express');
-const { pinAttemptLimiter } = require('../../middleware/rateLimit');
+const { pinAttemptLimiter, enquirySubmitLimiter } = require('../../middleware/rateLimit');
+const { submitPublicEnquiryHandler } = require('../enquiries/enquiries.controller');
 const {
   getLodgePageHandler,
   getMenuPageHandler,
@@ -39,6 +40,9 @@ router.get('/lodges/:slug', getLodgePageHandler);
 
 router.get('/lodges/:slug/menu', getMenuPageHandler);
 router.post('/lodges/:slug/orders', pinAttemptLimiter, placeRoomOrderHandler);
+// A guest's enquiry from the public page — stored for the dashboard's
+// Enquiries inbox instead of only opening WhatsApp.
+router.post('/lodges/:slug/enquiries', enquirySubmitLimiter, submitPublicEnquiryHandler);
 
 // The guest side of a stay's food. Every one of these carries the room number
 // and PIN in its body and is checked afresh — there is still no session issued

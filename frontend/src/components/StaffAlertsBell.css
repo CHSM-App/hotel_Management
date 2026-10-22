@@ -165,3 +165,24 @@
     max-width: 380px;
   }
 }
+
+/* Optional per-row button (an alert's `action`): pushed to the row's right
+   edge so the message keeps the width it had. */
+.staff-bell__row-action {
+  margin-left: auto;
+  flex-shrink: 0;
+  align-self: center;
+  padding: 3px 10px;
+  border: 1px solid var(--brand);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--brand-ink, var(--brand));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.staff-bell__row-action:hover {
+  background: var(--brand);
+  color: #fff;
+}

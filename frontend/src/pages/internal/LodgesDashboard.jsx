@@ -20,6 +20,7 @@ const CHECKIN_LABEL = {
   HOUR_24: '24-hour',
   NIGHT_BASED: 'Night-based',
   CYCLE: 'Fixed cycle',
+  HYBRID: 'Hybrid',
 };
 
 // The API returns snake_case rows straight from the database here, so the flags

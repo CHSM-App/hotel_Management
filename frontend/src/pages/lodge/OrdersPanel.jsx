@@ -1738,7 +1738,7 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
               </div>
             ))}
               {view === 'sheet' && (
-              <section className="history-sheet">
+              <section className="history-sheet history-sheet--orders">
               <div className="history-table-wrap">
                 <table className="history-table">
                   <thead>

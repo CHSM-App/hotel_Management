@@ -67,6 +67,20 @@ export function describeParty(adultCount, childCount) {
   return `${adults} and ${childCount} child${childCount === 1 ? '' : 'ren'}`;
 }
 
+// The head count as a document prints it: "3 (2 Adults, 1 Child)". The split is
+// only stated when the booking recorded children — a booking from before the
+// child count was kept reads 0 whether or not children came, and "0 children"
+// would be a claim nobody checked — so otherwise it is the plain number.
+export function formatHeadCount(numGuests, childCount, labels) {
+  if (!numGuests) return null;
+  const children = Number(childCount) || 0;
+  if (children <= 0 || children >= numGuests) return String(numGuests);
+  const adults = numGuests - children;
+  const adultWord = adults === 1 ? labels.adult : labels.adults;
+  const childWord = children === 1 ? labels.child : labels.children;
+  return `${numGuests} (${adults} ${adultWord}, ${children} ${childWord})`;
+}
+
 export function idProofLabel(type) {
   return type.charAt(0) + type.slice(1).toLowerCase().replace('_', ' ');
 }

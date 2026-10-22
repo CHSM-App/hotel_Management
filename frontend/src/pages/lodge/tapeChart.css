@@ -2000,3 +2000,71 @@
 .tape-tile--flash.tape-tile--start.tape-tile--end {
   box-shadow: inset 0 0 0 3px var(--flash);
 }
+
+/* Today: jumps the room chart back to the current dates. Same pill as the
+   function diary's. */
+.bookings-panel__toolbar .tape-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bookings-panel__toolbar .tape-nav .chart-row__link-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--brand);
+  cursor: pointer;
+}
+
+.bookings-panel__toolbar .tape-nav .chart-row__link-btn:hover {
+  background: color-mix(in srgb, var(--brand) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--brand) 40%, var(--border));
+}
+
+/* Room chart search box — same look as the function diary's: 38px, 10px corners,
+   hairline border on white, room for the magnifier, blue focus ring, violet
+   border while there are matches. */
+.bookings-panel__toolbar .tape-search__box {
+  height: 38px;
+}
+
+.bookings-panel__toolbar .tape-search__input {
+  height: 38px;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0 36px 0 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: none;
+  font-size: 13px;
+}
+
+.bookings-panel__toolbar .tape-search__input:hover {
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--border));
+}
+
+.bookings-panel__toolbar .tape-search__input:focus-visible {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.bookings-panel__toolbar .tape-search--found .tape-search__input {
+  border-color: var(--tape-hit, #8b5cf6);
+}
+
+.bookings-panel__toolbar .tape-search__icon {
+  left: 14px;
+}
+
+.bookings-panel__toolbar .tape-search__clear {
+  right: 8px;
+}

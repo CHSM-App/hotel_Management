@@ -11,6 +11,7 @@ const MODE_LABEL = {
   HOUR_24: '24-hour stays',
   NIGHT_BASED: 'Night-based stays',
   CYCLE: 'Fixed check-in / checkout cycle',
+  HYBRID: 'Hybrid: early arrival 24 hours',
 };
 
 const MODE_NOTE = {
@@ -20,6 +21,8 @@ const MODE_NOTE = {
     'This property is night-based, so every stay is due to end at the checkout time below on the departure date, whatever time the guest arrived.',
   CYCLE:
     'This property sells a fixed cycle: rooms are ready from the check-in time and every stay is due out by the checkout time. Each time a stay runs past the checkout time it has started another night — a guest arriving at 2pm and leaving at noon the next day has stayed two nights, not one night plus a late fee.',
+  HYBRID:
+    'A guest who arrives before the check-in time gets a full 24 hours from the moment they arrive — in at 10am, out by 10am the next day. A guest who arrives at or after the check-in time is due out at the fixed checkout time the next day. Late fees apply only if you set a charge below; leave the percentages at 0 for none.',
 };
 
 // How long "1h 30m" reads better than "90". Used for the two minute fields,
@@ -108,6 +111,7 @@ export default function CheckoutPolicyPanel() {
         {
           checkOutTime: policy.checkOutTime,
           checkInTime: policy.checkInTime || undefined,
+          earlyArrivalFrom: policy.earlyArrivalFrom || null,
           lateGraceMinutes: Number(policy.lateGraceMinutes),
           lateHalfDayPercent: Number(policy.lateHalfDayPercent),
           lateFullDayAfterMinutes: Number(policy.lateFullDayAfterMinutes),
@@ -172,7 +176,7 @@ export default function CheckoutPolicyPanel() {
                 Arrival time + 24 hours per night booked
               </strong>
             </div>
-          ) : policy.checkinMode === 'CYCLE' ? (
+          ) : policy.checkinMode === 'CYCLE' || policy.checkinMode === 'HYBRID' ? (
             <div className="field-row">
               <div className="field checkout-policy__field--narrow">
                 <label htmlFor="checkInTime">Check-in from</label>
@@ -183,7 +187,9 @@ export default function CheckoutPolicyPanel() {
                   onChange={(e) => update({ checkInTime: e.target.value })}
                 />
                 <p className="checkout-policy__hint">
-                  When rooms are ready. Quoted to the guest; it does not change the night count.
+                  {policy.checkinMode === 'HYBRID'
+                    ? 'Arrive before this and you get 24 hours from arrival; arrive at or after it and checkout is the fixed time.'
+                    : 'When rooms are ready. Quoted to the guest; it does not change the night count.'}
                 </p>
               </div>
               <div className="field checkout-policy__field--narrow">
@@ -195,9 +201,26 @@ export default function CheckoutPolicyPanel() {
                   onChange={(e) => update({ checkOutTime: e.target.value })}
                 />
                 <p className="checkout-policy__hint">
-                  Every time a stay runs past this it has started another night.
+                  {policy.checkinMode === 'HYBRID'
+                    ? 'The fixed checkout for guests who arrive at or after the check-in time.'
+                    : 'Every time a stay runs past this it has started another night.'}
                 </p>
               </div>
+              {policy.checkinMode === 'HYBRID' && (
+                <div className="field checkout-policy__field--narrow">
+                  <label htmlFor="earlyArrivalFrom">Early arrival counts from</label>
+                  <input
+                    id="earlyArrivalFrom"
+                    type="time"
+                    value={policy.earlyArrivalFrom || ''}
+                    onChange={(e) => update({ earlyArrivalFrom: e.target.value })}
+                  />
+                  <p className="checkout-policy__hint">
+                    Optional. Blank means any time before check-in; set 06:00 and a 3am arrival keeps
+                    the fixed checkout instead.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="field checkout-policy__field--narrow">

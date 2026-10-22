@@ -633,6 +633,7 @@ export default function Customers() {
                                 <td className="cust-history-table__date">{formatDate(h.date)}</td>
                                 <td>
                                   <div className="cust-history-table__title">{h.label}</div>
+                                  {h.bookingNumber && <div className="cust-history-table__sub">{h.bookingNumber}</div>}
                                   <span className={`cust-type-chip ${HISTORY_TAG_CLASS[h.type]}`}>{HISTORY_TYPE_LABEL[h.type]}</span>
                                 </td>
                                 <td>

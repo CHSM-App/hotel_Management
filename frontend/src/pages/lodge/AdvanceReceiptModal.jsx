@@ -390,6 +390,15 @@ export default function AdvanceReceiptModal({
               {subject?.label ?? 'Booking'}
             </span>
             {shownReceipt?.status === 'VOID' && <span className="bill-tag bill-tag--void">Void</span>}
+            <button
+              type="button"
+              className="modal-form__close"
+              onClick={onClose}
+              aria-label="Close"
+              title="Close"
+            >
+              ×
+            </button>
           </span>
         </div>
 

@@ -184,8 +184,20 @@ const refreshLimiter = createRateLimiter({
   message: 'Too many token refreshes. Please wait a few minutes and try again.',
 });
 
+// Guards the public page's enquiry form. Successes are charged: each one is a
+// row the lodge has to read, and a bot filling the inbox is the abuse worth
+// stopping. 10 per 15 minutes is generous for a guest (a few room/venue
+// enquiries in a sitting) but shared guest Wi-Fi/NAT means it is per network.
+const enquirySubmitLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many enquiries from this network. Please wait a few minutes, or call the lodge.',
+  countWhen: (res) => res.statusCode < 400,
+});
+
 module.exports = {
   createRateLimiter,
+  enquirySubmitLimiter,
   refreshLimiter,
   pinAttemptLimiter,
   loginAttemptLimiter,

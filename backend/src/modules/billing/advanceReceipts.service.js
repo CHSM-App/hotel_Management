@@ -232,7 +232,12 @@ function mapReceipt(row) {
     // The stay this is against, for the register strip on the document.
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
+    // The stay's own number (SKR2610001); null on an event receipt.
+    bookingNumber: row.booking_number ?? null,
     numGuests: row.num_guests ?? null,
+    // child_count on a stored receipt's row, num_children on a preview built off
+    // the raw booking row.
+    childCount: row.child_count ?? row.num_children ?? null,
     roomNumber: row.room_number ?? null,
     // Same fields the printed bill reads (BillDocument.jsx), so the advance
     // receipt says just as plainly that this stay is a dormitory booking —
@@ -271,7 +276,7 @@ const RECEIPT_SELECT = `
           FOR JSON PATH) AS payment_lines,
          COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
          COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
-         b.num_guests, b.check_in_date, b.check_out_date,
+         b.booking_number, b.num_guests, b.num_children AS child_count, b.check_in_date, b.check_out_date,
          COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
                        FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
                        WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, r.is_dormitory, c.name AS category_name,

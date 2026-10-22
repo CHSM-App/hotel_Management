@@ -4,7 +4,7 @@ import { apiGet, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
-import { chargesParam, selectionOf, toggleSelection, withQuantity } from './chargeSelections';
+import { chargesParam, isHiddenExtra, selectionOf, toggleSelection, withQuantity } from './chargeSelections';
 import './forms.css';
 import './chartSections.css';
 import PageLoader from '../../components/PageLoader';
@@ -327,12 +327,13 @@ export default function PriceSimulatorPanel() {
                   <div className="checkbox-grid checkbox-grid--fit">
                     {activeCharges.map((charge) => {
                       const selection = selectionOf(sim.charges, charge.id);
+                      if (isHiddenExtra(sim.charges, charge)) return null;
                       return (
                         <label className="checkbox-chip" key={charge.id}>
                           <input
                             type="checkbox"
                             checked={Boolean(selection)}
-                            onChange={() => changeSim(sim, { charges: toggleSelection(sim.charges, charge.id) })}
+                            onChange={() => changeSim(sim, { charges: toggleSelection(sim.charges, charge.id, activeCharges) })}
                           />
                           {charge.name} ({formatPrice(charge.chargePerNight)}/night)
                           {/* Same rule as the booking form: only counted extras get

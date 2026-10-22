@@ -464,6 +464,7 @@
 }
 
 .billing-panel__detail-tags {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -2787,4 +2788,684 @@ th[aria-sort] .billing-sheet__sort-icon {
     margin: -20px -16px 14px;
     padding: 12px 16px;
   }
+}
+
+/* Stay Details footer with the stay's actions: the danger link and hint on the
+   left, the buttons on the right. */
+.stay-view__actions--stay {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.stay-view__actions-spacer {
+  flex: 1;
+}
+
+/* =========================================================================
+   Issue Bill modal — header / stay summary / table breakdown / payments /
+   footer. Layout follows the reference; colours are the app's own tokens.
+   ========================================================================= */
+
+/* Sticky header: pulls out over the modal's 22px padding so it runs edge to
+   edge, and stays while the body scrolls. */
+.issue-bill__head {
+  position: sticky;
+  top: -22px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: -22px -22px 18px;
+  padding: 16px 22px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+}
+
+.issue-bill__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+  color: var(--brand);
+}
+
+.issue-bill__titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.issue-bill__titles h3 {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.issue-bill__titles p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Stay summary card */
+.issue-bill__summary {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.issue-bill__label {
+  margin-bottom: 10px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.issue-bill__summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 0;
+}
+
+.issue-bill__summary-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 20px;
+  min-width: 0;
+}
+
+.issue-bill__summary-grid > div:first-child {
+  padding-left: 0;
+}
+
+.issue-bill__summary-grid > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.issue-bill__summary-grid small {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.issue-bill__summary-grid strong {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.issue-bill__link {
+  margin-left: auto;
+  padding: 4px 0 4px 16px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.issue-bill__link:hover {
+  text-decoration: underline;
+}
+
+/* Section headings in the same uppercase style as the reference. */
+.billing-steps__pane .form-section__title {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.issue-bill__optional {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+/* Bill breakdown as a bordered table */
+.issue-bill__breakdown .sim-result {
+  margin-top: 10px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.issue-bill__thead {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.issue-bill__breakdown .sim-result__line {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.issue-bill__breakdown .sim-result__line--part {
+  padding-left: 16px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.issue-bill__breakdown .sim-result__total {
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14.5px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 0 2px 0 var(--border);
+}
+
+/* The last row — balance due — is the figure of the whole form. */
+.issue-bill__breakdown .sim-result > .sim-result__total:last-child {
+  border-bottom: 0;
+  box-shadow: none;
+  align-items: center;
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+  color: var(--brand-ink);
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.issue-bill__breakdown .sim-result > .sim-result__total:last-child span:last-child {
+  font-size: 24px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Discount: rupee prefix inside the amount box. */
+.issue-bill__money {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--field-border, var(--border));
+  border-radius: 10px;
+  background: var(--field, var(--surface));
+  overflow: hidden;
+}
+
+.issue-bill__money > span {
+  display: grid;
+  place-items: center;
+  padding: 0 12px;
+  border-right: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--text-muted);
+}
+
+.billing-steps__pane .issue-bill__money input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.issue-bill__money:focus-within {
+  border-color: var(--focus, var(--brand));
+  box-shadow: var(--shadow-well-focus, 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent));
+}
+
+/* Preview bill / Paper size: full-width rows with an icon, label and a chevron
+   on the right that turns down when open. */
+.billing-steps__pane .billing-panel__bill-preview,
+.billing-steps__pane .billing-panel__paper-previews {
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.billing-steps__pane .billing-panel__bill-preview > summary,
+.billing-steps__pane .billing-panel__paper-previews > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: none;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.billing-steps__pane .billing-panel__bill-preview > summary:hover,
+.billing-steps__pane .billing-panel__paper-previews > summary:hover {
+  background: var(--paper);
+  box-shadow: none;
+}
+
+.billing-steps__pane .billing-panel__bill-preview > summary::after,
+.billing-steps__pane .billing-panel__paper-previews > summary::after {
+  content: '›';
+  margin-left: auto;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+}
+
+.billing-steps__pane .billing-panel__bill-preview[open] > summary::after,
+.billing-steps__pane .billing-panel__paper-previews[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.issue-bill__sum-icon {
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+}
+
+.billing-panel__paper-current {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+  color: var(--brand);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+/* Footer: Cancel on the left; Preview bill and Issue bill on the right,
+   pinned to the bottom edge while the form scrolls. */
+.billing-steps__pane .issue-bill__foot {
+  position: sticky;
+  bottom: -22px;
+  z-index: 5;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin: 18px -22px -22px;
+  padding: 14px 22px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 16px 16px;
+}
+
+.issue-bill__foot-spacer {
+  flex: 1;
+}
+
+@media (max-width: 640px) {
+  .issue-bill__head {
+    top: -20px;
+    margin: -20px -16px 14px;
+    padding: 12px 16px;
+  }
+  .issue-bill__summary-grid > div {
+    padding: 0 12px;
+  }
+  .issue-bill__link {
+    margin-left: 0;
+    padding-left: 0;
+    flex-basis: 100%;
+  }
+  .billing-steps__pane .issue-bill__foot {
+    bottom: -20px;
+    margin: 14px -16px -20px;
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+}
+
+/* Breakdown table, matched to the reference: every row reads in full ink, the
+   document total is a bold row set off by a heavier rule, the advance is a
+   quieter row, and the balance due is a blue-washed band with a large figure. */
+.issue-bill__breakdown .sim-result {
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.issue-bill__thead {
+  padding: 12px 16px;
+  font-size: 13px;
+}
+
+.issue-bill__breakdown .sim-result__line,
+.issue-bill__breakdown .sim-result__line--part {
+  padding: 13px 16px;
+  font-size: 14.5px;
+  color: var(--ink);
+  border-bottom: 1px solid var(--border);
+}
+
+.issue-bill__breakdown .sim-result__line .sim-result__part-nights {
+  color: var(--text-muted);
+}
+
+/* The tax / document total. */
+.issue-bill__breakdown .sim-result__total {
+  padding: 14px 16px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 0 3px 0 var(--border);
+}
+
+/* The advance sits between the total and the balance: lighter, muted. */
+.issue-bill__breakdown .sim-result__total + .sim-result__line {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Balance due. */
+.issue-bill__breakdown .sim-result > .sim-result__total:last-child {
+  padding: 18px 16px;
+  background: var(--brand-wash, #e6edf4);
+  box-shadow: none;
+  border-bottom: 0;
+  color: var(--brand-ink);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+
+.issue-bill__breakdown .sim-result > .sim-result__total:last-child span:last-child {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* GST on these bills is inside the prices above, not added on top. The tax
+   lines are shown as memo rows — muted, tagged "included", amounts in italics —
+   so the column visibly adds up: charges less discount ± round off = total. */
+.issue-bill__breakdown .sim-result__line--incl {
+  background: var(--paper);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.issue-bill__breakdown .sim-result__line--incl em {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.issue-bill__breakdown .sim-result__line--incl > span:last-child {
+  font-style: italic;
+}
+
+/* Compact bill breakdown: tighter rows and a slimmer balance bar. */
+.issue-bill__thead {
+  padding: 6px 14px;
+  font-size: 11.5px;
+}
+
+.issue-bill__breakdown .sim-result__line {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+.issue-bill__breakdown .sim-result__line--part {
+  padding-left: 14px;
+  font-size: 13px;
+}
+
+.issue-bill__breakdown .sim-result__line--incl {
+  padding: 4px 14px;
+  font-size: 12px;
+}
+
+.issue-bill__breakdown .sim-result__total {
+  padding: 7px 14px;
+  font-size: 13.5px;
+}
+
+.issue-bill__breakdown .sim-result > .sim-result__total:last-child {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.issue-bill__breakdown .sim-result > .sim-result__total:last-child span:last-child {
+  font-size: 20px;
+}
+
+.issue-bill__breakdown .sim-result {
+  margin-top: 6px;
+}
+
+.issue-bill__breakdown > .billing-panel__hint {
+  margin-bottom: 0;
+}
+
+/* Stay summary, second pass: white card with a header row (label left, link
+   right) and four icon cells in an even grid. */
+.issue-bill__summary {
+  padding: 12px 16px 14px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border), 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.issue-bill__summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.issue-bill__summary-head .issue-bill__label {
+  margin: 0;
+}
+
+.issue-bill__summary-head .issue-bill__link {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+}
+
+.issue-bill__summary-head .issue-bill__link:hover {
+  background: color-mix(in srgb, var(--brand) 14%, var(--surface));
+  text-decoration: none;
+}
+
+.issue-bill__summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.issue-bill__summary-grid > div,
+.issue-bill__summary-grid > div:first-child {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border-left: 0;
+}
+
+.issue-bill__cell-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+  color: var(--brand);
+}
+
+.issue-bill__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.issue-bill__cell small {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.issue-bill__cell strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .issue-bill__summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Stay summary, tidy pass: columns sized to their content (dates get the room
+   they need and stay on one line), one even divider between cells, and the
+   leftover per-cell borders from the first version removed. */
+.issue-bill__summary-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) auto auto;
+  gap: 0;
+  align-items: stretch;
+}
+
+.issue-bill__summary-grid > div,
+.issue-bill__summary-grid > div:first-child,
+.issue-bill__summary-grid > div + div {
+  padding: 0 18px;
+  border-left: 0;
+}
+
+.issue-bill__summary-grid > div:first-child {
+  padding-left: 0;
+}
+
+.issue-bill__summary-grid > div:last-child {
+  padding-right: 0;
+}
+
+.issue-bill__summary-grid > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.issue-bill__cell small {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.issue-bill__cell strong {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 760px) {
+  .issue-bill__summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 0;
+  }
+  .issue-bill__summary-grid > div,
+  .issue-bill__summary-grid > div:first-child,
+  .issue-bill__summary-grid > div:last-child {
+    padding: 0 12px;
+    border-left: 0;
+  }
+  .issue-bill__summary-grid > div:nth-child(odd) {
+    padding-left: 0;
+  }
+  .issue-bill__summary-grid > div:nth-child(even) {
+    border-left: 1px solid var(--border);
+  }
+  .issue-bill__cell strong {
+    white-space: normal;
+  }
+}
+
+/* Room cell: never truncated. Guest shrinks first; room and the others size to
+   their text, and a long category wraps instead of showing "8 · De…". */
+.issue-bill__summary-grid {
+  grid-template-columns: minmax(0, 0.8fr) auto auto auto;
+}
+
+.issue-bill__summary-grid > div {
+  padding: 0 14px;
+}
+
+.issue-bill__summary-grid > div:first-child {
+  padding-left: 0;
+}
+
+.issue-bill__summary-grid > div:last-child {
+  padding-right: 0;
+}
+
+.issue-bill__cell strong {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* Stay summary highlighted: a pale brand wash, a brand accent bar down the left
+   edge and a soft brand-tinted shadow, so it reads as the key card of the form. */
+.issue-bill__summary {
+  position: relative;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand) 8%, var(--surface)) 0%, var(--surface) 70%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--brand) 28%, var(--border)),
+    0 4px 14px -6px color-mix(in srgb, var(--brand) 35%, transparent);
+  overflow: hidden;
+}
+
+.issue-bill__summary::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--brand);
+}
+
+.issue-bill__summary-head {
+  border-bottom-color: color-mix(in srgb, var(--brand) 18%, var(--border));
+}
+
+.issue-bill__summary-head .issue-bill__label {
+  color: var(--brand);
+}
+
+.issue-bill__summary .issue-bill__cell-icon {
+  background: var(--brand);
+  color: #fff;
+}
+
+.issue-bill__summary-grid > div + div {
+  border-left-color: color-mix(in srgb, var(--brand) 18%, var(--border));
+}
+
+.issue-bill__summary-head .issue-bill__link {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 30%, var(--border));
 }

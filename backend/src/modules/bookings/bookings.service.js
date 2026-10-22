@@ -15,6 +15,7 @@ const advanceReceiptsService = require('../billing/advanceReceipts.service');
 const { logger } = require('../../config/logger');
 const draftsService = require('./drafts.service');
 const customersService = require('../customers/customers.service');
+const { allocateBookingNumber } = require('./bookingNumbers');
 const lateCheckout = require('./lateCheckout');
 const { apportionDiscount, mergeRoomNights, rollUpStatus } = require('./bookingRooms');
 
@@ -649,7 +650,7 @@ async function getActiveSwitchableCharges(pool, lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT id, name, charge_per_night, is_counter
+      SELECT id, name, charge_per_night, is_counter, hidden_when_charge_id
       FROM dbo.switchable_charges
       WHERE lodge_id = @lodgeId AND is_active = 1
       ORDER BY name ASC
@@ -659,6 +660,8 @@ async function getActiveSwitchableCharges(pool, lodgeId) {
     id: row.id,
     name: row.name,
     chargePerNight: Number(row.charge_per_night),
+    // Hidden while this other extra is ticked.
+    hiddenWhenChargeId: row.hidden_when_charge_id == null ? null : Number(row.hidden_when_charge_id),
     // Extras that come in counts (extra beds) get a "how many" box on the
     // booking form; the rest are a plain tick and always count 1.
     isCounter: !!row.is_counter,
@@ -1011,7 +1014,7 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
   }
 
   const result = await request.query(`
-    SELECT b.id, b.guest_name, b.guest_phone, b.num_guests, b.id_proof_type, b.id_proof_document,
+    SELECT b.id, b.booking_number, b.guest_name, b.guest_phone, b.num_guests, b.id_proof_type, b.id_proof_document,
            b.id_proof_number,
            b.check_in_date, b.check_out_date, b.status, b.total_price,
            b.actual_check_in_at, b.actual_check_out_at,
@@ -1047,6 +1050,7 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
 
   return result.recordset.map((row) => ({
     id: row.id,
+    bookingNumber: row.booking_number ?? null,
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
     numGuests: row.num_guests,
@@ -1107,7 +1111,7 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       -- One row per ROOM of a booking, not per booking: each room has its own
       -- dates and status, and the chart draws a strip per room. The id column
       -- is still the booking's, so every strip of one booking opens the same record.
-      SELECT b.id, br.room_id, br.id AS booking_room_id, b.guest_name, b.guest_phone, b.id_proof_number,
+      SELECT b.id, b.booking_number, br.room_id, br.id AS booking_room_id, b.guest_name, b.guest_phone, b.id_proof_number,
              br.check_in_date, br.check_out_date, br.status, br.total_price,
              (SELECT COUNT(*) FROM dbo.booking_rooms x WHERE x.booking_id = b.id AND x.status <> 'CANCELLED') AS room_count,
              -- The beds this booking holds in THIS room (bed_id plus the
@@ -1206,6 +1210,7 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       bedLabel: b.bed_labels ? b.bed_labels.split('\u001f')[0] : null,
       bedIds: b.bed_ids ? b.bed_ids.split('\u001f').map(Number) : [],
       bedLabels: b.bed_labels ? b.bed_labels.split('\u001f') : [],
+      bookingNumber: b.booking_number ?? null,
       guestName: b.guest_name,
       guestPhone: b.guest_phone,
       // The rest of what the stay can be looked up by on the chart. Names, not
@@ -1255,6 +1260,7 @@ function nightlyLines(row) {
 function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
   return {
     id: row.id,
+    bookingNumber: row.booking_number ?? null,
     roomId: row.room_id,
     roomNumber: row.room_number,
     categoryName: row.category_name,
@@ -1374,7 +1380,9 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     // Adults are num_guests minus the children on file, not a count of adult
     // rows: the primary guest has no row here, and a booking made before the
     // party split existed has no rows at all — both still add up this way.
-    childCount: guests.filter((g) => g.is_child).length,
+    // The recorded count, which includes children nobody took details for;
+    // never lower than the child rows themselves.
+    childCount: Math.max(Number(row.num_children ?? 0), guests.filter((g) => g.is_child).length),
     // NULL type means the plate predates the type being asked for — the UI
     // shows the number alone rather than inventing a category for it.
     vehicles: vehicles.map((v) => ({ number: v.vehicle_number, type: v.vehicle_type })),
@@ -1974,12 +1982,17 @@ async function createBooking(lodgeId, userId, input) {
     // The booking row is written with the roll-up of its rooms already; the
     // sync below re-derives it from the rows so the two can't drift.
     const first = priced.rooms[0];
+    // Taken in this transaction, so a booking that fails below gives its number
+    // back rather than leaving a hole in the day's sequence.
+    const bookingNumber = await allocateBookingNumber(transaction, lodgeId);
     const insertResult = await new sql.Request(transaction)
       .input('lodgeId', sql.BigInt, lodgeId)
+      .input('bookingNumber', sql.NVarChar, bookingNumber)
       .input('roomId', sql.BigInt, first.roomId)
       .input('guestName', sql.NVarChar, input.guestName)
       .input('guestPhone', sql.NVarChar, input.guestPhone)
       .input('numGuests', sql.Int, input.numGuests)
+      .input('numChildren', sql.Int, input.numChildren ?? input.guests.filter((g) => g.isChild).length)
       .input('idProofType', sql.NVarChar, input.idProofType ?? null)
       .input('idProofNumber', sql.NVarChar, input.idProofNumber ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
@@ -1995,12 +2008,12 @@ async function createBooking(lodgeId, userId, input) {
       .input('basePriceOverride', sql.Decimal(10, 2), first.basePriceOverride ?? null)
       .query(`
         INSERT INTO dbo.bookings
-          (lodge_id, room_id, guest_name, guest_phone, num_guests, id_proof_type, id_proof_number, id_proof_document,
+          (lodge_id, booking_number, room_id, guest_name, guest_phone, num_guests, num_children, id_proof_type, id_proof_number, id_proof_document,
            check_in_date, check_out_date, total_price, discount_amount, nightly_breakdown, created_by,
            advance_amount, advance_payment_method, advance_reference, base_price_override)
         OUTPUT inserted.id
         VALUES
-          (@lodgeId, @roomId, @guestName, @guestPhone, @numGuests, @idProofType, @idProofNumber, @idProofDocument,
+          (@lodgeId, @bookingNumber, @roomId, @guestName, @guestPhone, @numGuests, @numChildren, @idProofType, @idProofNumber, @idProofDocument,
            @checkInDate, @checkOutDate, @totalPrice, @discountAmount, @nightlyBreakdown, @createdBy,
            @advanceAmount, @advancePaymentMethod, @advanceReference, @basePriceOverride)
       `);
@@ -2051,7 +2064,7 @@ async function createBooking(lodgeId, userId, input) {
     // WhatsApp" (input.sendWhatsApp === false).
     if (input.sendWhatsApp !== false) void notifications.notifyStayBooked(lodgeId, bookingId);
 
-    return { id: bookingId };
+    return { id: bookingId, bookingNumber };
   } catch (err) {
     await transaction.rollback();
     throw err;
@@ -2179,7 +2192,7 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.num_guests, b.id_proof_type, b.total_price, b.advance_amount,
+      SELECT b.num_guests, b.num_children, b.id_proof_type, b.total_price, b.advance_amount,
              b.guest_name, b.guest_phone,
              l.serves_food, l.food_room_service
       FROM dbo.bookings b
@@ -2285,14 +2298,28 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
   // Safe to move: num_guests is a record of the party, not an input to
   // anything priced. Nothing in pricing reads it, and a room's max_occupancy
   // is advice to the desk rather than a constraint the database enforces.
+  //
+  // Adults and children are counted apart: a child row only raises the party
+  // when it is more children than the booking already says there are, and the
+  // same for adults — people named here may simply be putting names to heads
+  // that were already counted.
   let newNumGuests = bookingRow.num_guests;
+  let newNumChildren = bookingRow.num_children ?? 0;
   if (input.guests.length > 0) {
     const existingGuestsResult = await pool
       .request()
       .input('bookingId', sql.BigInt, bookingId)
-      .query('SELECT COUNT(*) AS count FROM dbo.booking_guests WHERE booking_id = @bookingId');
-    const existingCount = existingGuestsResult.recordset[0].count;
-    newNumGuests = Math.max(bookingRow.num_guests, existingCount + input.guests.length + 1);
+      .query(`
+        SELECT COUNT(*) AS total, SUM(CASE WHEN is_child = 1 THEN 1 ELSE 0 END) AS children
+        FROM dbo.booking_guests WHERE booking_id = @bookingId
+      `);
+    const existingChildren = Number(existingGuestsResult.recordset[0].children ?? 0);
+    const existingAdults = Number(existingGuestsResult.recordset[0].total) - existingChildren;
+    const addedChildren = input.guests.filter((g) => g.isChild).length;
+    const addedAdults = input.guests.length - addedChildren;
+    newNumChildren = Math.max(newNumChildren, existingChildren + addedChildren);
+    const adults = Math.max(bookingRow.num_guests - (bookingRow.num_children ?? 0), 1 + existingAdults + addedAdults);
+    newNumGuests = Math.max(bookingRow.num_guests, adults + newNumChildren);
   }
 
   // check-in ADDS to whatever was already taken, so the two are weighed
@@ -2331,9 +2358,11 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
       .input('idProofNumber', sql.NVarChar, input.idProofNumber ?? null)
       .input('idProofDocument', sql.NVarChar, input.idProofDocument ?? null)
       .input('numGuests', sql.Int, newNumGuests)
+      .input('numChildren', sql.Int, newNumChildren)
       .query(`
         UPDATE dbo.bookings
         SET num_guests = @numGuests,
+            num_children = @numChildren,
             advance_amount = CASE
               WHEN @advanceAmount IS NULL THEN advance_amount
               ELSE ISNULL(advance_amount, 0) + @advanceAmount
@@ -2426,7 +2455,7 @@ async function getLateCheckout(lodgeId, bookingId, at = new Date(), roomId = nul
       SELECT TOP 1 br.id AS booking_room_id, br.room_id, r.room_number,
              br.check_in_date, br.check_out_date, br.actual_check_in_at, br.status,
              br.total_price, br.nightly_breakdown, br.late_checkout_charge,
-             l.checkin_mode, l.check_out_time, l.check_in_time, l.late_grace_minutes,
+             l.checkin_mode, l.check_out_time, l.check_in_time, l.early_arrival_from, l.late_grace_minutes,
              l.late_half_day_percent, l.late_full_day_after_minutes, l.late_full_day_percent
       FROM dbo.booking_rooms br
       JOIN dbo.bookings b ON b.id = br.booking_id
@@ -2456,6 +2485,8 @@ async function getLateCheckout(lodgeId, bookingId, at = new Date(), roomId = nul
     // TIME comes back as a Date on the 1970 epoch, so the clock is read off it
     // rather than the value being used as a moment in its own right.
     checkOutTime: toClockTime(row.check_out_time),
+    checkInTime: toClockTime(row.check_in_time),
+    earlyArrivalFrom: row.early_arrival_from == null ? null : toClockTime(row.early_arrival_from),
     checkInDate,
     checkOutDate,
     actualCheckInAt: row.actual_check_in_at,
@@ -2545,7 +2576,7 @@ async function listCheckoutAlerts(lodgeId, { windowMinutes = 60, at = new Date()
     .query(`
       SELECT br.id AS booking_room_id, br.booking_id, br.room_id, r.room_number,
              br.check_in_date, br.check_out_date, br.actual_check_in_at,
-             b.guest_name, l.checkin_mode, l.check_out_time
+             b.guest_name, l.checkin_mode, l.check_out_time, l.check_in_time, l.early_arrival_from
       FROM dbo.booking_rooms br
       JOIN dbo.bookings b ON b.id = br.booking_id
       JOIN dbo.rooms r ON r.id = br.room_id
@@ -2558,6 +2589,8 @@ async function listCheckoutAlerts(lodgeId, { windowMinutes = 60, at = new Date()
     const deadline = lateCheckout.checkoutDeadline({
       checkinMode: row.checkin_mode,
       checkOutTime: toClockTime(row.check_out_time),
+      checkInTime: toClockTime(row.check_in_time),
+      earlyArrivalFrom: row.early_arrival_from == null ? null : toClockTime(row.early_arrival_from),
       checkInDate: toIsoDate(row.check_in_date),
       checkOutDate: toIsoDate(row.check_out_date),
       actualCheckInAt: row.actual_check_in_at,
@@ -2754,7 +2787,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT status, num_guests, guest_name, guest_phone, discount_amount, advance_amount
+      SELECT status, num_guests, num_children, guest_name, guest_phone, discount_amount, advance_amount
       FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId
     `);
   const bookingRow = bookingResult.recordset[0];
@@ -2986,13 +3019,18 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
   const existingGuestsResult = await pool
     .request()
     .input('bookingId', sql.BigInt, bookingId)
-    .query('SELECT id, id_proof_document FROM dbo.booking_guests WHERE booking_id = @bookingId');
+    .query('SELECT id, id_proof_document, is_child FROM dbo.booking_guests WHERE booking_id = @bookingId');
   const existingGuests = existingGuestsResult.recordset;
 
   // The party as it will stand after this save, which is what the guest count
   // has to accommodate — checked against the list in this request rather than
   // the one on file, since both are changing at once.
-  const partySize = (input.guests ? input.guests.length : existingGuests.length) + 1;
+  const partyRows = input.guests
+    ? input.guests.map((g) => ({ isChild: Boolean(g.isChild) }))
+    : existingGuests.map((g) => ({ isChild: Boolean(g.is_child) }));
+  const namedChildren = partyRows.filter((g) => g.isChild).length;
+  const namedAdults = partyRows.length - namedChildren + 1;
+  const partySize = partyRows.length + 1;
 
   let newNumGuests = bookingRow.num_guests;
   if (input.numGuests != null) {
@@ -3002,6 +3040,24 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     newNumGuests = input.numGuests;
   } else if (partySize > newNumGuests) {
     throw new ApiError('Guest details can’t exceed the number of guests.', 400);
+  }
+
+  // Children are a count of their own, so an edit that doesn't mention it keeps
+  // the recorded figure — raised only if the rows now name more children than
+  // that — and one that does is held to the same limits as a new booking: at
+  // least one adult, and no more named people of either kind than the count
+  // allows.
+  let newNumChildren = Math.max(Number(bookingRow.num_children ?? 0), namedChildren);
+  if (input.numChildren != null) {
+    newNumChildren = input.numChildren;
+    if (newNumChildren > newNumGuests - 1) {
+      throw new ApiError('There has to be at least one adult — the primary guest.', 400);
+    }
+    if (namedChildren > newNumChildren || namedAdults > newNumGuests - newNumChildren) {
+      throw new ApiError('Guest details can’t exceed the number of adults or children.', 400);
+    }
+  } else if (newNumChildren > newNumGuests - 1) {
+    newNumChildren = Math.max(namedChildren, newNumGuests - 1);
   }
 
   const newGuestName = input.guestName != null ? input.guestName : bookingRow.guest_name;
@@ -3104,6 +3160,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     await new sql.Request(transaction)
       .input('bookingId', sql.BigInt, bookingId)
       .input('numGuests', sql.Int, newNumGuests)
+      .input('numChildren', sql.Int, newNumChildren)
       .input('guestName', sql.NVarChar, newGuestName)
       .input('guestPhone', sql.NVarChar, newGuestPhone)
       // The advance is set to what was typed, not added to — an edit corrects
@@ -3122,6 +3179,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       .query(`
         UPDATE dbo.bookings
         SET num_guests = @numGuests,
+            num_children = @numChildren,
             guest_name = @guestName, guest_phone = @guestPhone,
             advance_amount = CASE WHEN @setAdvance = 1 THEN @advanceAmount ELSE advance_amount END,
             advance_payment_method =

@@ -107,7 +107,7 @@ function directionsFor(lodge) {
 }
 
 // When a stay begins and ends, as the property's own rules put it. A
-// NIGHT_BASED or CYCLE property has fixed clock times on the lodge; a
+// NIGHT_BASED, CYCLE or HYBRID property has fixed clock times on the lodge; a
 // HOUR_24 property checks out 24 hours after the guest actually arrived, so
 // there is no time to promise until they do.
 function stayTimes(booking, lodge) {
@@ -115,6 +115,15 @@ function stayTimes(booking, lodge) {
   const checkOut = formatDate(dateParts(booking.check_out_date));
   if (lodge.checkin_mode === 'HOUR_24') {
     return { checkIn, checkOut: `${checkOut} (24 hrs from check-in)` };
+  }
+  if (lodge.checkin_mode === 'HYBRID') {
+    // An early arrival is out 24 hours after walking in; a later one by the
+    // fixed time — so the promise is the fixed time, with the early rule beside it.
+    const outAt = formatClock(toClockTime(lodge.check_out_time));
+    return {
+      checkIn: `${checkIn} ${formatClock(toClockTime(lodge.check_in_time))}`,
+      checkOut: `${checkOut} ${outAt} (24 hrs from check-in if you arrive before ${formatClock(toClockTime(lodge.check_in_time))})`,
+    };
   }
   return {
     checkIn: `${checkIn} ${formatClock(toClockTime(lodge.check_in_time))}`,

@@ -42,6 +42,15 @@ const coordinatesPaired = [
   { message: 'Enter both latitude and longitude, or leave both empty.', path: ['latitude'] },
 ];
 
+// 3-4 letters, upper-cased on the way in. It starts every booking number
+// (SKR2610001). Letters only, so the digits after it can always be told apart
+// from it and two hotels can never produce the same number.
+const bookingCodeField = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{3,4}$/, 'Booking code must be 3 or 4 letters.');
+
 const createLodgeSchema = z
   .object({
     lodgeName: z.string().trim().min(1, 'Lodge name is required.'),
@@ -50,6 +59,8 @@ const createLodgeSchema = z
       .trim()
       .min(1, 'Slug is required.')
       .regex(/^[a-z0-9-]+$/, 'Slug can only have lowercase letters, numbers and hyphens.'),
+    // Left blank, the server derives one from the name.
+    bookingCode: bookingCodeField.optional().or(z.literal('')),
     phone: z.string().trim().optional().default(''),
     whatsappNumber: z.string().trim().optional().default(''),
     address: z.string().trim().optional().default(''),
@@ -63,7 +74,7 @@ const createLodgeSchema = z
     // pin to hand — but when given, both halves must be.
     latitude: latitude.default(null),
     longitude: longitude.default(null),
-    checkinMode: z.enum(['HOUR_24', 'NIGHT_BASED', 'CYCLE']).default('HOUR_24'),
+    checkinMode: z.enum(['HOUR_24', 'NIGHT_BASED', 'CYCLE', 'HYBRID']).default('HOUR_24'),
     isGstRegistered: z.boolean().default(false),
     gstin: gstin.optional().default(''),
     isSpecifiedPremises: z.boolean().default(false),
@@ -145,6 +156,7 @@ const updateLodgeSchema = z.object({
     .min(1, 'Slug is required.')
     .regex(/^[a-z0-9-]+$/, 'Slug can only have lowercase letters, numbers and hyphens.')
     .optional(),
+  bookingCode: bookingCodeField.optional(),
   phone: z.string().trim().max(50).optional(),
   whatsappNumber: z.string().trim().max(50).optional(),
   address: z.string().trim().max(500).optional(),
@@ -155,7 +167,7 @@ const updateLodgeSchema = z.object({
   // null clears the pin.
   latitude: latitude.optional(),
   longitude: longitude.optional(),
-  checkinMode: z.enum(['HOUR_24', 'NIGHT_BASED', 'CYCLE']).optional(),
+  checkinMode: z.enum(['HOUR_24', 'NIGHT_BASED', 'CYCLE', 'HYBRID']).optional(),
   isGstRegistered: z.boolean().optional(),
   gstin: gstin.optional(),
   isSpecifiedPremises: z.boolean().optional(),

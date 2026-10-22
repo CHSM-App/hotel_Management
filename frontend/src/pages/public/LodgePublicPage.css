@@ -2017,3 +2017,24 @@
     grid-template-columns: 1fr;
   }
 }
+
+.lodge-public__modal-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fdecea;
+  color: #8a1c13;
+  font-size: 0.9rem;
+}
+
+.lodge-public__modal-success {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 4px 4px;
+  line-height: 1.5;
+}
+
+.lodge-public__modal-success p {
+  margin: 0;
+}
