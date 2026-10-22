@@ -239,6 +239,11 @@ test('every query touching a lodge-scoped table filters by lodge', () => {
   // still match something below, so a stale excuse fails rather than rots.
   const ACKNOWLEDGED = [
     {
+      file: 'enquiries/enquiries.service.js',
+      match: 'DELETE FROM dbo.lodge_enquiries WHERE created_at <',
+      why: 'The retention purge. It runs on a schedule with no lodge context and deliberately deletes every lodge\'s enquiries older than RETENTION_DAYS — the age is the whole filter, and no request or session can reach it.',
+    },
+    {
       file: 'orders/orders.service.js',
       match: '${filters.join',
       why: 'The WHERE clause is assembled in JS and always starts with "o.lodge_id = @lodgeId" — scoped, but behind an interpolation this scan cannot read through.',
