@@ -23,24 +23,42 @@ class AdvanceReceiptPdf {
     await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
-  static Future<String> download(AdvanceReceipt receipt, {String? lodgeName}) async {
+  static Future<String> download(
+    AdvanceReceipt receipt, {
+    String? lodgeName,
+  }) async {
     final bytes = await build(receipt, lodgeName: lodgeName);
-    final safe = (receipt.receiptNumber ?? '${receipt.id}').replaceAll(RegExp(r'[\\/]'), '-');
+    final safe = (receipt.receiptNumber ?? '${receipt.id}').replaceAll(
+      RegExp(r'[\\/]'),
+      '-',
+    );
     return saveBytesToDevice(bytes, '$safe.pdf');
   }
 
   static Future<void> share(AdvanceReceipt receipt, {String? lodgeName}) async {
     final bytes = await build(receipt, lodgeName: lodgeName);
-    final safe = (receipt.receiptNumber ?? '${receipt.id}').replaceAll(RegExp(r'[\\/]'), '-');
+    final safe = (receipt.receiptNumber ?? '${receipt.id}').replaceAll(
+      RegExp(r'[\\/]'),
+      '-',
+    );
     await shareBytesFromDevice(bytes, '$safe.pdf');
   }
 
-  static Future<Uint8List> build(AdvanceReceipt receipt, {String? lodgeName, bool compress = true}) async {
+  static Future<Uint8List> build(
+    AdvanceReceipt receipt, {
+    String? lodgeName,
+    bool compress = true,
+  }) async {
     final doc = pw.Document(compress: compress);
     final logo = await _fetchLogo(receipt.lodgeLogoUrl);
     doc.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.a6.copyWith(marginTop: 16, marginBottom: 16, marginLeft: 16, marginRight: 16),
+        pageFormat: PdfPageFormat.a6.copyWith(
+          marginTop: 16,
+          marginBottom: 16,
+          marginLeft: 16,
+          marginRight: 16,
+        ),
         build: (context) => _voucher(receipt, lodgeName, logo),
       ),
     );
@@ -73,14 +91,24 @@ class AdvanceReceiptPdf {
       .replaceAll(RegExp('[‘’]'), "'")
       .replaceAll(RegExp('[“”]'), '"');
 
-  static pw.Widget _voucher(AdvanceReceipt r, String? fallbackName, Uint8List? logo) {
+  static pw.Widget _voucher(
+    AdvanceReceipt r,
+    String? fallbackName,
+    Uint8List? logo,
+  ) {
     final isGst = r.billingSide == 'GST';
     final name = r.lodgeName ?? fallbackName ?? '';
     final isEvent = r.isEventReceipt;
     final tenders = r.paymentLines.isNotEmpty
         ? r.paymentLines
         : (r.paymentMethod != null
-              ? [PaymentLine(method: r.paymentMethod!, amount: r.amountReceived, reference: r.paymentReference)]
+              ? [
+                  PaymentLine(
+                    method: r.paymentMethod!,
+                    amount: r.amountReceived,
+                    reference: r.paymentReference,
+                  ),
+                ]
               : const <PaymentLine>[]);
     final singleMethod = tenders.length == 1 ? tenders.first.method : null;
     final singleRef = tenders.length == 1 ? tenders.first.reference : null;
@@ -103,19 +131,36 @@ class AdvanceReceiptPdf {
                         child: pw.Text(
                           'Receipt Voucher',
                           textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(fontSize: 9, fontStyle: pw.FontStyle.italic),
+                          style: pw.TextStyle(
+                            fontSize: 9,
+                            fontStyle: pw.FontStyle.italic,
+                          ),
                         ),
                       ),
                       if (r.lodgePhone != null)
-                        pw.Text(_ascii('Mob. ${r.lodgePhone}'), style: const pw.TextStyle(fontSize: 7)),
+                        pw.Text(
+                          _ascii('Mob. ${r.lodgePhone}'),
+                          style: const pw.TextStyle(fontSize: 7),
+                        ),
                     ],
                   ),
                   pw.SizedBox(height: 2),
                   pw.Center(
-                    child: pw.Text(_ascii(name), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                    child: pw.Text(
+                      _ascii(name),
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
                   ),
                   if (r.lodgeAddress != null)
-                    pw.Center(child: pw.Text(_ascii(r.lodgeAddress!), style: const pw.TextStyle(fontSize: 7))),
+                    pw.Center(
+                      child: pw.Text(
+                        _ascii(r.lodgeAddress!),
+                        style: const pw.TextStyle(fontSize: 7),
+                      ),
+                    ),
                 ],
               ),
               // Same corner spot BillPdf uses, opposite the "Mob." line.
@@ -127,17 +172,30 @@ class AdvanceReceiptPdf {
                     height: 22,
                     width: 22,
                     alignment: pw.Alignment.center,
-                    child: pw.Image(pw.MemoryImage(logo), fit: pw.BoxFit.contain),
+                    child: pw.Image(
+                      pw.MemoryImage(logo),
+                      fit: pw.BoxFit.contain,
+                    ),
                   ),
                 ),
             ],
           ),
 
           _rule(),
-          _strip([_label('No.-'), _filled('${r.receiptNumber ?? r.id}', width: 60), _label('Date -'), _filled(_date(r.createdAt), width: 80)]),
+          _strip([
+            _label('No.-'),
+            _filled('${r.receiptNumber ?? r.id}', width: 60),
+            _label('Date -'),
+            _filled(_date(r.createdAt), width: 80),
+          ]),
           _rule(),
 
-          _strip([_label('Received with thanks from'), _filled(r.guestName ?? '', flex: 2), _label('Mob. No.'), _filled(r.guestPhone ?? '', width: 76)]),
+          _strip([
+            _label('Received with thanks from'),
+            _filled(r.guestName ?? '', flex: 2),
+            _label('Mob. No.'),
+            _filled(r.guestPhone ?? '', width: 76),
+          ]),
           pw.SizedBox(height: 2),
           pw.Text(
             _ascii(
@@ -149,7 +207,10 @@ class AdvanceReceiptPdf {
           ),
           pw.SizedBox(height: 3),
 
-          _strip([_label('the sum of Rupees'), _filled(_inWords(r.amountReceived), flex: 3)]),
+          _strip([
+            _label('the sum of Rupees'),
+            _filled(_inWords(r.amountReceived), flex: 3),
+          ]),
           pw.SizedBox(height: 3),
 
           pw.Row(
@@ -165,11 +226,24 @@ class AdvanceReceiptPdf {
                         width: 7,
                         height: 7,
                         alignment: pw.Alignment.center,
-                        decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.6)),
-                        child: singleMethod == m ? pw.Text('X', style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)) : null,
+                        decoration: pw.BoxDecoration(
+                          border: pw.Border.all(width: 0.6),
+                        ),
+                        child: singleMethod == m
+                            ? pw.Text(
+                                'X',
+                                style: pw.TextStyle(
+                                  fontSize: 6,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              )
+                            : null,
                       ),
                       pw.SizedBox(width: 2),
-                      pw.Text(_ascii(kPayLabels[m] ?? m), style: const pw.TextStyle(fontSize: 7)),
+                      pw.Text(
+                        _ascii(kPayLabels[m] ?? m),
+                        style: const pw.TextStyle(fontSize: 7),
+                      ),
                     ],
                   ),
                 ),
@@ -183,14 +257,25 @@ class AdvanceReceiptPdf {
               child: pw.Text(
                 _ascii(
                   tenders
-                      .map((t) => '${kPayLabels[t.method] ?? t.method}${t.reference != null ? ' (${t.reference})' : ''}: ${_amt(t.amount)}')
+                      .map(
+                        (t) =>
+                            '${kPayLabels[t.method] ?? t.method}${t.reference != null ? ' (${t.reference})' : ''}: ${_amt(t.amount)}',
+                      )
                       .join(', '),
                 ),
-                style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+                style: const pw.TextStyle(
+                  fontSize: 7,
+                  color: PdfColors.grey700,
+                ),
               ),
             ),
           pw.SizedBox(height: 2),
-          _strip([_label('against full/part payment of our Bill No.'), _filled('', flex: 1), _label('Dated'), _filled('', width: 50)]),
+          _strip([
+            _label('against full/part payment of our Bill No.'),
+            _filled('', flex: 1),
+            _label('Dated'),
+            _filled('', width: 50),
+          ]),
 
           if (isGst)
             _strip([
@@ -203,7 +288,11 @@ class AdvanceReceiptPdf {
 
           // ── The money column ───────────────────────────────────────────
           pw.Table(
-            columnWidths: const {0: pw.FlexColumnWidth(), 1: pw.FixedColumnWidth(48), 2: pw.FixedColumnWidth(22)},
+            columnWidths: const {
+              0: pw.FlexColumnWidth(),
+              1: pw.FixedColumnWidth(48),
+              2: pw.FixedColumnWidth(22),
+            },
             children: [
               _moneyRow(isEvent ? 'Stay Total' : 'Stay Total', r.stayTotal),
               _moneyRow('Less: Advance Received', r.amountReceived),
@@ -215,9 +304,18 @@ class AdvanceReceiptPdf {
           pw.Align(
             alignment: pw.Alignment.centerLeft,
             child: pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 5,
+              ),
               decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.6)),
-              child: pw.Text(_ascii('₹ ${_amtWhole(r.amountReceived)}/-'), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+              child: pw.Text(
+                _ascii('₹ ${_amtWhole(r.amountReceived)}/-'),
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
             ),
           ),
 
@@ -225,23 +323,37 @@ class AdvanceReceiptPdf {
           pw.Text(
             _ascii(
               r.balanceDue <= 0.005
-                  ? (isEvent ? 'This advance settles the function total in full.' : 'This advance settles the stay total in full.')
+                  ? (isEvent
+                        ? 'This advance settles the function total in full.'
+                        : 'This advance settles the stay total in full.')
                   : (isEvent
                         ? 'This advance is adjusted against the final bill for the function named above. Please keep this receipt for settlement.'
                         : 'This advance is adjusted against the final bill for the stay named above. Please keep this receipt for settlement.'),
             ),
             style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
           ),
-          pw.Text('This is a receipt voucher for an advance, not a tax invoice.', style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700)),
+          pw.Text(
+            'This is a receipt voucher for an advance, not a tax invoice.',
+            style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+          ),
           if (r.lodgeCity != null)
-            pw.Text(_ascii('Subject to ${r.lodgeCity} Jurisdiction.'), style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700)),
+            pw.Text(
+              _ascii('Subject to ${r.lodgeCity} Jurisdiction.'),
+              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+            ),
 
           if (r.isVoid) ...[
             pw.SizedBox(height: 4),
             pw.Center(
               child: pw.Text(
-                _ascii('VOID${r.voidReason != null ? ' - ${r.voidReason}' : ''}'),
-                style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.red),
+                _ascii(
+                  'VOID${r.voidReason != null ? ' - ${r.voidReason}' : ''}',
+                ),
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.red,
+                ),
               ),
             ),
           ],
@@ -252,7 +364,15 @@ class AdvanceReceiptPdf {
             children: [
               _sign("Guest's Sign."),
               pw.Expanded(
-                child: pw.Center(child: pw.Text('THANK YOU!', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
+                child: pw.Center(
+                  child: pw.Text(
+                    'THANK YOU!',
+                    style: pw.TextStyle(
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
               ),
               _sign('For Prop. / Manager'),
             ],
@@ -264,42 +384,98 @@ class AdvanceReceiptPdf {
 
   // ── Ruled-pad pieces, the same shapes BillPdf draws ────────────────────
 
-  static pw.Widget _rule() => pw.Container(height: 0.5, margin: const pw.EdgeInsets.symmetric(vertical: 3), color: PdfColors.black);
+  static pw.Widget _rule() => pw.Container(
+    height: 0.5,
+    margin: const pw.EdgeInsets.symmetric(vertical: 3),
+    color: PdfColors.black,
+  );
 
-  static pw.Widget _strip(List<pw.Widget> children) =>
-      pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 1.5), child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.end, children: children));
+  static pw.Widget _strip(List<pw.Widget> children) => pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+    child: pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.end,
+      children: children,
+    ),
+  );
 
-  static pw.Widget _label(String text) => pw.Text(_ascii(text), style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700));
+  static pw.Widget _label(String text) => pw.Text(
+    _ascii(text),
+    style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+  );
 
-  static pw.Widget _filled(String value, {double? width, int? flex, bool fine = false}) {
+  static pw.Widget _filled(
+    String value, {
+    double? width,
+    int? flex,
+    bool fine = false,
+  }) {
     final field = _underline(value, fine: fine);
     if (flex != null) return pw.Expanded(flex: flex, child: field);
     return pw.SizedBox(width: width, child: field);
   }
 
-  static pw.Widget _underline(String value, {bool fine = false}) => pw.Container(
-    margin: const pw.EdgeInsets.symmetric(horizontal: 3),
-    padding: const pw.EdgeInsets.only(bottom: 1),
-    decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.4))),
-    child: pw.Text(_ascii(value), style: pw.TextStyle(fontSize: fine ? 6.5 : 8, fontWeight: pw.FontWeight.bold)),
-  );
+  static pw.Widget _underline(String value, {bool fine = false}) =>
+      pw.Container(
+        margin: const pw.EdgeInsets.symmetric(horizontal: 3),
+        padding: const pw.EdgeInsets.only(bottom: 1),
+        decoration: const pw.BoxDecoration(
+          border: pw.Border(bottom: pw.BorderSide(width: 0.4)),
+        ),
+        child: pw.Text(
+          _ascii(value),
+          style: pw.TextStyle(
+            fontSize: fine ? 6.5 : 8,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+      );
 
-  static pw.TableRow _moneyRow(String label, num value, {bool strong = false, bool rule = false}) {
+  static pw.TableRow _moneyRow(
+    String label,
+    num value, {
+    bool strong = false,
+    bool rule = false,
+  }) {
     final (rs, ps) = _split(value);
     return pw.TableRow(
-      decoration: rule ? const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))) : null,
+      decoration: rule
+          ? const pw.BoxDecoration(
+              border: pw.Border(top: pw.BorderSide(width: 0.5)),
+            )
+          : null,
       children: [
         pw.Padding(
           padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-          child: pw.Text(_ascii(label), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: strong ? 9 : 8, fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal)),
+          child: pw.Text(
+            _ascii(label),
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(
+              fontSize: strong ? 9 : 8,
+              fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
         ),
         pw.Padding(
           padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-          child: pw.Text(rs, textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: strong ? 9 : 8, fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal)),
+          child: pw.Text(
+            rs,
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(
+              fontSize: strong ? 9 : 8,
+              fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
         ),
         pw.Padding(
           padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-          child: pw.Text(ps, textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: strong ? 9 : 8, fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal)),
+          child: pw.Text(
+            ps,
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(
+              fontSize: strong ? 9 : 8,
+              fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
         ),
       ],
     );
@@ -323,12 +499,16 @@ class AdvanceReceiptPdf {
     final paiseTotal = (value.abs() * 100).round();
     final whole = paiseTotal ~/ 100;
     final paise = paiseTotal % 100;
-    return ('$sign${NumberFormat.decimalPattern('en_IN').format(whole)}', paise.toString().padLeft(2, '0'));
+    return (
+      '$sign${NumberFormat.decimalPattern('en_IN').format(whole)}',
+      paise.toString().padLeft(2, '0'),
+    );
   }
 
   static String _amt(num n) => NumberFormat('#,##,##0.00', 'en_IN').format(n);
 
-  static String _amtWhole(num n) => NumberFormat.decimalPattern('en_IN').format(n.round());
+  static String _amtWhole(num n) =>
+      NumberFormat.decimalPattern('en_IN').format(n.round());
 
   static String _date(String? iso) {
     if (iso == null || iso.isEmpty) return '';
@@ -342,18 +522,51 @@ class AdvanceReceiptPdf {
   }
 
   static const _ones = [
-    '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
-    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen',
+    '',
+    'One',
+    'Two',
+    'Three',
+    'Four',
+    'Five',
+    'Six',
+    'Seven',
+    'Eight',
+    'Nine',
+    'Ten',
+    'Eleven',
+    'Twelve',
+    'Thirteen',
+    'Fourteen',
+    'Fifteen',
+    'Sixteen',
+    'Seventeen',
+    'Eighteen',
+    'Nineteen',
   ];
-  static const _tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  static const _tens = [
+    '',
+    '',
+    'Twenty',
+    'Thirty',
+    'Forty',
+    'Fifty',
+    'Sixty',
+    'Seventy',
+    'Eighty',
+    'Ninety',
+  ];
 
   static String _words(int n) {
     if (n < 0) return 'Minus ${_words(-n)}';
     if (n < 20) return _ones[n];
-    if (n < 100) return '${_tens[n ~/ 10]}${n % 10 == 0 ? '' : ' ${_ones[n % 10]}'}';
-    if (n < 1000) return '${_ones[n ~/ 100]} Hundred${n % 100 == 0 ? '' : ' ${_words(n % 100)}'}';
-    if (n < 100000) return '${_words(n ~/ 1000)} Thousand${n % 1000 == 0 ? '' : ' ${_words(n % 1000)}'}';
-    if (n < 10000000) return '${_words(n ~/ 100000)} Lakh${n % 100000 == 0 ? '' : ' ${_words(n % 100000)}'}';
+    if (n < 100)
+      return '${_tens[n ~/ 10]}${n % 10 == 0 ? '' : ' ${_ones[n % 10]}'}';
+    if (n < 1000)
+      return '${_ones[n ~/ 100]} Hundred${n % 100 == 0 ? '' : ' ${_words(n % 100)}'}';
+    if (n < 100000)
+      return '${_words(n ~/ 1000)} Thousand${n % 1000 == 0 ? '' : ' ${_words(n % 1000)}'}';
+    if (n < 10000000)
+      return '${_words(n ~/ 100000)} Lakh${n % 100000 == 0 ? '' : ' ${_words(n % 100000)}'}';
     return '${_words(n ~/ 10000000)} Crore${n % 10000000 == 0 ? '' : ' ${_words(n % 10000000)}'}';
   }
 }

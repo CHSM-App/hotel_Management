@@ -110,9 +110,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           .bookings(fromDate: _fromDate, toDate: _toDate);
       // Drafts have no date range: some are parked before room or dates are
       // chosen. Keep them available to the register's Draft filter.
-      final drafts = await ref.read(bookingUsecaseProvider).drafts().catchError(
-        (_) => <BookingDraft>[],
-      );
+      final drafts = await ref
+          .read(bookingUsecaseProvider)
+          .drafts()
+          .catchError((_) => <BookingDraft>[]);
       if (!mounted) return;
       setState(() {
         _bookings = rows;
@@ -158,7 +159,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   /// place, one tap apart.
   bool _filterOpen = false;
   final LayerLink _filterLink = LayerLink();
-  final OverlayPortalController _filterPortalController = OverlayPortalController();
+  final OverlayPortalController _filterPortalController =
+      OverlayPortalController();
 
   void _toggleFilterOpen() {
     setState(() => _filterOpen = !_filterOpen);
@@ -202,7 +204,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   List<BookingDraft> get _filteredDrafts =>
-      _statuses.isEmpty || _statuses.contains('DRAFT') ? _searchedDrafts : const [];
+      _statuses.isEmpty || _statuses.contains('DRAFT')
+      ? _searchedDrafts
+      : const [];
 
   @override
   Widget build(BuildContext context) {
@@ -212,7 +216,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       counts[b.status ?? ''] = (counts[b.status ?? ''] ?? 0) + 1;
     }
     counts['DRAFT'] = _searchedDrafts.length;
-    final showingStays = _statuses.isEmpty || _statuses.any((s) => s != 'DRAFT');
+    final showingStays =
+        _statuses.isEmpty || _statuses.any((s) => s != 'DRAFT');
     final visibleBookings = showingStays ? filtered : const <Booking>[];
     final visibleDrafts = _filteredDrafts;
 
@@ -311,7 +316,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   draft: d,
                   onTap: () async {
                     await Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => TakeBookingScreen(draft: d)),
+                      MaterialPageRoute(
+                        builder: (_) => TakeBookingScreen(draft: d),
+                      ),
                     );
                     _load(silent: true);
                   },
@@ -404,13 +411,13 @@ class _RangeAndSearch extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppTheme.s12),
+        const SizedBox(height: AppTheme.s8),
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Container(
-                height: 48,
+                height: 40,
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                 decoration: BoxDecoration(
                   color: AppTheme.card,
@@ -421,8 +428,8 @@ class _RangeAndSearch extends StatelessWidget {
                 child: Row(
                   children: [
                     Container(
-                      width: 34,
-                      height: 34,
+                      width: 28,
+                      height: 28,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: AppTheme.accent.withValues(alpha: 0.10),
@@ -430,7 +437,7 @@ class _RangeAndSearch extends StatelessWidget {
                       ),
                       child: const Icon(
                         Icons.search_rounded,
-                        size: 17,
+                        size: 15,
                         color: AppTheme.accent,
                       ),
                     ),
@@ -451,7 +458,7 @@ class _RangeAndSearch extends StatelessWidget {
                           ),
                           border: InputBorder.none,
                           isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 13),
+                          contentPadding: EdgeInsets.symmetric(vertical: 10),
                         ),
                       ),
                     ),
@@ -463,8 +470,8 @@ class _RangeAndSearch extends StatelessWidget {
                         },
                         behavior: HitTestBehavior.opaque,
                         child: Container(
-                          width: 30,
-                          height: 30,
+                          width: 26,
+                          height: 26,
                           margin: const EdgeInsets.only(right: 2),
                           alignment: Alignment.center,
                           decoration: const BoxDecoration(
@@ -524,8 +531,8 @@ class _FilterButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 48,
-        height: 48,
+        width: 40,
+        height: 40,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           gradient: on
@@ -554,7 +561,7 @@ class _FilterButton extends StatelessWidget {
           children: [
             Icon(
               Icons.filter_alt_rounded,
-              size: 19,
+              size: 17,
               color: on ? Colors.white : AppTheme.accent,
             ),
             if (count > 0)
@@ -562,13 +569,19 @@ class _FilterButton extends StatelessWidget {
                 top: -4,
                 right: -6,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
                     border: Border.all(color: AppTheme.accent, width: 1.2),
                   ),
-                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  constraints: const BoxConstraints(
+                    minWidth: 16,
+                    minHeight: 16,
+                  ),
                   child: Text(
                     '$count',
                     textAlign: TextAlign.center,
@@ -602,8 +615,18 @@ class _DateField extends StatelessWidget {
 
   static const _months = [
     '',
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   @override
@@ -628,7 +651,7 @@ class _DateField extends StatelessWidget {
         highlightColor: AppTheme.accent.withValues(alpha: 0.05),
         splashColor: AppTheme.accent.withValues(alpha: 0.08),
         child: Container(
-          height: 50,
+          height: 42,
           padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
           decoration: BoxDecoration(
             color: AppTheme.card,
@@ -642,8 +665,8 @@ class _DateField extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 26,
+                height: 26,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: AppTheme.accent.withValues(alpha: 0.14),
@@ -651,7 +674,7 @@ class _DateField extends StatelessWidget {
                 ),
                 child: const Icon(
                   Icons.calendar_today_rounded,
-                  size: 14,
+                  size: 13,
                   color: AppTheme.accent,
                 ),
               ),
@@ -665,7 +688,7 @@ class _DateField extends StatelessWidget {
                       label,
                       style: const TextStyle(
                         color: AppTheme.muted,
-                        fontSize: 9.5,
+                        fontSize: 9,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -677,7 +700,7 @@ class _DateField extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: AppTheme.heading,
-                        fontSize: 12.5,
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -753,9 +776,10 @@ class _DraftRegisterCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final form = draft.form;
     final name = (draft.guestName ?? form.guestName).trim();
-    final dates = [draft.checkInDate, draft.checkOutDate]
-        .whereType<String>()
-        .join(' – ');
+    final dates = [
+      draft.checkInDate,
+      draft.checkOutDate,
+    ].whereType<String>().join(' – ');
     return GestureDetector(
       onTap: onTap,
       child: NeuCard(
@@ -777,14 +801,22 @@ class _DraftRegisterCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name.isEmpty ? 'Draft booking' : name,
-                      style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600)),
+                  Text(
+                    name.isEmpty ? 'Draft booking' : name,
+                    style: const TextStyle(
+                      color: AppTheme.heading,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text([
-                    if (draft.roomNumber != null) 'Room ${draft.roomNumber}',
-                    if (dates.isNotEmpty) dates,
-                    'Draft',
-                  ].join(' · '), style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  Text(
+                    [
+                      if (draft.roomNumber != null) 'Room ${draft.roomNumber}',
+                      if (dates.isNotEmpty) dates,
+                      'Draft',
+                    ].join(' · '),
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  ),
                 ],
               ),
             ),
@@ -820,123 +852,125 @@ class _RegisterCard extends StatelessWidget {
         padding: EdgeInsets.zero,
         child: IntrinsicHeight(
           child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s16,
-                  AppTheme.s12,
-                  AppTheme.s12,
-                  AppTheme.s12,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            (b.guestName ?? '').trim().isEmpty
-                                ? 'Guest'
-                                : capitalizeWords(b.guestName),
-                            style: const TextStyle(
-                              color: AppTheme.heading,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                              letterSpacing: -0.1,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.s16,
+                    AppTheme.s12,
+                    AppTheme.s12,
+                    AppTheme.s12,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              (b.guestName ?? '').trim().isEmpty
+                                  ? 'Guest'
+                                  : capitalizeWords(b.guestName),
+                              style: const TextStyle(
+                                color: AppTheme.heading,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
+                                letterSpacing: -0.1,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        const SizedBox(width: AppTheme.s8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _kStatusIcon[b.status] ?? Icons.circle,
-                                size: 11,
-                                color: statusColor,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                kRegisterStatusLabel[b.status] ?? b.status ?? '',
-                                style: TextStyle(
+                          const SizedBox(width: AppTheme.s8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _kStatusIcon[b.status] ?? Icons.circle,
+                                  size: 11,
                                   color: statusColor,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 4),
+                                Text(
+                                  kRegisterStatusLabel[b.status] ??
+                                      b.status ??
+                                      '',
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${b.bookingNumber != null ? '${b.bookingNumber} · ' : ''}'
-                      'Room ${b.roomNumber ?? '—'}'
-                      '${b.categoryName != null ? ' · ${b.categoryName}' : ''}'
-                      '${(b.guestPhone ?? '').isNotEmpty ? ' · ${b.guestPhone}' : ''}',
-                      style: const TextStyle(
-                        color: AppTheme.muted,
-                        fontSize: 11.5,
+                        ],
                       ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: AppTheme.s12),
-                    Container(height: 1, color: AppTheme.border),
-                    const SizedBox(height: AppTheme.s12),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: _Field(
-                            label: 'Came in',
-                            value: cameIn != null
-                                ? formatDateTime(cameIn)
-                                : 'Due ${formatIsoDate(b.checkInDate)}',
-                          ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${b.bookingNumber != null ? '${b.bookingNumber} · ' : ''}'
+                        'Room ${b.roomNumber ?? '—'}'
+                        '${b.categoryName != null ? ' · ${b.categoryName}' : ''}'
+                        '${(b.guestPhone ?? '').isNotEmpty ? ' · ${b.guestPhone}' : ''}',
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 11.5,
                         ),
-                        const SizedBox(width: AppTheme.s8),
-                        Expanded(
-                          flex: 3,
-                          child: _Field(
-                            label: 'Left',
-                            value: left != null
-                                ? formatDateTime(left)
-                                : cameIn != null
-                                ? 'Still staying'
-                                : 'Due ${formatIsoDate(b.checkOutDate)}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: AppTheme.s12),
+                      Container(height: 1, color: AppTheme.border),
+                      const SizedBox(height: AppTheme.s12),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: _Field(
+                              label: 'Came in',
+                              value: cameIn != null
+                                  ? formatDateTime(cameIn)
+                                  : 'Due ${formatIsoDate(b.checkInDate)}',
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: AppTheme.s8),
-                        Expanded(
-                          flex: 2,
-                          child: _Field(
-                            label: 'Amount',
-                            value: formatPrice(amount),
-                            accent: true,
-                            alignEnd: true,
+                          const SizedBox(width: AppTheme.s8),
+                          Expanded(
+                            flex: 3,
+                            child: _Field(
+                              label: 'Left',
+                              value: left != null
+                                  ? formatDateTime(left)
+                                  : cameIn != null
+                                  ? 'Still staying'
+                                  : 'Due ${formatIsoDate(b.checkOutDate)}',
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                          const SizedBox(width: AppTheme.s8),
+                          Expanded(
+                            flex: 2,
+                            child: _Field(
+                              label: 'Amount',
+                              value: formatPrice(amount),
+                              accent: true,
+                              alignEnd: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
           ),
         ),
       ),
@@ -960,8 +994,9 @@ class _Field extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment:
-          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         Text(
           label,
@@ -987,4 +1022,3 @@ class _Field extends StatelessWidget {
     );
   }
 }
-

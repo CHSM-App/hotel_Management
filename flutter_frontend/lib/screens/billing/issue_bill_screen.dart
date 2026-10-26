@@ -39,46 +39,49 @@ class IssueBillScreen extends ConsumerWidget {
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
         title: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Issue bill',
-                      style: TextStyle(
-                        color: AppTheme.heading,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    if (state.target?.guestName != null)
-                      Text(
-                        [
-                          state.target!.guestName!,
-                          if (preview?.roomNumber != null) 'Room ${preview!.roomNumber}',
-                        ].join('  ·  '),
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppTheme.muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                  ],
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Issue bill',
+              style: TextStyle(
+                color: AppTheme.heading,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
+            ),
+            if (state.target?.guestName != null)
+              Text(
+                [
+                  state.target!.guestName!,
+                  if (preview?.roomNumber != null)
+                    'Room ${preview!.roomNumber}',
+                ].join('  ·  '),
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                 ),
+              ),
+          ],
+        ),
         leading: IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.heading),
-                  onPressed: () {
-                    vm.close();
-                    Navigator.of(context).pop();
-                  },
-                ),
+          icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.heading),
+          onPressed: () {
+            vm.close();
+            Navigator.of(context).pop();
+          },
+        ),
       ),
       body: SafeArea(
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: const BoxConstraints(
+              maxWidth: AppTheme.maxContentWidth,
+            ),
             child: preview == null
                 ? Center(
                     child: state.previewing
@@ -170,7 +173,8 @@ class _Body extends ConsumerWidget {
               for (final item in preview.serviceItems)
                 _ItemRow(
                   name: item.name,
-                  detail: '${item.quantity} × ${formatPrice(item.unitPrice)}'
+                  detail:
+                      '${item.quantity} × ${formatPrice(item.unitPrice)}'
                       '${item.gstRatePercent > 0 ? ' · GST ${item.gstRatePercent}%' : ''}',
                   value: item.lineTotal,
                 ),
@@ -186,7 +190,7 @@ class _Body extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                _BillHero(preview: preview, amounts: amounts),
+              _BillHero(preview: preview, amounts: amounts),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppTheme.s12,
@@ -200,7 +204,8 @@ class _Body extends ConsumerWidget {
                     const SizedBox(height: 2),
                     const _SectionLabel('Charges'),
 
-                    if (roomBillSections(preview.roomCharges) case final sections?)
+                    if (roomBillSections(preview.roomCharges)
+                        case final sections?)
                       for (final section in sections)
                         _RoomSectionRows(section: section)
                     else
@@ -209,7 +214,8 @@ class _Body extends ConsumerWidget {
 
                     if (preview.lateCheckoutCharge > 0)
                       _Row(
-                        label: 'Late checkout'
+                        label:
+                            'Late checkout'
                             '${preview.lateCheckoutMinutes > 0 ? ' (${preview.lateCheckoutMinutes} min)' : ''}',
                         value: preview.lateCheckoutCharge,
                       ),
@@ -218,7 +224,10 @@ class _Body extends ConsumerWidget {
                       _Row(label: 'Food', value: amounts!.foodSubtotal),
 
                     if ((amounts?.serviceSubtotal ?? 0) > 0)
-                      _Row(label: 'Other services', value: amounts!.serviceSubtotal),
+                      _Row(
+                        label: 'Other services',
+                        value: amounts!.serviceSubtotal,
+                      ),
 
                     if ((amounts?.discountAmount ?? 0) > 0)
                       _Row(
@@ -226,7 +235,11 @@ class _Body extends ConsumerWidget {
                         value: -amounts.discountAmount,
                       ),
 
-                    const Divider(height: 14, thickness: 0.8, color: AppTheme.border),
+                    const Divider(
+                      height: 14,
+                      thickness: 0.8,
+                      color: AppTheme.border,
+                    ),
 
                     // The tax is inside the total, not added to it. Shown so
                     // the guest can see what was charged, and so the figures
@@ -240,7 +253,8 @@ class _Body extends ConsumerWidget {
                         (amounts?.foodCgstAmount ?? 0) > 0 ||
                         (amounts?.serviceCgstAmount ?? 0) > 0)
                       const _SectionLabel('Tax included in total'),
-                    if ((amounts?.cgstAmount ?? 0) > 0 || (amounts?.sgstAmount ?? 0) > 0) ...[
+                    if ((amounts?.cgstAmount ?? 0) > 0 ||
+                        (amounts?.sgstAmount ?? 0) > 0) ...[
                       _Row(
                         label: 'CGST (${amounts?.cgstRatePercent ?? 0}%)',
                         value: amounts?.cgstAmount ?? 0,
@@ -252,26 +266,32 @@ class _Body extends ConsumerWidget {
                         muted: true,
                       ),
                     ],
-                    if ((amounts?.foodCgstAmount ?? 0) > 0 || (amounts?.foodSgstAmount ?? 0) > 0) ...[
+                    if ((amounts?.foodCgstAmount ?? 0) > 0 ||
+                        (amounts?.foodSgstAmount ?? 0) > 0) ...[
                       _Row(
-                        label: 'CGST (${amounts?.foodCgstRatePercent ?? 0}%) on food',
+                        label:
+                            'CGST (${amounts?.foodCgstRatePercent ?? 0}%) on food',
                         value: amounts?.foodCgstAmount ?? 0,
                         muted: true,
                       ),
                       _Row(
-                        label: 'SGST (${amounts?.foodSgstRatePercent ?? 0}%) on food',
+                        label:
+                            'SGST (${amounts?.foodSgstRatePercent ?? 0}%) on food',
                         value: amounts?.foodSgstAmount ?? 0,
                         muted: true,
                       ),
                     ],
-                    if ((amounts?.serviceCgstAmount ?? 0) > 0 || (amounts?.serviceSgstAmount ?? 0) > 0) ...[
+                    if ((amounts?.serviceCgstAmount ?? 0) > 0 ||
+                        (amounts?.serviceSgstAmount ?? 0) > 0) ...[
                       _Row(
-                        label: 'CGST (${amounts?.serviceCgstRatePercent ?? 0}%) on services',
+                        label:
+                            'CGST (${amounts?.serviceCgstRatePercent ?? 0}%) on services',
                         value: amounts?.serviceCgstAmount ?? 0,
                         muted: true,
                       ),
                       _Row(
-                        label: 'SGST (${amounts?.serviceSgstRatePercent ?? 0}%) on services',
+                        label:
+                            'SGST (${amounts?.serviceSgstRatePercent ?? 0}%) on services',
                         value: amounts?.serviceSgstAmount ?? 0,
                         muted: true,
                       ),
@@ -283,7 +303,11 @@ class _Body extends ConsumerWidget {
                         muted: true,
                       ),
 
-                    const Divider(height: 14, thickness: 0.8, color: AppTheme.border),
+                    const Divider(
+                      height: 14,
+                      thickness: 0.8,
+                      color: AppTheme.border,
+                    ),
                     _Row(
                       label: 'Grand total',
                       value: amounts?.totalAmount ?? 0,
@@ -301,11 +325,16 @@ class _Body extends ConsumerWidget {
                     const SizedBox(height: AppTheme.s8),
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.s12,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: AppTheme.sidebarBrandWash,
                         borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                        border: Border.all(color: AppTheme.sidebarBrandWashEdge),
+                        border: Border.all(
+                          color: AppTheme.sidebarBrandWashEdge,
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -355,10 +384,14 @@ class _Body extends ConsumerWidget {
             trailing: Text(
               formatPrice(preview.lateCheckoutAgreed),
               style: TextStyle(
-                color: state.includeLateCheckout ? AppTheme.heading : AppTheme.muted,
+                color: state.includeLateCheckout
+                    ? AppTheme.heading
+                    : AppTheme.muted,
                 fontWeight: FontWeight.w800,
                 fontSize: 15,
-                decoration: state.includeLateCheckout ? null : TextDecoration.lineThrough,
+                decoration: state.includeLateCheckout
+                    ? null
+                    : TextDecoration.lineThrough,
               ),
             ),
             children: [
@@ -401,7 +434,10 @@ class _Body extends ConsumerWidget {
         // the unused ones back. It fills the discount below.
         if (preview.earlyCheckout != null) ...[
           const SizedBox(height: AppTheme.s12),
-          _EarlyCheckoutNotice(state: state, earlyCheckout: preview.earlyCheckout!),
+          _EarlyCheckoutNotice(
+            state: state,
+            earlyCheckout: preview.earlyCheckout!,
+          ),
         ],
 
         // ── The discount ─────────────────────────────────────────────────────
@@ -425,16 +461,26 @@ class _Body extends ConsumerWidget {
                 color: AppTheme.accent,
                 borderRadius: BorderRadius.circular(7),
               ),
-              child: const Icon(Icons.payments_rounded, color: Colors.white, size: 13),
+              child: const Icon(
+                Icons.payments_rounded,
+                color: Colors.white,
+                size: 13,
+              ),
             ),
             const SizedBox(width: 10),
             const Text(
               'Record payment',
-              style: TextStyle(color: AppTheme.heading, fontSize: 14, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                color: AppTheme.heading,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const Spacer(),
             Text(
-              state.nothingDue ? 'Nothing due' : '${formatPrice(state.balanceDue)} due',
+              state.nothingDue
+                  ? 'Nothing due'
+                  : '${formatPrice(state.balanceDue)} due',
               style: TextStyle(
                 color: state.nothingDue ? AppTheme.vacant : AppTheme.accent,
                 fontSize: 12.5,
@@ -462,20 +508,31 @@ class _Body extends ConsumerWidget {
         const SizedBox(height: AppTheme.s16),
         if (state.error != null) ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s12,
+              vertical: AppTheme.s8,
+            ),
             decoration: BoxDecoration(
               color: AppTheme.danger.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(AppTheme.rSmall),
-              border: Border.all(color: AppTheme.danger.withValues(alpha: 0.25)),
+              border: Border.all(
+                color: AppTheme.danger.withValues(alpha: 0.25),
+              ),
             ),
             child: Row(
               children: [
-                const Icon(Icons.error_outline_rounded, color: AppTheme.danger, size: 16),
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: AppTheme.danger,
+                  size: 16,
+                ),
                 const SizedBox(width: AppTheme.s8),
                 Expanded(
                   child: Text(
                     state.error!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
                   ),
                 ),
               ],
@@ -504,7 +561,12 @@ class _BillHero extends StatelessWidget {
     final guest = preview.guestName;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s12),
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.s16,
+        AppTheme.s12,
+        AppTheme.s16,
+        AppTheme.s12,
+      ),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.border)),
       ),
@@ -513,11 +575,16 @@ class _BillHero extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.receipt_long_rounded, color: AppTheme.muted, size: 14),
+              const Icon(
+                Icons.receipt_long_rounded,
+                color: AppTheme.muted,
+                size: 14,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  (kDocumentLabels[amounts?.documentType] ?? 'Bill').toUpperCase(),
+                  (kDocumentLabels[amounts?.documentType] ?? 'Bill')
+                      .toUpperCase(),
                   style: const TextStyle(
                     color: AppTheme.muted,
                     fontSize: 10.5,
@@ -538,7 +605,11 @@ class _BillHero extends StatelessWidget {
                 ),
                 child: Text(
                   preview.isGstRegistered ? 'GST' : 'Non-GST',
-                  style: const TextStyle(color: AppTheme.sidebarBrandInk, fontSize: 10, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    color: AppTheme.sidebarBrandInk,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -568,9 +639,14 @@ class _BillHero extends StatelessWidget {
                         'Room ${preview.roomNumber ?? '—'}',
                         nightsLabel(preview.nights),
                         if (preview.isDormitory)
-                          preview.bedLabel != null ? 'Bed ${preview.bedLabel}' : 'Whole dorm',
+                          preview.bedLabel != null
+                              ? 'Bed ${preview.bedLabel}'
+                              : 'Whole dorm',
                       ].join('  ·  '),
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 12,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -663,121 +739,136 @@ class _IssueBar extends ConsumerWidget {
               onPressed: (state.issuing || state.settlementProblem != null)
                   ? null
                   : () async {
-                  // Both taken before the await: after the pop this route's
-                  // context is defunct, and reading a messenger or a navigator
-                  // off it then is reading from a page that no longer exists.
-                  final navigator = Navigator.of(context);
-                  final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
+                      // Both taken before the await: after the pop this route's
+                      // context is defunct, and reading a messenger or a navigator
+                      // off it then is reading from a page that no longer exists.
+                      final navigator = Navigator.of(context);
+                      final lodgeName = ref
+                          .read(authViewModelProvider)
+                          .me
+                          ?.lodge
+                          .name;
 
-                  final invoice = await vm.issue();
-                  // A failure keeps the page open with the reason on it —
-                  // there is nothing to go back to, the bill is not cut.
-                  if (invoice == null) return;
+                      final invoice = await vm.issue();
+                      // A failure keeps the page open with the reason on it —
+                      // there is nothing to go back to, the bill is not cut.
+                      if (invoice == null) return;
 
-                  // The bill exists; the desk chooses whether to look at the
-                  // receipt now or just get back to the queue.
-                  if (!context.mounted) return;
-                  final wantsReceipt = await showDialog<bool>(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (context) => Dialog(
-                      backgroundColor: AppTheme.bg,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppTheme.rLarge),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppTheme.s24,
-                          AppTheme.s24,
-                          AppTheme.s24,
-                          AppTheme.s16,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 56,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                color: AppTheme.vacant.withValues(alpha: 0.12),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.check_circle_rounded,
-                                color: AppTheme.vacant,
-                                size: 32,
-                              ),
+                      // The bill exists; the desk chooses whether to look at the
+                      // receipt now or just get back to the queue.
+                      if (!context.mounted) return;
+                      final wantsReceipt = await showDialog<bool>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) => Dialog(
+                          backgroundColor: AppTheme.bg,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.rLarge,
                             ),
-                            const SizedBox(height: AppTheme.s16),
-                            Text(
-                              '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
-                              '${invoice.invoiceNumber ?? ''} issued',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              AppTheme.s24,
+                              AppTheme.s24,
+                              AppTheme.s24,
+                              AppTheme.s16,
                             ),
-                            const SizedBox(height: AppTheme.s8),
-                            Text(
-                              'The bill is cut. Open the receipt now, or '
-                              'head back to the billing list.',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            const SizedBox(height: AppTheme.s24),
-                            NeuButton(
-                              primary: true,
-                              expand: true,
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.receipt_long_rounded,
-                                    size: 18,
-                                    color: Colors.white,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.vacant.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                    shape: BoxShape.circle,
                                   ),
-                                  SizedBox(width: 8),
-                                  Text('Receipt'),
-                                ],
-                              ),
+                                  child: const Icon(
+                                    Icons.check_circle_rounded,
+                                    color: AppTheme.vacant,
+                                    size: 32,
+                                  ),
+                                ),
+                                const SizedBox(height: AppTheme.s16),
+                                Text(
+                                  '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
+                                  '${invoice.invoiceNumber ?? ''} issued',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: AppTheme.s8),
+                                Text(
+                                  'The bill is cut. Open the receipt now, or '
+                                  'head back to the billing list.',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                const SizedBox(height: AppTheme.s24),
+                                NeuButton(
+                                  primary: true,
+                                  expand: true,
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.receipt_long_rounded,
+                                        size: 18,
+                                        color: Colors.white,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text('Receipt'),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: AppTheme.s8),
+                                NeuButton(
+                                  expand: true,
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text('Done'),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: AppTheme.s8),
-                            NeuButton(
-                              expand: true,
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Done'),
+                          ),
+                        ),
+                      );
+
+                      vm.close();
+                      navigator.pop();
+
+                      if (wantsReceipt == true) {
+                        navigator.push(
+                          MaterialPageRoute(
+                            builder: (_) => BillReceiptScreen(
+                              invoice: invoice,
+                              lodgeName: lodgeName,
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-
-                  vm.close();
-                  navigator.pop();
-
-                  if (wantsReceipt == true) {
-                    navigator.push(
-                      MaterialPageRoute(
-                        builder: (_) => BillReceiptScreen(
-                          invoice: invoice,
-                          lodgeName: lodgeName,
-                        ),
-                      ),
-                    );
-                  }
-                },
+                          ),
+                        );
+                      }
+                    },
               child: state.issuing
                   ? const SizedBox(
                       height: 18,
                       width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.receipt_long_rounded, size: 18, color: Colors.white),
+                        Icon(
+                          Icons.receipt_long_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        ),
                         SizedBox(width: 8),
                         Text('Issue bill'),
                       ],
@@ -849,7 +940,10 @@ class _PanelCard extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11.5,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -904,7 +998,12 @@ class _RoomSectionRows extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: AppTheme.s8),
-      padding: const EdgeInsets.fromLTRB(AppTheme.s8, AppTheme.s8, AppTheme.s8, 2),
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.s8,
+        AppTheme.s8,
+        AppTheme.s8,
+        2,
+      ),
       decoration: BoxDecoration(
         color: AppTheme.bg,
         borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -975,7 +1074,12 @@ class _ItemisedSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s8),
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s12,
+              AppTheme.s12,
+              AppTheme.s12,
+              AppTheme.s8,
+            ),
             child: Row(
               children: [
                 Container(
@@ -997,14 +1101,22 @@ class _ItemisedSection extends StatelessWidget {
                 ),
                 const SizedBox(width: AppTheme.s8),
                 Expanded(
-                  child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
               ],
             ),
           ),
           const Divider(height: 1),
           Padding(
-            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s4),
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s12,
+              AppTheme.s8,
+              AppTheme.s12,
+              AppTheme.s4,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1034,7 +1146,11 @@ class _ItemRow extends StatelessWidget {
   final String detail;
   final num value;
 
-  const _ItemRow({required this.name, required this.detail, required this.value});
+  const _ItemRow({
+    required this.name,
+    required this.detail,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1067,7 +1183,11 @@ class _ItemRow extends StatelessWidget {
           const SizedBox(width: AppTheme.s8),
           Text(
             formatPrice(value),
-            style: const TextStyle(color: AppTheme.heading, fontSize: 13.5, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -1105,7 +1225,9 @@ class _ToggleButton extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppTheme.rSmall),
             border: Border.all(
-              color: selected ? AppTheme.accent : AppTheme.muted.withValues(alpha: 0.3),
+              color: selected
+                  ? AppTheme.accent
+                  : AppTheme.muted.withValues(alpha: 0.3),
             ),
           ),
           child: Text(
@@ -1187,14 +1309,20 @@ class _EarlyCheckoutNotice extends ConsumerStatefulWidget {
   final BillingState state;
   final EarlyCheckout earlyCheckout;
 
-  const _EarlyCheckoutNotice({required this.state, required this.earlyCheckout});
+  const _EarlyCheckoutNotice({
+    required this.state,
+    required this.earlyCheckout,
+  });
 
   @override
-  ConsumerState<_EarlyCheckoutNotice> createState() => _EarlyCheckoutNoticeState();
+  ConsumerState<_EarlyCheckoutNotice> createState() =>
+      _EarlyCheckoutNoticeState();
 }
 
 class _EarlyCheckoutNoticeState extends ConsumerState<_EarlyCheckoutNotice> {
-  late final _amount = TextEditingController(text: _reducing ? widget.state.discountInput : '');
+  late final _amount = TextEditingController(
+    text: _reducing ? widget.state.discountInput : '',
+  );
 
   bool get _reducing => widget.state.discountReason == _kEarlyDiscountReason;
 
@@ -1231,7 +1359,11 @@ class _EarlyCheckoutNoticeState extends ConsumerState<_EarlyCheckoutNotice> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.error_outline_rounded, color: AppTheme.checkout, size: 20),
+              const Icon(
+                Icons.error_outline_rounded,
+                color: AppTheme.checkout,
+                size: 20,
+              ),
               const SizedBox(width: AppTheme.s8),
               Expanded(
                 child: Column(
@@ -1286,9 +1418,13 @@ class _EarlyCheckoutNoticeState extends ConsumerState<_EarlyCheckoutNotice> {
                     textAlign: TextAlign.right,
                     onChanged: (v) {
                       vm.setDiscount(v);
-                      vm.setDiscountReason(v.trim().isEmpty ? '' : _kEarlyDiscountReason);
+                      vm.setDiscountReason(
+                        v.trim().isEmpty ? '' : _kEarlyDiscountReason,
+                      );
                     },
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.heading),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: AppTheme.heading),
                     decoration: const InputDecoration(
                       prefixText: '₹ ',
                       hintText: '0',
@@ -1453,7 +1589,11 @@ class _PaymentRows extends ConsumerWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.add_circle_outline_rounded, size: 16, color: AppTheme.accent),
+                      Icon(
+                        Icons.add_circle_outline_rounded,
+                        size: 16,
+                        color: AppTheme.accent,
+                      ),
                       SizedBox(width: 6),
                       Text(
                         'Split payment',
@@ -1477,7 +1617,9 @@ class _PaymentRows extends ConsumerWidget {
               ),
               const Spacer(),
               Icon(
-                state.settles ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                state.settles
+                    ? Icons.check_circle_rounded
+                    : Icons.error_outline_rounded,
                 size: 14,
                 color: state.settles ? AppTheme.vacant : AppTheme.danger,
               ),
@@ -1596,7 +1738,10 @@ class _StayDetailsExpanderState extends ConsumerState<_StayDetailsExpander> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     margin: const EdgeInsets.only(right: 6),
                     decoration: BoxDecoration(
                       color: AppTheme.sidebarBrandWash,
@@ -1637,7 +1782,10 @@ class _StayDetailsExpanderState extends ConsumerState<_StayDetailsExpander> {
                       child: Center(child: CircularProgressIndicator()),
                     )
                   : _error != null
-                  ? Text(_error!, style: const TextStyle(color: AppTheme.danger))
+                  ? Text(
+                      _error!,
+                      style: const TextStyle(color: AppTheme.danger),
+                    )
                   : _booking == null
                   ? const SizedBox.shrink()
                   : _StayDetailsContent(booking: _booking!),
@@ -1708,7 +1856,10 @@ class _StayDetailsContent extends StatelessWidget {
               _Fact(
                 label: 'Extras',
                 value: booking.switchableCharges
-                    .map((c) => c.quantity > 1 ? '${c.name} ×${c.quantity}' : c.name)
+                    .map(
+                      (c) =>
+                          c.quantity > 1 ? '${c.name} ×${c.quantity}' : c.name,
+                    )
                     .join(' · '),
               ),
           ],
@@ -1733,7 +1884,8 @@ class _StayDetailsContent extends StatelessWidget {
               role: 'Primary guest',
               meta: [
                 if (booking.guestPhone != null) booking.guestPhone!,
-                if (booking.idProofType != null) _idProofLabel(booking.idProofType!),
+                if (booking.idProofType != null)
+                  _idProofLabel(booking.idProofType!),
               ].join(' · '),
             ),
             for (final g in booking.guests)
@@ -1763,9 +1915,15 @@ class _StayDetailsContent extends StatelessWidget {
                     '${booking.advanceDescription}',
               ),
               if (booking.advanceReference != null)
-                _Fact(label: 'Transaction no.', value: booking.advanceReference!),
+                _Fact(
+                  label: 'Transaction no.',
+                  value: booking.advanceReference!,
+                ),
             ] else
-              Text('No advance taken.', style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                'No advance taken.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
           ],
         ),
         const SizedBox(height: AppTheme.s12),
@@ -1777,12 +1935,17 @@ class _StayDetailsContent extends StatelessWidget {
           title: 'Vehicles',
           children: [
             if (booking.vehicles.isEmpty)
-              Text('None on file.', style: Theme.of(context).textTheme.bodySmall)
+              Text(
+                'None on file.',
+                style: Theme.of(context).textTheme.bodySmall,
+              )
             else
               for (final v in booking.vehicles)
                 _PersonRow(
                   name: v.number,
-                  meta: v.type != null ? _vehicleTypeLabel(v.type!) : 'Type not recorded',
+                  meta: v.type != null
+                      ? _vehicleTypeLabel(v.type!)
+                      : 'Type not recorded',
                 ),
           ],
         ),
@@ -1796,26 +1959,40 @@ class _StayDetailsContent extends StatelessWidget {
           children: [
             const Text(
               'Room',
-              style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                color: AppTheme.muted,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
             for (final line in booking.roomCharges)
               _ItemRow(
                 name: line.label,
-                detail: line.nights > 1 && line.amount > 0 ? '× ${line.nights} nights' : '',
+                detail: line.nights > 1 && line.amount > 0
+                    ? '× ${line.nights} nights'
+                    : '',
                 value: line.amount,
               ),
             _Row(
-              label: 'Room charge for ${nights == 1 ? 'the night' : 'all nights'}',
+              label:
+                  'Room charge for ${nights == 1 ? 'the night' : 'all nights'}',
               value: booking.totalPrice ?? 0,
               strong: true,
             ),
             if (booking.lateCheckoutCharge > 0)
-              _Row(label: 'Agreed for leaving late', value: booking.lateCheckoutCharge),
+              _Row(
+                label: 'Agreed for leaving late',
+                value: booking.lateCheckoutCharge,
+              ),
             if (booking.foodOrdersOpen.isNotEmpty) ...[
               const SizedBox(height: AppTheme.s8),
               const Text(
                 'Food',
-                style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               for (final o in booking.foodOrdersOpen)
                 _ItemRow(
@@ -1825,23 +2002,33 @@ class _StayDetailsContent extends StatelessWidget {
                       : 'from ${o.placedFrom ?? 'restaurant'}',
                   value: o.subtotal,
                 ),
-              _Row(label: 'Food ordered', value: booking.foodOpenTotal, strong: true),
+              _Row(
+                label: 'Food ordered',
+                value: booking.foodOpenTotal,
+                strong: true,
+              ),
             ],
             if (booking.servicesOpen.isNotEmpty) ...[
               const SizedBox(height: AppTheme.s8),
               const Text(
                 'Services',
-                style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               for (final u in booking.servicesOpen)
                 _ItemRow(
                   name: u.name,
-                  detail: '${formatPrice(u.unitPrice ?? (u.quantity == 0 ? 0 : u.amount / u.quantity))} '
+                  detail:
+                      '${formatPrice(u.unitPrice ?? (u.quantity == 0 ? 0 : u.amount / u.quantity))} '
                       'per ${u.unitLabel} × ${u.quantity}',
                   value: u.amount,
                 ),
               _Row(
-                label: 'Services used · ${booking.servicesOpen.length} '
+                label:
+                    'Services used · ${booking.servicesOpen.length} '
                     '${booking.servicesOpen.length == 1 ? 'item' : 'items'}',
                 value: booking.servicesOpenTotal,
                 strong: true,
@@ -1851,10 +2038,16 @@ class _StayDetailsContent extends StatelessWidget {
               const SizedBox(height: AppTheme.s8),
               const Text(
                 'Payments',
-                style: TextStyle(color: AppTheme.muted, fontSize: 11.5, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               _Row(
-                label: booking.paidInFull ? 'Paid in full at booking' : 'Advance already paid',
+                label: booking.paidInFull
+                    ? 'Paid in full at booking'
+                    : 'Advance already paid',
                 value: -booking.advanceAmount!,
               ),
             ],
@@ -1873,8 +2066,9 @@ String? _lateByLabel(int? minutes) {
   return mins == 0 ? '$hours hours' : '${hours}h ${mins}m';
 }
 
-String _idProofLabel(String type) =>
-    type.isEmpty ? type : type[0] + type.substring(1).toLowerCase().replaceAll('_', ' ');
+String _idProofLabel(String type) => type.isEmpty
+    ? type
+    : type[0] + type.substring(1).toLowerCase().replaceAll('_', ' ');
 
 const _kVehicleTypeLabels = <String, String>{
   'TWO_WHEELER': 'Two wheeler',
@@ -1917,10 +2111,18 @@ class _DetailSection extends StatelessWidget {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 9),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s12,
+              vertical: 9,
+            ),
             decoration: const BoxDecoration(
               color: AppTheme.sidebarBrandWash,
-              border: Border(bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8)),
+              border: Border(
+                bottom: BorderSide(
+                  color: AppTheme.sidebarBrandWashEdge,
+                  width: 0.8,
+                ),
+              ),
             ),
             child: Row(
               children: [
@@ -1959,7 +2161,12 @@ class _DetailSection extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s8),
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s12,
+              AppTheme.s8,
+              AppTheme.s12,
+              AppTheme.s8,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: children,
@@ -1989,14 +2196,22 @@ class _Fact extends StatelessWidget {
             width: 82,
             child: Text(
               label,
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                color: AppTheme.muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
           Expanded(
             child: Text(
               value,
               textAlign: TextAlign.right,
-              style: const TextStyle(color: AppTheme.heading, fontSize: 13, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -2025,26 +2240,40 @@ class _PersonRow extends StatelessWidget {
             children: [
               Text(
                 name,
-                style: const TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  color: AppTheme.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               if (role != null) ...[
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: AppTheme.accent.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     role!,
-                    style: const TextStyle(color: AppTheme.accent, fontSize: 9.5, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      color: AppTheme.accent,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
             ],
           ),
           if (meta.isNotEmpty)
-            Text(meta, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+            Text(
+              meta,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+            ),
         ],
       ),
     );

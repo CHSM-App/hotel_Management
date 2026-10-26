@@ -139,7 +139,8 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
                                     ? SnackBarAction(
                                         label: 'Open',
                                         textColor: Colors.white,
-                                        onPressed: () => openSavedFile(where, 'bill.pdf'),
+                                        onPressed: () =>
+                                            openSavedFile(where, 'bill.pdf'),
                                       )
                                     : null,
                               ),
@@ -147,7 +148,9 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
                           }),
                     icon: const Icon(Icons.download_rounded),
                     color: Colors.white,
-                    style: IconButton.styleFrom(backgroundColor: AppTheme.accent),
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppTheme.accent,
+                    ),
                   ),
                   const SizedBox(width: AppTheme.s16),
                   IconButton(
@@ -184,7 +187,9 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
                     // WhatsApp, and nothing for the desk to attach by hand.
                     IconButton(
                       tooltip: 'Send on WhatsApp',
-                      onPressed: _busy ? null : () => _runWhatsApp(_shareOnWhatsApp),
+                      onPressed: _busy
+                          ? null
+                          : () => _runWhatsApp(_shareOnWhatsApp),
                       icon: const Icon(Icons.send_rounded),
                       color: const Color(0xFF25D366),
                     ),
@@ -195,7 +200,9 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
                 const SizedBox(height: AppTheme.s4),
                 Text(
                   _error!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
                 ),
               ],
               const SizedBox(height: AppTheme.s12),

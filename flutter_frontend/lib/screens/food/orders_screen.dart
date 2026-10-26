@@ -764,7 +764,7 @@ class _SearchFieldState extends State<_SearchField> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
-      height: 50,
+      height: 40,
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
       decoration: BoxDecoration(
         color: AppTheme.card,
@@ -787,8 +787,8 @@ class _SearchFieldState extends State<_SearchField> {
         children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 160),
-            width: 36,
-            height: 36,
+            width: 28,
+            height: 28,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -805,7 +805,7 @@ class _SearchFieldState extends State<_SearchField> {
             ),
             child: Icon(
               Icons.search_rounded,
-              size: 18,
+              size: 15,
               color: focused ? Colors.white : AppTheme.accent,
             ),
           ),
@@ -828,7 +828,7 @@ class _SearchFieldState extends State<_SearchField> {
                 hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 13),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
             ),
           ),
@@ -841,8 +841,8 @@ class _SearchFieldState extends State<_SearchField> {
               },
               behavior: HitTestBehavior.opaque,
               child: Container(
-                width: 30,
-                height: 30,
+                width: 26,
+                height: 26,
                 margin: const EdgeInsets.only(right: 2),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
@@ -892,14 +892,14 @@ class OrdersViewToggle extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
           child: Container(
             alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
             decoration: BoxDecoration(
               color: on ? AppTheme.accent.withValues(alpha: 0.1) : null,
               borderRadius: BorderRadius.circular(AppTheme.rSmall),
             ),
             child: Icon(
               icon,
-              size: 17,
+              size: 16,
               color: on ? AppTheme.accent : AppTheme.muted,
             ),
           ),
@@ -909,9 +909,9 @@ class OrdersViewToggle extends StatelessWidget {
 
     return Align(
       alignment: Alignment.centerRight,
-      // Same 50px height as _SearchField so the two sit level in a row.
+      // Same 40px height as _SearchField so the two sit level in a row.
       child: SizedBox(
-        height: 50,
+        height: 40,
         child: NeuCard(
           radius: AppTheme.rSmall,
           shadow: AppTheme.subtle,
@@ -961,7 +961,7 @@ class _PeriodChipsRow extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(
               horizontal: AppTheme.s12,
-              vertical: AppTheme.s8,
+              vertical: 5,
             ),
             decoration: BoxDecoration(
               color: on
@@ -973,7 +973,7 @@ class _PeriodChipsRow extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 12.5,
+                fontSize: 12,
                 fontWeight: on ? FontWeight.w700 : FontWeight.w500,
                 color: on ? AppTheme.accent : AppTheme.text,
               ),

@@ -72,7 +72,7 @@ class _BillsReportPanelState extends ConsumerState<BillsReportPanel> {
             children: [
               Expanded(
                 child: Container(
-                  height: 48,
+                  height: 40,
                   padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                   decoration: BoxDecoration(
                     color: AppTheme.card,
@@ -83,14 +83,14 @@ class _BillsReportPanelState extends ConsumerState<BillsReportPanel> {
                   child: Row(
                     children: [
                       Container(
-                        width: 34,
-                        height: 34,
+                        width: 28,
+                        height: 28,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: AppTheme.accent.withValues(alpha: 0.10),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
+                        child: const Icon(Icons.search_rounded, size: 15, color: AppTheme.accent),
                       ),
                       const SizedBox(width: AppTheme.s8),
                       Expanded(
@@ -102,7 +102,7 @@ class _BillsReportPanelState extends ConsumerState<BillsReportPanel> {
                             hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
                             border: InputBorder.none,
                             isDense: true,
-                            contentPadding: EdgeInsets.symmetric(vertical: 13),
+                            contentPadding: EdgeInsets.symmetric(vertical: 10),
                           ),
                           onChanged: (v) => setState(() => _search = v),
                         ),
@@ -115,8 +115,8 @@ class _BillsReportPanelState extends ConsumerState<BillsReportPanel> {
                           },
                           behavior: HitTestBehavior.opaque,
                           child: Container(
-                            width: 30,
-                            height: 30,
+                            width: 26,
+                            height: 26,
                             margin: const EdgeInsets.only(right: 2),
                             alignment: Alignment.center,
                             decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
@@ -317,8 +317,8 @@ class _BillTypeFilterButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 48,
-        height: 48,
+        width: 40,
+        height: 40,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           gradient: on
@@ -335,7 +335,7 @@ class _BillTypeFilterButton extends StatelessWidget {
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
-            Icon(Icons.filter_alt_rounded, size: 19, color: on ? Colors.white : AppTheme.accent),
+            Icon(Icons.filter_alt_rounded, size: 17, color: on ? Colors.white : AppTheme.accent),
             if (selected != 'ALL')
               Positioned(
                 top: -4,

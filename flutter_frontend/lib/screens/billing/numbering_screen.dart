@@ -62,7 +62,12 @@ class _NumberingScreenState extends ConsumerState<NumberingScreen> {
           onRefresh: _load,
           color: AppTheme.accent,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s12,
+              AppTheme.s8,
+              AppTheme.s12,
+              AppTheme.s24,
+            ),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
               NeuCard(
@@ -84,7 +89,11 @@ class _NumberingScreenState extends ConsumerState<NumberingScreen> {
                       'Bills and advance receipts are numbered separately, each '
                       'counting up on its own. Numbers already printed are never '
                       'changed — this only sets where the next one continues from.',
-                      style: TextStyle(color: AppTheme.muted, fontSize: 11.5, height: 1.35),
+                      style: TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11.5,
+                        height: 1.35,
+                      ),
                     ),
                   ],
                 ),
@@ -98,8 +107,9 @@ class _NumberingScreenState extends ConsumerState<NumberingScreen> {
                 series: series['final']!,
                 onSaved: (updated) =>
                     setState(() => _series = {...series, 'final': updated}),
-                save: (next) =>
-                    ref.read(billingUsecaseProvider).updateBillingSeries('FINAL', next),
+                save: (next) => ref
+                    .read(billingUsecaseProvider)
+                    .updateBillingSeries('FINAL', next),
               ),
               const SizedBox(height: AppTheme.s12),
               _SeriesCard(
@@ -223,7 +233,11 @@ class _SeriesCardState extends State<_SeriesCard> {
                   ),
                   borderRadius: BorderRadius.circular(AppTheme.rSmall),
                   boxShadow: const [
-                    BoxShadow(color: Color(0x2A1457AD), offset: Offset(0, 2), blurRadius: 5),
+                    BoxShadow(
+                      color: Color(0x2A1457AD),
+                      offset: Offset(0, 2),
+                      blurRadius: 5,
+                    ),
                   ],
                 ),
                 child: Icon(widget.icon, size: 14, color: Colors.white),
@@ -232,13 +246,24 @@ class _SeriesCardState extends State<_SeriesCard> {
               Expanded(
                 child: Text(
                   widget.title,
-                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14),
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: AppTheme.s8),
-          Text(widget.note, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5, height: 1.4)),
+          Text(
+            widget.note,
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 11.5,
+              height: 1.4,
+            ),
+          ),
           const SizedBox(height: AppTheme.s12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -283,7 +308,14 @@ class _SeriesCardState extends State<_SeriesCard> {
             }),
           ),
           const SizedBox(height: AppTheme.s4),
-          Text(_hint, style: const TextStyle(color: AppTheme.muted, fontSize: 10.5, height: 1.3)),
+          Text(
+            _hint,
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 10.5,
+              height: 1.3,
+            ),
+          ),
           if (tooLow) ...[
             const SizedBox(height: AppTheme.s4),
             Text(
@@ -295,17 +327,28 @@ class _SeriesCardState extends State<_SeriesCard> {
           ],
           if (_error != null) ...[
             const SizedBox(height: AppTheme.s4),
-            Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+            Text(
+              _error!,
+              style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+            ),
           ],
           const SizedBox(height: AppTheme.s12),
           Row(
             children: [
               if (_saved && _error == null) ...[
-                const Icon(Icons.check_circle_rounded, color: AppTheme.vacant, size: 16),
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: AppTheme.vacant,
+                  size: 16,
+                ),
                 const SizedBox(width: 4),
                 const Text(
                   'Saved',
-                  style: TextStyle(color: AppTheme.vacant, fontWeight: FontWeight.w600, fontSize: 12.5),
+                  style: TextStyle(
+                    color: AppTheme.vacant,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
                 ),
                 const Spacer(),
               ] else
@@ -314,7 +357,9 @@ class _SeriesCardState extends State<_SeriesCard> {
                 width: 140,
                 child: NeuButton(
                   primary: true,
-                  onPressed: (_saving || !isWhole || tooLow || unchanged) ? null : _save,
+                  onPressed: (_saving || !isWhole || tooLow || unchanged)
+                      ? null
+                      : _save,
                   padding: const EdgeInsets.symmetric(vertical: AppTheme.s12),
                   child: Text(_saving ? 'Saving…' : 'Save'),
                 ),

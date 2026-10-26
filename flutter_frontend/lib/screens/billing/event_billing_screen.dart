@@ -17,6 +17,8 @@ import 'billing_screen.dart'
         BillingInvoiceTable,
         BillingSearchAndViewToggle,
         billingDatePresetRange,
+        kBillDatePresetIcons,
+        kBillDatePresets,
         matchesBillingDateRange;
 import 'issue_event_bill_screen.dart';
 
@@ -104,14 +106,31 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
             onViewChanged: (v) => setState(() => _view = v),
             onSearchChanged: () => setState(() {}),
             hint: 'Search function, venue, organiser',
+            // Only the issued list has a date range to narrow by.
+            filterActive: _dateFilterKey != 'all',
+            filterPanelBuilder: _tab == _EventBillingTab.issued
+                ? (close) => NeuFilterPanel(
+                    title: 'FILTER BY DATE',
+                    children: [
+                      for (final (key, label) in kBillDatePresets)
+                        NeuFilterRow(
+                          label: label,
+                          on: _dateFilterKey == key,
+                          icon: kBillDatePresetIcons[key]!,
+                          onTap: () {
+                            _applyDatePreset(key);
+                            close();
+                          },
+                        ),
+                    ],
+                  )
+                : null,
           ),
           const SizedBox(height: AppTheme.s12),
           if (_tab == _EventBillingTab.issued) ...[
             BillingDateFilterRow(
-              filterKey: _dateFilterKey,
               from: _customFrom,
               to: _customTo,
-              onPresetSelected: _applyDatePreset,
               onFromChanged: (v) => setState(() {
                 _customFrom = v;
                 _dateFilterKey = 'custom';
@@ -168,9 +187,9 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
       Future<void> openEvent(EventBooking ev) async {
         await ref.read(billingViewModelProvider.notifier).openEvent(ev);
         if (!mounted) return;
-        await Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const IssueEventBillScreen()),
-        );
+        await Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const IssueEventBillScreen()));
         if (!mounted) return;
         await _load();
       }
@@ -209,8 +228,10 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
       ];
     }
     final allRows = [
-      for (final inv in invoices ?? const <Invoice>[]) BillDocument.ofInvoice(inv),
-      for (final r in receipts ?? const <AdvanceReceipt>[]) BillDocument.ofReceipt(r),
+      for (final inv in invoices ?? const <Invoice>[])
+        BillDocument.ofInvoice(inv),
+      for (final r in receipts ?? const <AdvanceReceipt>[])
+        BillDocument.ofReceipt(r),
     ];
     // Same split as the web's own streamOf(): only a function's own bills —
     // or a receipt taken against one — belong here, the same way Restaurant
@@ -219,12 +240,18 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
     final needle = _search.text.trim().toLowerCase();
     final searched = needle.isEmpty
         ? streamRows
-        : streamRows.where((d) =>
-            (d.invoiceNumber ?? '').toLowerCase().contains(needle) ||
-            (d.guestName ?? '').toLowerCase().contains(needle) ||
-            (d.venueName ?? '').toLowerCase().contains(needle)).toList();
+        : streamRows
+              .where(
+                (d) =>
+                    (d.invoiceNumber ?? '').toLowerCase().contains(needle) ||
+                    (d.guestName ?? '').toLowerCase().contains(needle) ||
+                    (d.venueName ?? '').toLowerCase().contains(needle),
+              )
+              .toList();
     final rows = searched
-        .where((d) => matchesBillingDateRange(d.createdAt, _customFrom, _customTo))
+        .where(
+          (d) => matchesBillingDateRange(d.createdAt, _customFrom, _customTo),
+        )
         .toList();
     if (rows.isEmpty) {
       return const [
@@ -253,11 +280,7 @@ class _Toggle extends StatelessWidget {
   final int? readyCount;
   final ValueChanged<_EventBillingTab> onChanged;
 
-  const _Toggle({
-    required this.tab,
-    this.readyCount,
-    required this.onChanged,
-  });
+  const _Toggle({required this.tab, this.readyCount, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -265,7 +288,12 @@ class _Toggle extends StatelessWidget {
       selected: tab.name,
       onSelect: (k) => onChanged(_EventBillingTab.values.byName(k)),
       tabs: [
-        PillTab('ready', 'Ready to bill', Icons.pending_actions_rounded, count: readyCount),
+        PillTab(
+          'ready',
+          'Ready to bill',
+          Icons.pending_actions_rounded,
+          count: readyCount,
+        ),
         const PillTab('issued', 'Bills', Icons.receipt_long_rounded),
       ],
     );
@@ -319,53 +347,51 @@ class EventReadyToBillTable extends StatelessWidget {
             width: width,
             child: StickyHeaderTable(
               header: Container(
-                  decoration: const BoxDecoration(
-                    color: AppTheme.sidebarBrandWash,
-                    border: Border(
-                      bottom: BorderSide(
-                        color: AppTheme.sidebarBrandWashEdge,
-                        width: 0.8,
-                      ),
+                decoration: const BoxDecoration(
+                  color: AppTheme.sidebarBrandWash,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppTheme.sidebarBrandWashEdge,
+                      width: 0.8,
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      for (final c in _columns)
-                        SizedBox(
-                          width: c.$2,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.s8,
-                              vertical: 10,
-                            ),
-                            child: Text(
-                              c.$1.toUpperCase(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: c.$3
-                                  ? TextAlign.right
-                                  : TextAlign.left,
-                              style: const TextStyle(
-                                color: AppTheme.sidebarBrandInk,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
+                ),
+                child: Row(
+                  children: [
+                    for (final c in _columns)
+                      SizedBox(
+                        width: c.$2,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.s8,
+                            vertical: 10,
+                          ),
+                          child: Text(
+                            c.$1.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: c.$3 ? TextAlign.right : TextAlign.left,
+                            style: const TextStyle(
+                              color: AppTheme.sidebarBrandInk,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
                             ),
                           ),
                         ),
-                      SizedBox(width: _actionWidth),
-                    ],
-                  ),
+                      ),
+                    SizedBox(width: _actionWidth),
+                  ],
                 ),
+              ),
               rows: [
-                      for (var i = 0; i < events.length; i++)
-                        _EventReadyToBillRow(
-                          event: events[i],
-                          shaded: i.isOdd,
-                          onBill: () => onBill(events[i]),
-                        ),
-                      _EventReadyToBillFooter(events: events),
+                for (var i = 0; i < events.length; i++)
+                  _EventReadyToBillRow(
+                    event: events[i],
+                    shaded: i.isOdd,
+                    onBill: () => onBill(events[i]),
+                  ),
+                _EventReadyToBillFooter(events: events),
               ],
             ),
           ),
@@ -444,7 +470,10 @@ class _EventReadyToBillRow extends StatelessWidget {
                       event.organiserPhone,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 10),
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 10,
+                      ),
                     ),
                   ],
                 ],
@@ -482,10 +511,17 @@ class _EventReadyToBillRow extends StatelessWidget {
             ),
           ),
           _numCell(70, '${event.billablePax}'),
-          _numCell(100, formatPrice(event.totalAmount), bold: true, color: AppTheme.heading),
+          _numCell(
+            100,
+            formatPrice(event.totalAmount),
+            bold: true,
+            color: AppTheme.heading,
+          ),
           _numCell(
             110,
-            event.advanceAmount > 0 ? '− ${formatPrice(event.advanceAmount)}' : '—',
+            event.advanceAmount > 0
+                ? '− ${formatPrice(event.advanceAmount)}'
+                : '—',
             color: AppTheme.muted,
           ),
           _numCell(
@@ -735,7 +771,10 @@ class EventReadyToBillCard extends StatelessWidget {
                         ].where((s) => s.isNotEmpty).join(' · '),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 11.5,
+                        ),
                       ),
                     ],
                   ),

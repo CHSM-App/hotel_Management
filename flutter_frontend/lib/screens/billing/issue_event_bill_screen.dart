@@ -38,7 +38,9 @@ class IssueEventBillScreen extends ConsumerWidget {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: const BoxConstraints(
+              maxWidth: AppTheme.maxContentWidth,
+            ),
             child: preview == null
                 ? Center(
                     child: state.previewing
@@ -116,10 +118,14 @@ class _Body extends ConsumerWidget {
                       strong: lines.length > 1,
                     ),
                   if ((amounts?.foodSubtotal ?? 0) > 0)
-                    BillRowLine(label: 'Catering', value: amounts!.foodSubtotal),
+                    BillRowLine(
+                      label: 'Catering',
+                      value: amounts!.foodSubtotal,
+                    ),
                   if ((amounts?.discountAmount ?? 0) > 0)
                     BillRowLine(
-                      label: 'Discount'
+                      label:
+                          'Discount'
                           '${state.discountReason.trim().isNotEmpty ? ' – ${state.discountReason.trim()}' : ''}',
                       value: -amounts!.discountAmount,
                     ),
@@ -134,7 +140,8 @@ class _Body extends ConsumerWidget {
                   if ((amounts?.cgstAmount ?? 0) > 0 ||
                       (amounts?.foodCgstAmount ?? 0) > 0)
                     const BillSectionLabel('Tax included in total'),
-                  if ((amounts?.cgstAmount ?? 0) > 0 || (amounts?.sgstAmount ?? 0) > 0) ...[
+                  if ((amounts?.cgstAmount ?? 0) > 0 ||
+                      (amounts?.sgstAmount ?? 0) > 0) ...[
                     BillRowLine(
                       label: 'CGST (${amounts?.cgstRatePercent ?? 0}%)',
                       value: amounts?.cgstAmount ?? 0,
@@ -146,20 +153,27 @@ class _Body extends ConsumerWidget {
                       muted: true,
                     ),
                   ],
-                  if ((amounts?.foodCgstAmount ?? 0) > 0 || (amounts?.foodSgstAmount ?? 0) > 0) ...[
+                  if ((amounts?.foodCgstAmount ?? 0) > 0 ||
+                      (amounts?.foodSgstAmount ?? 0) > 0) ...[
                     BillRowLine(
-                      label: 'CGST (${amounts?.foodCgstRatePercent ?? 0}%) on food',
+                      label:
+                          'CGST (${amounts?.foodCgstRatePercent ?? 0}%) on food',
                       value: amounts?.foodCgstAmount ?? 0,
                       muted: true,
                     ),
                     BillRowLine(
-                      label: 'SGST (${amounts?.foodSgstRatePercent ?? 0}%) on food',
+                      label:
+                          'SGST (${amounts?.foodSgstRatePercent ?? 0}%) on food',
                       value: amounts?.foodSgstAmount ?? 0,
                       muted: true,
                     ),
                   ],
                   if ((amounts?.roundOff ?? 0) != 0)
-                    BillRowLine(label: 'Round off', value: amounts!.roundOff, muted: true),
+                    BillRowLine(
+                      label: 'Round off',
+                      value: amounts!.roundOff,
+                      muted: true,
+                    ),
 
                   billHairline,
                   BillRowLine(
@@ -182,7 +196,10 @@ class _Body extends ConsumerWidget {
                         ? 'Issued under GSTIN ${preview.gstin ?? '—'}.'
                         : "This property isn't GST registered — every bill is a "
                               'cash receipt.',
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 11.5,
+                    ),
                   ),
                 ],
               ),
@@ -196,7 +213,10 @@ class _Body extends ConsumerWidget {
 
         // ── How it was paid ─────────────────────────────────────────────────
         const SizedBox(height: AppTheme.s16),
-        BillPaymentHeader(nothingDue: state.nothingDue, balanceDue: state.balanceDue),
+        BillPaymentHeader(
+          nothingDue: state.nothingDue,
+          balanceDue: state.balanceDue,
+        ),
         if (!state.nothingDue) ...[
           const SizedBox(height: AppTheme.s8),
           _PaymentRows(state: state),
@@ -205,20 +225,31 @@ class _Body extends ConsumerWidget {
         const SizedBox(height: AppTheme.s16),
         if (state.error != null) ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s12,
+              vertical: AppTheme.s8,
+            ),
             decoration: BoxDecoration(
               color: AppTheme.danger.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(AppTheme.rSmall),
-              border: Border.all(color: AppTheme.danger.withValues(alpha: 0.25)),
+              border: Border.all(
+                color: AppTheme.danger.withValues(alpha: 0.25),
+              ),
             ),
             child: Row(
               children: [
-                const Icon(Icons.error_outline_rounded, color: AppTheme.danger, size: 16),
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: AppTheme.danger,
+                  size: 16,
+                ),
                 const SizedBox(width: AppTheme.s8),
                 Expanded(
                   child: Text(
                     state.error!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
                   ),
                 ),
               ],
@@ -244,7 +275,10 @@ class _ExtrasNotice extends StatelessWidget {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(top: 2, bottom: 2),
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8 + 2, vertical: AppTheme.s8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s8 + 2,
+        vertical: AppTheme.s8,
+      ),
       decoration: BoxDecoration(
         color: AppTheme.accent.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -262,7 +296,11 @@ class _ExtrasNotice extends StatelessWidget {
             const SizedBox(height: 4),
             const Text(
               'Price every extra before this bill can be issued.',
-              style: TextStyle(color: AppTheme.danger, fontSize: 11.5, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: AppTheme.danger,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ],
@@ -281,7 +319,8 @@ class _EventDiscountSection extends ConsumerStatefulWidget {
   const _EventDiscountSection({required this.state});
 
   @override
-  ConsumerState<_EventDiscountSection> createState() => _EventDiscountSectionState();
+  ConsumerState<_EventDiscountSection> createState() =>
+      _EventDiscountSectionState();
 }
 
 class _EventDiscountSectionState extends ConsumerState<_EventDiscountSection> {
@@ -310,7 +349,8 @@ class _EventDiscountSectionState extends ConsumerState<_EventDiscountSection> {
   Widget build(BuildContext context) {
     final vm = ref.read(billingViewModelProvider.notifier);
     final discount = widget.state.cycleDiscount;
-    final discountAmount = widget.state.eventPreview?.amounts?.discountAmount ?? 0;
+    final discountAmount =
+        widget.state.eventPreview?.amounts?.discountAmount ?? 0;
 
     return BillPanel(
       child: Column(
@@ -326,7 +366,11 @@ class _EventDiscountSectionState extends ConsumerState<_EventDiscountSection> {
                   color: AppTheme.edit.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.local_offer_rounded, size: 15, color: AppTheme.edit),
+                child: const Icon(
+                  Icons.local_offer_rounded,
+                  size: 15,
+                  color: AppTheme.edit,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -345,7 +389,10 @@ class _EventDiscountSectionState extends ConsumerState<_EventDiscountSection> {
                       discount > 0
                           ? '${formatPrice(discountAmount)} off · printed on the bill'
                           : 'None on this bill',
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11.5,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -411,7 +458,9 @@ class _PaymentRows extends ConsumerWidget {
                 key: ValueKey(i),
                 compact: true,
                 line: state.payment[i],
-                onRemove: state.payment.length == 1 ? null : () => vm.removePaymentRow(i),
+                onRemove: state.payment.length == 1
+                    ? null
+                    : () => vm.removePaymentRow(i),
                 onChanged: vm.touch,
               ),
             ),
@@ -426,7 +475,11 @@ class _PaymentRows extends ConsumerWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.add_circle_outline_rounded, size: 16, color: AppTheme.accent),
+                      Icon(
+                        Icons.add_circle_outline_rounded,
+                        size: 16,
+                        color: AppTheme.accent,
+                      ),
                       SizedBox(width: 6),
                       Text(
                         'Split payment',
@@ -444,10 +497,15 @@ class _PaymentRows extends ConsumerWidget {
           billHairline,
           Row(
             children: [
-              const Text('Recorded', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+              const Text(
+                'Recorded',
+                style: TextStyle(color: AppTheme.muted, fontSize: 12),
+              ),
               const Spacer(),
               Icon(
-                state.settles ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                state.settles
+                    ? Icons.check_circle_rounded
+                    : Icons.error_outline_rounded,
                 size: 14,
                 color: state.settles ? AppTheme.vacant : AppTheme.danger,
               ),
@@ -531,7 +589,11 @@ class _IssueBar extends ConsumerWidget {
                   ? null
                   : () async {
                       final navigator = Navigator.of(context);
-                      final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
+                      final lodgeName = ref
+                          .read(authViewModelProvider)
+                          .me
+                          ?.lodge
+                          .name;
 
                       final invoice = await vm.issueEvent();
                       if (invoice == null) return;
@@ -543,7 +605,9 @@ class _IssueBar extends ConsumerWidget {
                         builder: (context) => Dialog(
                           backgroundColor: AppTheme.bg,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(AppTheme.rLarge),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.rLarge,
+                            ),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(
@@ -559,7 +623,9 @@ class _IssueBar extends ConsumerWidget {
                                   width: 56,
                                   height: 56,
                                   decoration: BoxDecoration(
-                                    color: AppTheme.vacant.withValues(alpha: 0.12),
+                                    color: AppTheme.vacant.withValues(
+                                      alpha: 0.12,
+                                    ),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(
@@ -573,9 +639,8 @@ class _IssueBar extends ConsumerWidget {
                                   '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
                                   '${invoice.invoiceNumber ?? ''} issued',
                                   textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w700),
                                 ),
                                 const SizedBox(height: AppTheme.s8),
                                 Text(
@@ -591,7 +656,11 @@ class _IssueBar extends ConsumerWidget {
                                   child: const Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.receipt_long_rounded, size: 18, color: Colors.white),
+                                      Icon(
+                                        Icons.receipt_long_rounded,
+                                        size: 18,
+                                        color: Colors.white,
+                                      ),
                                       SizedBox(width: 8),
                                       Text('Receipt'),
                                     ],
@@ -600,7 +669,8 @@ class _IssueBar extends ConsumerWidget {
                                 const SizedBox(height: AppTheme.s8),
                                 NeuButton(
                                   expand: true,
-                                  onPressed: () => Navigator.pop(context, false),
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
                                   child: const Text('Done'),
                                 ),
                               ],
@@ -615,7 +685,10 @@ class _IssueBar extends ConsumerWidget {
                       if (wantsReceipt == true) {
                         navigator.push(
                           MaterialPageRoute(
-                            builder: (_) => BillReceiptScreen(invoice: invoice, lodgeName: lodgeName),
+                            builder: (_) => BillReceiptScreen(
+                              invoice: invoice,
+                              lodgeName: lodgeName,
+                            ),
                           ),
                         );
                       }
@@ -624,12 +697,19 @@ class _IssueBar extends ConsumerWidget {
                   ? const SizedBox(
                       height: 18,
                       width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.receipt_long_rounded, size: 18, color: Colors.white),
+                        Icon(
+                          Icons.receipt_long_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        ),
                         SizedBox(width: 8),
                         Text('Issue bill'),
                       ],

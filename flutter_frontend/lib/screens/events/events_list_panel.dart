@@ -132,13 +132,13 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
                   ),
                 ],
               ),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
                     child: Container(
-                      height: 48,
+                      height: 40,
                       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                       decoration: BoxDecoration(
                         color: AppTheme.card,
@@ -149,14 +149,14 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
                       child: Row(
                         children: [
                           Container(
-                            width: 34,
-                            height: 34,
+                            width: 28,
+                            height: 28,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: AppTheme.accent.withValues(alpha: 0.10),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
+                            child: const Icon(Icons.search_rounded, size: 15, color: AppTheme.accent),
                           ),
                           const SizedBox(width: AppTheme.s8),
                           Expanded(
@@ -169,7 +169,7 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
                                 hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
                                 border: InputBorder.none,
                                 isDense: true,
-                                contentPadding: EdgeInsets.symmetric(vertical: 13),
+                                contentPadding: EdgeInsets.symmetric(vertical: 10),
                               ),
                             ),
                           ),
@@ -178,8 +178,8 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
                               onTap: () => setState(() => _search.clear()),
                               behavior: HitTestBehavior.opaque,
                               child: Container(
-                                width: 30,
-                                height: 30,
+                                width: 26,
+                                height: 26,
                                 margin: const EdgeInsets.only(right: 2),
                                 alignment: Alignment.center,
                                 decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
@@ -325,7 +325,7 @@ class _EventDateField extends StatelessWidget {
         highlightColor: AppTheme.accent.withValues(alpha: 0.05),
         splashColor: AppTheme.accent.withValues(alpha: 0.08),
         child: Container(
-          height: 50,
+          height: 42,
           padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
           decoration: BoxDecoration(
             color: AppTheme.card,
@@ -339,8 +339,8 @@ class _EventDateField extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 26,
+                height: 26,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: AppTheme.accent.withValues(alpha: 0.14),
@@ -348,7 +348,7 @@ class _EventDateField extends StatelessWidget {
                 ),
                 child: const Icon(
                   Icons.calendar_today_rounded,
-                  size: 14,
+                  size: 13,
                   color: AppTheme.accent,
                 ),
               ),
@@ -362,7 +362,7 @@ class _EventDateField extends StatelessWidget {
                       label,
                       style: const TextStyle(
                         color: AppTheme.muted,
-                        fontSize: 9.5,
+                        fontSize: 9,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -374,7 +374,7 @@ class _EventDateField extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: AppTheme.heading,
-                        fontSize: 12.5,
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -407,8 +407,8 @@ class _StatusFilterButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 48,
-        height: 48,
+        width: 40,
+        height: 40,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           gradient: on
@@ -425,7 +425,7 @@ class _StatusFilterButton extends StatelessWidget {
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
-            Icon(Icons.filter_alt_rounded, size: 19, color: on ? Colors.white : AppTheme.accent),
+            Icon(Icons.filter_alt_rounded, size: 17, color: on ? Colors.white : AppTheme.accent),
             if (selected.isNotEmpty)
               Positioned(
                 top: -4,

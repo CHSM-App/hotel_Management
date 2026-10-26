@@ -111,13 +111,13 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
             padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
             children: [
               _StatsRow(stats: state.stats, inView: filtered.length),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
                     child: Container(
-                      height: 48,
+                      height: 40,
                       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                       decoration: BoxDecoration(
                         color: AppTheme.card,
@@ -128,14 +128,14 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                       child: Row(
                         children: [
                           Container(
-                            width: 34,
-                            height: 34,
+                            width: 28,
+                            height: 28,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: AppTheme.accent.withValues(alpha: 0.10),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
+                            child: const Icon(Icons.search_rounded, size: 15, color: AppTheme.accent),
                           ),
                           const SizedBox(width: AppTheme.s8),
                           Expanded(
@@ -149,7 +149,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                 hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
                                 border: InputBorder.none,
                                 isDense: true,
-                                contentPadding: EdgeInsets.symmetric(vertical: 13),
+                                contentPadding: EdgeInsets.symmetric(vertical: 10),
                               ),
                             ),
                           ),
@@ -162,8 +162,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                               },
                               behavior: HitTestBehavior.opaque,
                               child: Container(
-                                width: 30,
-                                height: 30,
+                                width: 26,
+                                height: 26,
                                 margin: const EdgeInsets.only(right: 2),
                                 alignment: Alignment.center,
                                 decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
@@ -185,7 +185,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                     .read(customersViewModelProvider.notifier)
                     .setOptedInOnly(!state.optedInOnly),
               ),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               if (filtered.isEmpty)
                 NeuNotice(
                   icon: Icons.people_outline_rounded,
@@ -284,7 +284,7 @@ class _StatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 64,
+      height: 52,
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
       decoration: BoxDecoration(
         color: AppTheme.card,
@@ -295,11 +295,11 @@ class _StatTile extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 24,
+            height: 24,
             alignment: Alignment.center,
             decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
-            child: Icon(icon, size: 15, color: color),
+            child: Icon(icon, size: 13, color: color),
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -311,13 +311,13 @@ class _StatTile extends StatelessWidget {
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 17, fontWeight: FontWeight.w800),
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 15, fontWeight: FontWeight.w800),
                 ),
                 Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w500),
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 10, fontWeight: FontWeight.w500),
                 ),
               ],
             ),
@@ -343,7 +343,7 @@ class _OptedInFilterChip extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 5),
         decoration: BoxDecoration(
           color: selected ? AppTheme.accent.withValues(alpha: 0.10) : AppTheme.card,
           borderRadius: BorderRadius.circular(999),
@@ -354,7 +354,7 @@ class _OptedInFilterChip extends StatelessWidget {
           children: [
             Icon(
               selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-              size: 16,
+              size: 15,
               color: selected ? AppTheme.accent : AppTheme.muted,
             ),
             const SizedBox(width: 6),
@@ -362,7 +362,7 @@ class _OptedInFilterChip extends StatelessWidget {
               'Opted in only',
               style: TextStyle(
                 color: selected ? AppTheme.accent : AppTheme.text,
-                fontSize: 12.5,
+                fontSize: 12,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
@@ -390,14 +390,14 @@ class _ViewToggleButton extends StatelessWidget {
         onTap: () => onSelect(v),
         behavior: HitTestBehavior.opaque,
         child: Container(
-          width: 40,
-          height: 40,
+          width: 34,
+          height: 34,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: isSelected ? AppTheme.accent : Colors.transparent,
             borderRadius: BorderRadius.circular(AppTheme.rSmall - 2),
           ),
-          child: Icon(icon, size: 19, color: isSelected ? Colors.white : AppTheme.muted),
+          child: Icon(icon, size: 17, color: isSelected ? Colors.white : AppTheme.muted),
         ),
       );
     }
