@@ -313,6 +313,12 @@ const createBookingSchema = z
     guests: z.array(bookingGuestSchema).optional().default([]),
     vehicles: z.array(bookingVehicleSchema).optional().default([]),
     switchableCharges: z.array(chargeSelectionSchema).optional().default([]),
+    // Set only when this booking started from an enquiry's "Confirm booking"
+    // action (Enquiries.jsx) — carried on the pre-filled form the desk opened
+    // it from. The service links the two inside the booking's own
+    // transaction; see enquiries.service.js's linkConvertedBooking. Absent on
+    // every ordinary booking.
+    enquiryId: z.coerce.number().int().positive().optional(),
   })
   .refine((data) => data.checkOutDate > data.checkInDate, {
     message: 'Check-out date must be after check-in date.',

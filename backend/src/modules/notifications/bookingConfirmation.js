@@ -2,6 +2,8 @@ const { getPool, sql } = require('../../config/connection');
 const { logger } = require('../../config/logger');
 const whatsapp = require('../../config/whatsapp');
 const { toClockTime } = require('../rooms/checkoutPolicy.service');
+const advanceReceiptsService = require('../billing/advanceReceipts.service');
+const receiptShareService = require('../billing/receiptShare.service');
 
 // The WhatsApp confirmation a guest gets when their stay booking is written
 // down. Function bookings get their own template/module now — see
@@ -10,16 +12,24 @@ const { toClockTime } = require('../rooms/checkoutPolicy.service');
 // (room number, separate check-in/check-out instants). The template's ten
 // variables, in order:
 //
-//   {{1}} customer         {{6}} advance_paid
-//   {{2}} property_name    {{7}} total_amount
-//   {{3}} room_no          {{8}} balance_due
-//   {{4}} checkin_time     {{9}} directions
-//   {{5}} checkout_time    {{10}} phone
+//   {{1}} name             {{6}} advance
+//   {{2}} hotel_name       {{7}} balance
+//   {{3}} room             {{8}} receipt_link
+//   {{4}} checkin_at       {{9}} directions
+//   {{5}} checkout_at      {{10}} contact
 //
 // "Dear {{1}}, Thank you for choosing us! Your booking for {{2}} is
 //  confirmed. Room No: {{3}} / Check-in: {{4}} / Check-out: {{5}} /
-//  Advance Paid: ₹{{6}} / Total Amount: ₹{{7}} / Balance Due: ₹{{8}} /
-//  Directions: {{9}} / Contact: {{10}} ..."
+//  Advance Paid: ₹{{6}} / Balance Due: ₹{{7}} / Download your advance
+//  receipt here: {{8}} / Directions: {{9}} / Contact: {{10}} ..."
+//
+// {{8}} is built by resolveReceiptLink below: the most recently ISSUED
+// advance receipt against this booking, if any was taken, rendered to a PDF
+// and handed a /public/receipts/:token link on the spot — see
+// receiptShare.service.js's createAutoReceiptLink. No advance, or the PDF
+// could not be built, and the slot reads "-" the same way every other blank
+// template variable does; it never stops the confirmation itself from going
+// out.
 //
 // One booking can hold rooms on different date ranges — dbo.booking_rooms
 // carries its own check_in_date/check_out_date per room, and
@@ -30,14 +40,16 @@ const { toClockTime } = require('../rooms/checkoutPolicy.service');
 //
 //   - every active room has the same check-in AND check-out  -> one message,
 //     {{3}} names every room (the existing STRING_AGG'd room_numbers), {{4}}/
-//     {{5}} are that one shared range, {{6}}-{{8}} are the booking's own
-//     totals — unchanged from before this split existed.
+//     {{5}} are that one shared range, {{6}}/{{7}} are the booking's own
+//     advance/balance, {{8}} the one receipt link against the whole booking
+//     — unchanged from before this split existed.
 //   - the rooms disagree on dates -> one message per room instead, each
 //     naming just that room and its own dates. Advance Paid and Balance Due
 //     are not stored per room (only total_price is, on booking_rooms), so
 //     the booking's one advance payment is split across the per-room
 //     messages in proportion to each room's own share of the booking total —
-//     see buildPerRoomSample.
+//     see buildPerRoomSample. The receipt link is the same one booking-level
+//     link in every room's message, since there is only ever one receipt.
 //
 // Best-effort, by design. The booking is already committed when this runs,
 // and a provider outage must not turn into "the booking failed" at the desk —
@@ -145,8 +157,10 @@ function money(value) {
 // The ten template values for a stay, in template order. Pure, so it can be
 // checked without a database; booking is the dbo.bookings row (plus
 // room_numbers, advance_amount, total_price — see loadBooking), lodge the
-// dbo.lodges row.
-function buildStaySample(booking, lodge) {
+// dbo.lodges row. `receiptLink` is resolved separately (resolveReceiptLink,
+// which needs the database) and passed in so this stays a pure function —
+// null/undefined reads as "-" the same way every other blank variable does.
+function buildStaySample(booking, lodge, receiptLink) {
   const times = stayTimes(booking, lodge);
   const advance = Number(booking.advance_amount || 0);
   const total = Number(booking.total_price || 0);
@@ -157,8 +171,8 @@ function buildStaySample(booking, lodge) {
     times.checkIn,
     times.checkOut,
     money(advance),
-    money(total),
     money(total - advance),
+    receiptLink,
     directionsFor(lodge),
     lodgeContact(lodge),
   ].map(clean);
@@ -172,8 +186,10 @@ function buildStaySample(booking, lodge) {
 // column to read instead. A booking with no price on it yet (total_price 0,
 // which priceBooking never actually allows through createBooking but costs
 // nothing to guard anyway) splits the advance evenly instead of dividing by
-// zero.
-function buildPerRoomSample(room, booking, lodge, roomCount) {
+// zero. `receiptLink` is the one booking-level receipt link, repeated in
+// every room's message — there is only ever one receipt against a booking,
+// whatever rooms it holds.
+function buildPerRoomSample(room, booking, lodge, roomCount, receiptLink) {
   const times = stayTimes(room, lodge);
   const bookingTotal = Number(booking.total_price || 0);
   const bookingAdvance = Number(booking.advance_amount || 0);
@@ -187,8 +203,8 @@ function buildPerRoomSample(room, booking, lodge, roomCount) {
     times.checkIn,
     times.checkOut,
     money(roomAdvance),
-    money(roomTotal),
     money(roomTotal - roomAdvance),
+    receiptLink,
     directionsFor(lodge),
     lodgeContact(lodge),
   ].map(clean);
@@ -277,6 +293,36 @@ function toIsoDate(value) {
   return typeof value === 'string' ? value.slice(0, 10) : value.toISOString().slice(0, 10);
 }
 
+// The receipt to link to, if the booking has one. The most recently issued —
+// listAdvanceReceiptsForBooking already orders newest-first — because
+// issueAdvanceReceipt accumulates rather than replaces, so a second
+// instalment's own receipt is the one that states the balance as it stands
+// now. A VOIDed receipt is skipped: nothing to hand a guest a link to.
+async function latestIssuedReceiptId(lodgeId, bookingId) {
+  const receipts = await advanceReceiptsService.listAdvanceReceiptsForBooking(lodgeId, bookingId);
+  const issued = receipts.find((r) => r.status === 'ISSUED');
+  return issued ? issued.id : null;
+}
+
+// {{8}} in the template. Built here rather than by the desk's usual
+// "Share on WhatsApp" button — this message fires automatically right after
+// the booking is saved, before any desk action — so
+// receiptShareService.createAutoReceiptLink renders the PDF itself and
+// mints the link on the spot. Best-effort, same reasoning as the rest of
+// this file: a link that can't be built must not stop the confirmation
+// itself from going out, so this never throws and the template just prints
+// "-" in its place.
+async function resolveReceiptLink(lodgeId, bookingId, phone) {
+  try {
+    const receiptId = await latestIssuedReceiptId(lodgeId, bookingId);
+    if (!receiptId) return null;
+    return await receiptShareService.createAutoReceiptLink({ lodgeId, receiptId, phone });
+  } catch (err) {
+    logger.warn({ kind: 'stay', id: bookingId, lodgeId, err }, 'Could not prepare the advance receipt link');
+    return null;
+  }
+}
+
 // Runs the send and reports how it went, never throwing. `kind` and `id`
 // label the log lines so "did the guest for booking 41 get a message" can be
 // answered from the log after the fact.
@@ -324,13 +370,15 @@ async function notifyStayBooked(lodgeId, bookingId) {
     if (!booking || !lodge) return skipped('booking or lodge not found');
     if (rooms.length === 0) return skipped('no active rooms on this booking');
 
+    const receiptLink = await resolveReceiptLink(lodgeId, bookingId, booking.guest_phone);
+
     if (sameDatesAcrossRooms(rooms)) {
       return await deliver({
         kind: 'stay',
         id: bookingId,
         lodgeId,
         phone: booking.guest_phone,
-        sample: buildStaySample(booking, lodge),
+        sample: buildStaySample(booking, lodge, receiptLink),
       });
     }
 
@@ -341,7 +389,7 @@ async function notifyStayBooked(lodgeId, bookingId) {
         id: `${bookingId}/${room.room_number}`,
         lodgeId,
         phone: booking.guest_phone,
-        sample: buildPerRoomSample(room, booking, lodge, rooms.length),
+        sample: buildPerRoomSample(room, booking, lodge, rooms.length, receiptLink),
       });
       outcomes.push({ roomNumber: room.room_number, ...outcome });
     }

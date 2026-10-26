@@ -442,53 +442,58 @@
 
 .guest-register__table th:nth-child(1),
 .guest-register__table td:nth-child(1) {
-  width: 9%;
+  width: 10%;
+}
+
+.guest-register__table th:nth-child(2),
+.guest-register__table td:nth-child(2) {
+  width: 8%;
 }
 
 /* A stay that spans several rooms lists them all ("001, 002, 101") — long
-   enough on its own to run past the column's 9% share. The table-wide nowrap
+   enough on its own to run past the column's 8% share. The table-wide nowrap
    above left it to spill, uncontained, straight over the Bill No column
    beside it. Letting just this one column wrap keeps a multi-room list on
    its own line (or two), inside its own cell, instead of overlapping its
    neighbour. */
-.guest-register__table td:nth-child(1) .guest-register__cell-main {
+.guest-register__table td:nth-child(2) .guest-register__cell-main {
   white-space: normal;
   word-break: break-word;
   line-height: 1.25;
 }
 
-.guest-register__table th:nth-child(2),
-.guest-register__table td:nth-child(2) {
-  width: 11%;
-}
-
 .guest-register__table th:nth-child(3),
 .guest-register__table td:nth-child(3) {
-  width: 24%;
+  width: 10%;
 }
 
 .guest-register__table th:nth-child(4),
 .guest-register__table td:nth-child(4) {
-  width: 11%;
+  width: 21%;
 }
 
 .guest-register__table th:nth-child(5),
 .guest-register__table td:nth-child(5) {
-  width: 17%;
+  width: 10%;
 }
 
 .guest-register__table th:nth-child(6),
 .guest-register__table td:nth-child(6) {
-  width: 10%;
+  width: 15%;
 }
 
 .guest-register__table th:nth-child(7),
 .guest-register__table td:nth-child(7) {
-  width: 12%;
+  width: 9%;
 }
 
 .guest-register__table th:nth-child(8),
 .guest-register__table td:nth-child(8) {
+  width: 11%;
+}
+
+.guest-register__table th:nth-child(9),
+.guest-register__table td:nth-child(9) {
   width: 6%;
 }
 
@@ -596,7 +601,7 @@
 
 /* Room and Guest are the two columns a register is searched by, so they carry
    the sheet's weight; the rest stay quiet enough to scan past. */
-.guest-register__table tbody td:first-child .guest-register__cell-main {
+.guest-register__table tbody td:nth-child(2) .guest-register__cell-main {
   font-size: 15px;
   font-weight: 700;
 }
@@ -632,7 +637,7 @@
    number tints to the brand colour rather than carrying a left-edge bar
    (removed on request), so the row still reads as marked without the extra
    line down its side. */
-.guest-register__row--in-house > td:first-child .guest-register__cell-main {
+.guest-register__row--in-house > td:nth-child(2) .guest-register__cell-main {
   color: var(--brand-ink);
 }
 
@@ -2180,7 +2185,7 @@
   letter-spacing: 0.05em;
 }
 
-.guest-register__table tbody td:first-child .guest-register__cell-main {
+.guest-register__table tbody td:nth-child(2) .guest-register__cell-main {
   font-weight: 600;
 }
 
@@ -2258,11 +2263,16 @@
 
 .guest-register__table th:nth-child(1),
 .guest-register__table td:nth-child(1) {
+  min-width: 100px;
+}
+
+.guest-register__table th:nth-child(2),
+.guest-register__table td:nth-child(2) {
   min-width: 84px;
 }
 
-.guest-register__table th:nth-child(3),
-.guest-register__table td:nth-child(3) {
+.guest-register__table th:nth-child(4),
+.guest-register__table td:nth-child(4) {
   min-width: 160px;
 }
 

@@ -646,7 +646,23 @@ const NOT_READY = {
   OUT_OF_ORDER: 'Under repair',
 };
 
-export default function Bookings({ onBillStay, onShowRegister, modalOnly = false, openBookingId = null, initialAction = null, onModalClose }) {
+export default function Bookings({
+  onBillStay,
+  onShowRegister,
+  modalOnly = false,
+  openBookingId = null,
+  initialAction = null,
+  onModalClose,
+  // An enquiry the desk just clicked "Confirm booking" on, from Enquiries.jsx
+  // via OwnerDashboard.jsx's lifted-state handoff — see openFromEnquiry
+  // below. Consumed once (onPrefillConsumed) so navigating back here later
+  // doesn't reopen the same form.
+  prefillEnquiry = null,
+  onPrefillConsumed,
+  // Where closing a prefilled-from-enquiry form without saving should send
+  // the desk back to — see openFromEnquiry/returnToEnquiriesIfCame below.
+  onReturnToEnquiries,
+}) {
   const session = getSession();
   const token = session?.token;
   const toast = useToast();
@@ -774,6 +790,15 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     if (!cameFromRegister.current) return;
     cameFromRegister.current = false;
     onShowRegister?.('DRAFT');
+  };
+  // Same courtesy, for a form opened from an enquiry's "Confirm booking" —
+  // closing it without saving takes the desk back to Enquiries rather than
+  // leaving them stranded on the chart they didn't ask to be on.
+  const cameFromEnquiry = useRef(false);
+  const returnToEnquiriesIfCame = () => {
+    if (!cameFromEnquiry.current) return;
+    cameFromEnquiry.current = false;
+    onReturnToEnquiries?.();
   };
   const loadDrafts = () => {
     apiGet('/bookings/drafts', { token })
@@ -1362,6 +1387,13 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
   const editing = formMode === 'EDIT';
 
   const [draftNote, setDraftNote] = useState('');
+  // The extras an enquiry asked for, shown as a plain reminder when the form
+  // was opened from one (see openFromEnquiry) — never auto-ticked. The
+  // checklist below only offers whichever extras the *picked* room actually
+  // has, and picking a room resets it, so there's no safe moment to tick
+  // them automatically; the desk ticks the matching boxes by hand once a
+  // room is chosen. Cleared wherever draftNote is, same lifecycle.
+  const [extrasReminder, setExtrasReminder] = useState('');
   // The draft this form is working on, if any. Set means Save draft updates
   // that row instead of writing a new one, and the form offers to delete it.
   const [draftId, setDraftId] = useState(null);
@@ -1522,6 +1554,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     setEditTarget(null);
     setDraftId(null);
     setDraftNote('');
+    setExtrasReminder('');
     beginForm('CREATE', {
       ...initialBookingForm,
       checkInDate,
@@ -1534,6 +1567,61 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       bookingType: checkInDate > todayIso() ? 'RESERVATION' : 'WALK_IN',
     });
   };
+
+  // "Confirm booking" on an enquiry (Enquiries.jsx) — opens a fresh booking
+  // form the same way openNewBooking does, but with the guest's name, phone
+  // and dates already filled in from the enquiry rather than blank. Nothing
+  // is saved yet; enquiryId only rides along on the form so the eventual
+  // save (see handleSave's formData below) can tell the server which enquiry
+  // this booking answers, and the server links/converts it in the same
+  // transaction as the booking itself.
+  const openFromEnquiry = (enquiry) => {
+    // A DATE column comes back from the API as a full ISO timestamp
+    // ("2026-10-26T00:00:00.000Z"), not the bare "2026-10-26" this form's
+    // date fields hold — sliced to the first 10 characters so addDays (which
+    // appends its own "T00:00:00Z") gets a value it can actually parse,
+    // same convention the rest of this app's date-handling code follows.
+    const enquiryCheckIn = enquiry.checkInDate ? String(enquiry.checkInDate).slice(0, 10) : null;
+    const enquiryCheckOut = enquiry.checkOutDate ? String(enquiry.checkOutDate).slice(0, 10) : null;
+    const checkInDate = enquiryCheckIn || todayIso();
+    const checkOutDate = enquiryCheckOut && enquiryCheckOut > checkInDate ? enquiryCheckOut : addDays(checkInDate, 1);
+    setEditTarget(null);
+    setDraftId(null);
+    setDraftNote('');
+    setExtrasReminder(
+      enquiry.extrasNote ? `Guest also asked about: ${enquiry.extrasNote} — tick these below once a room is picked, if it offers them.` : ''
+    );
+    cameFromEnquiry.current = true;
+    beginForm('CREATE', {
+      ...initialBookingForm,
+      checkInDate,
+      checkOutDate,
+      // Always a pre-reservation, even when the enquiry's check-in date is
+      // today — the guest isn't standing at the desk the way a Walk-in
+      // means; they're being booked ahead from an enquiry that came in
+      // separately. Unlike openNewBooking above, this never falls back to
+      // Walk-in by date.
+      bookingType: 'RESERVATION',
+      adults: [{ ...emptyGuest, name: enquiry.name || '', phone: enquiry.phone || '' }],
+      // The enquiry only ever names a total head count, never a children
+      // split — so the whole figure becomes the adult count (the party
+      // stepper the desk sees first) and child count stays at the form's
+      // own default of 0, same as a brand-new booking. The desk can still
+      // move some of that count into children with the stepper if the
+      // enquiry's guest actually said so in their note.
+      adultCount: enquiry.guests ? String(enquiry.guests) : initialBookingForm.adultCount,
+      enquiryId: enquiry.id,
+    });
+  };
+
+  // Fires once per enquiry handed over this way — not on every render, or
+  // closing the form the prefill opened would reopen it straight away.
+  useEffect(() => {
+    if (!prefillEnquiry) return;
+    openFromEnquiry(prefillEnquiry);
+    onPrefillConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillEnquiry]);
 
   // Anything typed in since the form opened. A booking is filled in at a
   // counter with a guest waiting, and the cost of asking once is a click —
@@ -1564,7 +1652,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     setEditTarget(null);
     setDraftId(null);
     setDraftNote('');
+    setExtrasReminder('');
     returnToRegisterIfCame();
+    returnToEnquiriesIfCame();
   };
 
   // Parks what's on screen and closes. Only offered on a new booking: an edit
@@ -1587,9 +1677,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       setFormMode(null);
       setDraftId(null);
       setDraftNote('');
+      setExtrasReminder('');
       loadDrafts();
       loadTapeChart();
       returnToRegisterIfCame();
+      returnToEnquiriesIfCame();
     } catch (err) {
       reportFormError(err instanceof ApiError ? err.message : 'Could not save this draft.');
     } finally {
@@ -1626,6 +1718,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
           } again before booking.`
         : ''
     );
+    setExtrasReminder('');
   };
 
   // See openDraftRef, by loadDrafts.
@@ -1649,7 +1742,9 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
         setFormMode(null);
         setDraftId(null);
         setDraftNote('');
+        setExtrasReminder('');
         returnToRegisterIfCame();
+        returnToEnquiriesIfCame();
       }
       loadDrafts();
       loadTapeChart();
@@ -2004,8 +2099,8 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     if (overOccupancy && !wasOverOccupancy.current) {
       toast.show(
         capacityRooms.length > 1
-          ? `Over capacity — these ${capacityRooms.length} rooms sleep ${totalCapacity}, this booking has ${numGuests}.`
-          : `Over capacity — Room ${selectedRoom?.roomNumber} sleeps ${totalCapacity}, this booking has ${numGuests}.`,
+          ? `Over capacity — these ${capacityRooms.length} rooms accommodate up to ${totalCapacity} guests, this booking has ${numGuests}.`
+          : `Over capacity — Room ${selectedRoom?.roomNumber} accommodates up to ${totalCapacity} guests, this booking has ${numGuests}.`,
         'warning'
       );
       requestAnimationFrame(() => {
@@ -2527,6 +2622,13 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
             );
           }
         }
+        // Set only when this form was opened from an enquiry's "Confirm
+        // booking" action (see openFromEnquiry) — the server links the two
+        // and marks the enquiry Converted in the same transaction as this
+        // save.
+        if (bookingForm.enquiryId) {
+          formData.append('enquiryId', String(bookingForm.enquiryId));
+        }
 
         const created = await apiPostForm('/bookings', formData, { token });
         if (bookingForm.bookingType === 'WALK_IN') {
@@ -2559,9 +2661,11 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
       setEditTarget(null);
       setDraftId(null);
       setDraftNote('');
+      setExtrasReminder('');
       // Booked, so the chart with its confirmation is the right place to
       // stay — but the way back is spent, not carried onto the next form.
       cameFromRegister.current = false;
+      cameFromEnquiry.current = false;
       loadTapeChart();
     } catch (err) {
       reportFormError(
@@ -2798,6 +2902,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
     setEditTarget(bookingDetail);
     setDraftId(null);
     setDraftNote('');
+    setExtrasReminder('');
     setShowCheckInForm(false);
     beginForm('EDIT', seeded);
     // The detail modal steps aside rather than stacking behind. Both modals
@@ -4531,6 +4636,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   </div>
                 )}
                 {draftNote && <div className="form-banner form-banner--info">{draftNote}</div>}
+                {extrasReminder && <div className="form-banner form-banner--info">{extrasReminder}</div>}
 
                 <div className="form-section">
                   <div className="form-section__title">
@@ -5055,8 +5161,8 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                   {overOccupancy && (
                     <div ref={capacityBannerRef} className="form-banner form-banner--warning" role="alert">
                       {capacityRooms.length > 1
-                        ? `These ${capacityRooms.length} rooms sleep ${totalCapacity} in all — this booking has ${numGuests}.`
-                        : `Room ${selectedRoom.roomNumber} sleeps ${selectedRoom.maxOccupancy} — this booking has ${numGuests}.`}
+                        ? `These ${capacityRooms.length} rooms accommodate up to ${totalCapacity} guests in all — this booking has ${numGuests}.`
+                        : `Room ${selectedRoom.roomNumber} accommodates up to ${selectedRoom.maxOccupancy} guests — this booking has ${numGuests}.`}
                     </div>
                   )}
 
@@ -5515,7 +5621,7 @@ export default function Bookings({ onBillStay, onShowRegister, modalOnly = false
                     </p>
                     {overRoomOccupancy && (
                       <div className="form-banner form-banner--info">
-                        Room {bookingDetail.roomNumber} sleeps {bookingDetail.roomMaxOccupancy}. Check-in
+                        Room {bookingDetail.roomNumber} accommodates up to {bookingDetail.roomMaxOccupancy} guests. Check-in
                         isn’t blocked — make sure the extra bedding is arranged.
                       </div>
                     )}

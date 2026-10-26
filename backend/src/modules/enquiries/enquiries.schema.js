@@ -39,7 +39,6 @@ const publicEnquirySchema = z.object({
   venueId: optionalId,
   guests: z.coerce.number().int().min(1).max(1000).nullish().transform((v) => v ?? null),
   addonIds: z.array(z.coerce.number().int().positive()).max(30).nullish().transform((v) => v ?? []),
-  summary: optionalText(1000),
   notes: optionalText(1000),
   website: z.string().nullish(),
 });

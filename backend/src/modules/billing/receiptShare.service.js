@@ -7,6 +7,8 @@ const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR } = require('../../middleware/receiptShareUpload');
 const whatsapp = require('../../config/whatsapp');
 const { publicBaseUrl } = require('../../config/publicBaseUrl');
+const advanceReceiptsService = require('./advanceReceipts.service');
+const { renderReceiptPdf } = require('./receiptPdf.service');
 
 // Handing an advance receipt to a guest on WhatsApp, from the server rather
 // than from the desk's own phone. Same shape as billShare.service.js, and the
@@ -196,6 +198,48 @@ async function shareReceiptOnWhatsApp(lodgeId, userId, receiptId, { file, phone 
   }
 }
 
+// A receipt link generated here, rather than by the desk uploading a PDF
+// through shareReceiptOnWhatsApp above. The booking-confirmation message
+// (bookingConfirmation.js) fires automatically right after the booking is
+// saved — there is no desk click and no browser to render a PDF at that
+// moment — so this renders one itself, off the same receipt row, and stores
+// it under the same token scheme the manual share uses. The two paths end up
+// at the same /public/receipts/:token route either way.
+//
+// Best-effort: returns null on any failure rather than throwing, since a
+// receipt link that can't be built must not stop the booking confirmation it
+// rides along with from going out.
+async function createAutoReceiptLink({ lodgeId, receiptId, phone }) {
+  if (!receiptId) return null;
+  try {
+    const receipt = await advanceReceiptsService.getAdvanceReceipt(lodgeId, receiptId);
+    if (!receipt || receipt.status !== 'ISSUED') return null;
+
+    const pdfBuffer = await renderReceiptPdf(receipt);
+    const filename = `${crypto.randomUUID()}.pdf`;
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), pdfBuffer);
+
+    const token = crypto.randomUUID().replace(/-/g, '');
+    await recordShare({
+      lodgeId,
+      receiptId,
+      token,
+      filename,
+      phone: whatsapp.normalisePhone(phone) ?? null,
+      channel: 'WHATSAPP',
+      status: 'SENT',
+      error: null,
+      campaignId: null,
+      userId: null,
+    });
+
+    return `${publicBaseUrl()}/public/receipts/${token}`;
+  } catch (err) {
+    logger.warn({ err, lodgeId, receiptId }, 'Could not prepare the advance receipt link for the booking confirmation');
+    return null;
+  }
+}
+
 // The guest's end of the link. No authentication — the token is the whole of
 // the credential, same as a shared bill.
 async function readSharedReceipt(token) {
@@ -257,6 +301,7 @@ function whatsAppAvailable() {
 
 module.exports = {
   shareReceiptOnWhatsApp,
+  createAutoReceiptLink,
   readSharedReceipt,
   listShares,
   whatsAppAvailable,

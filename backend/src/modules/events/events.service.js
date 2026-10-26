@@ -6,6 +6,7 @@ const eventConfirmation = require('../notifications/eventConfirmation');
 const eventCancellation = require('../notifications/eventCancellation');
 const eventReschedule = require('../notifications/eventReschedule');
 const customersService = require('../customers/customers.service');
+const enquiriesService = require('../enquiries/enquiries.service');
 
 // The statuses that keep a venue busy. A draft does not — two families can
 // ask about the same Saturday and the first to confirm gets it — and neither
@@ -704,6 +705,14 @@ async function createEventBooking(lodgeId, userId, input) {
       `);
     const id = inserted.recordset[0].id;
     await replaceAddonLines(transaction, id, addons);
+
+    // This booking started from an enquiry's "Confirm booking" action — mark
+    // it CONVERTED and link it, inside this same transaction, so the two can
+    // never disagree. See enquiries.service.js's linkConvertedBooking.
+    if (input.enquiryId) {
+      await enquiriesService.linkConvertedBooking(transaction, lodgeId, input.enquiryId, { eventBookingId: id }, userId);
+    }
+
     await transaction.commit();
     const event = await getEventBooking(lodgeId, id);
     // The organiser hears from us once the venue is theirs. A draft holds

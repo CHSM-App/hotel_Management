@@ -62,3 +62,92 @@
   align-items: center;
   margin-left: 0;
 }
+
+/* The row opens the detail modal on click — same affordance a pointer gives
+   any other clickable row in this app, and a visible ring for whoever tabs
+   to it instead. The actions cell stops its own clicks from bubbling here
+   (see Enquiries.jsx), so pressing a button inside it never also opens the
+   modal underneath. */
+.enquiries-sheet__row {
+  cursor: pointer;
+}
+
+.enquiries-sheet__row:hover {
+  background: var(--brand-wash, #e6edf4);
+}
+
+.enquiries-sheet__row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* The detail modal's label/value pairs — same grid shape as the guest
+   register's own record facts (.guest-register__facts), so a desk reading
+   one detail panel and then the other finds the same layout twice rather
+   than two different ones for the same kind of information. */
+.enquiries-sheet__detail {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 0;
+  margin: 0 0 16px;
+}
+
+.enquiries-sheet__detail dt {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 9px 12px 9px 0;
+  border-top: 1px solid var(--border);
+}
+
+.enquiries-sheet__detail dd {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.enquiries-sheet__detail dt:first-of-type,
+.enquiries-sheet__detail dt:first-of-type + dd {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* Not inside .enquiries-sheet (the table), so the scoped
+   .enquiries-sheet .history-table__actions-inner rule above doesn't reach
+   it — restated here rather than relying on that selector matching by
+   accident. */
+.enquiries-sheet__detail-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.enquiries-sheet__detail-actions .history-table__btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (max-width: 480px) {
+  .enquiries-sheet__detail {
+    grid-template-columns: 1fr;
+  }
+
+  .enquiries-sheet__detail dt {
+    padding: 10px 0 0;
+  }
+
+  .enquiries-sheet__detail dd {
+    padding: 2px 0 10px;
+    border-top: none;
+  }
+
+  .enquiries-sheet__detail dt:first-of-type + dd {
+    padding-top: 2px;
+  }
+}
