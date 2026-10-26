@@ -12,6 +12,7 @@ const checkinWelcome = require('../notifications/checkinWelcome');
 const billingService = require('../billing/billing.service');
 const { splitAcross } = require('../reports/reports.service');
 const advanceReceiptsService = require('../billing/advanceReceipts.service');
+const enquiriesService = require('../enquiries/enquiries.service');
 const { logger } = require('../../config/logger');
 const draftsService = require('./drafts.service');
 const customersService = require('../customers/customers.service');
@@ -2053,6 +2054,13 @@ async function createBooking(lodgeId, userId, input) {
     await syncBookingFromRooms(transaction, bookingId);
 
     await insertGuestsAndVehicles(transaction, bookingId, input.guests, input.vehicles);
+
+    // This booking started from an enquiry's "Confirm booking" action — mark
+    // it CONVERTED and link it, inside this same transaction, so the two can
+    // never disagree. See enquiries.service.js's linkConvertedBooking.
+    if (input.enquiryId) {
+      await enquiriesService.linkConvertedBooking(transaction, lodgeId, input.enquiryId, { bookingId }, userId);
+    }
 
     await transaction.commit();
 

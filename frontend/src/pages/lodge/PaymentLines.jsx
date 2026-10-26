@@ -107,6 +107,7 @@ export default function PaymentLines({
                 min="0"
                 step="1"
                 inputMode="numeric"
+                placeholder="Amount"
                 onFocus={(e) => e.target.select()}
                 value={line.amount}
                 aria-label={`Amount ${index + 1}`}

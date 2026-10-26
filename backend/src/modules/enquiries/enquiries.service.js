@@ -31,7 +31,6 @@ function mapEnquiry(row) {
     venueId: row.venue_id,
     guests: row.guests,
     addonIds: row.addon_ids ? JSON.parse(row.addon_ids) : [],
-    summary: row.summary,
     notes: row.notes,
     status: row.status,
     createdAt: row.created_at,
@@ -65,15 +64,14 @@ async function createPublicEnquiry(lodgeId, data) {
         .input('venueId', sql.BigInt, data.venueId)
         .input('guests', sql.Int, data.guests)
         .input('addonIds', sql.NVarChar, data.addonIds.length ? JSON.stringify(data.addonIds) : null)
-        .input('summary', sql.NVarChar, data.summary)
         .input('notes', sql.NVarChar, data.notes)
         .query(`
           INSERT INTO dbo.lodge_enquiries
             (lodge_id, reference_code, kind, name, phone, check_in_date, check_out_date,
-             event_date, event_type, room_type_id, venue_id, guests, addon_ids, summary, notes)
+             event_date, event_type, room_type_id, venue_id, guests, addon_ids, notes)
           VALUES
             (@lodgeId, @code, @kind, @name, @phone, @checkIn, @checkOut,
-             @eventDate, @eventType, @roomTypeId, @venueId, @guests, @addonIds, @summary, @notes)
+             @eventDate, @eventType, @roomTypeId, @venueId, @guests, @addonIds, @notes)
         `);
       return { referenceCode };
     } catch (err) {
@@ -147,6 +145,97 @@ async function updateStatus(lodgeId, userId, id, status) {
   return { enquiry: mapEnquiry(row) };
 }
 
+// Called from inside createBooking's or createEventBooking's own transaction
+// (bookings.service.js / events.service.js) when the desk started that
+// booking from an enquiry's "Confirm booking" button — see Enquiries.jsx,
+// OwnerDashboard.jsx's pendingBookingEnquiry/pendingEventEnquiry handoff, and
+// Bookings.jsx's/Events.jsx's prefilled-form entry points. Marks the enquiry
+// CONVERTED and records which booking it became, in the same transaction as
+// the booking itself, so the two can never disagree: either both commit or
+// neither does. Exactly one of bookingId/eventBookingId is passed, never both
+// — an enquiry converts into a stay or a function, not both.
+//
+// `converted_booking_id IS NULL AND converted_event_booking_id IS NULL` in
+// the WHERE is the only guard — not a status check — so this never blocks on
+// an enquiry already marked CLOSED or CONTACTED by hand; the only thing that
+// must not happen twice is a second booking claiming the same enquiry.
+// Matching zero rows (already converted, or the enquiry was deleted by the
+// 30-day purge since the form was opened) is not an error: the booking the
+// desk is making right now is still good, it just won't have an enquiry
+// linked back to it.
+async function linkConvertedBooking(transaction, lodgeId, enquiryId, { bookingId = null, eventBookingId = null } = {}, userId) {
+  const result = await new sql.Request(transaction)
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('enquiryId', sql.BigInt, enquiryId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('eventBookingId', sql.BigInt, eventBookingId)
+    .input('userId', sql.BigInt, userId ?? null)
+    .query(`
+      UPDATE dbo.lodge_enquiries
+      SET status = 'CONVERTED',
+          converted_booking_id = @bookingId,
+          converted_event_booking_id = @eventBookingId,
+          handled_by = COALESCE(handled_by, @userId),
+          handled_at = COALESCE(handled_at, SYSDATETIMEOFFSET())
+      OUTPUT inserted.id
+      WHERE id = @enquiryId AND lodge_id = @lodgeId
+        AND converted_booking_id IS NULL AND converted_event_booking_id IS NULL
+    `);
+  if (result.recordset.length === 0) {
+    logger.warn(
+      { lodgeId, enquiryId, bookingId, eventBookingId },
+      'Could not link this booking to its enquiry — already converted, or the enquiry no longer exists'
+    );
+  }
+}
+
+// The id->name lookups the dashboard's enquiry detail modal needs to turn
+// roomTypeId/venueId/addonIds (all it stores — an enquiry names a catalogue
+// entry, never duplicates its name onto the row) back into words. Scoped to
+// this module rather than reusing /rooms or /events/venues: both of those
+// sit behind a write-capable permission (rooms.manage/orders.take,
+// events.manage) that a desk holding only enquiries.manage may not have —
+// granting that for a read-only label would mean granting the ability to
+// edit room categories or venues just to view an enquiry. All four
+// catalogues are read here, inactive entries included: an enquiry can sit
+// around for weeks (30-day retention) naming something since deactivated in
+// Setup, and that's still the honest answer to "what did this enquiry ask
+// for", not a reason to show nothing.
+async function loadCatalogue(lodgeId) {
+  const pool = await getPool();
+  const [roomTypes, venues, addons, roomExtras] = await Promise.all([
+    pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query('SELECT id, name FROM dbo.room_categories WHERE lodge_id = @lodgeId ORDER BY name'),
+    pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query('SELECT id, name FROM dbo.event_venues WHERE lodge_id = @lodgeId ORDER BY name'),
+    pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query('SELECT id, name FROM dbo.event_addons WHERE lodge_id = @lodgeId ORDER BY name'),
+    // An enquiry's addonIds means two different things depending on kind: a
+    // ROOM enquiry's extras are ticked off the public page's room-addon
+    // picker (dbo.switchable_charges, via public.service.js's
+    // listPublicRoomAddons) — a separate catalog from `addons` above
+    // (dbo.event_addons, what an EVENT enquiry's extras are). Same field
+    // name on the enquiry row, two unrelated id spaces; the caller picks
+    // the right map by e.kind.
+    pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query('SELECT id, name FROM dbo.switchable_charges WHERE lodge_id = @lodgeId ORDER BY name'),
+  ]);
+  return {
+    roomTypes: roomTypes.recordset,
+    venues: venues.recordset,
+    addons: addons.recordset,
+    roomExtras: roomExtras.recordset,
+  };
+}
+
 async function purgeOldEnquiries() {
   const pool = await getPool();
   const result = await pool
@@ -156,4 +245,12 @@ async function purgeOldEnquiries() {
   if (result.rowsAffected[0]) logger.info({ removed: result.rowsAffected[0] }, 'Purged old enquiries');
 }
 
-module.exports = { createPublicEnquiry, listEnquiries, summarize, updateStatus, purgeOldEnquiries };
+module.exports = {
+  createPublicEnquiry,
+  listEnquiries,
+  summarize,
+  updateStatus,
+  linkConvertedBooking,
+  loadCatalogue,
+  purgeOldEnquiries,
+};

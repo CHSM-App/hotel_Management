@@ -215,6 +215,12 @@ const createEventSchema = withRoomsCheck(
       // Where the booking starts its life. A half-filled booking stays DRAFT; a desk
       // taking money at the same time can go straight to CONFIRMED.
       status: z.enum(OPENING_STATUSES).optional().default('DRAFT'),
+      // Set only when this booking started from an enquiry's "Confirm
+      // booking" action (Enquiries.jsx) — carried on the pre-filled form the
+      // desk opened it from. The service links the two inside the booking's
+      // own transaction; see enquiries.service.js's linkConvertedBooking.
+      // Absent on every ordinary event booking.
+      enquiryId: z.coerce.number().int().positive().optional(),
     })
     .refine((data) => data.expectedPax != null, {
       message: 'Enter the expected number of guests.',

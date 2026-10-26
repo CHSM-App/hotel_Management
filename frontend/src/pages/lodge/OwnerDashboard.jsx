@@ -356,6 +356,15 @@ export default function OwnerDashboard() {
   // pattern in HotelProfileModal.
   const [linkCopied, setLinkCopied] = useState('');
 
+  // The enquiry behind a "Confirm booking" click in Enquiries.jsx, handed
+  // over here and down to Bookings/Events so each can open its new-booking
+  // form pre-filled from it rather than blank — same lifted-state shape as
+  // billNowBookingId/billNowEventId above. Cleared once that screen has
+  // consumed it (onPrefillConsumed), so coming back to Bookings/Events later
+  // doesn't reopen the same form a second time.
+  const [pendingBookingEnquiry, setPendingBookingEnquiry] = useState(null);
+  const [pendingEventEnquiry, setPendingEventEnquiry] = useState(null);
+
   // The tape chart's legend following a colour into the register's cut of it.
   //
   // Both keys are written in one go rather than through the two useUrlState
@@ -395,6 +404,44 @@ export default function OwnerDashboard() {
         updated.set('section', 'enquiries');
         updated.delete('tab');
         updated.delete('view');
+        updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
+  // "Confirm booking" on a ROOM/EVENT enquiry (Enquiries.jsx): the enquiry
+  // itself — already loaded there — is handed over so Bookings/Events can
+  // open their new-booking form pre-filled from it, rather than this screen
+  // fetching the enquiry again. No draft or server write happens here; the
+  // enquiry is only ever linked once the desk actually saves that booking
+  // (see bookings.service.js / events.service.js's linkConvertedBooking).
+  const confirmEnquiryBooking = (enquiry) => {
+    setBillNowBookingId(null);
+    setBillNowEventId(null);
+    setPendingBookingEnquiry(enquiry);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('section', 'bookings');
+        updated.delete('tab');
+        updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
+  const confirmEnquiryEvent = (enquiry) => {
+    setBillNowBookingId(null);
+    setBillNowEventId(null);
+    setPendingEventEnquiry(enquiry);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('section', 'events');
+        updated.delete('tab');
         updated.delete('status');
         return updated;
       },
@@ -915,6 +962,9 @@ export default function OwnerDashboard() {
                   // left them to find their way back afterwards.
                   onBillStay={(bookingId) => setBillNowBookingId(bookingId ?? null)}
                   onShowRegister={showRegisterWithStatus}
+                  prefillEnquiry={pendingBookingEnquiry}
+                  onPrefillConsumed={() => setPendingBookingEnquiry(null)}
+                  onReturnToEnquiries={openEnquiries}
                 />
               )}
 
@@ -933,6 +983,9 @@ export default function OwnerDashboard() {
                   refreshKey={eventsRefresh}
                   onBillEvent={(eventId) => setBillNowEventId(eventId ?? null)}
                   onViewInvoice={(invoiceId) => setViewEventInvoiceId(invoiceId ?? null)}
+                  prefillEnquiry={pendingEventEnquiry}
+                  onPrefillConsumed={() => setPendingEventEnquiry(null)}
+                  onReturnToEnquiries={openEnquiries}
                 />
               )}
 
@@ -1011,7 +1064,13 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'customers' && <Customers />}
 
-              {activeFeature && activeFeature.key === 'enquiries' && <Enquiries onChanged={refreshEnquiryAlerts} />}
+              {activeFeature && activeFeature.key === 'enquiries' && (
+                <Enquiries
+                  onChanged={refreshEnquiryAlerts}
+                  onConfirmBooking={confirmEnquiryBooking}
+                  onConfirmEventBooking={confirmEnquiryEvent}
+                />
+              )}
 
               {activeFeature && activeFeature.key.startsWith('report-') && (
                 <ReportsPanel

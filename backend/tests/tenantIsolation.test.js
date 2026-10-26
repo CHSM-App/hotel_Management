@@ -153,6 +153,10 @@ test('every service either filters by lodge or is excused by name', () => {
       'me/otp.service.js',
       'Issues and burns password-change codes keyed on the user id from the JWT. dbo.otp_store has no lodge_id on purpose: a code belongs to one account, and scoping it to a lodge as well would add a second key that could only ever agree or be a bug.',
     ],
+    [
+      'billing/receiptPdf.service.js',
+      'Renders a PDF from an already-loaded receipt object (advanceReceipts.service.js already did the lodge-scoped read); it never touches the database itself.',
+    ],
   ]);
 
   const present = new Set();

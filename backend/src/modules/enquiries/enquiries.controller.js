@@ -39,6 +39,17 @@ async function summaryHandler(req, res, next) {
   }
 }
 
+// The room type / venue / add-on names the detail modal resolves an
+// enquiry's ids against — see loadCatalogue's own comment for why this
+// isn't just a call to /rooms or /events/venues.
+async function catalogueHandler(req, res, next) {
+  try {
+    res.json(await enquiriesService.loadCatalogue(req.user.lodgeId));
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function updateEnquiryHandler(req, res, next) {
   try {
     const { status } = parse(updateEnquirySchema, req.body);
@@ -48,4 +59,10 @@ async function updateEnquiryHandler(req, res, next) {
   }
 }
 
-module.exports = { submitPublicEnquiryHandler, listEnquiriesHandler, summaryHandler, updateEnquiryHandler };
+module.exports = {
+  submitPublicEnquiryHandler,
+  listEnquiriesHandler,
+  summaryHandler,
+  catalogueHandler,
+  updateEnquiryHandler,
+};

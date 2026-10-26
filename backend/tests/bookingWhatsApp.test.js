@@ -61,7 +61,7 @@ const stay = {
 // ---------------------------------------------------------------------------
 
 test('a stay fills the ten template variables in order', () => {
-  const sample = buildStaySample(stay, lodge);
+  const sample = buildStaySample(stay, lodge, 'https://lodge.example/public/receipts/abc123');
   assert.deepStrictEqual(sample, [
     'Rahul Patil',
     'Sea View Lodge',
@@ -69,11 +69,16 @@ test('a stay fills the ten template variables in order', () => {
     '12 Sep 2026 12:00 PM',
     '14 Sep 2026 10:30 AM',
     '2000.00',
-    '5000.00',
     '3000.00',
+    'https://lodge.example/public/receipts/abc123',
     'https://www.google.com/maps/search/?api=1&query=15.861%2C73.632',
     '02366-123456',
   ]);
+});
+
+test('with no receipt link the slot reads as a dash, not blank', () => {
+  const sample = buildStaySample(stay, lodge);
+  assert.strictEqual(sample[7], '-');
 });
 
 test('a multi-room booking sends every room, not just the first', () => {
@@ -174,14 +179,13 @@ test('.env.example documents the template switch', () => {
 test('balance due is total minus advance, formatted as plain digits with no currency mark', () => {
   const sample = buildStaySample({ ...stay, advance_amount: 1234.5, total_price: 9000 }, lodge);
   assert.strictEqual(sample[5], '1234.50');
-  assert.strictEqual(sample[6], '9000.00');
-  assert.strictEqual(sample[7], '7765.50');
+  assert.strictEqual(sample[6], '7765.50');
 });
 
 test('a booking with no advance on file reads as zero, not a blank or a dash', () => {
   const sample = buildStaySample({ ...stay, advance_amount: null }, lodge);
   assert.strictEqual(sample[5], '0.00');
-  assert.strictEqual(sample[7], sample[6]); // balance due equals the full total
+  assert.strictEqual(sample[6], '5000.00'); // balance due equals the full total
 });
 
 test('loadBooking reads room_numbers/advance_amount/total_price, not the raw column names', () => {
@@ -229,11 +233,9 @@ test('buildPerRoomSample splits the one advance payment in proportion to each ro
   const sampleA = buildPerRoomSample(roomA, booking, lodge, 2);
   const sampleB = buildPerRoomSample(roomB, booking, lodge, 2);
   assert.strictEqual(sampleA[5], '600.00'); // advance paid
-  assert.strictEqual(sampleA[6], '3000.00'); // total
-  assert.strictEqual(sampleA[7], '2400.00'); // balance due
+  assert.strictEqual(sampleA[6], '2400.00'); // balance due (room total 3000 - 600)
   assert.strictEqual(sampleB[5], '400.00');
-  assert.strictEqual(sampleB[6], '2000.00');
-  assert.strictEqual(sampleB[7], '1600.00');
+  assert.strictEqual(sampleB[6], '1600.00'); // balance due (room total 2000 - 400)
   // The two rooms' advance shares add back up to the one real payment —
   // nothing invented, nothing dropped.
   assert.strictEqual(Number(sampleA[5]) + Number(sampleB[5]), 1000);
@@ -249,5 +251,5 @@ test('notifyStayBooked sends one message per room when the rooms disagree on dat
   const src = read('src/modules/notifications/bookingConfirmation.js');
   const fn = src.slice(src.indexOf('async function notifyStayBooked('));
   assert.match(fn, /if \(sameDatesAcrossRooms\(rooms\)\)/);
-  assert.match(fn, /buildPerRoomSample\(room, booking, lodge, rooms\.length\)/);
+  assert.match(fn, /buildPerRoomSample\(room, booking, lodge, rooms\.length, receiptLink\)/);
 });

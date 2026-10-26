@@ -656,24 +656,13 @@
   font-size: 12.5px;
 }
 
-/* Vehicle rows now live in a half-width card, so they wrap rather than
-   squeeze the plate field down to nothing. */
+/* Vehicle rows live in a half-width card here, so the same grid tightens its
+   gap and floors rather than switching layout entirely — the plate and type
+   tracks shrink together down to a still-readable minimum instead of one
+   squeezing to nothing while the other holds its width. */
 .booking-form .bookings-panel__vehicle-row {
-  flex-wrap: wrap;
+  grid-template-columns: minmax(90px, 1.4fr) minmax(70px, 1fr) auto;
   gap: 8px;
-}
-
-.booking-form .bookings-panel__vehicle-row input {
-  min-width: 120px;
-}
-
-.booking-form .bookings-panel__vehicle-row select {
-  min-width: 90px;
-}
-
-.booking-form .bookings-panel__remove-btn {
-  padding: 7px 11px;
-  font-size: 12px;
 }
 
 .bookings-panel__actions {
@@ -734,7 +723,7 @@
 
 .booking-form .bookings-panel__repeat-list {
   gap: 8px;
-  margin-bottom: 0;
+  margin-bottom: 10px;
 }
 
 .bookings-panel__guest-row {
@@ -961,15 +950,22 @@
   width: 38px;
 }
 
+/* Plate, type and the remove button, each in their own fixed track — same
+   grid shape the advance-payment row (.pay-lines__row) uses, so a row of
+   fields reads the same way wherever it appears in this form rather than
+   each one inventing its own proportions. The plate is the thing being read
+   down the list; the type is a four-option pick, so it gets less of the
+   row — and the remove button sizes to itself rather than stretching. */
 .bookings-panel__vehicle-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(100px, 1.4fr) minmax(80px, 1fr) auto;
   gap: 10px;
   align-items: center;
 }
 
 .bookings-panel__vehicle-row input,
 .bookings-panel__vehicle-row select {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   padding: 11px 12px;
   border: 1px solid var(--field-border);
@@ -978,12 +974,6 @@
   color: var(--ink);
   min-height: 44px;
   box-shadow: var(--shadow-well);
-}
-
-/* The plate is the thing being read down the list; the type is a four-option
-   pick, so it doesn't need to match the number field's width. */
-.bookings-panel__vehicle-row input {
-  flex: 1.4;
 }
 
 .bookings-panel__remove-btn {
@@ -1202,14 +1192,18 @@
     display: none;
   }
 
-  /* Plate, type and Remove won't fit side by side at this width — wrap the
-     Remove button onto its own line rather than squeezing the plate field. */
+  /* Plate and type won't both stay readable beside a remove button at this
+     width — drop to two columns and let the remove button fall onto its own
+     row rather than crushing the plate field to fit three across. Targeted
+     by position (it's always the row's last child) since IconButton is a
+     shared component with no vehicle-row-specific class of its own. */
   .bookings-panel__vehicle-row {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr 1fr;
   }
 
-  .bookings-panel__vehicle-row .bookings-panel__remove-btn {
-    width: 100%;
+  .bookings-panel__vehicle-row > :last-child {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
 }
 

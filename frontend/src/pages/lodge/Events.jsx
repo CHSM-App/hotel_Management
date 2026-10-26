@@ -1757,7 +1757,22 @@ function Setup({ venues, addons, reloadCatalogue }) {
 // list re-read on it exactly as they do on their own bump.
 // `only` pins the screen to one of its tabs ('diary' | 'list' | 'setup') and
 // drops the tab strip — each is its own sidebar section under Events.
-export default function Events({ lodge, onBillEvent, onViewInvoice, only = null, refreshKey: externalRefresh = 0 }) {
+export default function Events({
+  lodge,
+  onBillEvent,
+  onViewInvoice,
+  only = null,
+  refreshKey: externalRefresh = 0,
+  // An enquiry the desk just clicked "Confirm booking" on, from
+  // Enquiries.jsx via OwnerDashboard.jsx's lifted-state handoff — see the
+  // effect below. Consumed once (onPrefillConsumed) so navigating back here
+  // later doesn't reopen the same form.
+  prefillEnquiry = null,
+  onPrefillConsumed,
+  // Where closing a prefilled-from-enquiry form without saving should send
+  // the desk back to.
+  onReturnToEnquiries,
+}) {
   const token = getSession()?.token;
   const [urlTab, setTab] = useUrlState('tab', 'diary');
   const tab = only ?? urlTab;
@@ -1785,6 +1800,35 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, only = null,
   }, [reloadCatalogue]);
 
   const bump = () => setBumps((k) => k + 1);
+
+  // "Confirm booking" on an EVENT enquiry (Enquiries.jsx): opens the new-
+  // function form pre-filled from it, the same way clicking a date on the
+  // diary opens it pre-filled with just a date/venue. Fires once per
+  // handed-over enquiry — not on every render, or closing the form the
+  // prefill opened would reopen it straight away.
+  useEffect(() => {
+    if (!prefillEnquiry) return;
+    setCreating({
+      // Same ISO-timestamp-to-bare-date fix as Bookings.jsx's
+      // openFromEnquiry: a DATE column comes back as
+      // "2026-11-02T00:00:00.000Z", not the "2026-11-02" EventForm's
+      // initialDate expects.
+      date: prefillEnquiry.eventDate ? String(prefillEnquiry.eventDate).slice(0, 10) : null,
+      venueId: prefillEnquiry.venueId || null,
+      organiserName: prefillEnquiry.name || '',
+      organiserPhone: prefillEnquiry.phone || '',
+      eventType: prefillEnquiry.eventType || null,
+      expectedPax: prefillEnquiry.guests ?? null,
+      notes: prefillEnquiry.notes || '',
+      // Flat lodge-wide catalog, not scoped per-venue, so unlike the
+      // booking form's room extras these are safe to carry straight
+      // through and pre-tick — see EventForm.jsx's initialLines.
+      addonIds: prefillEnquiry.addonIds || [],
+      enquiryId: prefillEnquiry.id,
+    });
+    onPrefillConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillEnquiry]);
 
   // Following a colour on the diary's legend into the list's cut of it.
   //
@@ -1858,10 +1902,26 @@ export default function Events({ lodge, onBillEvent, onViewInvoice, only = null,
         <EventForm
           initialDate={creating.date}
           initialVenueId={creating.venueId}
+          initialOrganiserName={creating.organiserName}
+          initialOrganiserPhone={creating.organiserPhone}
+          initialEventType={creating.eventType}
+          initialExpectedPax={creating.expectedPax}
+          initialNotes={creating.notes}
+          initialAddonIds={creating.addonIds}
+          initialEnquiryId={creating.enquiryId}
           venues={venues}
           addons={addons}
           lodge={lodge}
-          onClose={() => setCreating(null)}
+          onClose={() => {
+            // Closing without saving a form opened from an enquiry's
+            // "Confirm booking" takes the desk back to Enquiries, the same
+            // courtesy Bookings.jsx's returnToEnquiriesIfCame gives — not
+            // left stranded on the diary they didn't ask to be on. A save
+            // (onSaved below) stays here instead, to show the new function.
+            const fromEnquiry = Boolean(creating.enquiryId);
+            setCreating(null);
+            if (fromEnquiry) onReturnToEnquiries?.();
+          }}
           onSaved={(ev) => {
             setCreating(null);
             bump();

@@ -24,7 +24,11 @@ const OTP_TEMPLATE_ID = process.env.WHATSAPP_OTP_TEMPLATE_ID || '';
 // The approved "your booking is confirmed" template — room stays only as of
 // the split described above. Left blank, no confirmation goes out and
 // nothing else changes — the switch for a property that has not had the
-// template approved yet.
+// template approved yet. Its ten variables, in order, are built by
+// bookingConfirmation.js:
+//   {{1}} name  {{2}} hotel_name  {{3}} room  {{4}} checkin_at
+//   {{5}} checkout_at  {{6}} advance  {{7}} balance
+//   {{8}} receipt_link  {{9}} directions  {{10}} contact
 const BOOKING_TEMPLATE_ID = process.env.WHATSAPP_BOOKING_TEMPLATE_ID || '';
 // The approved "your event booking is confirmed" template — a function's own
 // wording (venue, a single date, a start-end time range) rather than reusing

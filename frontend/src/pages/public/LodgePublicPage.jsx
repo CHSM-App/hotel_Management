@@ -568,7 +568,6 @@ function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuA
         venueId: venue ? venue.id : null,
         guests: isService ? null : (isRoom ? guests : eventGuests) || null,
         addonIds: isService ? [] : isRoom ? roomAddonIds : eventAddonIds,
-        summary: message,
         notes: notes.trim() || null,
         website,
       });

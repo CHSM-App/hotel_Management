@@ -173,6 +173,7 @@ function formatNightDate(dateStr) {
 // before Z, so a money or date column opens descending and a text one ascending
 // — one less click on the order that was actually being asked for.
 const SORT_COLUMNS = {
+  bookingId: { label: 'Booking ID', get: (b) => b.bookingNumber || '' },
   room: { label: 'Room', get: (b) => b.roomNumbers || b.roomNumber || '' },
   invoice: { label: 'Bill No', get: (b) => b.invoiceNumber || '' },
   guest: { label: 'Guest', get: (b) => b.guestName || '' },
@@ -1196,6 +1197,9 @@ export default function GuestRegister({ onOpenDraft, onBillStay }) {
                       }`}
                     >
                       <td>
+                        <span className="guest-register__bill-no">{b.bookingNumber || '—'}</span>
+                      </td>
+                      <td>
                         <div className="guest-register__cell-main">{b.roomNumbers || b.roomNumber}</div>
                         <div className="guest-register__cell-sub">{b.categoryName}</div>
                       </td>
@@ -1221,7 +1225,6 @@ export default function GuestRegister({ onOpenDraft, onBillStay }) {
                           {b.guestPhone || 'No phone'}
                           {b.numGuests > 1 ? ` · ${b.numGuests} people` : ''}
                         </div>
-                        {b.bookingNumber && <div className="guest-register__cell-sub">{b.bookingNumber}</div>}
                         {matchedCoGuest && !b.guestName.toLowerCase().includes(query) && (
                           <div className="guest-register__cell-match">
                             with {matchedCoGuest}
@@ -1294,6 +1297,9 @@ export default function GuestRegister({ onOpenDraft, onBillStay }) {
                     named, and those sit where the eye already looks for them. */}
                 {sortedDrafts.map((d) => (
                   <tr key={`draft-${d.id}`} className="guest-register__row guest-register__row--draft">
+                    <td>
+                      <span className="guest-register__muted">—</span>
+                    </td>
                     <td>
                       {d.roomNumber ? (
                         <>

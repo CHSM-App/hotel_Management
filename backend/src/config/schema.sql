@@ -3311,7 +3311,6 @@ CREATE TABLE dbo.lodge_enquiries (
     venue_id       BIGINT NULL,
     guests         INT NULL,
     addon_ids      NVARCHAR(500) NULL,
-    summary        NVARCHAR(1000) NULL,
     notes          NVARCHAR(1000) NULL,
     status         NVARCHAR(12) NOT NULL CONSTRAINT df_lodge_enquiries_status DEFAULT 'NEW'
                    CONSTRAINT ck_lodge_enquiries_status CHECK (status IN ('NEW', 'CONTACTED', 'CONVERTED', 'CLOSED')),
@@ -3325,6 +3324,21 @@ CREATE UNIQUE INDEX uq_lodge_enquiries_ref ON dbo.lodge_enquiries(reference_code
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_lodge_enquiries_lodge_status' AND object_id = OBJECT_ID('dbo.lodge_enquiries'))
 CREATE INDEX ix_lodge_enquiries_lodge_status ON dbo.lodge_enquiries(lodge_id, status, created_at DESC);
+
+-- converted_booking_id / converted_event_booking_id (156): which booking, if
+-- any, this enquiry turned into — set in the same transaction as
+-- createBooking/createEventBooking when it is given an enquiryId, so a
+-- conversion and the booking it means can never disagree.
+IF COL_LENGTH('dbo.lodge_enquiries', 'converted_booking_id') IS NULL
+    EXEC('ALTER TABLE dbo.lodge_enquiries ADD converted_booking_id BIGINT NULL REFERENCES dbo.bookings(id)');
+
+IF COL_LENGTH('dbo.lodge_enquiries', 'converted_event_booking_id') IS NULL
+    EXEC('ALTER TABLE dbo.lodge_enquiries ADD converted_event_booking_id BIGINT NULL REFERENCES dbo.event_bookings(id)');
+
+-- summary dropped (157): the composed free-text message is no longer
+-- stored — everything it said is already captured structurally.
+IF COL_LENGTH('dbo.lodge_enquiries', 'summary') IS NOT NULL
+    EXEC('ALTER TABLE dbo.lodge_enquiries DROP COLUMN summary');
 
 -- enquiries.manage granted to whichever role already holds bookings.manage
 -- (migration 148).

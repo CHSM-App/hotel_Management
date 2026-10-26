@@ -90,7 +90,7 @@ function catalogueLine(addon) {
 // was agreed stays visible and editable.
 const wantsQty = (line) => Boolean(line.isPerUnit) || Number(line.quantity) > 1;
 
-function initialForm(event, initialDate, venues, initialVenueId = null) {
+function initialForm(event, initialDate, venues, initialVenueId = null, prefill = {}) {
   if (event) {
     const start = new Date(event.startAt);
     const end = new Date(event.endAt);
@@ -131,7 +131,11 @@ function initialForm(event, initialDate, venues, initialVenueId = null) {
   const firstVenue = initialVenueId != null ? venues.find((v) => String(v.id) === String(initialVenueId)) : null;
   const date = initialDate || toDateKey(new Date());
   return {
-    eventType: 'BIRTHDAY',
+    // From an enquiry's "Confirm booking" (Events.jsx's prefillEnquiry),
+    // this and organiserName/organiserPhone/expectedPax/scheduleNotes below
+    // start filled in rather than blank; everything else about a new
+    // function still starts exactly as it always did.
+    eventType: prefill.eventType || 'BIRTHDAY',
     title: '',
     venueId: firstVenue ? String(firstVenue.id) : '',
     // No slot forced by default — Evening's fixed hours are wrong the moment
@@ -142,10 +146,10 @@ function initialForm(event, initialDate, venues, initialVenueId = null) {
     startTime: SLOT_HOURS.EVENING[0],
     endDate: date,
     endTime: SLOT_HOURS.EVENING[1],
-    organiserName: '',
-    organiserPhone: '',
+    organiserName: prefill.organiserName || '',
+    organiserPhone: prefill.organiserPhone || '',
     organiserAltPhone: '',
-    expectedPax: '',
+    expectedPax: prefill.expectedPax != null ? String(prefill.expectedPax) : '',
     catering: false,
     guaranteedPax: '',
     perPlateRate: '',
@@ -159,13 +163,29 @@ function initialForm(event, initialDate, venues, initialVenueId = null) {
     discountReason: '',
     menuNotes: '',
     setupNotes: '',
-    scheduleNotes: '',
+    // The enquiry's free-text note, if any — the closest existing field to
+    // what a guest typed in asking about the function.
+    scheduleNotes: prefill.notes || '',
   };
 }
 
-function initialLines(event, addons) {
+// `prefillAddonIds` is from an enquiry's "Confirm booking" (Events.jsx's
+// prefillEnquiry) — only meaningful on a brand-new function (an edit always
+// has `event` instead, which already carries its own saved selections). The
+// catalog here is a flat lodge-wide list, not scoped per-venue the way a
+// room's switchable charges are, so — unlike the booking form's extras,
+// which can only ever be a reminder — pre-ticking the matching lines is
+// safe: nothing about picking a venue resets `lines`.
+function initialLines(event, addons, prefillAddonIds = []) {
   const lines = addons.filter((a) => a.isActive || event?.addons?.some((x) => x.addonId === a.id)).map(catalogueLine);
-  if (!event) return lines;
+  if (!event) {
+    if (prefillAddonIds.length) {
+      for (const line of lines) {
+        if (prefillAddonIds.includes(line.addonId)) line.selected = true;
+      }
+    }
+    return lines;
+  }
   const oneOffs = [];
   for (const saved of event.addons || []) {
     const hit = saved.addonId ? lines.find((l) => l.addonId === saved.addonId) : null;
@@ -233,6 +253,18 @@ export default function EventForm({
   event = null,
   initialDate = null,
   initialVenueId = null,
+  // From an enquiry's "Confirm booking" (Events.jsx's prefillEnquiry) — see
+  // initialForm above for how they seed the new-function form. enquiryId
+  // doesn't name a form field at all; it just rides along to save() so the
+  // server can link/convert the enquiry in the same transaction as this
+  // booking. None of these apply on an edit (`event` set).
+  initialOrganiserName = '',
+  initialOrganiserPhone = '',
+  initialEventType = null,
+  initialExpectedPax = null,
+  initialNotes = '',
+  initialAddonIds = [],
+  initialEnquiryId = null,
   venues = [],
   addons = [],
   lodge = null,
@@ -246,8 +278,16 @@ export default function EventForm({
   const canCater = Boolean(lodge?.servesFood);
   const canRooms = Boolean(lodge?.hasRooms);
 
-  const [form, setForm] = useState(() => initialForm(event, initialDate, venues, initialVenueId));
-  const [lines, setLines] = useState(() => initialLines(event, addons));
+  const [form, setForm] = useState(() =>
+    initialForm(event, initialDate, venues, initialVenueId, {
+      organiserName: initialOrganiserName,
+      organiserPhone: initialOrganiserPhone,
+      eventType: initialEventType,
+      expectedPax: initialExpectedPax,
+      notes: initialNotes,
+    })
+  );
+  const [lines, setLines] = useState(() => initialLines(event, addons, initialAddonIds));
   const [oneOff, setOneOff] = useState({ label: '', amount: '' });
   // Money taken with the draft, as the booking form takes a deposit: the
   // advance is whatever the rows add up to. Only on a new function — money
@@ -550,6 +590,10 @@ export default function EventForm({
         if (needsPaymentReference(advanceLines[0].method)) body.advanceReference = advanceLines[0].reference.trim();
         if (advanceLines.length > 1) body.advanceLines = toPaymentLines(advanceLines);
       }
+      // Set only when this form was opened from an enquiry's "Confirm
+      // booking" action — the server links the two and marks the enquiry
+      // Converted in the same transaction as this save.
+      if (initialEnquiryId) body.enquiryId = initialEnquiryId;
     }
     setSaving(true);
     setError('');
