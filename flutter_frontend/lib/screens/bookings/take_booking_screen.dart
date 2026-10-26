@@ -5,6 +5,7 @@ import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../domain/models/enquiry.dart';
 import '../../domain/models/booking.dart';
 import '../../domain/models/charge_selections.dart';
 import '../../domain/models/draft.dart';
@@ -58,12 +59,24 @@ class TakeBookingScreen extends ConsumerStatefulWidget {
   /// the tape chart's own yellow tile rather than starting fresh.
   final BookingDraft? draft;
 
+  /// An enquiry the desk tapped "Confirm booking" on — opens a fresh
+  /// pre-reservation with the guest's name, phone, dates and head count
+  /// already filled in. Nothing is saved until the desk saves the form, and
+  /// the enquiry's id rides along so the server marks it Converted.
+  final Enquiry? prefillEnquiry;
+
+  /// The extras that enquiry asked for, by name — shown as a reminder only,
+  /// never auto-ticked (picking a room resets the extras checklist).
+  final String? prefillExtrasNote;
+
   const TakeBookingScreen({
     super.key,
     this.presetRoomId,
     this.presetCheckIn,
     this.editBooking,
     this.draft,
+    this.prefillEnquiry,
+    this.prefillExtrasNote,
   });
 
   @override
@@ -428,11 +441,36 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     // Today and tomorrow, the same default the web form's own state opens
     // with — a fresh "New booking" is a walk-in for one night until the desk
     // says otherwise, not a blank pair of boxes waiting to be filled first.
+    final enquiry = widget.prefillEnquiry;
+    // A DATE comes back as a full ISO timestamp; the first 10 characters are
+    // the day itself.
+    DateTime? day(String? iso) => iso == null || iso.length < 10
+        ? null
+        : DateTime.tryParse(iso.substring(0, 10));
     final checkIn =
-        widget.presetCheckIn ?? DateTime(now.year, now.month, now.day);
+        widget.presetCheckIn ??
+        day(enquiry?.checkInDate) ??
+        DateTime(now.year, now.month, now.day);
+    final enquiryOut = day(enquiry?.checkOutDate);
+    final checkOut = enquiryOut != null && enquiryOut.isAfter(checkIn)
+        ? enquiryOut
+        : checkIn.add(const Duration(days: 1));
     final roomId = widget.presetRoomId;
 
-    await vm.setDates(checkIn, checkIn.add(const Duration(days: 1)));
+    if (enquiry != null) {
+      setState(() {
+        _name.text = enquiry.name;
+        _phone.text = enquiry.phone;
+        // The enquiry only names a head count, never a children split — the
+        // whole figure is the adult count; the desk can move some across.
+        if ((enquiry.guests ?? 0) > 0) _adultCount = enquiry.guests!;
+      });
+    }
+
+    await vm.setDates(checkIn, checkOut);
+    // Always a pre-reservation: the guest is being booked ahead from an
+    // enquiry, not standing at the desk, even if the dates start today.
+    if (enquiry != null) vm.setBookingType('RESERVATION');
     // A fresh booking starts with nobody over anything, so the baseline is
     // confirmed up front — any later crossing (including the preset room
     // just below) is a genuine one worth a toast.
@@ -485,8 +523,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     if (overOccupancy && !_wasOverOccupancy) {
       _warn(
         rooms.length > 1
-            ? 'Over capacity — these ${rooms.length} rooms sleep $totalCapacity, this booking has $_numGuests.'
-            : 'Over capacity — Room ${rooms.first.roomNumber} sleeps $totalCapacity, this booking has $_numGuests.',
+            ? 'Over capacity — these ${rooms.length} rooms accommodate up to $totalCapacity guests, this booking has $_numGuests.'
+            : 'Over capacity — Room ${rooms.first.roomNumber} accommodates up to $totalCapacity guests, this booking has $_numGuests.',
       );
       final ctx = _capacityBannerKey.currentContext;
       if (ctx != null) {
@@ -684,6 +722,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         guests: saveGuests,
         vehicles: _vehicles,
         advanceLines: paid,
+        enquiryId: widget.prefillEnquiry?.id,
       );
     }
 
@@ -1020,6 +1059,29 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             // about the past.
             if (!_editing) ...[
               _BookingTypeHeader(state: state),
+              const SizedBox(height: AppTheme.s4),
+            ],
+
+            if (!_editing && (widget.prefillExtrasNote ?? '').isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.s12,
+                  vertical: AppTheme.s8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                  border: Border.all(
+                    color: AppTheme.accent.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Text(
+                  'Guest also asked about: ${widget.prefillExtrasNote} — tick '
+                  'these below once a room is picked, if it offers them.',
+                  style: const TextStyle(color: AppTheme.text, fontSize: 12.5),
+                ),
+              ),
               const SizedBox(height: AppTheme.s4),
             ],
 
@@ -3736,8 +3798,8 @@ class _CapacityBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final message = rooms.length > 1
-        ? 'These ${rooms.length} rooms sleep $totalCapacity in all — this booking has $numGuests.'
-        : 'Room ${rooms.first.roomNumber} sleeps ${rooms.first.maxOccupancy} — this booking has $numGuests.';
+        ? 'These ${rooms.length} rooms accommodate up to $totalCapacity guests in all — this booking has $numGuests.'
+        : 'Room ${rooms.first.roomNumber} accommodates up to ${rooms.first.maxOccupancy} guests — this booking has $numGuests.';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(

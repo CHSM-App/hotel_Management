@@ -2359,6 +2359,12 @@ class ApiService {
     return Enquiry.fromJson(_map(res.data)['enquiry'] as Map<String, dynamic>);
   }
 
+  /// id -> name lookups for an enquiry's room type, venue and extras.
+  Future<EnquiryCatalogue> enquiryCatalogue() async {
+    final res = await _dio.get('/enquiries/catalogue');
+    return EnquiryCatalogue.fromJson(_map(res.data));
+  }
+
   // ===== CUSTOMERS (customers.manage) =====
 
   Future<CustomersResult> customers() async {

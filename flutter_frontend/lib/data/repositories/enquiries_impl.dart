@@ -16,4 +16,7 @@ class EnquiriesImpl implements EnquiriesRepository {
   @override
   Future<Enquiry> updateStatus(int id, String status) =>
       api.updateEnquiryStatus(id, status);
+
+  @override
+  Future<EnquiryCatalogue> catalogue() => api.enquiryCatalogue();
 }

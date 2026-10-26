@@ -12,4 +12,6 @@ class EnquiriesUsecase {
 
   Future<Enquiry> updateStatus(int id, String status) =>
       repository.updateStatus(id, status);
+
+  Future<EnquiryCatalogue> catalogue() => repository.catalogue();
 }

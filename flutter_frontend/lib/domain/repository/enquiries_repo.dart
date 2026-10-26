@@ -8,4 +8,6 @@ abstract class EnquiriesRepository {
   Future<List<EnquiryAlertItem>> newEnquiries();
 
   Future<Enquiry> updateStatus(int id, String status);
+
+  Future<EnquiryCatalogue> catalogue();
 }
