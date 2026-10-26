@@ -222,6 +222,10 @@ class EventInvoiceRef {
 /// record. Mirrors mapEvent() in events.service.js.
 class EventBooking {
   final int id;
+
+  /// The function's own number (E-SKR2610001); null on one taken before
+  /// numbering existed.
+  final String? eventNumber;
   final int venueId;
   final String venueName;
   final int? venueCapacity;
@@ -271,6 +275,7 @@ class EventBooking {
 
   const EventBooking({
     required this.id,
+    this.eventNumber,
     required this.venueId,
     this.venueName = '',
     this.venueCapacity,
@@ -315,6 +320,7 @@ class EventBooking {
 
   factory EventBooking.fromJson(Map<String, dynamic> json) => EventBooking(
     id: asInt(json['id']),
+    eventNumber: asStringOrNull(json['eventNumber']),
     venueId: asInt(json['venueId']),
     venueName: json['venueName']?.toString() ?? '',
     venueCapacity: asIntOrNull(json['venueCapacity']),

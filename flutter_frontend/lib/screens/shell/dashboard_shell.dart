@@ -17,6 +17,7 @@ import '../bookings/register_screen.dart';
 import '../customers/customers_screen.dart';
 import '../events/events_screen.dart';
 import '../expenses/expenses_screen.dart';
+import '../enquiries/enquiries_screen.dart';
 import '../food/food_billing_screen.dart';
 import '../food/menu_setup_screen.dart';
 import '../housekeeping/housekeeping_screen.dart';
@@ -118,6 +119,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       canPendingOrders: permissions.can('orders.manage'),
       canHousekeeping: _features(me).any((f) => f.key == 'housekeeping'),
       canReports: permissions.can('reports.view'),
+      canEnquiries: permissions.can('enquiries.manage'),
     );
   }
 
@@ -183,7 +185,14 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                     : null,
                 actions: _headerActions,
                 bell: (me != null && _canSeeStaffAlerts(me))
-                    ? StaffAlertsBell(alerts: staffAlerts)
+                    ? StaffAlertsBell(
+                        alerts: staffAlerts,
+                        // The bell's "View" on an enquiry alert: straight to
+                        // the Enquiries section.
+                        onAction: (a) {
+                          if (a.category == 'enquiry') _select('enquiries');
+                        },
+                      )
                     : null,
               ),
               const _OfflineBanner(),
@@ -253,6 +262,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     return p.can('bookings.manage') ||
         p.canAny(['assets.manage', 'reports.view']) ||
         p.can('orders.manage') ||
+        p.can('enquiries.manage') ||
         p.can('reports.view') ||
         _features(me).any((f) => f.key == 'housekeeping');
   }
@@ -415,6 +425,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return const BillingScreen();
       case 'customers':
         return const CustomersScreen();
+      case 'enquiries':
+        return const EnquiriesScreen();
       case 'eventBilling':
         return const EventBillingScreen();
       case 'rooms':

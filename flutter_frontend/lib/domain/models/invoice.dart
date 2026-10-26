@@ -4,6 +4,7 @@ import 'json.dart';
 /// A stay waiting to be billed — GET /billing/queue.
 class BillableStay {
   final int id;
+  final String? bookingNumber;
   final String? guestName;
   final String? guestPhone;
   final String? roomNumber;
@@ -18,6 +19,7 @@ class BillableStay {
 
   const BillableStay({
     required this.id,
+    this.bookingNumber,
     this.guestName,
     this.guestPhone,
     this.roomNumber,
@@ -33,6 +35,7 @@ class BillableStay {
 
   factory BillableStay.fromJson(Map<String, dynamic> json) => BillableStay(
     id: asInt(json['id']),
+    bookingNumber: asStringOrNull(json['bookingNumber']),
     guestName: asStringOrNull(json['guestName']),
     guestPhone: asStringOrNull(json['guestPhone']),
     roomNumber: asStringOrNull(json['roomNumber']),
@@ -810,6 +813,10 @@ class EventBillPreview {
 class Invoice {
   final int id;
   final int? bookingId;
+
+  /// The stay's own number (SKR2610001) — null on food, function and service
+  /// bills, and on stays taken before numbering existed.
+  final String? bookingNumber;
   final String? invoiceNumber;
   final String? documentType;
   final String? billingSide;
@@ -854,6 +861,9 @@ class Invoice {
   final String? guestPhone;
   final String? categoryName;
   final int? numGuests;
+
+  /// Of [numGuests], how many are children — stays only; null elsewhere.
+  final int? childCount;
   final String? actualCheckInAt;
   final String? actualCheckOutAt;
   final String? checkOutTime;
@@ -919,6 +929,7 @@ class Invoice {
   const Invoice({
     required this.id,
     this.bookingId,
+    this.bookingNumber,
     this.invoiceNumber,
     this.documentType,
     this.billingSide,
@@ -948,6 +959,7 @@ class Invoice {
     this.guestPhone,
     this.categoryName,
     this.numGuests,
+    this.childCount,
     this.actualCheckInAt,
     this.actualCheckOutAt,
     this.checkOutTime,
@@ -993,6 +1005,7 @@ class Invoice {
   factory Invoice.fromJson(Map<String, dynamic> json) => Invoice(
     id: asInt(json['id']),
     bookingId: asIntOrNull(json['bookingId']),
+    bookingNumber: asStringOrNull(json['bookingNumber']),
     invoiceNumber: asStringOrNull(json['invoiceNumber']),
     documentType: asStringOrNull(json['documentType']),
     billingSide: asStringOrNull(json['billingSide']),
@@ -1026,6 +1039,7 @@ class Invoice {
     guestPhone: asStringOrNull(json['guestPhone']),
     categoryName: asStringOrNull(json['categoryName']),
     numGuests: asIntOrNull(json['numGuests']),
+    childCount: asIntOrNull(json['childCount']),
     actualCheckInAt: asStringOrNull(json['actualCheckInAt']),
     actualCheckOutAt: asStringOrNull(json['actualCheckOutAt']),
     checkOutTime: asStringOrNull(json['checkOutTime']),
@@ -1227,6 +1241,12 @@ class AdvanceReceipt {
   final String? guestName;
   final String? guestPhone;
   final int? numGuests;
+
+  /// Of [numGuests], how many are children — null when not recorded.
+  final int? childCount;
+
+  /// The stay's own number (SKR2610001); null on an event receipt.
+  final String? bookingNumber;
   final String? roomNumber;
   final String? categoryName;
   final String? checkInDate;
@@ -1276,6 +1296,8 @@ class AdvanceReceipt {
     this.guestName,
     this.guestPhone,
     this.numGuests,
+    this.childCount,
+    this.bookingNumber,
     this.roomNumber,
     this.categoryName,
     this.checkInDate,
@@ -1322,6 +1344,8 @@ class AdvanceReceipt {
     guestName: asStringOrNull(json['guestName']),
     guestPhone: asStringOrNull(json['guestPhone']),
     numGuests: asIntOrNull(json['numGuests']),
+    childCount: asIntOrNull(json['childCount']),
+    bookingNumber: asStringOrNull(json['bookingNumber']),
     roomNumber: asStringOrNull(json['roomNumber']),
     categoryName: asStringOrNull(json['categoryName']),
     checkInDate: asStringOrNull(json['checkInDate']),
@@ -1390,6 +1414,8 @@ class BillDocument {
   /// same tag billSource()/streamOf() on the web key off.
   String? get kind => isReceipt ? 'ADVANCE' : invoice!.kind;
 
+  String? get bookingNumber =>
+      isReceipt ? receipt!.bookingNumber : invoice!.bookingNumber;
   String? get invoiceNumber =>
       isReceipt ? receipt!.receiptNumber : invoice!.invoiceNumber;
   String? get documentType =>

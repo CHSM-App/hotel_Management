@@ -85,7 +85,9 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       backgroundColor: AppTheme.bg,
       appBar: billAppBar(
         title: 'Function',
-        subtitle: ev?.title,
+        subtitle: ev == null
+            ? null
+            : (ev.eventNumber == null ? ev.title : '${ev.title} · ${ev.eventNumber}'),
         onBack: () => Navigator.of(context).pop(),
       ),
       body: SafeArea(

@@ -243,6 +243,12 @@ class DraftForm {
   String roomTotal;
   String discount;
 
+  /// The party as two head counts — adults (the primary guest included) and
+  /// children — which can sit above the named rows in [guests]. Null on a
+  /// draft parked before the party was kept as counts.
+  int? adultCount;
+  int? childCount;
+
   /// chargeId → what was switched on for it, the same shape the booking form
   /// itself keeps live.
   Map<int, ExtraDraft> extras;
@@ -260,6 +266,8 @@ class DraftForm {
     this.advanceLines = const [],
     this.roomTotal = '',
     this.discount = '',
+    this.adultCount,
+    this.childCount,
     this.extras = const {},
   });
 
@@ -324,6 +332,12 @@ class DraftForm {
       advanceLines: advanceLines,
       roomTotal: json['roomTotal']?.toString() ?? '',
       discount: json['discount']?.toString() ?? '',
+      // A draft parked before the party was kept as two counts carries only
+      // the rows and a bump for undetailed adults; the counts come from those.
+      adultCount:
+          asIntOrNull(json['adultCount']) ??
+          (adults.length + (asIntOrNull(json['extraGuests']) ?? 0)),
+      childCount: asIntOrNull(json['childCount']) ?? children.length,
       extras: extras,
     );
   }
@@ -375,6 +389,9 @@ class DraftForm {
           .toList(),
       if (roomTotal.trim().isNotEmpty) 'roomTotal': roomTotal.trim(),
       if (discount.trim().isNotEmpty) 'discount': discount.trim(),
+      // Strings, the way the web form keeps them, so either app reopens it.
+      if (adultCount != null) 'adultCount': '$adultCount',
+      if (childCount != null) 'childCount': '$childCount',
       'extras': [
         for (final entry in extras.entries)
           {

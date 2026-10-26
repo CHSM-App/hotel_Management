@@ -150,6 +150,16 @@ class ProfileScreen extends ConsumerWidget {
                                 value: _checkinLabel(me.lodge.checkinMode!),
                               ),
                             ],
+                            if (_hasText(me.lodge.bookingCode)) ...[
+                              const _RowDivider(),
+                              _InfoRow(
+                                icon: Icons.confirmation_number_rounded,
+                                iconColor: AppTheme.accent,
+                                label: 'Booking code',
+                                value:
+                                    '${me.lodge.bookingCode} — bookings are numbered ${me.lodge.bookingCode}YYMM001',
+                              ),
+                            ],
                             const _RowDivider(),
                             _ActionRow(
                               icon: Icons.call_rounded,
@@ -271,6 +281,7 @@ class ProfileScreen extends ConsumerWidget {
     'HOUR_24': '24-hour cycle',
     'NIGHT_BASED': 'Night-based',
     'CYCLE': 'Fixed check-in / checkout',
+    'HYBRID': 'Hybrid: early arrival 24 hours',
   };
 
   static String _checkinLabel(String mode) => _checkinLabels[mode] ?? mode;

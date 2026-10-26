@@ -35,7 +35,23 @@ import 'take_booking_screen.dart';
 class BookingDetailScreen extends ConsumerStatefulWidget {
   final int bookingId;
 
-  const BookingDetailScreen({super.key, required this.bookingId});
+  /// A read-only record of the stay (the billing queue's "View"): no cancel,
+  /// advance, edit, check-in or check-out, and no adding food to the room
+  /// bill — reading what a figure is made of should not need a way to change
+  /// it.
+  final bool readOnly;
+
+  /// Offered with [readOnly] when the record was opened from the billing
+  /// queue: an "Issue bill" button beside Close, so a desk that has read what
+  /// the figures are made of can go straight on to billing it.
+  final VoidCallback? onIssueBill;
+
+  const BookingDetailScreen({
+    super.key,
+    required this.bookingId,
+    this.readOnly = false,
+    this.onIssueBill,
+  });
 
   @override
   ConsumerState<BookingDetailScreen> createState() =>
@@ -190,7 +206,12 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      appBar: AppBar(title: const Text('Guest stay')),
+      appBar: AppBar(
+        title: Text(
+          '${widget.readOnly ? 'Stay summary' : 'Guest stay'}'
+          '${booking?.bookingNumber != null ? ' · ${booking!.bookingNumber}' : ''}',
+        ),
+      ),
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -282,6 +303,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                               _FoodOrdersSection(
                                 orders: booking.foodOrders,
                                 canAdd:
+                                    !widget.readOnly &&
                                     booking.invoice == null &&
                                     booking.status != 'CANCELLED',
                                 onAdded: _load,
@@ -296,8 +318,41 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                               const SizedBox(height: AppTheme.s8),
                               _BillSection(invoice: booking.invoice!),
                             ],
-                            if (booking.status == 'BOOKED' ||
-                                booking.status == 'CHECKED_IN') ...[
+                            if (widget.readOnly && widget.onIssueBill != null) ...[
+                              const SizedBox(height: AppTheme.s12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: NeuButton(
+                                      expand: true,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: AppTheme.s12,
+                                        vertical: 13,
+                                      ),
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(),
+                                      child: const Text('Close'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppTheme.s8),
+                                  Expanded(
+                                    child: NeuButton(
+                                      primary: true,
+                                      expand: true,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: AppTheme.s12,
+                                        vertical: 13,
+                                      ),
+                                      onPressed: widget.onIssueBill,
+                                      child: const Text('Issue bill'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (!widget.readOnly &&
+                                (booking.status == 'BOOKED' ||
+                                    booking.status == 'CHECKED_IN')) ...[
                               const SizedBox(height: AppTheme.s12),
                               _actions(booking),
                             ],
@@ -1058,21 +1113,24 @@ class _GuestSection extends StatelessWidget {
                 ? 'Guest'
                 : booking.guestName!,
             role: 'Primary guest',
-            meta: [
-              if ((booking.guestPhone ?? '').isNotEmpty) booking.guestPhone!,
-              if (booking.idProofType != null)
-                _idProofLabel(booking.idProofType!),
-            ].join(' · '),
+            details: _details(
+              phone: booking.guestPhone,
+              idType: booking.idProofType,
+              idNumber: booking.idProofNumber,
+              hasDocument: booking.hasIdProofDocument,
+            ),
             onViewIdProof: booking.hasIdProofDocument ? onViewIdProof : null,
           ),
           for (final g in booking.guests)
             _PersonRow(
               name: g.name,
-              role: g.isChild ? 'Child' : null,
-              meta: [
-                if ((g.phone ?? '').isNotEmpty) g.phone!,
-                if (g.idProofType != null) _idProofLabel(g.idProofType!),
-              ].join(' · '),
+              role: g.isChild ? 'Child' : 'Adult',
+              details: _details(
+                phone: g.phone,
+                idType: g.idProofType,
+                idNumber: g.idProofNumber,
+                hasDocument: g.hasIdProofDocument,
+              ),
               onViewIdProof: g.hasIdProofDocument
                   ? () => onViewGuestIdProof(g)
                   : null,
@@ -1081,6 +1139,20 @@ class _GuestSection extends StatelessWidget {
       ),
     );
   }
+
+  /// Every detail that was entered for one person, each on its own labelled
+  /// line — a missing value says so rather than being left out.
+  static List<(String, String)> _details({
+    String? phone,
+    String? idType,
+    String? idNumber,
+    required bool hasDocument,
+  }) => [
+    ('Phone', (phone ?? '').isEmpty ? '—' : phone!),
+    ('ID type', (idType ?? '').isEmpty ? '—' : _idProofLabel(idType!)),
+    ('ID number', (idNumber ?? '').isEmpty ? '—' : idNumber!),
+    ('ID document', hasDocument ? 'Uploaded' : '—'),
+  ];
 
   static String _idProofLabel(String type) {
     if (type.isEmpty) return type;
@@ -1092,7 +1164,12 @@ class _GuestSection extends StatelessWidget {
 class _PersonRow extends StatelessWidget {
   final String name;
   final String? role;
+
+  /// A single muted line under the name (a vehicle's type) …
   final String meta;
+
+  /// … or one labelled line per detail, for a guest.
+  final List<(String, String)> details;
 
   /// Only offered when a document is actually on file — the same gate the
   /// web page's own "View ID proof" link is drawn behind.
@@ -1101,7 +1178,8 @@ class _PersonRow extends StatelessWidget {
   const _PersonRow({
     required this.name,
     this.role,
-    required this.meta,
+    this.meta = '',
+    this.details = const [],
     this.onViewIdProof,
   });
 
@@ -1209,6 +1287,36 @@ class _PersonRow extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
+                if (details.isNotEmpty) const SizedBox(height: 4),
+                for (final d in details)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 84,
+                          child: Text(
+                            d.$1,
+                            style: const TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            d.$2,
+                            style: TextStyle(
+                              color: d.$2 == '—' ? AppTheme.muted : AppTheme.text,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

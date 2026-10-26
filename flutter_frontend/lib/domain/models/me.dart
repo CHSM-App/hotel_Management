@@ -63,6 +63,10 @@ class Lodge {
   final int id;
   final String name;
   final String? slug;
+
+  /// The 3-4 letter start of every booking number (SKR2610001) — set by
+  /// Vengurla Tech, read-only here.
+  final String? bookingCode;
   final String? phone;
   final String? whatsappNumber;
   final String? address;
@@ -73,7 +77,7 @@ class Lodge {
   final double? latitude;
   final double? longitude;
 
-  /// HOUR_24, NIGHT_BASED or CYCLE — set by Vengurla Tech, not editable here.
+  /// HOUR_24, NIGHT_BASED, CYCLE or HYBRID — set by Vengurla Tech, not editable here.
   final String? checkinMode;
 
   /// GST-registered properties issue tax invoices; the rest issue bills of
@@ -112,6 +116,7 @@ class Lodge {
     required this.id,
     required this.name,
     this.slug,
+    this.bookingCode,
     this.phone,
     this.whatsappNumber,
     this.address,
@@ -144,6 +149,7 @@ class Lodge {
     id: asInt(json['id']),
     name: json['name']?.toString() ?? '',
     slug: asStringOrNull(json['slug']),
+    bookingCode: asStringOrNull(json['bookingCode']),
     phone: asStringOrNull(json['phone']),
     whatsappNumber: asStringOrNull(json['whatsappNumber']),
     address: asStringOrNull(json['address']),

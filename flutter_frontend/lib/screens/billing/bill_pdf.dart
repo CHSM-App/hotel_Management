@@ -10,6 +10,7 @@ import 'package:printing/printing.dart';
 import '../../core/constant.dart';
 import '../../domain/models/booking.dart' show PaymentLine;
 import '../../domain/models/invoice.dart';
+import '../../widgets/format.dart' show formatHeadCount;
 import '../bookings/receipt_download.dart';
 import '../bookings/receipt_share.dart';
 
@@ -272,6 +273,15 @@ class BillPdf {
             _filled(inv.guestPhone ?? '', width: 80),
           ]),
           _rule(),
+          // The stay's own number, so a printed bill can be traced back to
+          // its booking. Null on food, function and service bills.
+          if (inv.bookingNumber != null) ...[
+            _strip([
+              _label('Booking ID'),
+              _filled(inv.bookingNumber!, flex: 2),
+            ]),
+            _rule(),
+          ],
           // A function bill names the venue and the plate count here instead
           // of a room; a food bill has no room or stay behind it, so it
           // names the bill number and the table/covers instead of leaving
@@ -303,7 +313,11 @@ class BillPdf {
                 flex: 3,
               ),
               _label('Persons -'),
-              _filled('${inv.numGuests ?? ''}', width: 40),
+              _filled(
+                formatHeadCount(inv.numGuests, inv.childCount) ??
+                    '${inv.numGuests ?? ''}',
+                width: 100,
+              ),
             ]),
           _rule(),
 
@@ -537,7 +551,7 @@ class BillPdf {
           ),
           pw.Text(
             ascii(
-              inv.checkinMode == 'NIGHT_BASED'
+              inv.checkinMode != 'HOUR_24'
                   ? 'Checkout by ${_clockLabel(inv.checkOutTime) ?? '11:00 AM'} on the departure date.'
                   : 'Checkout time 24 hours from check-in.',
             ),

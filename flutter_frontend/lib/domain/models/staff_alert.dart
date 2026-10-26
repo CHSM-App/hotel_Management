@@ -3,7 +3,7 @@ import 'json.dart';
 /// One row in the staff alerts bell — the Flutter mirror of the alert shape
 /// every web hook (useCheckinAlerts, useCoverageAlerts, useOpenIssues, …)
 /// settles on before handing it to StaffAlertsBell.jsx. `category` is one of
-/// checkin | checkout | order | workOrder | coverage | housekeeping | reports
+/// enquiry | checkin | checkout | order | workOrder | coverage | housekeeping | reports
 /// — same keys as CATEGORY_META/CATEGORY_ORDER there, so the two clients
 /// group and order alerts the same way.
 class StaffAlert {
@@ -12,11 +12,16 @@ class StaffAlert {
   final String message;
   final bool urgent;
 
+  /// A small button on the row that takes staff to the screen where the alert
+  /// is handled (an enquiry's "View"). Null on alerts with nowhere to go.
+  final String? actionLabel;
+
   const StaffAlert({
     required this.id,
     required this.category,
     required this.message,
     this.urgent = false,
+    this.actionLabel,
   });
 }
 

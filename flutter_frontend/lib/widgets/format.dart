@@ -24,6 +24,20 @@ String formatIsoDate(String? iso) {
   return parsed == null ? iso : formatDate(parsed);
 }
 
+/// The head count as a document prints it: "3 (2 Adults, 1 Child)". The split
+/// is only stated when the booking recorded children — a booking from before
+/// the child count was kept reads 0 whether or not children came, and "0
+/// children" would be a claim nobody checked — so otherwise it is the plain
+/// number. Null when there is no head count at all.
+String? formatHeadCount(int? numGuests, int? childCount) {
+  if (numGuests == null || numGuests <= 0) return null;
+  final children = childCount ?? 0;
+  if (children <= 0 || children >= numGuests) return '$numGuests';
+  final adults = numGuests - children;
+  return '$numGuests ($adults ${adults == 1 ? 'Adult' : 'Adults'}, '
+      '$children ${children == 1 ? 'Child' : 'Children'})';
+}
+
 /// "3 nights", "1 night".
 String nightsLabel(int nights) => '$nights night${nights == 1 ? '' : 's'}';
 

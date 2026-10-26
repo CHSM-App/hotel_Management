@@ -69,12 +69,12 @@ class RoomsImpl implements RoomsRepository {
   Future<List<SwitchableChargeListing>> switchableCharges() => api.switchableCharges();
 
   @override
-  Future<void> createSwitchableCharge({required String name, required num chargePerNight}) =>
-      api.createSwitchableCharge(name: name, chargePerNight: chargePerNight);
+  Future<void> createSwitchableCharge({required String name, required num chargePerNight, int? hiddenWhenChargeId}) =>
+      api.createSwitchableCharge(name: name, chargePerNight: chargePerNight, hiddenWhenChargeId: hiddenWhenChargeId);
 
   @override
-  Future<void> updateSwitchableCharge(int id, {required String name, required num chargePerNight}) =>
-      api.updateSwitchableCharge(id, name: name, chargePerNight: chargePerNight);
+  Future<void> updateSwitchableCharge(int id, {required String name, required num chargePerNight, int? hiddenWhenChargeId}) =>
+      api.updateSwitchableCharge(id, name: name, chargePerNight: chargePerNight, hiddenWhenChargeId: hiddenWhenChargeId);
 
   @override
   Future<void> setSwitchableChargeActive(int id, bool isActive) =>
@@ -132,6 +132,8 @@ class RoomsImpl implements RoomsRepository {
   Future<CheckoutPolicy> updateCheckoutPolicy({
     required String checkOutTime,
     String? checkInTime,
+    String? earlyArrivalFrom,
+    bool sendEarlyArrivalFrom = false,
     required int lateGraceMinutes,
     required num lateHalfDayPercent,
     required int lateFullDayAfterMinutes,
@@ -139,6 +141,8 @@ class RoomsImpl implements RoomsRepository {
   }) => api.updateCheckoutPolicy(
     checkOutTime: checkOutTime,
     checkInTime: checkInTime,
+    earlyArrivalFrom: earlyArrivalFrom,
+    sendEarlyArrivalFrom: sendEarlyArrivalFrom,
     lateGraceMinutes: lateGraceMinutes,
     lateHalfDayPercent: lateHalfDayPercent,
     lateFullDayAfterMinutes: lateFullDayAfterMinutes,

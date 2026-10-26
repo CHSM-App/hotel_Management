@@ -178,6 +178,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       if ((b.guestName ?? '').toLowerCase().contains(query)) return true;
       if ((b.roomNumber ?? '').toLowerCase().contains(query)) return true;
       if ((b.invoiceNumber ?? '').toLowerCase().contains(query)) return true;
+      if ((b.bookingNumber ?? '').toLowerCase().contains(query)) return true;
       if ((b.guestPhone ?? '').contains(query)) return true;
       return b.coGuestNames.any((n) => n.toLowerCase().contains(query));
     }).toList();
@@ -882,6 +883,7 @@ class _RegisterCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
+                      '${b.bookingNumber != null ? '${b.bookingNumber} · ' : ''}'
                       'Room ${b.roomNumber ?? '—'}'
                       '${b.categoryName != null ? ' · ${b.categoryName}' : ''}'
                       '${(b.guestPhone ?? '').isNotEmpty ? ' · ${b.guestPhone}' : ''}',

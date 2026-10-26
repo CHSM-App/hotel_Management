@@ -1295,12 +1295,12 @@ class BookingViewModel extends StateNotifier<BookingState> {
 
   /// Turn an extra on or off.
   Future<void> toggleExtra(int chargeId, bool on) async {
-    final next = Map<int, ExtraDraft>.from(state.extras);
-    if (on) {
-      next[chargeId] = ExtraDraft();
-    } else {
-      next.remove(chargeId);
-    }
+    final next = ChargeSelections.toggleSelection(
+      state.extras,
+      chargeId,
+      on,
+      state.room?.switchableCharges ?? const [],
+    );
     state = state.copyWith(extras: next);
     await refreshQuote();
   }
@@ -1549,7 +1549,12 @@ class BookingViewModel extends StateNotifier<BookingState> {
     _updateExtraRoom(
       index,
       (r) => r.copyWith(
-        extras: ChargeSelections.toggleSelection(r.extras, chargeId, on),
+        extras: ChargeSelections.toggleSelection(
+          r.extras,
+          chargeId,
+          on,
+          r.room?.switchableCharges ?? const [],
+        ),
       ),
     );
     await refreshQuote();
@@ -1704,6 +1709,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     required String guestName,
     required String guestPhone,
     required int numGuests,
+    int? numChildren,
     String? idProofType,
     String? idProofNumber,
     XFile? idProofFile,
@@ -1742,6 +1748,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
         'checkInDate': iso(tripCheckIn),
         'checkOutDate': iso(tripCheckOut),
         'numGuests': '$numGuests',
+        if (numChildren != null) 'numChildren': '$numChildren',
         'guestName': guestName.trim(),
         'guestPhone': guestPhone.trim(),
         // Saving never sends the guest's WhatsApp confirmation by itself; the
@@ -1844,6 +1851,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     required String guestName,
     required String guestPhone,
     required int numGuests,
+    int? numChildren,
     String? idProofType,
     String? idProofNumber,
     XFile? idProofFile,
@@ -1879,6 +1887,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
         'checkInDate': iso(tripCheckIn),
         'checkOutDate': iso(tripCheckOut),
         'numGuests': '$numGuests',
+        if (numChildren != null) 'numChildren': '$numChildren',
         'guestName': guestName.trim(),
         'guestPhone': guestPhone.trim(),
         // Set either way, never omitted — blank is how a concession already

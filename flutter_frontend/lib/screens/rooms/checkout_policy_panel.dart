@@ -10,6 +10,7 @@ const _modeLabel = {
   'HOUR_24': '24-hour stays',
   'NIGHT_BASED': 'Night-based stays',
   'CYCLE': 'Fixed check-in / checkout cycle',
+  'HYBRID': 'Hybrid: early arrival 24 hours',
 };
 
 const _modeNote = {
@@ -28,6 +29,12 @@ const _modeNote = {
       'runs past the checkout time it has started another night — a guest '
       'arriving at 2pm and leaving at noon the next day has stayed two '
       'nights, not one night plus a late fee.',
+  'HYBRID':
+      'A guest who arrives before the check-in time gets a full 24 hours from '
+      'the moment they arrive — in at 10am, out by 10am the next day. A guest '
+      'who arrives at or after the check-in time is due out at the fixed '
+      'checkout time the next day. Late fees apply only if you set a charge '
+      'below; leave the percentages at 0 for none.',
 };
 
 /// "1h 30m" reads better than "90" — owners think in hours, the policy
@@ -111,6 +118,7 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
   late String _checkinMode;
   late TimeOfDay _checkInTime;
   late TimeOfDay _checkOutTime;
+  TimeOfDay? _earlyArrivalFrom;
   final _grace = TextEditingController();
   final _halfDayPercent = TextEditingController();
   final _fullDayAfter = TextEditingController();
@@ -132,6 +140,9 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
     _checkinMode = p.checkinMode;
     _checkInTime = _parseTime(p.checkInTime);
     _checkOutTime = _parseTime(p.checkOutTime);
+    _earlyArrivalFrom = p.earlyArrivalFrom == null || p.earlyArrivalFrom!.isEmpty
+        ? null
+        : _parseTime(p.earlyArrivalFrom!);
     _grace.text = '${p.lateGraceMinutes}';
     _halfDayPercent.text = '${p.lateHalfDayPercent}';
     _fullDayAfter.text = '${p.lateFullDayAfterMinutes}';
@@ -153,16 +164,20 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
     checkinMode: _checkinMode,
     checkInTime: _fmtTime(_checkInTime),
     checkOutTime: _fmtTime(_checkOutTime),
+    earlyArrivalFrom:
+        _earlyArrivalFrom == null ? null : _fmtTime(_earlyArrivalFrom!),
     lateGraceMinutes: int.tryParse(_grace.text.trim()) ?? 0,
     lateHalfDayPercent: num.tryParse(_halfDayPercent.text.trim()) ?? 0,
     lateFullDayAfterMinutes: int.tryParse(_fullDayAfter.text.trim()) ?? 0,
     lateFullDayPercent: num.tryParse(_fullDayPercent.text.trim()) ?? 0,
   );
 
-  Future<void> _pickTime({required bool checkIn}) async {
+  Future<void> _pickTime({required bool checkIn, bool early = false}) async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: checkIn ? _checkInTime : _checkOutTime,
+      initialTime: early
+          ? (_earlyArrivalFrom ?? const TimeOfDay(hour: 6, minute: 0))
+          : (checkIn ? _checkInTime : _checkOutTime),
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
           colorScheme: const ColorScheme.light(
@@ -177,7 +192,9 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
     );
     if (picked == null) return;
     setState(() {
-      if (checkIn) {
+      if (early) {
+        _earlyArrivalFrom = picked;
+      } else if (checkIn) {
         _checkInTime = picked;
       } else {
         _checkOutTime = picked;
@@ -193,6 +210,7 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
       return;
     }
     final isCycle = _checkinMode == 'CYCLE';
+    final isHybrid = _checkinMode == 'HYBRID';
     num? halfPercent = num.tryParse(_halfDayPercent.text.trim());
     int? fullAfter = int.tryParse(_fullDayAfter.text.trim());
     num? fullPercent = num.tryParse(_fullDayPercent.text.trim());
@@ -213,7 +231,10 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
     setState(() => _error = null);
     final ok = await ref.read(roomsViewModelProvider.notifier).saveCheckoutPolicy(
           checkOutTime: _fmtTime(_checkOutTime),
-          checkInTime: _checkinMode == 'CYCLE' ? _fmtTime(_checkInTime) : null,
+          checkInTime: isCycle || isHybrid ? _fmtTime(_checkInTime) : null,
+          earlyArrivalFrom:
+              isHybrid && _earlyArrivalFrom != null ? _fmtTime(_earlyArrivalFrom!) : null,
+          sendEarlyArrivalFrom: isHybrid,
           lateGraceMinutes: grace,
           lateHalfDayPercent: halfPercent ?? 0,
           lateFullDayAfterMinutes: fullAfter ?? 0,
@@ -238,6 +259,7 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
 
     final submitting = state.submitting;
     final isCycle = _checkinMode == 'CYCLE';
+    final isHybrid = _checkinMode == 'HYBRID';
     final preview = _previewSteps(_preview());
 
     return Align(
@@ -324,27 +346,53 @@ class _CheckoutPolicyPanelState extends ConsumerState<CheckoutPolicyPanel> {
                         ],
                       ),
                     )
-                  : isCycle
-                      ? Row(
+                  : isCycle || isHybrid
+                      ? Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: _TimeField(
-                                label: 'Check-in from',
-                                time: _checkInTime,
-                                hint: 'When rooms are ready.',
-                                onTap: () => _pickTime(checkIn: true),
-                              ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: _TimeField(
+                                    label: 'Check-in from',
+                                    time: _checkInTime,
+                                    hint: isHybrid
+                                        ? 'Arrive before this and you get 24 hours from arrival; at or after it, checkout is the fixed time.'
+                                        : 'When rooms are ready.',
+                                    onTap: () => _pickTime(checkIn: true),
+                                  ),
+                                ),
+                                const SizedBox(width: AppTheme.s8),
+                                Expanded(
+                                  child: _TimeField(
+                                    label: 'Checkout by',
+                                    time: _checkOutTime,
+                                    hint: isHybrid
+                                        ? 'The fixed checkout for guests who arrive at or after the check-in time.'
+                                        : 'Past this starts another night.',
+                                    onTap: () => _pickTime(checkIn: false),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: AppTheme.s8),
-                            Expanded(
-                              child: _TimeField(
-                                label: 'Checkout by',
-                                time: _checkOutTime,
-                                hint: 'Past this starts another night.',
-                                onTap: () => _pickTime(checkIn: false),
+                            if (isHybrid) ...[
+                              const SizedBox(height: AppTheme.s8),
+                              _TimeField(
+                                label: 'Early arrival counts from',
+                                time: _earlyArrivalFrom,
+                                placeholder: 'Any time before check-in',
+                                hint:
+                                    'Optional. Blank means any time before check-in; set 06:00 and a 3am arrival keeps the fixed checkout instead.',
+                                onTap: () => _pickTime(checkIn: false, early: true),
+                                onClear: _earlyArrivalFrom == null
+                                    ? null
+                                    : () => setState(() {
+                                          _earlyArrivalFrom = null;
+                                          _saved = false;
+                                        }),
                               ),
-                            ),
+                            ],
                           ],
                         )
                       : _TimeField(
@@ -624,11 +672,20 @@ class _PolicySectionState extends State<_PolicySection> {
 
 class _TimeField extends StatelessWidget {
   final String label;
-  final TimeOfDay time;
+  final TimeOfDay? time;
   final String hint;
   final VoidCallback onTap;
+  final VoidCallback? onClear;
+  final String placeholder;
 
-  const _TimeField({required this.label, required this.time, required this.hint, required this.onTap});
+  const _TimeField({
+    required this.label,
+    required this.time,
+    required this.hint,
+    required this.onTap,
+    this.onClear,
+    this.placeholder = '',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -645,10 +702,21 @@ class _TimeField extends StatelessWidget {
               children: [
                 const Icon(Icons.access_time_rounded, size: 15, color: AppTheme.accent),
                 const SizedBox(width: 8),
-                Text(
-                  time.format(context),
-                  style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w600, fontSize: 13.5),
+                Expanded(
+                  child: Text(
+                    time?.format(context) ?? placeholder,
+                    style: TextStyle(
+                      color: time == null ? AppTheme.muted : AppTheme.heading,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13.5,
+                    ),
+                  ),
                 ),
+                if (onClear != null)
+                  GestureDetector(
+                    onTap: onClear,
+                    child: const Icon(Icons.close_rounded, size: 16, color: AppTheme.muted),
+                  ),
               ],
             ),
           ),

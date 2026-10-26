@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../domain/models/booking.dart';
+import '../../domain/models/charge_selections.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/extra_room.dart';
 import '../../domain/models/guest_match.dart';
@@ -126,10 +127,50 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   /// register that records one of four people is not a register.
   final List<GuestDraft> _guests = [];
 
-  /// Occupants reception is bumping the head count for without taking their
-  /// details — counted as adults, same convention the stay-detail view
-  /// already uses for numGuests. Mirrors extraGuests in Bookings.jsx.
-  int _extraGuests = 0;
+  /// The party as two head counts — adults (the primary guest included) and
+  /// children — set with the steppers. The rows in [_guests] are optional
+  /// details for some of those heads, and a row past the count raises it, so
+  /// the counts are never below the rows. Mirrors adultCount/childCount in
+  /// Bookings.jsx.
+  int _adultCount = 1;
+  int _childCount = 0;
+
+  int get _namedAdults => 1 + _guests.where((g) => !g.isChild).length;
+  int get _namedChildren => _guests.where((g) => g.isChild).length;
+  int get _adultN => _adultCount < _namedAdults ? _namedAdults : _adultCount;
+  int get _childN => _childCount < _namedChildren ? _namedChildren : _childCount;
+
+  /// The rows as they are sent: a child needs no details, so a row left empty
+  /// is dropped (the count already holds that child), and one with only an ID
+  /// typed gets a placeholder name so the record still has something to show.
+  List<GuestDraft> _guestsForSave() {
+    final out = <GuestDraft>[];
+    var childNo = 0;
+    for (final g in _guests) {
+      if (!g.isChild) {
+        out.add(g);
+        continue;
+      }
+      final hasDetail =
+          g.name.trim().isNotEmpty ||
+          g.idProofType != null ||
+          g.idProofNumber.trim().isNotEmpty ||
+          g.idProofFile != null;
+      if (!hasDetail) continue;
+      childNo++;
+      out.add(
+        GuestDraft(
+          id: g.id,
+          name: g.name.trim().isEmpty ? 'Child $childNo' : g.name,
+          idProofType: g.idProofType,
+          idProofNumber: g.idProofNumber,
+          isChild: true,
+          idProofFile: g.idProofFile,
+        ),
+      );
+    }
+    return out;
+  }
 
   final _capacityBannerKey = GlobalKey();
 
@@ -344,12 +385,10 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             (v) => VehicleDraft(number: v.number, type: v.type),
           ),
         );
-      // A head count on file above the named rows was recorded without
-      // every guest's details — preserve it rather than silently dropping
-      // it here.
-      _extraGuests = (edit.numGuests != null)
-          ? (edit.numGuests! - (1 + edit.guests.length)).clamp(0, 999)
-          : 0;
+      // The counts on file, which can sit above the named rows: heads whose
+      // details weren't taken are kept rather than silently dropped here.
+      _childCount = edit.childCount;
+      _adultCount = ((edit.numGuests ?? 1) - edit.childCount).clamp(1, 999);
       await vm.startEdit(edit);
       _confirmCapacityBaseline();
       return;
@@ -369,6 +408,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       _guests
         ..clear()
         ..addAll(form.guests);
+      _adultCount = form.adultCount ?? 1;
+      _childCount = form.childCount ?? 0;
       _vehicles
         ..clear()
         ..addAll(form.vehicles);
@@ -428,7 +469,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     return totalCapacity != null && _numGuests > totalCapacity;
   }
 
-  int get _numGuests => 1 + _guests.length + _extraGuests;
+  int get _numGuests => _adultN + _childN;
 
   /// Checks whether the party just crossed into over-capacity and, if so,
   /// fires the toast and scrolls the banner into view — once per crossing,
@@ -602,8 +643,11 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     final phone = _phone.text.trim();
 
     for (final g in _guests) {
-      if (g.isEmpty) return _say('Enter a name for each additional guest.');
+      if (!g.isChild && g.isEmpty) {
+        return _say('Enter a name for each additional adult, or remove the row.');
+      }
     }
+    final saveGuests = _guestsForSave();
 
     for (final v in _vehicles) {
       if (v.isEmpty) continue;
@@ -617,10 +661,11 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         guestName: capitalizeWords(_name.text),
         guestPhone: phone,
         numGuests: _numGuests,
+        numChildren: _childN,
         idProofType: _idProofType,
         idProofNumber: _idProofNumber.text,
         idProofFile: _idProofFile,
-        guests: _guests,
+        guests: saveGuests,
         vehicles: _vehicles,
       );
     } else {
@@ -630,13 +675,13 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       booking = await vm.submit(
         guestName: capitalizeWords(_name.text),
         guestPhone: phone,
-        // The party is whoever was named, plus whatever the extra-guests
-        // stepper bumps it by for occupants reception isn't taking names for.
+        // The party is the two stepper counts, never below the named rows.
         numGuests: _numGuests,
+        numChildren: _childN,
         idProofType: _idProofType,
         idProofNumber: _idProofNumber.text,
         idProofFile: _idProofFile,
-        guests: _guests,
+        guests: saveGuests,
         vehicles: _vehicles,
         advanceLines: paid,
       );
@@ -681,6 +726,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       advanceLines: List.of(_advance),
       roomTotal: state.roomTotal,
       discount: state.discount,
+      adultCount: _adultN,
+      childCount: _childN,
       extras: Map.of(state.extras),
     );
   }
@@ -703,6 +750,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         _phone.text.trim().isNotEmpty ||
         form.roomId != null ||
         _guests.isNotEmpty ||
+        _adultN > 1 ||
+        _childN > 0 ||
         _vehicles.any((v) => !v.isEmpty) ||
         _advance.any((l) => l.value > 0);
     if (!hasContent) {
@@ -1148,6 +1197,22 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                     ],
                     const SizedBox(height: AppTheme.s4),
 
+                    _PartyCounts(
+                      total: _numGuests,
+                      adults: _adultN,
+                      children: _childN,
+                      minAdults: _namedAdults,
+                      minChildren: _namedChildren,
+                      onAdults: (v) {
+                        setState(() => _adultCount = v);
+                        _checkCapacityCrossing(state);
+                      },
+                      onChildren: (v) {
+                        setState(() => _childCount = v);
+                        _checkCapacityCrossing(state);
+                      },
+                    ),
+                    const SizedBox(height: AppTheme.s4),
                     _SectionLabel('Adults', trailing: '${1 + adults.length}'),
                     const SizedBox(height: AppTheme.s4),
                     NeuCard(
@@ -1292,7 +1357,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       ),
                       soft: true,
                       minHeight: 34,
-                      child: const Text('+ Add adult'),
+                      child: const Text('+ Add adult details (optional)'),
                     ),
 
                     const SizedBox(height: AppTheme.s4),
@@ -1307,6 +1372,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                         child: _GuestCard(
                           guest: _guests[i],
                           index: i,
+                          optionalName: true,
                           onRemove: () {
                             setState(() => _guests.removeAt(i));
                             _checkCapacityCrossing(state);
@@ -1325,41 +1391,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       ),
                       soft: true,
                       minHeight: 34,
-                      child: const Text('+ Add child'),
-                    ),
-
-                    // A bump to the head count for occupants reception
-                    // isn't taking names for — counted as adults, same
-                    // convention the stay-detail view already uses for
-                    // numGuests. Mirrors the "+ more guests" row in the
-                    // web form's own PartyEditor.
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppTheme.s4),
-                      child: NeuCard(
-                        shadow: AppTheme.subtle,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.s8,
-                          vertical: AppTheme.s4,
-                        ),
-                        child: Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                '+ more guests (no details taken)',
-                                style: TextStyle(color: AppTheme.muted, fontSize: 12.5),
-                              ),
-                            ),
-                            _Stepper(
-                              value: _extraGuests,
-                              onChanged: (v) {
-                                if (v < 0) return;
-                                setState(() => _extraGuests = v);
-                                _checkCapacityCrossing(state);
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
+                      child: const Text('+ Add child details (optional)'),
                     ),
 
                     if (!_editing && state.isWalkIn) ...[
@@ -3280,7 +3312,10 @@ class _ExtraRoomExtras extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.read(bookingViewModelProvider.notifier);
-    final charges = room.switchableCharges;
+    final charges = [
+      for (final c in room.switchableCharges)
+        if (!ChargeSelections.isHiddenExtra(draft.extras, c)) c,
+    ];
 
     return Column(
       children: [
@@ -3563,7 +3598,10 @@ class _ExtrasCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.read(bookingViewModelProvider.notifier);
-    final charges = state.room!.switchableCharges;
+    final charges = [
+      for (final c in state.room!.switchableCharges)
+        if (!ChargeSelections.isHiddenExtra(state.extras, c)) c,
+    ];
 
     return Column(
       children: [
@@ -3723,6 +3761,95 @@ class _CapacityBanner extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The head count as two steppers — "Total head count: 3 guests" over an
+/// Adults and a Children stepper, neither able to drop below the number of
+/// people already named below it.
+class _PartyCounts extends StatelessWidget {
+  final int total;
+  final int adults;
+  final int children;
+  final int minAdults;
+  final int minChildren;
+  final ValueChanged<int> onAdults;
+  final ValueChanged<int> onChildren;
+
+  const _PartyCounts({
+    required this.total,
+    required this.adults,
+    required this.children,
+    required this.minAdults,
+    required this.minChildren,
+    required this.onAdults,
+    required this.onChildren,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final split =
+        '$adults adult${adults == 1 ? '' : 's'}'
+        '${children > 0 ? ' and $children child${children == 1 ? '' : 'ren'}' : ''}';
+    return NeuCard(
+      shadow: AppTheme.subtle,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s8,
+        vertical: AppTheme.s8,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Total head count: $total guest${total == 1 ? '' : 's'}',
+            style: const TextStyle(
+              color: AppTheme.heading,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+          Text(
+            'Including the primary guest · $split',
+            style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+          ),
+          const SizedBox(height: AppTheme.s4),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Adults',
+                  style: TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                ),
+              ),
+              _Stepper(
+                value: adults,
+                onChanged: (v) {
+                  if (v < minAdults) return;
+                  onAdults(v);
+                },
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Children',
+                  style: TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                ),
+              ),
+              _Stepper(
+                value: children,
+                onChanged: (v) {
+                  if (v < minChildren) return;
+                  onChildren(v);
+                },
+              ),
+            ],
           ),
         ],
       ),
@@ -4219,11 +4346,15 @@ class _GuestCard extends StatefulWidget {
   final VoidCallback onRemove;
   final VoidCallback onChanged;
 
+  /// A child's details are optional — the head count already holds them.
+  final bool optionalName;
+
   const _GuestCard({
     required this.guest,
     required this.index,
     required this.onRemove,
     required this.onChanged,
+    this.optionalName = false,
   });
 
   @override
@@ -4256,7 +4387,7 @@ class _GuestCardState extends State<_GuestCard> {
           // delete icon uses.
           NeuField(
             controller: _name,
-            label: 'Name',
+            label: widget.optionalName ? 'Name (optional)' : 'Name',
             onChanged: (v) => widget.guest.name = v,
             forceCapitalizeWords: true,
             dense: true,

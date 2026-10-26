@@ -96,6 +96,7 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
         (e) =>
             needle.isNotEmpty &&
             !e.title.toLowerCase().contains(needle) &&
+            !(e.eventNumber ?? '').toLowerCase().contains(needle) &&
             !e.organiserName.toLowerCase().contains(needle) &&
             !e.organiserPhone.contains(needle),
       )
@@ -164,7 +165,7 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
                               onChanged: (_) => setState(() {}),
                               style: const TextStyle(color: AppTheme.heading, fontSize: 14),
                               decoration: const InputDecoration(
-                                hintText: 'Search title, organiser, phone',
+                                hintText: 'Search title, event ID, organiser, phone',
                                 hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
                                 border: InputBorder.none,
                                 isDense: true,
@@ -585,7 +586,8 @@ class _EventCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${kEventTypeLabel[event.eventType] ?? event.eventType} · ${event.venueName}',
+                    '${kEventTypeLabel[event.eventType] ?? event.eventType} · ${event.venueName}'
+                    '${event.eventNumber != null ? ' · ${event.eventNumber}' : ''}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

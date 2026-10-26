@@ -34,8 +34,8 @@ abstract class RoomsRepository {
 
   // Switchable charges (booking extras)
   Future<List<SwitchableChargeListing>> switchableCharges();
-  Future<void> createSwitchableCharge({required String name, required num chargePerNight});
-  Future<void> updateSwitchableCharge(int id, {required String name, required num chargePerNight});
+  Future<void> createSwitchableCharge({required String name, required num chargePerNight, int? hiddenWhenChargeId});
+  Future<void> updateSwitchableCharge(int id, {required String name, required num chargePerNight, int? hiddenWhenChargeId});
   Future<void> setSwitchableChargeActive(int id, bool isActive);
   Future<void> deleteSwitchableCharge(int id);
 
@@ -69,6 +69,8 @@ abstract class RoomsRepository {
   Future<CheckoutPolicy> updateCheckoutPolicy({
     required String checkOutTime,
     String? checkInTime,
+    String? earlyArrivalFrom,
+    bool sendEarlyArrivalFrom = false,
     required int lateGraceMinutes,
     required num lateHalfDayPercent,
     required int lateFullDayAfterMinutes,

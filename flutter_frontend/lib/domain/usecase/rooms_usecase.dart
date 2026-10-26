@@ -40,10 +40,10 @@ class RoomsUsecase {
   Future<void> deleteCategory(int id) => repository.deleteCategory(id);
 
   Future<List<SwitchableChargeListing>> switchableCharges() => repository.switchableCharges();
-  Future<void> createSwitchableCharge({required String name, required num chargePerNight}) =>
-      repository.createSwitchableCharge(name: name, chargePerNight: chargePerNight);
-  Future<void> updateSwitchableCharge(int id, {required String name, required num chargePerNight}) =>
-      repository.updateSwitchableCharge(id, name: name, chargePerNight: chargePerNight);
+  Future<void> createSwitchableCharge({required String name, required num chargePerNight, int? hiddenWhenChargeId}) =>
+      repository.createSwitchableCharge(name: name, chargePerNight: chargePerNight, hiddenWhenChargeId: hiddenWhenChargeId);
+  Future<void> updateSwitchableCharge(int id, {required String name, required num chargePerNight, int? hiddenWhenChargeId}) =>
+      repository.updateSwitchableCharge(id, name: name, chargePerNight: chargePerNight, hiddenWhenChargeId: hiddenWhenChargeId);
   Future<void> setSwitchableChargeActive(int id, bool isActive) =>
       repository.setSwitchableChargeActive(id, isActive);
   Future<void> deleteSwitchableCharge(int id) => repository.deleteSwitchableCharge(id);
@@ -86,6 +86,8 @@ class RoomsUsecase {
   Future<CheckoutPolicy> updateCheckoutPolicy({
     required String checkOutTime,
     String? checkInTime,
+    String? earlyArrivalFrom,
+    bool sendEarlyArrivalFrom = false,
     required int lateGraceMinutes,
     required num lateHalfDayPercent,
     required int lateFullDayAfterMinutes,
@@ -93,6 +95,8 @@ class RoomsUsecase {
   }) => repository.updateCheckoutPolicy(
     checkOutTime: checkOutTime,
     checkInTime: checkInTime,
+    earlyArrivalFrom: earlyArrivalFrom,
+    sendEarlyArrivalFrom: sendEarlyArrivalFrom,
     lateGraceMinutes: lateGraceMinutes,
     lateHalfDayPercent: lateHalfDayPercent,
     lateFullDayAfterMinutes: lateFullDayAfterMinutes,

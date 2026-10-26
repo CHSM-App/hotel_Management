@@ -15,6 +15,7 @@ class _CategoryMeta {
 }
 
 const _categoryMeta = <String, _CategoryMeta>{
+  'enquiry': _CategoryMeta('Enquiries', Color(0xFFDB2777), Icons.chat_bubble_rounded),
   'checkin': _CategoryMeta('Arrivals today', Color(0xFF2563EB), Icons.login_rounded),
   'checkout': _CategoryMeta('Check-outs', Color(0xFFEA580C), Icons.logout_rounded),
   'order': _CategoryMeta('Kitchen', Color(0xFFD97706), Icons.room_service_rounded),
@@ -24,7 +25,7 @@ const _categoryMeta = <String, _CategoryMeta>{
   'reports': _CategoryMeta('Reports', Color(0xFF0284C7), Icons.bar_chart_rounded),
 };
 
-const _categoryOrder = ['checkin', 'checkout', 'order', 'workOrder', 'coverage', 'housekeeping', 'reports'];
+const _categoryOrder = ['enquiry', 'checkin', 'checkout', 'order', 'workOrder', 'coverage', 'housekeeping', 'reports'];
 
 /// The bell in the top bar: every category of thing worth a staff member's
 /// attention right now, grouped under its own heading on its own page —
@@ -33,7 +34,11 @@ const _categoryOrder = ['checkin', 'checkout', 'order', 'workOrder', 'coverage',
 class StaffAlertsBell extends StatefulWidget {
   final List<StaffAlert> alerts;
 
-  const StaffAlertsBell({super.key, required this.alerts});
+  /// Runs when staff tap an alert's action button (an enquiry's "View") —
+  /// the shell takes them to the section where it is handled.
+  final ValueChanged<StaffAlert>? onAction;
+
+  const StaffAlertsBell({super.key, required this.alerts, this.onAction});
 
   @override
   State<StaffAlertsBell> createState() => _StaffAlertsBellState();
@@ -144,7 +149,9 @@ class _StaffAlertsBellState extends State<StaffAlertsBell> with SingleTickerProv
 
   void _open(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => StaffAlertsScreen(alerts: widget.alerts)),
+      MaterialPageRoute(
+        builder: (_) => StaffAlertsScreen(alerts: widget.alerts, onAction: widget.onAction),
+      ),
     );
   }
 }
@@ -152,8 +159,9 @@ class _StaffAlertsBellState extends State<StaffAlertsBell> with SingleTickerProv
 /// Full-page staff alerts screen, reached by tapping the bell.
 class StaffAlertsScreen extends StatelessWidget {
   final List<StaffAlert> alerts;
+  final ValueChanged<StaffAlert>? onAction;
 
-  const StaffAlertsScreen({super.key, required this.alerts});
+  const StaffAlertsScreen({super.key, required this.alerts, this.onAction});
 
   @override
   Widget build(BuildContext context) {
@@ -186,7 +194,17 @@ class StaffAlertsScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s24),
                 children: [
                   if (urgentCount > 0) _UrgentBanner(count: urgentCount),
-                  for (final section in sections) _Section(category: section.category, items: section.items),
+                  for (final section in sections)
+                    _Section(
+                      category: section.category,
+                      items: section.items,
+                      onAction: onAction == null
+                          ? null
+                          : (a) {
+                              Navigator.of(context).pop();
+                              onAction!(a);
+                            },
+                    ),
                 ],
               ),
       ),
@@ -266,8 +284,9 @@ class _UrgentBanner extends StatelessWidget {
 class _Section extends StatelessWidget {
   final String category;
   final List<StaffAlert> items;
+  final ValueChanged<StaffAlert>? onAction;
 
-  const _Section({required this.category, required this.items});
+  const _Section({required this.category, required this.items, this.onAction});
 
   @override
   Widget build(BuildContext context) {
@@ -289,7 +308,7 @@ class _Section extends StatelessWidget {
               ),
             ),
           ),
-          for (final a in items) _AlertRow(alert: a, meta: meta),
+          for (final a in items) _AlertRow(alert: a, meta: meta, onAction: onAction),
         ],
       ),
     );
@@ -299,8 +318,9 @@ class _Section extends StatelessWidget {
 class _AlertRow extends StatelessWidget {
   final StaffAlert alert;
   final _CategoryMeta meta;
+  final ValueChanged<StaffAlert>? onAction;
 
-  const _AlertRow({required this.alert, required this.meta});
+  const _AlertRow({required this.alert, required this.meta, this.onAction});
 
   @override
   Widget build(BuildContext context) {
@@ -344,6 +364,19 @@ class _AlertRow extends StatelessWidget {
                     alert.message,
                     style: const TextStyle(fontSize: 13, height: 1.35, color: AppTheme.text),
                   ),
+                  if (alert.actionLabel != null && onAction != null) ...[
+                    const SizedBox(height: AppTheme.s8),
+                    OutlinedButton(
+                      onPressed: () => onAction!(alert),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: accentColor,
+                        side: BorderSide(color: accentColor),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                      ),
+                      child: Text(alert.actionLabel!),
+                    ),
+                  ],
                 ],
               ),
             ),

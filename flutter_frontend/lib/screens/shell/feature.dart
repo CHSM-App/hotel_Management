@@ -113,6 +113,17 @@ const kFeatures = <Feature>[
   // The web's own Guest register ('guests') — every stay's booking details
   // in one searchable, filterable list, with the same summary tiles that
   // page opens on.
+  // Same web module (Enquiries.jsx): what guests send from the public page,
+  // to follow up and mark Converted. Sits in the Customers group like the web
+  // sidebar (propertyProfile.js), earned by either rooms or events.
+  Feature(
+    key: 'enquiries',
+    title: 'Enquiries',
+    icon: Icons.mark_chat_unread_rounded,
+    permission: 'enquiries.manage',
+    anyCapabilities: ['hasRooms', 'hasEvents'],
+    group: 'Customers',
+  ),
   Feature(
     key: 'register',
     title: 'Guest Register',

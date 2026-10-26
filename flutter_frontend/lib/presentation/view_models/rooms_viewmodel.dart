@@ -232,14 +232,15 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
     int? id,
     required String name,
     required num chargePerNight,
+    int? hiddenWhenChargeId,
   }) async {
     if (state.submitting) return false;
     state = state.copyWith(submitting: true, clearError: true);
     try {
       if (id != null) {
-        await usecase.updateSwitchableCharge(id, name: name, chargePerNight: chargePerNight);
+        await usecase.updateSwitchableCharge(id, name: name, chargePerNight: chargePerNight, hiddenWhenChargeId: hiddenWhenChargeId);
       } else {
-        await usecase.createSwitchableCharge(name: name, chargePerNight: chargePerNight);
+        await usecase.createSwitchableCharge(name: name, chargePerNight: chargePerNight, hiddenWhenChargeId: hiddenWhenChargeId);
       }
       state = state.copyWith(submitting: false);
       await loadAll();
@@ -325,6 +326,8 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
   Future<bool> saveCheckoutPolicy({
     required String checkOutTime,
     String? checkInTime,
+    String? earlyArrivalFrom,
+    bool sendEarlyArrivalFrom = false,
     required int lateGraceMinutes,
     required num lateHalfDayPercent,
     required int lateFullDayAfterMinutes,
@@ -336,6 +339,8 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
       final policy = await usecase.updateCheckoutPolicy(
         checkOutTime: checkOutTime,
         checkInTime: checkInTime,
+        earlyArrivalFrom: earlyArrivalFrom,
+        sendEarlyArrivalFrom: sendEarlyArrivalFrom,
         lateGraceMinutes: lateGraceMinutes,
         lateHalfDayPercent: lateHalfDayPercent,
         lateFullDayAfterMinutes: lateFullDayAfterMinutes,

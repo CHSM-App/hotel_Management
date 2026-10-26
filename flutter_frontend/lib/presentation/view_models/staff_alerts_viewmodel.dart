@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/staff_alert.dart';
 import '../../domain/usecase/assets_usecase.dart';
 import '../../domain/usecase/booking_usecase.dart';
+import '../../domain/usecase/enquiries_usecase.dart';
 import '../../domain/usecase/housekeeping_usecase.dart';
 import '../../domain/usecase/orders_usecase.dart';
 
@@ -45,12 +46,14 @@ class StaffAlertsViewModel extends StateNotifier<StaffAlertsState> {
   final AssetsUsecase assetsUsecase;
   final OrdersUsecase ordersUsecase;
   final HousekeepingUsecase housekeepingUsecase;
+  final EnquiriesUsecase enquiriesUsecase;
 
   StaffAlertsViewModel(
     this.bookingUsecase,
     this.assetsUsecase,
     this.ordersUsecase,
     this.housekeepingUsecase,
+    this.enquiriesUsecase,
   ) : super(const StaffAlertsState());
 
   final Map<String, List<StaffAlert>> _byCategory = {};
@@ -68,10 +71,12 @@ class StaffAlertsViewModel extends StateNotifier<StaffAlertsState> {
     required bool canPendingOrders,
     required bool canHousekeeping,
     required bool canReports,
+    bool canEnquiries = false,
   }) {
     if (_started) return;
     _started = true;
 
+    if (canEnquiries) _poll('enquiry', const Duration(seconds: 60), refreshEnquiries);
     if (canCheckin) _poll('checkin', const Duration(seconds: 60), _loadCheckin);
     if (canCheckout) _poll('checkout', const Duration(seconds: 60), _loadCheckout);
     if (canWorkOrders) _poll('workOrder', const Duration(seconds: 60), _loadWorkOrders);
@@ -96,6 +101,45 @@ class StaffAlertsViewModel extends StateNotifier<StaffAlertsState> {
   }
 
   void clearToast() => state = state.copyWith(clearToast: true);
+
+  // ── Enquiries from the public page ───────────────────────────────────────
+
+  Set<int>? _seenEnquiryIds;
+
+  /// New enquiries nobody has picked up yet. Toasts only for ids it hasn't
+  /// seen before — the first load just records what's already waiting, so
+  /// opening the app doesn't fire a toast for every old enquiry. Also called
+  /// by the Enquiries screen straight after a status change, so the bell
+  /// updates at once.
+  Future<void> refreshEnquiries() async {
+    try {
+      final items = await enquiriesUsecase.newEnquiries();
+      if (_seenEnquiryIds != null) {
+        for (final item in items) {
+          if (!_seenEnquiryIds!.contains(item.id)) {
+            _toast('New enquiry from ${item.name} (${item.referenceCode}).');
+          }
+        }
+      }
+      _seenEnquiryIds = items.map((i) => i.id).toSet();
+      _merge(
+        'enquiry',
+        items
+            .map(
+              (i) => StaffAlert(
+                id: 'enquiry-${i.id}',
+                category: 'enquiry',
+                message:
+                    'New ${i.kind.toLowerCase()} enquiry from ${i.name} — ${i.referenceCode}.',
+                actionLabel: 'View',
+              ),
+            )
+            .toList(),
+      );
+    } catch (_) {
+      _merge('enquiry', const []);
+    }
+  }
 
   // ── Check-in / check-out ────────────────────────────────────────────────
 

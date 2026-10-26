@@ -13,6 +13,7 @@ import '../../widgets/neu.dart';
 import '../housekeeping/housekeeping_parts.dart';
 import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
+import '../bookings/booking_detail_screen.dart';
 import 'advance_receipt_screen.dart';
 import 'invoice_preview_screen.dart';
 import 'issue_bill_screen.dart';
@@ -429,6 +430,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 .where(
                   (stay) =>
                       (stay.roomNumber ?? '').toLowerCase().contains(needle) ||
+                      (stay.bookingNumber ?? '').toLowerCase().contains(needle) ||
                       (stay.guestName ?? '').toLowerCase().contains(needle) ||
                       (stay.categoryName ?? '').toLowerCase().contains(needle),
                 )
@@ -456,17 +458,39 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         await _load();
       }
 
+      // The read-only stay record — the same answer to "what is this stay"
+      // without having to start writing a bill to look.
+      void viewStay(BillableStay stay) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (routeContext) => BookingDetailScreen(
+              bookingId: stay.id,
+              readOnly: true,
+              // "Issue bill" closes the record and carries on to the bill.
+              onIssueBill: () {
+                Navigator.of(routeContext).pop();
+                openStay(stay);
+              },
+            ),
+          ),
+        );
+      }
+
       if (_view == 'table') {
-        return [ReadyToBillTable(stays: rows, onBill: openStay)];
+        return [
+          ReadyToBillTable(stays: rows, onBill: openStay, onView: viewStay),
+        ];
       }
 
       final queueRows = [
         for (final stay in rows)
           BillingQueueRow(
             onTap: () => openStay(stay),
+            onView: () => viewStay(stay),
             roomLabel: stay.roomNumber,
             title: stay.guestName ?? 'Guest',
             subtitle: [
+              if (stay.bookingNumber != null) stay.bookingNumber!,
               if (stay.categoryName != null) stay.categoryName!,
               'Stay ${formatPrice(stay.totalPrice)}',
               if ((stay.foodTotal ?? 0) > 0)
@@ -489,6 +513,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               subtitle: row.subtitle,
               amount: row.amount,
               amountLabel: row.amountLabel,
+              onView: row.onView,
             ),
           ),
       ];
@@ -544,6 +569,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               .where(
                 (d) =>
                     (d.invoiceNumber ?? '').toLowerCase().contains(needle) ||
+                    (d.bookingNumber ?? '').toLowerCase().contains(needle) ||
                     (d.guestName ?? '').toLowerCase().contains(needle) ||
                     (d.roomNumber ?? '').toLowerCase().contains(needle) ||
                     (d.venueName ?? '').toLowerCase().contains(needle) ||
@@ -593,6 +619,9 @@ class BillingRowCard extends StatelessWidget {
   final String? amountLabel;
   final VoidCallback onBill;
 
+  /// A read-only look at the stay behind the row — offered on the room queue.
+  final VoidCallback? onView;
+
   const BillingRowCard({
     super.key,
     this.icon,
@@ -602,6 +631,7 @@ class BillingRowCard extends StatelessWidget {
     required this.amount,
     this.amountLabel,
     required this.onBill,
+    this.onView,
   });
 
   @override
@@ -727,6 +757,10 @@ class BillingRowCard extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
+                if (onView != null) ...[
+                  _ViewPillButton(onPressed: onView!),
+                  const SizedBox(width: AppTheme.s8),
+                ],
                 _BillPillButton(onPressed: onBill),
               ],
             ),
@@ -1265,6 +1299,15 @@ class BillingInvoiceCard extends ConsumerWidget {
                             style: Theme.of(context).textTheme.titleSmall,
                             overflow: TextOverflow.ellipsis,
                           ),
+                          if (invoice.bookingNumber != null)
+                            Text(
+                              invoice.bookingNumber!,
+                              style: const TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 10.5,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           const SizedBox(height: 2),
                           Row(
                             children: [
@@ -2081,6 +2124,7 @@ class BillingQueueRow {
   final num? amount;
   final String? amountLabel;
   final VoidCallback onTap;
+  final VoidCallback? onView;
 
   const BillingQueueRow({
     this.icon,
@@ -2090,6 +2134,7 @@ class BillingQueueRow {
     required this.amount,
     this.amountLabel,
     required this.onTap,
+    this.onView,
   });
 }
 
@@ -2364,11 +2409,13 @@ class _QueueTableRow extends StatelessWidget {
 class ReadyToBillTable extends StatelessWidget {
   final List<BillableStay> stays;
   final ValueChanged<BillableStay> onBill;
+  final ValueChanged<BillableStay>? onView;
 
   const ReadyToBillTable({
     super.key,
     required this.stays,
     required this.onBill,
+    this.onView,
   });
 
   static const List<(String label, double width, bool numeric)> _columns = [
@@ -2382,7 +2429,7 @@ class ReadyToBillTable extends StatelessWidget {
     ('To collect', 110, true),
   ];
 
-  static const double _actionWidth = 76;
+  static const double _actionWidth = 140;
 
   @override
   Widget build(BuildContext context) {
@@ -2446,6 +2493,7 @@ class ReadyToBillTable extends StatelessWidget {
                           stay: stays[i],
                           shaded: i.isOdd,
                           onBill: () => onBill(stays[i]),
+                          onView: onView == null ? null : () => onView!(stays[i]),
                         ),
                       _ReadyToBillFooter(stays: stays),
                 ],
@@ -2461,11 +2509,13 @@ class _ReadyToBillRow extends StatelessWidget {
   final BillableStay stay;
   final bool shaded;
   final VoidCallback onBill;
+  final VoidCallback? onView;
 
   const _ReadyToBillRow({
     required this.stay,
     required this.shaded,
     required this.onBill,
+    this.onView,
   });
 
   @override
@@ -2604,7 +2654,15 @@ class _ReadyToBillRow extends StatelessWidget {
             width: ReadyToBillTable._actionWidth,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
-              child: _BillPillButton(onPressed: onBill),
+              child: Row(
+                children: [
+                  if (onView != null) ...[
+                    _ViewPillButton(onPressed: onView!),
+                    const SizedBox(width: AppTheme.s4),
+                  ],
+                  _BillPillButton(onPressed: onBill),
+                ],
+              ),
             ),
           ),
         ],
@@ -2645,6 +2703,47 @@ class _ReadyToBillRow extends StatelessWidget {
 /// The small solid-gradient "Bill" pill each row ends on — same accent
 /// gradient the tab strips above now use, so the one actionable thing in
 /// this sheet reads as unmistakably a button rather than another data cell.
+/// The quiet counterpart of [_BillPillButton] — an outlined "View" that opens
+/// the stay record without starting a bill.
+class _ViewPillButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _ViewPillButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: AppTheme.accent),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.visibility_outlined, size: 13, color: AppTheme.accent),
+              SizedBox(width: 4),
+              Text(
+                'View',
+                style: TextStyle(
+                  color: AppTheme.accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BillPillButton extends StatelessWidget {
   final VoidCallback onPressed;
 

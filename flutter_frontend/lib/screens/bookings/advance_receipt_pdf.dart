@@ -6,6 +6,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../../domain/models/invoice.dart';
+import '../../widgets/format.dart' show formatHeadCount;
 import 'receipt_download.dart';
 import 'receipt_share.dart';
 
@@ -143,7 +144,8 @@ class AdvanceReceiptPdf {
       if (r.roomNumber != null) 'Room No. ${r.roomNumber}',
       if (r.checkInDate != null) 'dt. ${_date(r.checkInDate)}',
       if (nights != null) '($nights ${nights == 1 ? 'Day' : 'Days'})',
-      if (r.numGuests != null) 'Persons - ${r.numGuests}',
+      if (r.numGuests != null)
+        'Persons - ${formatHeadCount(r.numGuests, r.childCount) ?? r.numGuests}',
     ].join('  ');
     // Same rule and same strings as bill_pdf.dart's bed line — said plainly
     // on its own line, or a guest reading "Room No. 002" has no way to tell
@@ -237,6 +239,13 @@ class AdvanceReceiptPdf {
             _filled(_date(r.createdAt), width: 90),
           ]),
           _rule(),
+          if (r.bookingNumber != null) ...[
+            _strip([
+              _label('Booking ID'),
+              _filled(r.bookingNumber!, flex: 2),
+            ]),
+            _rule(),
+          ],
           _strip([
             _label('Received with thanks from'),
             _filled(r.guestName ?? '', flex: 3),

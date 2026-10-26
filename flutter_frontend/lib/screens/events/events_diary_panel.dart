@@ -71,8 +71,21 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
   static const _dateHeadHeight = 32.0;
 
   final _hScroll = ScrollController();
-  bool _showClosed = false;
   bool _scrolledToToday = false;
+
+  // ── Search and drafts — the way the room chart does them ────────────────
+  //
+  // Search rings the matching functions on the diary and the arrows walk
+  // through them; the Drafts chip lists functions still in DRAFT whatever the
+  // dates on screen. Cancelled functions never appear on the diary.
+  final _search = TextEditingController();
+  int _hitIndex = 0;
+
+  /// Recomputed each build, read by [_cell] when it rings a tile.
+  Set<int> _hitIds = const {};
+  int? _activeHitId;
+
+  List<EventBooking> _drafts = const [];
   bool _growingPast = false;
   bool _growingFuture = false;
 
@@ -87,6 +100,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
   /// Empty until the board answers, and for good at a property without
   /// Housekeeping, where the request fails and the chart shows nothing extra.
   Map<int, ({String label, String note})> _notReady = const {};
+
   /// Whether the housekeeping board has answered at all yet — distinct from
   /// `_notReady` being empty, which just means nothing is unready right now.
   /// The legend's own "Not ready" chip only shows once this is true, the
@@ -106,7 +120,9 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
             if (_kNotReadyLabel[v.status] != null)
               v.id: (
                 label: _kNotReadyLabel[v.status]!,
-                note: v.status == 'OUT_OF_ORDER' ? (v.outOfOrderNote ?? '') : '',
+                note: v.status == 'OUT_OF_ORDER'
+                    ? (v.outOfOrderNote ?? '')
+                    : '',
               ),
         };
       });
@@ -137,9 +153,13 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
   void initState() {
     super.initState();
     Future.microtask(_load);
+    _loadDrafts();
     _hScroll.addListener(_onScroll);
     _loadNotReady();
-    _hkTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadNotReady());
+    _hkTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _loadNotReady(),
+    );
   }
 
   @override
@@ -147,7 +167,164 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
     _hkTimer?.cancel();
     _hScroll.removeListener(_onScroll);
     _hScroll.dispose();
+    _search.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadDrafts() async {
+    try {
+      final drafts = await ref
+          .read(eventsUsecaseProvider)
+          .events(status: 'DRAFT');
+      if (!mounted) return;
+      setState(
+        () => _drafts = drafts.where((e) => e.status == 'DRAFT').toList(),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _drafts = const []);
+    }
+  }
+
+  /// Every non-cancelled function matching what was typed, in start order —
+  /// title, event number, organiser, either phone or venue, compared as typed
+  /// and with punctuation squashed out.
+  List<({EventBooking ev, String date})> _hits(List<EventBooking> events) {
+    final needle = _search.text.trim().toLowerCase();
+    if (needle.isEmpty) return const [];
+    final squash = RegExp(r'[^a-z0-9]');
+    final squashed = needle.replaceAll(squash, '');
+    final sorted = [...events.where((e) => !_isClosed(e.status))]
+      ..sort((a, b) => a.startAt.compareTo(b.startAt));
+    return [
+      for (final ev in sorted)
+        if (() {
+          final fields =
+              [
+                    ev.title,
+                    ev.eventNumber,
+                    ev.organiserName,
+                    ev.organiserPhone,
+                    ev.organiserAltPhone,
+                    ev.venueName,
+                  ]
+                  .whereType<String>()
+                  .where((f) => f.isNotEmpty)
+                  .map((f) => f.toLowerCase());
+          return fields.any((f) => f.contains(needle)) ||
+              (squashed.isNotEmpty &&
+                  fields.any(
+                    (f) => f.replaceAll(squash, '').contains(squashed),
+                  ));
+        }())
+          if (_dayKeys(ev).isNotEmpty) (ev: ev, date: _dayKeys(ev).first),
+    ];
+  }
+
+  /// Brings the matched function's first day to the middle of the strip.
+  void _scrollToHit(String date) {
+    if (!_hScroll.hasClients) return;
+    final index = _dates.indexWhere((d) => _dateKey(d) == date);
+    if (index < 0) return;
+    final target =
+        (index * _tile - _hScroll.position.viewportDimension / 2 + _tile / 2)
+            .clamp(0.0, _hScroll.position.maxScrollExtent);
+    _hScroll.animateTo(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _stepHit(List<({EventBooking ev, String date})> hits, int n) {
+    if (hits.isEmpty) return;
+    final current = _hitIndex.clamp(0, hits.length - 1);
+    final next = (current + n + hits.length) % hits.length;
+    setState(() => _hitIndex = next);
+    _scrollToHit(hits[next].date);
+  }
+
+  void _openDrafts() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppTheme.s16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Draft functions',
+                    style: Theme.of(sheetContext).textTheme.titleMedium,
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  Text(
+                    '${_drafts.length}',
+                    style: const TextStyle(color: AppTheme.muted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Started but not confirmed. A draft is held on the diary until it is confirmed or cancelled.',
+                style: TextStyle(color: AppTheme.muted, fontSize: 12),
+              ),
+              const SizedBox(height: AppTheme.s8),
+              if (_drafts.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppTheme.s16),
+                  child: Text(
+                    'Nothing parked right now. Save a function as a draft and it is listed here.',
+                    style: TextStyle(color: AppTheme.muted, fontSize: 13),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final d in _drafts)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            d.title.isEmpty ? 'Untitled function' : d.title,
+                          ),
+                          subtitle: Text(
+                            [
+                              if (d.organiserName.isNotEmpty) d.organiserName,
+                              d.venueName,
+                              if (d.startAt.isNotEmpty)
+                                formatDateTime(d.startAt),
+                            ].where((s) => s.isNotEmpty).join(' · '),
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () async {
+                            Navigator.of(sheetContext).pop();
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    EventDetailScreen(eventId: d.id),
+                              ),
+                            );
+                            _load();
+                            _loadDrafts();
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// Whichever date sits at the left edge of the visible strip right now —
@@ -336,7 +513,8 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
     // venueId → dateKey → functions touching it, in start order.
     final cells = <int, Map<String, List<EventBooking>>>{};
     for (final ev in state.events) {
-      if (!_showClosed && _isClosed(ev.status)) continue;
+      // Cancelled functions never appear on the diary.
+      if (_isClosed(ev.status)) continue;
       final byDay = cells.putIfAbsent(ev.venueId, () => {});
       for (final key in _dayKeys(ev)) {
         byDay.putIfAbsent(key, () => []).add(ev);
@@ -345,6 +523,13 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
     final rows = venues
         .where((v) => v.isActive || cells.containsKey(v.id))
         .toList();
+
+    final hits = _hits(state.events);
+    final activeHit = hits.isEmpty
+        ? null
+        : hits[_hitIndex.clamp(0, hits.length - 1)];
+    _hitIds = {for (final h in hits) h.ev.id};
+    _activeHitId = activeHit?.ev.id;
 
     // The function a not-ready venue is waiting to be cleaned after — mirrors
     // Events.jsx's own `awaitingClean`: the last CONFIRMED/SETTLED function at
@@ -357,11 +542,17 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
       final since = today.subtract(const Duration(days: 1));
       final last = <int, ({int eventId, DateTime over})>{};
       for (final ev in state.events) {
-        if ((ev.status != 'CONFIRMED' && ev.status != 'SETTLED') || !_notReady.containsKey(ev.venueId)) continue;
+        if ((ev.status != 'CONFIRMED' && ev.status != 'SETTLED') ||
+            !_notReady.containsKey(ev.venueId))
+          continue;
         final end = DateTime.tryParse(ev.endAt)?.toLocal();
         if (end == null) continue;
-        final completed = ev.completedAt != null ? DateTime.tryParse(ev.completedAt!)?.toLocal() : null;
-        final over = (completed != null && completed.isBefore(end)) ? completed : end;
+        final completed = ev.completedAt != null
+            ? DateTime.tryParse(ev.completedAt!)?.toLocal()
+            : null;
+        final over = (completed != null && completed.isBefore(end))
+            ? completed
+            : end;
         if (over.isAfter(now)) continue;
         final overDay = DateTime(over.year, over.month, over.day);
         if (overDay.isBefore(since)) continue;
@@ -381,7 +572,11 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
     // bottom of a box this tall lands right beside that thumb rather than
     // at some hand-tuned pixel guess.
     final gridContentHeight =
-        _dateHeadHeight + 1 + rows.length * _rowHeight + (rows.isEmpty ? 0 : (rows.length - 1)) + 10;
+        _dateHeadHeight +
+        1 +
+        rows.length * _rowHeight +
+        (rows.isEmpty ? 0 : (rows.length - 1)) +
+        10;
 
     // The strip opens on today the first time it has something to scroll,
     // the same "land here once, then leave the desk's own drag alone" rule
@@ -424,7 +619,221 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                           AppTheme.s16,
                           AppTheme.s16,
                         ),
-                        child: NeuCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Search the diary: matches are ringed on the
+                            // chart and the arrows walk through them.
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppTheme.s12,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Container(
+                                          height: 48,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: AppTheme.s4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.card,
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                            border: Border.all(
+                                              color: AppTheme.shadowDark,
+                                              width: 1.3,
+                                            ),
+                                            boxShadow: AppTheme.subtle,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 34,
+                                                height: 34,
+                                                alignment: Alignment.center,
+                                                decoration: BoxDecoration(
+                                                  color: AppTheme.accent
+                                                      .withValues(alpha: 0.10),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.search_rounded,
+                                                  size: 17,
+                                                  color: AppTheme.accent,
+                                                ),
+                                              ),
+                                              const SizedBox(width: AppTheme.s8),
+                                              Expanded(
+                                                child: TextField(
+                                                  controller: _search,
+                                                  onChanged: (_) {
+                                                    setState(() => _hitIndex = 0);
+                                                    final next = _hits(state.events);
+                                                    if (next.isNotEmpty) {
+                                                      _scrollToHit(next.first.date);
+                                                    }
+                                                  },
+                                                  style: const TextStyle(
+                                                    color: AppTheme.heading,
+                                                    fontSize: 14,
+                                                  ),
+                                                  decoration: const InputDecoration(
+                                                    hintText:
+                                                        'Search function, event no, organiser or phone',
+                                                    hintStyle: TextStyle(
+                                                      color: AppTheme.muted,
+                                                      fontSize: 14,
+                                                    ),
+                                                    border: InputBorder.none,
+                                                    isDense: true,
+                                                    contentPadding:
+                                                        EdgeInsets.symmetric(
+                                                          vertical: 13,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ),
+                                              if (_search.text.isNotEmpty)
+                                                GestureDetector(
+                                                  onTap: () => setState(() {
+                                                    _search.clear();
+                                                    _hitIndex = 0;
+                                                  }),
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  child: Container(
+                                                    width: 30,
+                                                    height: 30,
+                                                    margin: const EdgeInsets.only(
+                                                      right: 2,
+                                                    ),
+                                                    alignment: Alignment.center,
+                                                    decoration:
+                                                        const BoxDecoration(
+                                                          color: AppTheme.bg,
+                                                          shape: BoxShape.circle,
+                                                        ),
+                                                    child: const Icon(
+                                                      Icons.close_rounded,
+                                                      size: 15,
+                                                      color: AppTheme.muted,
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        onTap: _openDrafts,
+                                        child: Container(
+                                          height: 48,
+                                          alignment: Alignment.center,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _drafts.isEmpty
+                                                ? AppTheme.bg
+                                                : AppTheme.draft.withValues(
+                                                    alpha: 0.2,
+                                                  ),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: _drafts.isEmpty
+                                                  ? AppTheme.border
+                                                  : AppTheme.draft,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.description_outlined,
+                                                size: 13,
+                                                color: AppTheme.muted,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                _drafts.isEmpty
+                                                    ? 'No Drafts'
+                                                    : '${_drafts.length} Draft${_drafts.length == 1 ? '' : 's'}',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.labelSmall,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (_search.text.trim().isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: hits.isEmpty
+                                          ? Text(
+                                              'No function matching “${_search.text.trim()}”',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.labelSmall,
+                                            )
+                                          : Row(
+                                              children: [
+                                                Text(
+                                                  '${_hitIndex.clamp(0, hits.length - 1) + 1}/${hits.length}',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    '${activeHit!.ev.title} · ${activeHit.ev.venueName}',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: Theme.of(
+                                                      context,
+                                                    ).textTheme.labelSmall,
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  onPressed: hits.length < 2
+                                                      ? null
+                                                      : () =>
+                                                            _stepHit(hits, -1),
+                                                  icon: const Icon(
+                                                    Icons.chevron_left_rounded,
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  onPressed: hits.length < 2
+                                                      ? null
+                                                      : () => _stepHit(hits, 1),
+                                                  icon: const Icon(
+                                                    Icons.chevron_right_rounded,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            NeuCard(
                               padding: EdgeInsets.zero,
                               radius: AppTheme.rMedium,
                               child: Column(
@@ -500,32 +909,6 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                        const Spacer(),
-                                        GestureDetector(
-                                          onTap: () => setState(
-                                            () => _showClosed = !_showClosed,
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                _showClosed
-                                                    ? Icons.check_box_rounded
-                                                    : Icons
-                                                          .check_box_outline_blank_rounded,
-                                                size: 15,
-                                                color: AppTheme.muted,
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                'Show cancelled',
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.labelSmall,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
                                       ],
                                     ),
                                   ),
@@ -567,7 +950,6 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                           'CONFIRMED',
                                           'SETTLED',
                                           'DRAFT',
-                                          'CANCELLED',
                                         ])
                                           _LegendChip(
                                             color: _statusColor(status),
@@ -577,22 +959,21 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                             label:
                                                 kEventStatusLabel[status] ??
                                                 status,
-                                            onTap: () => Navigator.of(
-                                              context,
-                                            ).push(
-                                              MaterialPageRoute(
-                                                builder: (_) => Scaffold(
-                                                  appBar: AppBar(
-                                                    title: const Text(
-                                                      'Event register',
+                                            onTap: () =>
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute(
+                                                    builder: (_) => Scaffold(
+                                                      appBar: AppBar(
+                                                        title: const Text(
+                                                          'Event register',
+                                                        ),
+                                                      ),
+                                                      body: EventsListPanel(
+                                                        initialStatus: status,
+                                                      ),
                                                     ),
                                                   ),
-                                                  body: EventsListPanel(
-                                                    initialStatus: status,
-                                                  ),
                                                 ),
-                                              ),
-                                            ),
                                           ),
                                         // The two marks a tile can carry on top
                                         // of its status colour — static, since
@@ -875,6 +1256,8 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                                 ],
                               ),
                             ),
+                          ],
+                        ),
                       ),
                     ),
             ),
@@ -891,6 +1274,7 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                 MaterialPageRoute(builder: (_) => const EventFormScreen()),
               );
               _load();
+              _loadDrafts();
             },
             child: const Icon(Icons.add_rounded),
           ),
@@ -928,10 +1312,16 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
           );
           _load();
         },
-        onLongPress: () => _showVacantInfo(d, venueName, notReadyHere ? _notReady[venueId] : null),
+        onLongPress: () => _showVacantInfo(
+          d,
+          venueName,
+          notReadyHere ? _notReady[venueId] : null,
+        ),
         child: Container(
           decoration: BoxDecoration(
-            color: notReadyHere ? _kTapeNotReadyColor : AppTheme.vacant.withValues(alpha: 0.16),
+            color: notReadyHere
+                ? _kTapeNotReadyColor
+                : AppTheme.vacant.withValues(alpha: 0.16),
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
               color: notReadyHere
@@ -955,8 +1345,12 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
     // applies to a stay's nights.
     bool sameEvent(List<EventBooking>? day) =>
         day != null && day.any((e) => e.id == ev.id);
-    final isRunStart = !sameEvent(venueDays?[_dateKey(d.subtract(const Duration(days: 1)))]);
-    final isRunEnd = !sameEvent(venueDays?[_dateKey(d.add(const Duration(days: 1)))]);
+    final isRunStart = !sameEvent(
+      venueDays?[_dateKey(d.subtract(const Duration(days: 1)))],
+    );
+    final isRunEnd = !sameEvent(
+      venueDays?[_dateKey(d.add(const Duration(days: 1)))],
+    );
 
     // Same flat-fill vocabulary as TapeChart's own [_Tile]: one solid colour,
     // an initial when there's room, no gradient or shadow doing the work
@@ -984,6 +1378,15 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
             left: isRunStart ? const Radius.circular(6) : Radius.zero,
             right: isRunEnd ? const Radius.circular(6) : Radius.zero,
           ),
+          // A search match is ringed; the one the arrows are on, heavier.
+          border: _hitIds.contains(ev.id)
+              ? Border.all(
+                  color: _activeHitId == ev.id
+                      ? AppTheme.heading
+                      : AppTheme.accent,
+                  width: _activeHitId == ev.id ? 2.4 : 1.6,
+                )
+              : null,
         ),
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -1004,14 +1407,23 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
   /// The touch equivalent of the web diary's own hover tooltip for an empty
   /// day — mirrors [TapeChart]'s own `_showNightInfo`, so a long-press on
   /// either chart opens the same family of dialog.
-  void _showVacantInfo(DateTime d, String venueName, ({String label, String note})? notReady) {
+  void _showVacantInfo(
+    DateTime d,
+    String venueName,
+    ({String label, String note})? notReady,
+  ) {
     final color = notReady != null ? _kTapeNotReadyColor : AppTheme.vacant;
     showDialog<void>(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: AppTheme.bg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rLarge)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.rLarge),
+        ),
+        insetPadding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s16,
+          vertical: AppTheme.s24,
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: Padding(
@@ -1022,24 +1434,60 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
               children: [
                 Row(
                   children: [
-                    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
                     const SizedBox(width: AppTheme.s8),
                     Text(
-                      notReady != null ? 'Vacant · ${notReady.label}' : 'Vacant',
-                      style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w700),
+                      notReady != null
+                          ? 'Vacant · ${notReady.label}'
+                          : 'Vacant',
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(venueName, style: const TextStyle(color: AppTheme.heading, fontSize: 17, fontWeight: FontWeight.w700)),
+                Text(
+                  venueName,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(formatDate(d), style: const TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(
+                  formatDate(d),
+                  style: const TextStyle(
+                    color: AppTheme.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 if (notReady != null && notReady.note.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(notReady.note, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+                  Text(
+                    notReady.note,
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 12.5,
+                    ),
+                  ),
                 ],
                 const SizedBox(height: AppTheme.s16),
-                const Text('Tap to book a function on this day', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                const Text(
+                  'Tap to book a function on this day',
+                  style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                ),
               ],
             ),
           ),
@@ -1057,8 +1505,13 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
       context: context,
       builder: (_) => Dialog(
         backgroundColor: AppTheme.bg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rLarge)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: AppTheme.s16, vertical: AppTheme.s24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.rLarge),
+        ),
+        insetPadding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.s16,
+          vertical: AppTheme.s24,
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: Padding(
@@ -1069,18 +1522,35 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
               children: [
                 Row(
                   children: [
-                    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
                     const SizedBox(width: AppTheme.s8),
                     Text(
                       kEventStatusLabel[ev.status] ?? ev.status,
-                      style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  ev.title.isEmpty ? (kEventTypeLabel[ev.eventType] ?? ev.eventType) : ev.title,
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 17, fontWeight: FontWeight.w700),
+                  ev.title.isEmpty
+                      ? (kEventTypeLabel[ev.eventType] ?? ev.eventType)
+                      : ev.title,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -1090,14 +1560,27 @@ class _EventsDiaryPanelState extends ConsumerState<EventsDiaryPanel> {
                 const SizedBox(height: 6),
                 Text(
                   '${formatDateTime(ev.startAt)} – ${formatTimeOfDay(ev.endAt)}',
-                  style: const TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    color: AppTheme.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 if (ev.organiserName.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(ev.organiserName, style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+                  Text(
+                    ev.organiserName,
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 12.5,
+                    ),
+                  ),
                 ],
                 const SizedBox(height: AppTheme.s16),
-                const Text('Tap to open the full function detail', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                const Text(
+                  'Tap to open the full function detail',
+                  style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                ),
               ],
             ),
           ),
@@ -1219,6 +1702,7 @@ class _LegendChip extends StatelessWidget {
   final String label;
   final bool outlined;
   final VoidCallback? onTap;
+
   /// Overrides [color] for the label text — needed for statuses like
   /// CANCELLED whose swatch colour is too pale on white to read as text,
   /// the same split the web legend makes (swatch keeps the status hue,

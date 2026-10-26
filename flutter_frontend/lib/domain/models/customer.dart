@@ -75,10 +75,15 @@ class CustomerHistoryItem {
   final String? status;
   final num amount;
 
+  /// The stay's booking number (SKR2610001) or the function's event number
+  /// (E-SKR2610001) — null on one taken before numbering existed.
+  final String? bookingNumber;
+
   const CustomerHistoryItem({
     this.date,
     required this.label,
     required this.type,
+    this.bookingNumber,
     this.status,
     this.amount = 0,
   });
@@ -88,6 +93,7 @@ class CustomerHistoryItem {
         date: asStringOrNull(json['date']),
         label: json['label']?.toString() ?? '',
         type: json['type']?.toString() ?? '',
+        bookingNumber: asStringOrNull(json['bookingNumber']),
         status: asStringOrNull(json['status']),
         amount: asNum(json['amount']),
       );

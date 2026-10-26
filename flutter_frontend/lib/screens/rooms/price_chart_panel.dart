@@ -502,6 +502,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
   final _name = TextEditingController();
   final _amount = TextEditingController();
   int? _editingId;
+  int? _hiddenWhenChargeId;
   String? _error;
   bool _formOpen = false;
 
@@ -518,6 +519,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
       _formOpen = true;
       _name.text = c.name;
       _amount.text = '${c.chargePerNight}';
+      _hiddenWhenChargeId = c.hiddenWhenChargeId;
       _error = null;
     });
   }
@@ -528,6 +530,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
       _formOpen = false;
       _name.clear();
       _amount.clear();
+      _hiddenWhenChargeId = null;
       _error = null;
     });
   }
@@ -543,7 +546,12 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
       return;
     }
     final vm = ref.read(roomsViewModelProvider.notifier);
-    final ok = await vm.saveSwitchableCharge(id: _editingId, name: _name.text.trim(), chargePerNight: amount);
+    final ok = await vm.saveSwitchableCharge(
+      id: _editingId,
+      name: _name.text.trim(),
+      chargePerNight: amount,
+      hiddenWhenChargeId: _hiddenWhenChargeId,
+    );
     if (!mounted) return;
     if (ok) {
       _cancelEdit();
@@ -560,9 +568,22 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
     if (!ok) _say(context, ref.read(roomsViewModelProvider).error ?? 'Could not update this extra.');
   }
 
+  /// " · hidden when AC is ticked" — the one-way rule, named on the row.
+  String _hiddenNote(SwitchableChargeListing c) {
+    if (c.hiddenWhenChargeId == null) return '';
+    String? other;
+    for (final o in widget.charges) {
+      if (o.id == c.hiddenWhenChargeId) other = o.name;
+    }
+    return ' · hidden when ${other ?? 'another extra'} is ticked';
+  }
+
   @override
   Widget build(BuildContext context) {
     final submitting = ref.watch(roomsViewModelProvider).submitting;
+    final hideChoices = widget.charges
+        .where((c) => c.isActive && c.id != _editingId)
+        .toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -571,7 +592,7 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
             icon: Icons.local_offer_outlined,
             name: c.name,
             isActive: c.isActive,
-            value: '${formatPrice(c.chargePerNight)}/night',
+            value: '${formatPrice(c.chargePerNight)}/night${_hiddenNote(c)}',
             onEdit: () => _edit(c),
             onDelete: () => _delete(c),
           ),
@@ -606,6 +627,38 @@ class _ChargesSectionState extends ConsumerState<_ChargesSection> {
               ),
             ],
           ),
+          if (hideChoices.isNotEmpty) ...[
+            const SizedBox(height: AppTheme.s8),
+            const Text(
+              'Hide this extra when… (optional)',
+              style: TextStyle(color: AppTheme.muted, fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: AppTheme.s4),
+            NeuPressed(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 3),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int?>(
+                  value: hideChoices.any((c) => c.id == _hiddenWhenChargeId) ? _hiddenWhenChargeId : null,
+                  isExpanded: true,
+                  dropdownColor: AppTheme.card,
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.muted),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('Never hide', style: TextStyle(fontSize: 13.5)),
+                    ),
+                    for (final c in hideChoices)
+                      DropdownMenuItem<int?>(
+                        value: c.id,
+                        child: Text('${c.name} is ticked', style: const TextStyle(fontSize: 13.5)),
+                      ),
+                  ],
+                  onChanged: (id) => setState(() => _hiddenWhenChargeId = id),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: AppTheme.s8),
           Row(
             children: [

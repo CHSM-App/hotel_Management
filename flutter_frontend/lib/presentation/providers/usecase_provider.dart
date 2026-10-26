@@ -5,6 +5,7 @@ import '../../domain/usecase/auth_usecase.dart';
 import '../../domain/usecase/booking_usecase.dart';
 import '../../domain/usecase/billing_usecase.dart';
 import '../../domain/usecase/customers_usecase.dart';
+import '../../domain/usecase/enquiries_usecase.dart';
 import '../../domain/usecase/events_usecase.dart';
 import '../../domain/usecase/expenses_usecase.dart';
 import '../../domain/usecase/food_setup_usecase.dart';
@@ -65,6 +66,10 @@ final incomeUsecaseProvider = Provider<IncomeUsecase>(
 
 final staffUsecaseProvider = Provider<StaffUsecase>(
   (ref) => StaffUsecase(ref.watch(staffRepositoryProvider)),
+);
+
+final enquiriesUsecaseProvider = Provider<EnquiriesUsecase>(
+  (ref) => EnquiriesUsecase(ref.watch(enquiriesRepositoryProvider)),
 );
 
 final customersUsecaseProvider = Provider<CustomersUsecase>(

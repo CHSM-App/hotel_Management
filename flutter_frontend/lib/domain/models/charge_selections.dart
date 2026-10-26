@@ -1,4 +1,5 @@
 import 'draft.dart';
+import 'room.dart' show SwitchableCharge;
 
 /// Pure helpers over a room's `chargeId -> ExtraDraft` selections — shared by
 /// room 1 (still [BookingState.extras]) and every [ExtraRoomDraft], so the
@@ -33,16 +34,35 @@ class ChargeSelections {
   /// boundary (see json.dart's asInt/asIntOrNull), so this is plain equality.
   static bool sameCharge(int a, int b) => a == b;
 
+  /// An extra with a hiddenWhenChargeId is hidden while that other extra is
+  /// ticked (Extra Person Non AC disappears once AC is ticked); unticking
+  /// brings it back.
+  static bool isHiddenExtra(
+    Map<int, ExtraDraft> extras,
+    SwitchableCharge charge,
+  ) =>
+      charge.hiddenWhenChargeId != null &&
+      extras.containsKey(charge.hiddenWhenChargeId);
+
+  /// [charges] is optional: pass the list the form renders and any extra the
+  /// new tick has just hidden is dropped, so a hidden extra is never still
+  /// booked.
   static Map<int, ExtraDraft> toggleSelection(
     Map<int, ExtraDraft> extras,
     int chargeId,
-    bool on,
-  ) {
+    bool on, [
+    List<SwitchableCharge> charges = const [],
+  ]) {
     final next = Map<int, ExtraDraft>.from(extras);
     if (on) {
       next[chargeId] = ExtraDraft();
     } else {
       next.remove(chargeId);
+    }
+    for (final charge in charges) {
+      if (next.containsKey(charge.id) && isHiddenExtra(next, charge)) {
+        next.remove(charge.id);
+      }
     }
     return next;
   }

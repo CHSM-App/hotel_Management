@@ -7,6 +7,10 @@ import 'json.dart';
 /// endpoint does, and both decode through this class.
 class Booking {
   final int id;
+
+  /// The stay's own number — hotel code, year, month and a running count
+  /// (SKR2610001). Null on a stay taken before numbering existed.
+  final String? bookingNumber;
   final int? roomId;
   final String? roomNumber;
 
@@ -136,6 +140,7 @@ class Booking {
 
   const Booking({
     required this.id,
+    this.bookingNumber,
     this.roomId,
     this.roomNumber,
     this.bedId,
@@ -191,6 +196,7 @@ class Booking {
     // bookings.id and rooms.id are BIGINTs and arrive as strings, while
     // num_guests is an INT and arrives as a number — see json.dart.
     id: asInt(json['id']),
+    bookingNumber: asStringOrNull(json['bookingNumber']),
     roomId: asIntOrNull(json['roomId']),
     roomNumber: asStringOrNull(json['roomNumber']),
     bedId: asIntOrNull(json['bedId']),

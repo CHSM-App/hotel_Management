@@ -105,6 +105,7 @@ class TapeChartBooking {
   final String? guestPhone;
   final String? idProofNumber;
   final String? invoiceNumber;
+  final String? bookingNumber;
   final List<String> coGuestNames;
   final List<String> coGuestIdNumbers;
   final String? checkInDate;
@@ -123,6 +124,7 @@ class TapeChartBooking {
     this.guestPhone,
     this.idProofNumber,
     this.invoiceNumber,
+    this.bookingNumber,
     this.coGuestNames = const [],
     this.coGuestIdNumbers = const [],
     this.checkInDate,
@@ -143,6 +145,7 @@ class TapeChartBooking {
         guestPhone: asStringOrNull(json['guestPhone']),
         idProofNumber: asStringOrNull(json['idProofNumber']),
         invoiceNumber: asStringOrNull(json['invoiceNumber']),
+        bookingNumber: asStringOrNull(json['bookingNumber']),
         coGuestNames: _stringList(json['coGuestNames']),
         coGuestIdNumbers: _stringList(json['coGuestIdNumbers']),
         checkInDate: asStringOrNull(json['checkInDate']),
@@ -161,6 +164,7 @@ class TapeChartBooking {
     guestName,
     guestPhone,
     invoiceNumber,
+    bookingNumber,
     idProofNumber,
     ...coGuestNames,
     ...coGuestIdNumbers,

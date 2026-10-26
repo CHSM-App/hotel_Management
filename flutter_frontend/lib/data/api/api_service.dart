@@ -9,6 +9,7 @@ import '../../domain/models/category.dart';
 import '../../domain/models/checkout_policy.dart';
 import '../../domain/models/customer.dart';
 import '../../domain/models/draft.dart';
+import '../../domain/models/enquiry.dart';
 import '../../domain/models/event_booking.dart';
 import '../../domain/models/expense.dart';
 import '../../domain/models/food_order.dart';
@@ -1243,10 +1244,15 @@ class ApiService {
   Future<void> createSwitchableCharge({
     required String name,
     required num chargePerNight,
+    int? hiddenWhenChargeId,
   }) async {
     await _dio.post(
       '/switchable-charges',
-      data: {'name': name, 'chargePerNight': chargePerNight},
+      data: {
+        'name': name,
+        'chargePerNight': chargePerNight,
+        'hiddenWhenChargeId': hiddenWhenChargeId,
+      },
     );
   }
 
@@ -1254,10 +1260,16 @@ class ApiService {
     int id, {
     required String name,
     required num chargePerNight,
+    int? hiddenWhenChargeId,
   }) async {
     await _dio.patch(
       '/switchable-charges/$id',
-      data: {'name': name, 'chargePerNight': chargePerNight},
+      // null is "Never hide" and clears the rule.
+      data: {
+        'name': name,
+        'chargePerNight': chargePerNight,
+        'hiddenWhenChargeId': hiddenWhenChargeId,
+      },
     );
   }
 
@@ -1327,6 +1339,8 @@ class ApiService {
   Future<CheckoutPolicy> updateCheckoutPolicy({
     required String checkOutTime,
     String? checkInTime,
+    String? earlyArrivalFrom,
+    bool sendEarlyArrivalFrom = false,
     required int lateGraceMinutes,
     required num lateHalfDayPercent,
     required int lateFullDayAfterMinutes,
@@ -1337,6 +1351,8 @@ class ApiService {
       data: {
         'checkOutTime': checkOutTime,
         if (checkInTime != null) 'checkInTime': checkInTime,
+        // HYBRID only: null clears it ("any time before check-in").
+        if (sendEarlyArrivalFrom) 'earlyArrivalFrom': earlyArrivalFrom,
         'lateGraceMinutes': lateGraceMinutes,
         'lateHalfDayPercent': lateHalfDayPercent,
         'lateFullDayAfterMinutes': lateFullDayAfterMinutes,
@@ -2317,6 +2333,30 @@ class ApiService {
 
   Future<void> deleteRole(String roleKey) async {
     await _dio.delete('/roles/$roleKey');
+  }
+
+  // ===== ENQUIRIES (enquiries.manage) =====
+
+  /// Everything guests have sent from the public page in the last 30 days,
+  /// newest first.
+  Future<List<Enquiry>> enquiries() async {
+    final res = await _dio.get('/enquiries');
+    return (_map(res.data)['enquiries'] as List? ?? [])
+        .map((e) => Enquiry.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// The NEW ones only, newest first and capped — what the alert bell polls.
+  Future<List<EnquiryAlertItem>> newEnquiries() async {
+    final res = await _dio.get('/enquiries/summary');
+    return (_map(res.data)['items'] as List? ?? [])
+        .map((e) => EnquiryAlertItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Enquiry> updateEnquiryStatus(int id, String status) async {
+    final res = await _dio.patch('/enquiries/$id', data: {'status': status});
+    return Enquiry.fromJson(_map(res.data)['enquiry'] as Map<String, dynamic>);
   }
 
   // ===== CUSTOMERS (customers.manage) =====

@@ -149,13 +149,34 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
   }
 
   void _toggleCharge(_SimRoom sim, int chargeId) {
+    final all = ref.read(roomsViewModelProvider).switchableCharges;
     setState(() {
       final existing = _quantityOf(sim, chargeId);
-      sim.charges = existing != null
+      var next = existing != null
           ? sim.charges.where((c) => c.id != chargeId).toList()
           : [...sim.charges, _SimCharge(chargeId, 1)];
+      // A tick can hide another extra (hiddenWhenChargeId) — drop it so a
+      // hidden extra is never still priced.
+      next = [
+        for (final c in next)
+          if (!_hiddenBy(all, next, c.id)) c,
+      ];
+      sim.charges = next;
     });
     _runQuote(sim);
+  }
+
+  static bool _hiddenBy(
+    List<SwitchableChargeListing> all,
+    List<_SimCharge> selected,
+    int chargeId,
+  ) {
+    for (final charge in all) {
+      if (charge.id == chargeId && charge.hiddenWhenChargeId != null) {
+        return selected.any((s) => s.id == charge.hiddenWhenChargeId);
+      }
+    }
+    return false;
   }
 
   void _setChargeQuantity(_SimRoom sim, int chargeId, int quantity) {
@@ -496,7 +517,10 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
           Wrap(
             spacing: AppTheme.s8,
             runSpacing: AppTheme.s8,
-            children: [for (final charge in activeCharges) _chargeChip(sim, charge)],
+            children: [
+              for (final charge in activeCharges)
+                if (!_hiddenBy(activeCharges, sim.charges, charge.id)) _chargeChip(sim, charge),
+            ],
           ),
         ],
 

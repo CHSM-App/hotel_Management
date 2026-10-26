@@ -78,11 +78,17 @@ class SwitchableCharge {
   /// a plain on/off.
   final bool isCounter;
 
+  /// Not offered (and can't be booked) while the extra with this id is ticked
+  /// on the same booking — a one-way rule, e.g. "Extra Person Non AC" hidden
+  /// when "AC" is on. Null means never hidden by another extra.
+  final int? hiddenWhenChargeId;
+
   const SwitchableCharge({
     required this.id,
     required this.name,
     required this.chargePerNight,
     this.isCounter = false,
+    this.hiddenWhenChargeId,
   });
 
   factory SwitchableCharge.fromJson(Map<String, dynamic> json) =>
@@ -91,6 +97,7 @@ class SwitchableCharge {
         name: json['name']?.toString() ?? '',
         chargePerNight: asNum(json['chargePerNight']),
         isCounter: asBool(json['isCounter']),
+        hiddenWhenChargeId: asIntOrNull(json['hiddenWhenChargeId']),
       );
 }
 

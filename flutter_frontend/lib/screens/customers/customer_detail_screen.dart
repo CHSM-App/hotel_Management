@@ -461,6 +461,13 @@ class _HistoryRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(item.label, style: Theme.of(context).textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                if (item.bookingNumber != null)
+                  Text(
+                    item.bookingNumber!,
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 const SizedBox(height: 3),
                 Wrap(
                   spacing: AppTheme.s8,

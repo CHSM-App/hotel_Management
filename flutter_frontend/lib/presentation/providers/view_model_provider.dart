@@ -5,6 +5,7 @@ import '../view_models/auth_viewmodel.dart';
 import '../view_models/booking_viewmodel.dart';
 import '../view_models/billing_viewmodel.dart';
 import '../view_models/customers_viewmodel.dart';
+import '../view_models/enquiries_viewmodel.dart';
 import '../view_models/events_viewmodel.dart';
 import '../view_models/expenses_viewmodel.dart';
 import '../view_models/food_settings_viewmodel.dart';
@@ -132,6 +133,14 @@ final staffViewModelProvider =
       (ref) => StaffViewModel(ref.watch(staffUsecaseProvider)),
     );
 
+/// Enquiries inbox. Behind its own section — autoDispose so a login that never
+/// opens it never keeps the list warm. The alert bell polls through
+/// [staffAlertsViewModelProvider], not this.
+final enquiriesViewModelProvider =
+    StateNotifierProvider.autoDispose<EnquiriesViewModel, EnquiriesState>(
+      (ref) => EnquiriesViewModel(ref.watch(enquiriesUsecaseProvider)),
+    );
+
 /// Customers list + profile. Behind its own section — autoDispose so a login
 /// that never opens it never keeps the customer list warm for the life of
 /// the app.
@@ -173,5 +182,6 @@ final staffAlertsViewModelProvider =
         ref.watch(assetsUsecaseProvider),
         ref.watch(ordersUsecaseProvider),
         ref.watch(housekeepingUsecaseProvider),
+        ref.watch(enquiriesUsecaseProvider),
       ),
     );

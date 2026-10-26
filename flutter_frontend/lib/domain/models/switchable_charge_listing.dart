@@ -10,12 +10,16 @@ class SwitchableChargeListing {
   final bool isActive;
   final bool isCounter;
 
+  /// Hidden from booking while the extra with this id is ticked; null = never.
+  final int? hiddenWhenChargeId;
+
   const SwitchableChargeListing({
     required this.id,
     required this.name,
     required this.chargePerNight,
     required this.isActive,
     this.isCounter = false,
+    this.hiddenWhenChargeId,
   });
 
   factory SwitchableChargeListing.fromJson(Map<String, dynamic> json) =>
@@ -25,5 +29,6 @@ class SwitchableChargeListing {
         chargePerNight: asNum(json['chargePerNight']),
         isActive: asBool(json['isActive']),
         isCounter: asBool(json['isCounter']),
+        hiddenWhenChargeId: asIntOrNull(json['hiddenWhenChargeId']),
       );
 }
