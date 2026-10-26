@@ -33,22 +33,23 @@ class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
   // The status filter's own door — a funnel icon beside the search box that
   // folds the status chips open directly underneath, same as the Guest
   // register screen (register_screen.dart)'s own _FilterButton/_StatusChips.
-  bool _filterOpen = false;
-  final LayerLink _filterLink = LayerLink();
-  final OverlayPortalController _filterPortalController = OverlayPortalController();
+  Map<String, int> _counts = const {};
 
-  void _toggleFilterOpen() {
-    setState(() => _filterOpen = !_filterOpen);
-    if (_filterOpen) {
-      _filterPortalController.show();
-    } else {
-      _filterPortalController.hide();
-    }
-  }
+  Future<void> _openFilter() => showNeuFilterSheet(
+    context,
+    (close) => _UsageFilterChips(
+      selected: _filter,
+      counts: _counts,
+      onSelect: (v) {
+        _selectFilter(v);
+        close();
+      },
+    ),
+    onReset: () => setState(() => _filter = 'ALL'),
+  );
 
   void _selectFilter(String key) {
     setState(() => _filter = key);
-    _toggleFilterOpen();
   }
 
   @override
@@ -75,7 +76,7 @@ class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
                 (u.roomNumber ?? '').toLowerCase().contains(needle))
             .toList();
 
-    final counts = {
+    _counts = {
       'ALL': searched.length,
       'IN_USE': searched.where((u) => u.status == 'IN_USE').length,
       'COMPLETED': searched.where((u) => u.status == 'COMPLETED').length,
@@ -107,44 +108,10 @@ class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
-                  CompositedTransformTarget(
-                    link: _filterLink,
-                    child: OverlayPortal(
-                      controller: _filterPortalController,
-                      overlayChildBuilder: (context) => Stack(
-                        children: [
-                          Positioned.fill(
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onTap: _toggleFilterOpen,
-                            ),
-                          ),
-                          CompositedTransformFollower(
-                            link: _filterLink,
-                            showWhenUnlinked: false,
-                            targetAnchor: Alignment.bottomRight,
-                            followerAnchor: Alignment.topRight,
-                            offset: const Offset(0, AppTheme.s8),
-                            child: Align(
-                              alignment: Alignment.topRight,
-                              child: Material(
-                                color: Colors.transparent,
-                                child: _UsageFilterChips(
-                                  selected: _filter,
-                                  counts: counts,
-                                  onSelect: _selectFilter,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      child: _FilterButton(
-                        on: _filter != 'ALL',
-                        open: _filterOpen,
-                        onTap: _toggleFilterOpen,
-                      ),
-                    ),
+                  _FilterButton(
+                    on: _filter != 'ALL',
+                    open: false,
+                    onTap: _openFilter,
                   ),
                 ],
               ),

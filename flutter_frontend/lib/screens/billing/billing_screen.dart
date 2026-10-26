@@ -131,6 +131,15 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         view: _view,
         onViewChanged: (v) => setState(() => _view = v),
         onSearchChanged: () => setState(() {}),
+        filterMulti: tab == _BillingTab.issued,
+        onFilterReset: () {
+          setState(() {
+            _stayFilter = 'all';
+            _billFilter = 'all';
+            _serviceFilter = 'all';
+          });
+          _applyDatePreset('all');
+        },
         filterActive: switch (tab) {
           _BillingTab.services => _serviceFilter != 'all',
           _BillingTab.issued => _billFilter != 'all' || _dateFilterKey != 'all',
@@ -1881,6 +1890,12 @@ class BillingSearchAndViewToggle extends StatefulWidget {
   final bool filterActive;
   final Widget Function(VoidCallback close)? filterPanelBuilder;
 
+  /// Clears every filter on the list; shows Reset in the filter sheet.
+  final VoidCallback? onFilterReset;
+
+  /// The filter panel has more than one group (see [showNeuFilterSheet]).
+  final bool filterMulti;
+
   const BillingSearchAndViewToggle({
     super.key,
     required this.controller,
@@ -1890,6 +1905,8 @@ class BillingSearchAndViewToggle extends StatefulWidget {
     this.hint = 'Search guest, room, bill no.',
     this.filterActive = false,
     this.filterPanelBuilder,
+    this.onFilterReset,
+    this.filterMulti = false,
   });
 
   @override
@@ -1900,15 +1917,10 @@ class BillingSearchAndViewToggle extends StatefulWidget {
 class _BillingSearchAndViewToggleState
     extends State<BillingSearchAndViewToggle> {
   final _focus = FocusNode();
-  final _filterKey = GlobalKey();
-  final _filterPortal = OverlayPortalController();
 
-  // NeuFilterPanel's own fixed width.
-  static const _kFilterPanelWidth = 214.0;
-
-  void _toggleFilter() {
-    _filterPortal.toggle();
-    setState(() {});
+  Future<void> _openFilter() async {
+    await showNeuFilterSheet(context, widget.filterPanelBuilder!, onReset: widget.onFilterReset, multi: widget.filterMulti);
+    if (mounted) setState(() {});
   }
 
   @override
@@ -2022,56 +2034,12 @@ class _BillingSearchAndViewToggleState
         Expanded(child: field),
         const SizedBox(width: AppTheme.s8),
         if (widget.filterPanelBuilder != null) ...[
-          OverlayPortal(
-            controller: _filterPortal,
-            overlayChildBuilder: (overlayContext) {
-              // Hang the panel under the icon's right edge, but slide it
-              // back inside the screen — on a narrow phone the icon sits
-              // too far left for a right-aligned panel to fit.
-              final box =
-                  _filterKey.currentContext?.findRenderObject() as RenderBox?;
-              final screen = MediaQuery.of(overlayContext).size;
-              const margin = AppTheme.s8;
-              var left = margin;
-              var top = 0.0;
-              if (box != null && box.attached) {
-                final origin = box.localToGlobal(Offset.zero);
-                left = (origin.dx + box.size.width - _kFilterPanelWidth).clamp(
-                  margin,
-                  (screen.width - _kFilterPanelWidth - margin).clamp(
-                    margin,
-                    double.infinity,
-                  ),
-                );
-                top = origin.dy + box.size.height + AppTheme.s8;
-              }
-              return Stack(
-                children: [
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: _toggleFilter,
-                    ),
-                  ),
-                  Positioned(
-                    left: left,
-                    top: top,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: widget.filterPanelBuilder!(_toggleFilter),
-                    ),
-                  ),
-                ],
-              );
-            },
-            child: GestureDetector(
-              key: _filterKey,
-              onTap: _toggleFilter,
-              behavior: HitTestBehavior.opaque,
-              child: _iconButton(
-                Icons.filter_alt_rounded,
-                active: widget.filterActive,
-              ),
+          GestureDetector(
+            onTap: _openFilter,
+            behavior: HitTestBehavior.opaque,
+            child: _iconButton(
+              Icons.filter_alt_rounded,
+              active: widget.filterActive,
             ),
           ),
           const SizedBox(width: AppTheme.s8),
@@ -2094,7 +2062,12 @@ class _BillingSearchAndViewToggleState
   final today = DateTime(now.year, now.month, now.day);
   return switch (key) {
     'today' => (today, today),
+    'last7' => (today.subtract(const Duration(days: 6)), today),
     'month' => (DateTime(now.year, now.month, 1), today),
+    'lastMonth' => (
+      DateTime(now.year, now.month - 1, 1),
+      DateTime(now.year, now.month, 0),
+    ),
     'year' => (DateTime(now.year, 1, 1), today),
     _ => (null, null),
   };
@@ -2118,14 +2091,18 @@ bool matchesBillingDateRange(String? createdAt, DateTime? from, DateTime? to) {
 const kBillDatePresets = [
   ('all', 'All time'),
   ('today', 'Today'),
+  ('last7', 'Last 7 days'),
   ('month', 'This month'),
+  ('lastMonth', 'Last month'),
   ('year', 'This year'),
 ];
 
 const kBillDatePresetIcons = {
   'all': Icons.all_inclusive_rounded,
   'today': Icons.today_rounded,
+  'last7': Icons.date_range_rounded,
   'month': Icons.calendar_view_month_rounded,
+  'lastMonth': Icons.calendar_month_rounded,
   'year': Icons.event_rounded,
 };
 
@@ -2327,22 +2304,6 @@ class _BillFilterPanel extends StatelessWidget {
     required this.onDate,
   });
 
-  Widget _section(String text) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-    child: Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: AppTheme.muted,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.2,
-        ),
-      ),
-    ),
-  );
-
   @override
   Widget build(BuildContext context) {
     return NeuFilterPanel(
@@ -2356,7 +2317,7 @@ class _BillFilterPanel extends StatelessWidget {
             icon: e.value.icon,
             onTap: () => onKind(e.key),
           ),
-        _section('DATE'),
+        const NeuFilterSection('DATE'),
         for (final (key, label) in kBillDatePresets)
           NeuFilterRow(
             label: label,
@@ -3565,15 +3526,31 @@ class _InvoiceTableRow extends StatelessWidget {
                           _billSourceColor(source),
                         ),
                       ),
-                      'guest' => Text(
-                        guestOrTable,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppTheme.heading,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      'guest' => Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            guestOrTable,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.heading,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (document.bookingNumber != null)
+                            Text(
+                              document.bookingNumber!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 10.5,
+                              ),
+                            ),
+                        ],
                       ),
                       'room' => Text(
                         room,
@@ -3597,6 +3574,17 @@ class _InvoiceTableRow extends StatelessWidget {
                       'status' =>
                         document.isVoid
                             ? tag('Void', AppTheme.danger)
+                            : document.isCancelledAdvance
+                            ? Text(
+                                'Cancelled — ${document.settlementLabel}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppTheme.danger,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              )
                             : (document.dueAfter > 0
                                   ? Text(
                                       '${formatPrice(document.dueAfter)} due',

@@ -175,15 +175,38 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
+                  NeuFilterButton(
+                    onReset: () => ref.read(customersViewModelProvider.notifier).setOptedInOnly(false),
+                    active: state.optedInOnly,
+                    builder: (close) => NeuFilterPanel(
+                      title: 'MARKETING',
+                      children: [
+                        NeuFilterRow(
+                          label: 'All customers',
+                          count: state.customers.length,
+                          on: !state.optedInOnly,
+                          icon: Icons.people_alt_rounded,
+                          onTap: () {
+                            ref.read(customersViewModelProvider.notifier).setOptedInOnly(false);
+                            close();
+                          },
+                        ),
+                        NeuFilterRow(
+                          label: 'Opted in',
+                          count: state.customers.where((c) => c.marketingOptIn).length,
+                          on: state.optedInOnly,
+                          icon: Icons.campaign_rounded,
+                          onTap: () {
+                            ref.read(customersViewModelProvider.notifier).setOptedInOnly(true);
+                            close();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
                   _ViewToggleButton(view: view, onSelect: (v) => setState(() => _view = v)),
                 ],
-              ),
-              const SizedBox(height: AppTheme.s8),
-              _OptedInFilterChip(
-                selected: state.optedInOnly,
-                onTap: () => ref
-                    .read(customersViewModelProvider.notifier)
-                    .setOptedInOnly(!state.optedInOnly),
               ),
               const SizedBox(height: AppTheme.s8),
               if (filtered.isEmpty)
@@ -323,51 +346,6 @@ class _StatTile extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// A single tappable pill — whole row toggles the filter, not just a tiny
-/// checkbox target, and fills solid once active so "filtering" is visible at
-/// a glance rather than read off a small tick mark.
-class _OptedInFilterChip extends StatelessWidget {
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _OptedInFilterChip({required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 5),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.accent.withValues(alpha: 0.10) : AppTheme.card,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? AppTheme.accent.withValues(alpha: 0.4) : AppTheme.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-              size: 15,
-              color: selected ? AppTheme.accent : AppTheme.muted,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Opted in only',
-              style: TextStyle(
-                color: selected ? AppTheme.accent : AppTheme.text,
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

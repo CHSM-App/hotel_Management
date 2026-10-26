@@ -205,29 +205,32 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
                   ),
                 ),
                 const SizedBox(width: AppTheme.s8),
+                NeuFilterButton(
+                  onReset: () => setState(() => _filter = 'NEW'),
+                  active: _filter != 'NEW',
+                  builder: (close) => NeuFilterPanel(
+                    title: 'FILTER BY STATUS',
+                    children: [
+                      for (final f in _filters)
+                        NeuFilterRow(
+                          label: f == 'ALL' ? 'All' : _statusLabel[f]!,
+                          count: counts[f] ?? 0,
+                          on: _filter == f,
+                          icon: f == 'ALL' ? Icons.apps_rounded : Icons.mark_email_unread_rounded,
+                          onTap: () {
+                            setState(() => _filter = f);
+                            close();
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s8),
                 _ViewToggleButton(
                   view: view,
                   onSelect: (v) => setState(() => _view = v),
                 ),
               ],
-            ),
-            const SizedBox(height: AppTheme.s8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final f in _filters)
-                    Padding(
-                      padding: const EdgeInsets.only(right: AppTheme.s8),
-                      child: _FilterPill(
-                        label: f == 'ALL' ? 'All' : _statusLabel[f]!,
-                        count: counts[f] ?? 0,
-                        selected: _filter == f,
-                        onTap: () => setState(() => _filter = f),
-                      ),
-                    ),
-                ],
-              ),
             ),
             const SizedBox(height: AppTheme.s8),
             if (visible.isEmpty)
@@ -592,57 +595,6 @@ class _EnquiryTableRow extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _FilterPill extends StatelessWidget {
-  final String label;
-  final int count;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FilterPill({
-    required this.label,
-    required this.count,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.accent : AppTheme.card,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? Colors.white : AppTheme.text,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '$count',
-              style: TextStyle(
-                color: selected ? Colors.white70 : AppTheme.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

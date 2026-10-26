@@ -35,6 +35,43 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
   String? _fromDate;
   String? _toDate;
 
+  // Category / payment cuts, in the shared filter bottom sheet.
+  String? _category;
+  String? _method;
+  String? _payStatus;
+
+  // Category, payment method and payment status stay open so they can be
+  // combined; the date range lives in the From/To bar.
+  Widget _filterPanel(VoidCallback close, StateSetter setSheet, List<String> categories) {
+    void pick(VoidCallback change) {
+      setState(change);
+      setSheet(() {});
+    }
+
+    Widget group<T>(String title, String allLabel, T? current, Iterable<(T, String)> options, ValueChanged<T?> onPick) => NeuFilterPanel(
+      title: title,
+      children: [
+        NeuFilterRow(label: allLabel, on: current == null, icon: Icons.apps_rounded, onTap: () => pick(() => onPick(null))),
+        for (final (v, label) in options)
+          NeuFilterRow(label: label, on: current == v, icon: Icons.label_rounded, onTap: () => pick(() => onPick(v))),
+      ],
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (categories.isNotEmpty) ...[
+          group<String>('CATEGORY', 'All categories', _category, [for (final c in categories) (c, c)], (v) => _category = v),
+        ],
+        const SizedBox(height: AppTheme.s16),
+        group<String>('PAYMENT METHOD', 'All payment methods', _method, [for (final m in kPaymentMethods) (m, kPaymentMethodLabel[m] ?? m)], (v) => _method = v),
+        const SizedBox(height: AppTheme.s16),
+        group<String>('PAYMENT STATUS', 'All payment statuses', _payStatus, const [('PAID', 'Paid'), ('PARTIAL', 'Partially paid'), ('PENDING', 'Pending')], (v) => _payStatus = v),
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +121,9 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
     final needle = _search.text.trim().toLowerCase();
     final shown = [...state.expenses]
       ..removeWhere((e) =>
+          (_category != null && e.categoryName != _category) ||
+          (_method != null && e.paymentMethod != _method) ||
+          (_payStatus != null && e.paymentStatus != _payStatus) ||
           (_fromDate != null && e.expenseDate.compareTo(_fromDate!) < 0) ||
           (_toDate != null && e.expenseDate.compareTo(_toDate!) > 0) ||
           (needle.isNotEmpty &&
@@ -162,6 +202,19 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
                             ),
                         ],
                       ),
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  NeuFilterButton(
+                    multi: true,
+                    onReset: () => setState(() {
+                      _category = null;
+                      _method = null;
+                      _payStatus = null;
+                    }),
+                    active: _category != null || _method != null || _payStatus != null,
+                    builder: (close) => StatefulBuilder(
+                      builder: (context, setSheet) => _filterPanel(close, setSheet, {for (final e in state.expenses) e.categoryName}.where((n) => n.isNotEmpty).toList()..sort()),
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),

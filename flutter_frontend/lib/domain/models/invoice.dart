@@ -1274,6 +1274,13 @@ class AdvanceReceipt {
   final String? lodgeState;
   final String? lodgeLogoUrl;
 
+  /// Whether the stay or function behind this receipt was later cancelled —
+  /// the receipt itself stays ISSUED; [refundAmount] / [cancellationCharge]
+  /// say how the cancellation settled (both null when not yet settled).
+  final bool cancelled;
+  final num? refundAmount;
+  final num? cancellationCharge;
+
   const AdvanceReceipt({
     required this.id,
     this.receiptNumber,
@@ -1316,6 +1323,9 @@ class AdvanceReceipt {
     this.lodgeCity,
     this.lodgeState,
     this.lodgeLogoUrl,
+    this.cancelled = false,
+    this.refundAmount,
+    this.cancellationCharge,
   });
 
   factory AdvanceReceipt.fromJson(Map<String, dynamic> json) => AdvanceReceipt(
@@ -1364,7 +1374,22 @@ class AdvanceReceipt {
     lodgeCity: asStringOrNull(json['lodgeCity']),
     lodgeState: asStringOrNull(json['lodgeState']),
     lodgeLogoUrl: asStringOrNull(json['lodgeLogoUrl']),
+    cancelled: asBool(json['cancelled']),
+    refundAmount: json['refundAmount'] == null ? null : asNum(json['refundAmount']),
+    cancellationCharge: json['cancellationCharge'] == null
+        ? null
+        : asNum(json['cancellationCharge']),
   );
+
+  /// What a cancelled subject's advance settled to — same wording as the
+  /// web's advanceSettlementLabel().
+  String get settlementLabel {
+    if ((cancellationCharge ?? 0) > 0) return '${_rupees(cancellationCharge!)} kept';
+    if ((refundAmount ?? 0) > 0) return '${_rupees(refundAmount!)} refunded';
+    return 'not settled';
+  }
+
+  static String _rupees(num n) => '₹${n.toStringAsFixed(n % 1 == 0 ? 0 : 2)}';
 
   /// A function's advance — checked off [kind] where the server sent one;
   /// [eventBookingId] is the fallback for a cached object from before [kind]
@@ -1437,6 +1462,10 @@ class BillDocument {
   /// non-zero for a receipt; an issued invoice is itself the document that
   /// settles the balance, so it never carries one of its own.
   num get dueAfter => isReceipt ? receipt!.balanceDue : 0;
+
+  /// An advance whose stay/function was later cancelled — web's `inv.cancelled`.
+  bool get isCancelledAdvance => isReceipt && receipt!.cancelled;
+  String get settlementLabel => isReceipt ? receipt!.settlementLabel : '';
 
   /// Same split [BillingScreen] and [EventBillingScreen] key their own
   /// stream off of — an EVENT invoice, or a receipt taken against a

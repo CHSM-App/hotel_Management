@@ -153,22 +153,100 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   void _clearStatuses() => setState(_statuses.clear);
 
-  /// The status cut, behind its own icon rather than sitting permanently on
-  /// screen — folds open right under the search bar rather than in a sheet,
-  /// so choosing a chip and seeing the list answer it happen in the same
-  /// place, one tap apart.
-  bool _filterOpen = false;
-  final LayerLink _filterLink = LayerLink();
-  final OverlayPortalController _filterPortalController =
-      OverlayPortalController();
+  /// Quick date ranges for the filter sheet: key, label, and the From/To
+  /// they stand for as of today.
+  static const _kRangePresets = [
+    ('today', 'Today'),
+    ('last7', 'Last 7 days'),
+    ('month', 'This month'),
+    ('lastMonth', 'Last month'),
+  ];
 
-  void _toggleFilterOpen() {
-    setState(() => _filterOpen = !_filterOpen);
-    if (_filterOpen) {
-      _filterPortalController.show();
-    } else {
-      _filterPortalController.hide();
-    }
+  static (String, String) _presetRange(String key) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return switch (key) {
+      'today' => (_iso(today), _iso(today)),
+      'last7' => (_iso(today.subtract(const Duration(days: 6))), _iso(today)),
+      'lastMonth' => (
+        _iso(DateTime(now.year, now.month - 1, 1)),
+        _iso(DateTime(now.year, now.month, 0)),
+      ),
+      _ => (_iso(DateTime(now.year, now.month, 1)), _iso(today)),
+    };
+  }
+
+  /// The date shortcuts and the status cut, in one bottom sheet behind the
+  /// funnel icon. Statuses are multi-select, so the sheet stays open and
+  /// rebuilds itself as they toggle; a date shortcut applies and closes.
+  Future<void> _openFilter() {
+    return showNeuFilterSheet(
+      context,
+      multi: true,
+      (close) => StatefulBuilder(
+        builder: (context, setSheet) {
+          final counts = <String, int>{};
+          for (final b in _searched) {
+            counts[b.status ?? ''] = (counts[b.status ?? ''] ?? 0) + 1;
+          }
+          counts['DRAFT'] = _searchedDrafts.length;
+          return NeuFilterPanel(
+            title: 'DATE',
+            children: [
+              for (final (key, label) in _kRangePresets)
+                NeuFilterRow(
+                  label: label,
+                  on: (_presetRange(key) == (_fromDate, _toDate)),
+                  icon: Icons.event_rounded,
+                  onTap: () {
+                    final (from, to) = _presetRange(key);
+                    _setRange(from, to);
+                    close();
+                  },
+                ),
+              const NeuFilterSection('STATUS'),
+              NeuFilterRow(
+                label: 'All',
+                count: _searched.length + _searchedDrafts.length,
+                on: _statuses.isEmpty,
+                icon: Icons.apps_rounded,
+                onTap: () {
+                  _clearStatuses();
+                  setSheet(() {});
+                },
+              ),
+              for (final key in _kStatusOrder)
+                NeuFilterRow(
+                  label: kRegisterStatusLabel[key]!,
+                  count: counts[key] ?? 0,
+                  on: _statuses.contains(key),
+                  color: BookingActions.statusColor(key),
+                  icon: _kStatusIcon[key]!,
+                  onTap: () {
+                    _toggleStatus(key);
+                    setSheet(() {});
+                  },
+                ),
+              NeuFilterRow(
+                label: 'Draft',
+                count: counts['DRAFT'] ?? 0,
+                on: _statuses.contains('DRAFT'),
+                color: AppTheme.draft,
+                icon: Icons.edit_note_rounded,
+                onTap: () {
+                  _toggleStatus('DRAFT');
+                  setSheet(() {});
+                },
+              ),
+            ],
+          );
+        },
+      ),
+      onReset: () {
+        _clearStatuses();
+        _setRange(_startOfMonth(), _today());
+      },
+    );
   }
 
   List<Booking> get _searched {
@@ -211,11 +289,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
-    final counts = <String, int>{};
-    for (final b in _searched) {
-      counts[b.status ?? ''] = (counts[b.status ?? ''] ?? 0) + 1;
-    }
-    counts['DRAFT'] = _searchedDrafts.length;
     final showingStays =
         _statuses.isEmpty || _statuses.any((s) => s != 'DRAFT');
     final visibleBookings = showingStays ? filtered : const <Booking>[];
@@ -239,48 +312,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             searchController: _searchController,
             searchNotEmpty: _search.isNotEmpty,
             activeFilterCount: _statuses.length,
-            filterOpen: _filterOpen,
-            filterLink: _filterLink,
-            filterPortalController: _filterPortalController,
-            filterOverlayBuilder: (context) => Stack(
-              children: [
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: _toggleFilterOpen,
-                  ),
-                ),
-                CompositedTransformFollower(
-                  link: _filterLink,
-                  showWhenUnlinked: false,
-                  targetAnchor: Alignment.bottomRight,
-                  followerAnchor: Alignment.topRight,
-                  offset: const Offset(0, AppTheme.s8),
-                  child: Align(
-                    alignment: Alignment.topRight,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: _StatusChips(
-                        selected: _statuses,
-                        counts: counts,
-                        allCount: _searched.length + _searchedDrafts.length,
-                        onToggle: (key) {
-                          _toggleStatus(key);
-                          _toggleFilterOpen();
-                        },
-                        onClearAll: () {
-                          _clearStatuses();
-                          _toggleFilterOpen();
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
             onFromTo: _setRange,
             onSearch: (v) => setState(() => _search = v),
-            onToggleFilter: _toggleFilterOpen,
+            onToggleFilter: _openFilter,
           ),
           const SizedBox(height: AppTheme.s16),
           if (_loading)
@@ -363,10 +397,6 @@ class _RangeAndSearch extends StatelessWidget {
   final TextEditingController searchController;
   final bool searchNotEmpty;
   final int activeFilterCount;
-  final bool filterOpen;
-  final LayerLink filterLink;
-  final OverlayPortalController filterPortalController;
-  final WidgetBuilder filterOverlayBuilder;
   final void Function(String from, String to) onFromTo;
   final ValueChanged<String> onSearch;
   final VoidCallback onToggleFilter;
@@ -376,11 +406,7 @@ class _RangeAndSearch extends StatelessWidget {
     required this.toDate,
     required this.searchController,
     required this.searchNotEmpty,
-    required this.filterLink,
-    required this.filterPortalController,
-    required this.filterOverlayBuilder,
     required this.activeFilterCount,
-    required this.filterOpen,
     required this.onFromTo,
     required this.onSearch,
     required this.onToggleFilter,
@@ -490,18 +516,7 @@ class _RangeAndSearch extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppTheme.s8),
-            CompositedTransformTarget(
-              link: filterLink,
-              child: OverlayPortal(
-                controller: filterPortalController,
-                overlayChildBuilder: filterOverlayBuilder,
-                child: _FilterButton(
-                  count: activeFilterCount,
-                  open: filterOpen,
-                  onTap: onToggleFilter,
-                ),
-              ),
-            ),
+            _FilterButton(count: activeFilterCount, onTap: onToggleFilter),
           ],
         ),
       ],
@@ -516,18 +531,13 @@ class _RangeAndSearch extends StatelessWidget {
 /// sheet over the rest of the screen.
 class _FilterButton extends StatelessWidget {
   final int count;
-  final bool open;
   final VoidCallback onTap;
 
-  const _FilterButton({
-    required this.count,
-    required this.open,
-    required this.onTap,
-  });
+  const _FilterButton({required this.count, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final on = count > 0 || open;
+    final on = count > 0;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -712,56 +722,6 @@ class _DateField extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ── Status chips ─────────────────────────────────────────────────────────────
-
-class _StatusChips extends StatelessWidget {
-  final Set<String> selected;
-  final Map<String, int> counts;
-  final int allCount;
-  final ValueChanged<String> onToggle;
-  final VoidCallback onClearAll;
-
-  const _StatusChips({
-    required this.selected,
-    required this.counts,
-    required this.allCount,
-    required this.onToggle,
-    required this.onClearAll,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return NeuFilterPanel(
-      children: [
-        NeuFilterRow(
-          label: 'All',
-          count: allCount,
-          on: selected.isEmpty,
-          icon: Icons.apps_rounded,
-          onTap: onClearAll,
-        ),
-        for (final key in _kStatusOrder)
-          NeuFilterRow(
-            label: kRegisterStatusLabel[key]!,
-            count: counts[key] ?? 0,
-            on: selected.contains(key),
-            color: BookingActions.statusColor(key),
-            icon: _kStatusIcon[key]!,
-            onTap: () => onToggle(key),
-          ),
-        NeuFilterRow(
-          label: 'Draft',
-          count: counts['DRAFT'] ?? 0,
-          on: selected.contains('DRAFT'),
-          color: AppTheme.draft,
-          icon: Icons.edit_note_rounded,
-          onTap: () => onToggle('DRAFT'),
-        ),
-      ],
     );
   }
 }

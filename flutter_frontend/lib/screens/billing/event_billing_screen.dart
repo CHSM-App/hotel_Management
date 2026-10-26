@@ -46,6 +46,8 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
   // `useState('sheet')` in Billing.jsx.
   String _view = 'table';
 
+  // 'all', 'advance' (receipts) or 'final' — same kinds as the Bills tab.
+  String _kind = 'all';
   String _dateFilterKey = 'all';
   DateTime? _customFrom;
   DateTime? _customTo;
@@ -106,12 +108,36 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
             onViewChanged: (v) => setState(() => _view = v),
             onSearchChanged: () => setState(() {}),
             hint: 'Search function, venue, organiser',
+            filterMulti: true,
+            onFilterReset: () {
+              setState(() => _kind = 'all');
+              _applyDatePreset('all');
+            },
             // Only the issued list has a date range to narrow by.
-            filterActive: _dateFilterKey != 'all',
+            filterActive: _kind != 'all' || _dateFilterKey != 'all',
             filterPanelBuilder: _tab == _EventBillingTab.issued
                 ? (close) => NeuFilterPanel(
-                    title: 'FILTER BY DATE',
+                    title: 'FILTER BY TYPE',
                     children: [
+                      for (final (key, label, icon) in const [
+                        ('all', 'All', Icons.apps_rounded),
+                        (
+                          'advance',
+                          'Advance receipts',
+                          Icons.payments_rounded,
+                        ),
+                        ('final', 'Final bills', Icons.receipt_long_rounded),
+                      ])
+                        NeuFilterRow(
+                          label: label,
+                          on: _kind == key,
+                          icon: icon,
+                          onTap: () {
+                            setState(() => _kind = key);
+                            close();
+                          },
+                        ),
+                      const NeuFilterSection('DATE'),
                       for (final (key, label) in kBillDatePresets)
                         NeuFilterRow(
                           label: label,
@@ -250,7 +276,9 @@ class _EventBillingScreenState extends ConsumerState<EventBillingScreen> {
               .toList();
     final rows = searched
         .where(
-          (d) => matchesBillingDateRange(d.createdAt, _customFrom, _customTo),
+          (d) =>
+              matchesBillingDateRange(d.createdAt, _customFrom, _customTo) &&
+              (_kind == 'all' || (_kind == 'advance') == (d.kind == 'ADVANCE')),
         )
         .toList();
     if (rows.isEmpty) {

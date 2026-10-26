@@ -25,6 +25,7 @@ class RoomsTab extends ConsumerStatefulWidget {
 class _RoomsTabState extends ConsumerState<RoomsTab> {
   String _filter = 'TODO';
   String _view = 'table';
+  final _search = TextEditingController();
   // ROOMS | VENUES | BOTH — only offered where there is a choice to make: a
   // property with rooms and venues both. Mirrors HousekeepingPanel.jsx.
   String _spaces = 'BOTH';
@@ -49,6 +50,7 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
 
   @override
   void dispose() {
+    _search.dispose();
     _timer?.cancel();
     super.dispose();
   }
@@ -97,7 +99,11 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
                         ? (a.isVenue ? 1 : -1)
                         : a.roomNumber.compareTo(b.roomNumber),
       );
-    final shown = pool.where((r) => _inFilter(r, _filter)).toList();
+    final needle = _search.text.trim().toLowerCase();
+    final shown = pool
+        .where((r) => _inFilter(r, _filter))
+        .where((r) => needle.isEmpty || [r.roomNumber, r.categoryName, r.guestName ?? '', r.eventTitle ?? ''].any((v) => v.toLowerCase().contains(needle)))
+        .toList();
     final now = DateTime.now();
 
     final filters = [
@@ -134,19 +140,25 @@ class _RoomsTabState extends ConsumerState<RoomsTab> {
             HkErrorBanner(state.error!),
             const SizedBox(height: AppTheme.s12),
           ],
-          Row(
-            children: [
-              Flexible(child: FilterDropdownButton(options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v))),
-              if (bothKinds) ...[
-                const SizedBox(width: AppTheme.s8),
-                Flexible(child: FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces')),
-              ],
-              const SizedBox(width: AppTheme.s8),
-              HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
-            ],
+          HkSearchBar(
+            controller: _search,
+            onChanged: (_) => setState(() {}),
+            hint: 'Search room, venue or guest',
+            filter: FilterDropdownButton(
+              compact: true,
+              options: filters,
+              selected: _filter,
+              onSelect: (v) => setState(() => _filter = v),
+              extraOptions: bothKinds ? spaceFilters : null,
+              extraSelected: bothKinds ? _spaces : null,
+              onExtraSelect: (v) => setState(() => _spaces = v),
+            ),
+            viewToggle: HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
           ),
           const SizedBox(height: AppTheme.s12),
-          if (pool.isNotEmpty && shown.isEmpty)
+          if (pool.isNotEmpty && shown.isEmpty && needle.isNotEmpty)
+            const NeuNotice(icon: Icons.search_off_rounded, message: 'Nothing matches this search.')
+          else if (pool.isNotEmpty && shown.isEmpty)
             NeuNotice(
               icon: Icons.cleaning_services_outlined,
               message: _filter == 'TODO'

@@ -23,6 +23,7 @@ class IssuesTab extends ConsumerStatefulWidget {
 class _IssuesTabState extends ConsumerState<IssuesTab> {
   String _filter = 'OPEN';
   String _view = 'table';
+  final _search = TextEditingController();
   // ROOMS | VENUES | BOTH — only offered where there is a choice to make: a
   // property with rooms and events both. Mirrors the `spaces` filter
   // HousekeepingIssues.jsx adds next to Show.
@@ -38,6 +39,7 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
 
   @override
   void dispose() {
+    _search.dispose();
     _timer?.cancel();
     super.dispose();
   }
@@ -65,11 +67,15 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
         .toList();
     final open = inSpaces.where((i) => i.isOpen).toList();
     final closed = inSpaces.where((i) => !i.isOpen).toList();
-    final shown = switch (_filter) {
+    final needle = _search.text.trim().toLowerCase();
+    final byFilter = switch (_filter) {
       'OPEN' => open,
       'CLOSED' => closed,
       _ => [...open, ...closed],
     };
+    final shown = needle.isEmpty
+        ? byFilter
+        : byFilter.where((i) => [i.roomNumber, i.text, i.reportedBy ?? ''].any((v) => v.toLowerCase().contains(needle))).toList();
 
     final filters = [
       FilterOption('OPEN', 'Open', open.length),
@@ -102,19 +108,25 @@ class _IssuesTabState extends ConsumerState<IssuesTab> {
             HkErrorBanner(state.error!),
             const SizedBox(height: AppTheme.s12),
           ],
-          Row(
-            children: [
-              Flexible(child: FilterDropdownButton(options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v))),
-              if (bothKinds) ...[
-                const SizedBox(width: AppTheme.s8),
-                Flexible(child: FilterDropdownButton(options: spaceFilters, selected: _spaces, onSelect: (v) => setState(() => _spaces = v), label: 'Spaces')),
-              ],
-              const SizedBox(width: AppTheme.s8),
-              HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
-            ],
+          HkSearchBar(
+            controller: _search,
+            onChanged: (_) => setState(() {}),
+            hint: 'Search room, venue or note',
+            filter: FilterDropdownButton(
+              compact: true,
+              options: filters,
+              selected: _filter,
+              onSelect: (v) => setState(() => _filter = v),
+              extraOptions: bothKinds ? spaceFilters : null,
+              extraSelected: bothKinds ? _spaces : null,
+              onExtraSelect: (v) => setState(() => _spaces = v),
+            ),
+            viewToggle: HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
           ),
           const SizedBox(height: AppTheme.s12),
-          if (shown.isEmpty)
+          if (shown.isEmpty && needle.isNotEmpty)
+            const NeuNotice(icon: Icons.search_off_rounded, message: 'Nothing matches this search.')
+          else if (shown.isEmpty)
             NeuNotice(
               icon: Icons.task_alt_rounded,
               message: _filter == 'CLOSED'
