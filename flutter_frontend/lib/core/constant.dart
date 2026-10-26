@@ -15,6 +15,7 @@
 /// A cleartext http host also has to be named in
 /// android/app/src/main/res/xml/network_security_config.xml, or Android will
 /// refuse the connection without the app ever seeing it.
+/// 
 const String baseUrl = String.fromEnvironment(
   'API_BASE_URL',
   defaultValue: 'https://hotel.vengurlatech.com',
