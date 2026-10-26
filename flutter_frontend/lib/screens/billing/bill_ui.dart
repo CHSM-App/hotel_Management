@@ -14,34 +14,34 @@ AppBar billAppBar({
 }) {
   return AppBar(
     leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.heading),
-          onPressed: onBack,
-        ),
+      icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.heading),
+      onPressed: onBack,
+    ),
     title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                color: AppTheme.heading,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.2,
-              ),
-            ),
-            if (subtitle != null && subtitle.isNotEmpty)
-              Text(
-                subtitle,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppTheme.muted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-          ],
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppTheme.heading,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
+          ),
         ),
+        if (subtitle != null && subtitle.isNotEmpty)
+          Text(
+            subtitle,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+      ],
+    ),
   );
 }
 
@@ -90,7 +90,12 @@ class BillHero extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s12),
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.s16,
+        AppTheme.s12,
+        AppTheme.s16,
+        AppTheme.s12,
+      ),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.border)),
       ),
@@ -99,7 +104,11 @@ class BillHero extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.receipt_long_rounded, color: AppTheme.muted, size: 14),
+              const Icon(
+                Icons.receipt_long_rounded,
+                color: AppTheme.muted,
+                size: 14,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -153,7 +162,10 @@ class BillHero extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         subtitle!,
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 12,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
@@ -214,7 +226,11 @@ class BillSectionLabel extends StatelessWidget {
   }
 }
 
-const billHairline = Divider(height: 14, thickness: 0.8, color: AppTheme.border);
+const billHairline = Divider(
+  height: 14,
+  thickness: 0.8,
+  color: AppTheme.border,
+);
 
 /// One itemised line: name, "qty × price" beneath, amount on the right.
 class BillItemRow extends StatelessWidget {
@@ -222,7 +238,12 @@ class BillItemRow extends StatelessWidget {
   final String detail;
   final num value;
 
-  const BillItemRow({super.key, required this.name, required this.detail, required this.value});
+  const BillItemRow({
+    super.key,
+    required this.name,
+    required this.detail,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -245,7 +266,13 @@ class BillItemRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (detail.isNotEmpty)
-                  Text(detail, style: const TextStyle(color: AppTheme.muted, fontSize: 11.5)),
+                  Text(
+                    detail,
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 11.5,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -326,7 +353,10 @@ class BillBalanceBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.s12,
+        vertical: 10,
+      ),
       decoration: BoxDecoration(
         color: AppTheme.sidebarBrandWash,
         borderRadius: BorderRadius.circular(AppTheme.rSmall),
@@ -364,7 +394,11 @@ class BillPaymentHeader extends StatelessWidget {
   final bool nothingDue;
   final num balanceDue;
 
-  const BillPaymentHeader({super.key, required this.nothingDue, required this.balanceDue});
+  const BillPaymentHeader({
+    super.key,
+    required this.nothingDue,
+    required this.balanceDue,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -381,12 +415,20 @@ class BillPaymentHeader extends StatelessWidget {
                 color: AppTheme.accent,
                 borderRadius: BorderRadius.circular(7),
               ),
-              child: const Icon(Icons.payments_rounded, color: Colors.white, size: 13),
+              child: const Icon(
+                Icons.payments_rounded,
+                color: Colors.white,
+                size: 13,
+              ),
             ),
             const SizedBox(width: 10),
             const Text(
               'Record payment',
-              style: TextStyle(color: AppTheme.heading, fontSize: 14, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                color: AppTheme.heading,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const Spacer(),
             Text(

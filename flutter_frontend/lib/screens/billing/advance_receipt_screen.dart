@@ -35,7 +35,8 @@ class AdvanceReceiptScreen extends ConsumerStatefulWidget {
   static const takeAnother = 'take-another';
 
   @override
-  ConsumerState<AdvanceReceiptScreen> createState() => _AdvanceReceiptScreenState();
+  ConsumerState<AdvanceReceiptScreen> createState() =>
+      _AdvanceReceiptScreenState();
 }
 
 class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
@@ -66,7 +67,10 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           backgroundColor: AppTheme.bg,
-          title: const Text('Void this receipt?', style: TextStyle(color: AppTheme.heading)),
+          title: const Text(
+            'Void this receipt?',
+            style: TextStyle(color: AppTheme.heading),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -75,11 +79,20 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                 'The receipt stays on file marked void, and its number is not reused. Say why.',
               ),
               const SizedBox(height: AppTheme.s16),
-              NeuField(controller: controller, label: 'Reason', maxLength: 200, required: true, errorText: errorText),
+              NeuField(
+                controller: controller,
+                label: 'Reason',
+                maxLength: 200,
+                required: true,
+                errorText: errorText,
+              ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Keep it')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Keep it'),
+            ),
             TextButton(
               onPressed: () {
                 final value = controller.text.trim();
@@ -89,7 +102,10 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                 }
                 Navigator.pop(context, value);
               },
-              child: const Text('Void', style: TextStyle(color: AppTheme.danger)),
+              child: const Text(
+                'Void',
+                style: TextStyle(color: AppTheme.danger),
+              ),
             ),
           ],
         ),
@@ -98,13 +114,25 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
 
     if (reason == null || reason.isEmpty || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    final voided = await ref.read(billingViewModelProvider.notifier).voidAdvanceReceipt(_receipt.id, reason);
+    final voided = await ref
+        .read(billingViewModelProvider.notifier)
+        .voidAdvanceReceipt(_receipt.id, reason);
     if (!mounted) return;
     if (voided != null) {
       setState(() => _receipt = voided);
-      messenger.showSnackBar(const SnackBar(content: Text('Receipt voided.'), backgroundColor: AppTheme.heading));
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Receipt voided.'),
+          backgroundColor: AppTheme.heading,
+        ),
+      );
     } else {
-      messenger.showSnackBar(const SnackBar(content: Text('Could not void this receipt.'), backgroundColor: AppTheme.heading));
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Could not void this receipt.'),
+          backgroundColor: AppTheme.heading,
+        ),
+      );
     }
   }
 
@@ -134,11 +162,15 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
               const SizedBox(height: AppTheme.s12),
               Expanded(
                 child: Container(
-                  decoration: BoxDecoration(border: Border.all(color: AppTheme.border), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppTheme.border),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   clipBehavior: Clip.antiAlias,
                   child: PdfPreview(
                     key: ValueKey(r.id),
-                    build: (format) => AdvanceReceiptPdf.build(r, lodgeName: lodgeName),
+                    build: (format) =>
+                        AdvanceReceiptPdf.build(r, lodgeName: lodgeName),
                     canChangePageFormat: false,
                     canChangeOrientation: false,
                     canDebug: false,
@@ -153,7 +185,14 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                 children: [
                   IconButton(
                     tooltip: 'Print',
-                    onPressed: _busy ? null : () => _run(() => AdvanceReceiptPdf.print(r, lodgeName: lodgeName)),
+                    onPressed: _busy
+                        ? null
+                        : () => _run(
+                            () => AdvanceReceiptPdf.print(
+                              r,
+                              lodgeName: lodgeName,
+                            ),
+                          ),
                     icon: const Icon(Icons.print_rounded),
                     color: AppTheme.text,
                   ),
@@ -164,7 +203,10 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                         ? null
                         : () => _run(() async {
                             final messenger = ScaffoldMessenger.of(context);
-                            final where = await AdvanceReceiptPdf.download(r, lodgeName: lodgeName);
+                            final where = await AdvanceReceiptPdf.download(
+                              r,
+                              lodgeName: lodgeName,
+                            );
                             if (!mounted) return;
                             messenger.showSnackBar(
                               SnackBar(
@@ -174,7 +216,8 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                                     ? SnackBarAction(
                                         label: 'Open',
                                         textColor: Colors.white,
-                                        onPressed: () => openSavedFile(where, 'receipt.pdf'),
+                                        onPressed: () =>
+                                            openSavedFile(where, 'receipt.pdf'),
                                       )
                                     : null,
                               ),
@@ -182,12 +225,21 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                           }),
                     icon: const Icon(Icons.download_rounded),
                     color: Colors.white,
-                    style: IconButton.styleFrom(backgroundColor: AppTheme.accent),
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppTheme.accent,
+                    ),
                   ),
                   const SizedBox(width: AppTheme.s16),
                   IconButton(
                     tooltip: 'Share on WhatsApp',
-                    onPressed: _busy ? null : () => _run(() => AdvanceReceiptPdf.share(r, lodgeName: lodgeName)),
+                    onPressed: _busy
+                        ? null
+                        : () => _run(
+                            () => AdvanceReceiptPdf.share(
+                              r,
+                              lodgeName: lodgeName,
+                            ),
+                          ),
                     icon: const Icon(Icons.send_rounded),
                     color: const Color(0xFF25D366),
                   ),
@@ -195,13 +247,22 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
               ),
               if (_error != null) ...[
                 const SizedBox(height: AppTheme.s4),
-                Text(_error!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger)),
+                Text(
+                  _error!,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
+                ),
               ],
               const SizedBox(height: AppTheme.s12),
               if (widget.canTakeAnother && !r.isVoid) ...[
                 NeuButton(
                   expand: true,
-                  onPressed: _busy ? null : () => Navigator.of(context).pop(AdvanceReceiptScreen.takeAnother),
+                  onPressed: _busy
+                      ? null
+                      : () => Navigator.of(
+                          context,
+                        ).pop(AdvanceReceiptScreen.takeAnother),
                   child: const Text('Take another advance'),
                 ),
                 const SizedBox(height: AppTheme.s8),
@@ -220,7 +281,9 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                     onPressed: _busy ? null : _confirmVoid,
                     child: Text(
                       'Void this receipt',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
                     ),
                   ),
                 ),

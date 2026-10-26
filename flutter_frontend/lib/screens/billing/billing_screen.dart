@@ -53,6 +53,15 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   // easier read for one stay/table/bill at a time on a phone.
   String _view = 'table';
 
+  // Ready to bill filter: 'all', or 'food' for stays with food on them.
+  String _stayFilter = 'all';
+
+  // Bills filter: 'all', 'advance' (receipts) or 'final' (everything else).
+  String _billFilter = 'all';
+
+  // Services to bill filter: 'all', 'room' (a staying guest) or 'walkin'.
+  String _serviceFilter = 'all';
+
   // The Bills tab's own date range — mirrors BILL_DATE_PRESETS in
   // Billing.jsx. 'all' means no filter; 'custom' reads [_customFrom]/
   // [_customTo].
@@ -91,8 +100,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     // (`billsStays && lodge?.hasOtherServices`).
     final showServices =
         !widget.restaurantOnly &&
-        (ref.watch(authViewModelProvider).me?.lodge.hasOtherServices ??
-            false);
+        (ref.watch(authViewModelProvider).me?.lodge.hasOtherServices ?? false);
     // "Food to bill" now lives only on Restaurant billing — the same split
     // the web makes between its plain Billing (stream="room", no tables tab
     // at all) and its stream="restaurant" page, which is the only one that
@@ -123,14 +131,55 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         view: _view,
         onViewChanged: (v) => setState(() => _view = v),
         onSearchChanged: () => setState(() {}),
+        filterActive: switch (tab) {
+          _BillingTab.services => _serviceFilter != 'all',
+          _BillingTab.issued => _billFilter != 'all' || _dateFilterKey != 'all',
+          _ => _stayFilter != 'all',
+        },
+        filterPanelBuilder: switch (tab) {
+          _BillingTab.issued => (close) => _BillFilterPanel(
+            kind: _billFilter,
+            dateKey: _dateFilterKey,
+            docs:
+                _billDocuments(state, widget.restaurantOnly) ??
+                const <BillDocument>[],
+            from: _customFrom,
+            to: _customTo,
+            onKind: (v) {
+              setState(() => _billFilter = v);
+              close();
+            },
+            onDate: (v) {
+              _applyDatePreset(v);
+              close();
+            },
+          ),
+          _BillingTab.toBill => (close) => _StayFilterPanel(
+            value: _stayFilter,
+            stays: state.queue.valueOrNull ?? const [],
+            onChanged: (v) {
+              setState(() => _stayFilter = v);
+              close();
+            },
+          ),
+          _BillingTab.services => (close) => _ServiceFilterPanel(
+            value: _serviceFilter,
+            groups: _groupServiceUsages(
+              state.serviceQueue.valueOrNull ?? const [],
+            ),
+            onChanged: (v) {
+              setState(() => _serviceFilter = v);
+              close();
+            },
+          ),
+          _ => null,
+        },
       ),
       const SizedBox(height: AppTheme.s12),
       if (tab == _BillingTab.issued) ...[
         BillingDateFilterRow(
-          filterKey: _dateFilterKey,
           from: _customFrom,
           to: _customTo,
-          onPresetSelected: _applyDatePreset,
           onFromChanged: (v) => setState(() {
             _customFrom = v;
             _dateFilterKey = 'custom';
@@ -146,7 +195,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final content = switch (tab) {
       _BillingTab.food => _food(state),
       _BillingTab.services => _services(state),
-      _BillingTab.issued => _issued(state, restaurantOnly: widget.restaurantOnly),
+      _BillingTab.issued => _issued(
+        state,
+        restaurantOnly: widget.restaurantOnly,
+      ),
       _ => _queue(state),
     };
 
@@ -324,12 +376,24 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           SizedBox(height: 80),
           NeuNotice(
             icon: Icons.task_alt_rounded,
-            message: 'Nothing waiting — every completed service has been billed.',
+            message:
+                'Nothing waiting — every completed service has been billed.',
           ),
         ];
       }
 
-      final groups = _groupServiceUsages(usages);
+      final groups = _groupServiceUsages(
+        usages,
+      ).where((g) => _serviceFilters[_serviceFilter]!.matches(g)).toList();
+      if (groups.isEmpty) {
+        return const [
+          SizedBox(height: 80),
+          NeuNotice(
+            icon: Icons.filter_alt_off_rounded,
+            message: 'No services match this filter.',
+          ),
+        ];
+      }
 
       if (_view == 'table') {
         return [
@@ -346,7 +410,9 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
             child: _ServiceUsageRow(
               usage: g.display,
-              itemCount: g.display.laundryOrderId != null ? g.members.length : null,
+              itemCount: g.display.laundryOrderId != null
+                  ? g.members.length
+                  : null,
               onAddToRoom: () => _addServicesToRoom(g.members),
               onBill: () => _billSelectedServices(g.members),
             ),
@@ -374,7 +440,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         groups.add(_ServiceUsageGroup(u.asLaundryHead(), [u]));
       } else {
         final existing = groups[idx];
-        groups[idx] = _ServiceUsageGroup(existing.display.mergedWith(u), [...existing.members, u]);
+        groups[idx] = _ServiceUsageGroup(existing.display.mergedWith(u), [
+          ...existing.members,
+          u,
+        ]);
       }
     }
     return groups;
@@ -386,7 +455,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   Future<void> _addServicesToRoom(List<ServiceUsage> usages) async {
     final usageIds = usages.map((u) => u.id).toList();
     final bookingIds = usages.map((u) => u.bookingId).whereType<int>().toSet();
-    if (bookingIds.length == 1 && usages.every((u) => u.bookingId == bookingIds.first)) {
+    if (bookingIds.length == 1 &&
+        usages.every((u) => u.bookingId == bookingIds.first)) {
       await ref
           .read(billingViewModelProvider.notifier)
           .addServicesToRoom(usageIds, bookingIds.first);
@@ -424,17 +494,17 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     ],
     data: (allRows) {
       final needle = _search.text.trim().toLowerCase();
-      final rows = needle.isEmpty
-          ? allRows
-          : allRows
-                .where(
-                  (stay) =>
-                      (stay.roomNumber ?? '').toLowerCase().contains(needle) ||
-                      (stay.bookingNumber ?? '').toLowerCase().contains(needle) ||
-                      (stay.guestName ?? '').toLowerCase().contains(needle) ||
-                      (stay.categoryName ?? '').toLowerCase().contains(needle),
-                )
-                .toList();
+      final rows = allRows
+          .where((stay) => _stayFilters[_stayFilter]!.matches(stay))
+          .where(
+            (stay) =>
+                needle.isEmpty ||
+                (stay.roomNumber ?? '').toLowerCase().contains(needle) ||
+                (stay.bookingNumber ?? '').toLowerCase().contains(needle) ||
+                (stay.guestName ?? '').toLowerCase().contains(needle) ||
+                (stay.categoryName ?? '').toLowerCase().contains(needle),
+          )
+          .toList();
       if (rows.isEmpty) {
         return const [
           SizedBox(height: 80),
@@ -490,6 +560,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             roomLabel: stay.roomNumber,
             title: stay.guestName ?? 'Guest',
             subtitle: [
+              '${formatIsoDate(stay.checkInDate)} → ${formatIsoDate(stay.checkOutDate)} (${nightsLabel(stay.nights)})',
               if (stay.bookingNumber != null) stay.bookingNumber!,
               if (stay.categoryName != null) stay.categoryName!,
               'Stay ${formatPrice(stay.totalPrice)}',
@@ -522,6 +593,56 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   // ── Issued ────────────────────────────────────────────────────────────────
 
+  /// Every issued document this stream shows, narrowed by search and the date
+  /// range but not yet by bill kind — the filter panel counts its kinds off
+  /// this. Null when neither list loaded.
+  List<BillDocument>? _billDocuments(BillingState state, bool restaurantOnly) {
+    final invoices = state.invoices.valueOrNull;
+    final receipts = state.advanceReceipts.valueOrNull;
+    if (invoices == null && receipts == null) return null;
+    final allRows = [
+      for (final inv in invoices ?? const <Invoice>[])
+        BillDocument.ofInvoice(inv),
+      // A FOOD invoice has no receipt of its own (an advance is only ever
+      // taken against a stay or a function), so merging receipts in plainly
+      // never adds one to the restaurant stream below.
+      for (final r in receipts ?? const <AdvanceReceipt>[])
+        BillDocument.ofReceipt(r),
+    ];
+    // Same split as the web's own streamOf(): a FOOD-kind bill is a
+    // restaurant document and an event bill (or a receipt taken against one)
+    // its own "event" stream — EventBillingScreen's issued list, not this
+    // one — so both are kept out of room billing entirely rather than
+    // shown and looking out of place among room/stay bills.
+    final streamRows = restaurantOnly
+        ? allRows.where((d) => d.kind == 'FOOD').toList()
+        : allRows
+              .where(
+                (d) =>
+                    d.kind != 'FOOD' && !d.isEventBill && !d.isLaundryInvoice,
+              )
+              .toList();
+    final needle = _search.text.trim().toLowerCase();
+    final searched = needle.isEmpty
+        ? streamRows
+        : streamRows
+              .where(
+                (d) =>
+                    (d.invoiceNumber ?? '').toLowerCase().contains(needle) ||
+                    (d.bookingNumber ?? '').toLowerCase().contains(needle) ||
+                    (d.guestName ?? '').toLowerCase().contains(needle) ||
+                    (d.roomNumber ?? '').toLowerCase().contains(needle) ||
+                    (d.venueName ?? '').toLowerCase().contains(needle) ||
+                    (d.tableLabel ?? '').toLowerCase().contains(needle),
+              )
+              .toList();
+    return searched
+        .where(
+          (d) => matchesBillingDateRange(d.createdAt, _customFrom, _customTo),
+        )
+        .toList();
+  }
+
   List<Widget> _issued(BillingState state, {required bool restaurantOnly}) {
     if (state.invoices.isLoading || state.advanceReceipts.isLoading) {
       return const [
@@ -543,44 +664,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         ),
       ];
     }
-    final allRows = [
-      for (final inv in invoices ?? const <Invoice>[])
-        BillDocument.ofInvoice(inv),
-      // A FOOD invoice has no receipt of its own (an advance is only ever
-      // taken against a stay or a function), so merging receipts in plainly
-      // never adds one to the restaurant stream below.
-      for (final r in receipts ?? const <AdvanceReceipt>[])
-        BillDocument.ofReceipt(r),
-    ];
-    // Same split as the web's own streamOf(): a FOOD-kind bill is a
-    // restaurant document and an event bill (or a receipt taken against one)
-    // its own "event" stream — EventBillingScreen's issued list, not this
-    // one — so both are kept out of room billing entirely rather than
-    // shown and looking out of place among room/stay bills.
-    final streamRows = restaurantOnly
-        ? allRows.where((d) => d.kind == 'FOOD').toList()
-        : allRows
-              .where((d) => d.kind != 'FOOD' && !d.isEventBill && !d.isLaundryInvoice)
-              .toList();
-    final needle = _search.text.trim().toLowerCase();
-    final searched = needle.isEmpty
-        ? streamRows
-        : streamRows
-              .where(
-                (d) =>
-                    (d.invoiceNumber ?? '').toLowerCase().contains(needle) ||
-                    (d.bookingNumber ?? '').toLowerCase().contains(needle) ||
-                    (d.guestName ?? '').toLowerCase().contains(needle) ||
-                    (d.roomNumber ?? '').toLowerCase().contains(needle) ||
-                    (d.venueName ?? '').toLowerCase().contains(needle) ||
-                    (d.tableLabel ?? '').toLowerCase().contains(needle),
-              )
-              .toList();
-    final rows = searched
-        .where(
-          (d) => matchesBillingDateRange(d.createdAt, _customFrom, _customTo),
-        )
-        .toList();
+    final rows = _billDocuments(
+      state,
+      restaurantOnly,
+    )!.where((d) => _billKinds[_billFilter]!.matches(d)).toList();
     if (rows.isEmpty) {
       return const [
         SizedBox(height: 80),
@@ -718,6 +805,7 @@ class BillingRowCard extends StatelessWidget {
                       Text(
                         subtitle,
                         style: Theme.of(context).textTheme.bodySmall,
+                        maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
@@ -736,27 +824,40 @@ class BillingRowCard extends StatelessWidget {
             ),
             child: Row(
               children: [
-                if (amountLabel != null) ...[
-                  Text(
-                    amountLabel!,
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
+                // Shrinks to fit rather than overflowing on a narrow phone —
+                // the two pills on the right keep their size.
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (amountLabel != null) ...[
+                          Text(
+                            amountLabel!,
+                            style: const TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.s4),
+                        ],
+                        Text(
+                          formatPrice(amount),
+                          style: const TextStyle(
+                            color: AppTheme.heading,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: AppTheme.s4),
-                ],
-                Text(
-                  formatPrice(amount),
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                    letterSpacing: -0.3,
-                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: AppTheme.s8),
                 if (onView != null) ...[
                   _ViewPillButton(onPressed: onView!),
                   const SizedBox(width: AppTheme.s8),
@@ -808,11 +909,26 @@ class _Toggle extends StatelessWidget {
       onSelect: (k) => onChanged(_BillingTab.values.byName(k)),
       tabs: [
         if (showRoom)
-          PillTab('toBill', 'Ready to bill', Icons.king_bed_rounded, count: toBillCount),
+          PillTab(
+            'toBill',
+            'Ready to bill',
+            Icons.king_bed_rounded,
+            count: toBillCount,
+          ),
         if (showServices)
-          PillTab('services', 'Services to bill', Icons.room_service_rounded, count: serviceCount),
+          PillTab(
+            'services',
+            'Services to bill',
+            Icons.room_service_rounded,
+            count: serviceCount,
+          ),
         if (showFood)
-          PillTab('food', 'Food to bill', Icons.restaurant_rounded, count: foodCount),
+          PillTab(
+            'food',
+            'Food to bill',
+            Icons.restaurant_rounded,
+            count: foodCount,
+          ),
         const PillTab('issued', 'Bills', Icons.receipt_long_rounded),
       ],
     );
@@ -912,9 +1028,19 @@ class _ServiceUsageRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                CompactActionButton(label: 'Add to room bill', color: AppTheme.sidebarBrandInk, fillColor: AppTheme.sidebarBrandWash, onTap: onAddToRoom),
+                CompactActionButton(
+                  label: 'Add to room bill',
+                  color: AppTheme.sidebarBrandInk,
+                  fillColor: AppTheme.sidebarBrandWash,
+                  onTap: onAddToRoom,
+                ),
                 const SizedBox(height: 6),
-                CompactActionButton(label: 'Bill', color: AppTheme.accent, primary: true, onTap: onBill),
+                CompactActionButton(
+                  label: 'Bill',
+                  color: AppTheme.accent,
+                  primary: true,
+                  onTap: onBill,
+                ),
               ],
             ),
           ],
@@ -961,52 +1087,55 @@ class _ServiceQueueTable extends StatelessWidget {
           child: SizedBox(
             width: width,
             child: StickyHeaderTable(
-                header: Container(
-                  decoration: const BoxDecoration(
-                    color: AppTheme.sidebarBrandWash,
-                    border: Border(
-                      bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8),
+              header: Container(
+                decoration: const BoxDecoration(
+                  color: AppTheme.sidebarBrandWash,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppTheme.sidebarBrandWashEdge,
+                      width: 0.8,
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      for (final c in _columns)
-                        SizedBox(
-                          width: c.width,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.s8,
-                              vertical: 10,
-                            ),
-                            child: Text(
-                              c.label.toUpperCase(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.sidebarBrandInk,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
+                ),
+                child: Row(
+                  children: [
+                    for (final c in _columns)
+                      SizedBox(
+                        width: c.width,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.s8,
+                            vertical: 10,
+                          ),
+                          child: Text(
+                            c.label.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.sidebarBrandInk,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
                             ),
                           ),
                         ),
-                      const SizedBox(width: _actionsWidth),
-                    ],
-                  ),
+                      ),
+                    const SizedBox(width: _actionsWidth),
+                  ],
                 ),
-                rows: [
-                      for (var i = 0; i < groups.length; i++)
-                        _ServiceTableRow(
-                          usage: groups[i].display,
-                          itemCount: groups[i].display.laundryOrderId != null
-                              ? groups[i].members.length
-                              : null,
-                          shaded: i.isOdd,
-                          onAddToRoom: () => onAddToRoom(groups[i]),
-                          onBill: () => onBill(groups[i]),
-                        ),
-                ],
+              ),
+              rows: [
+                for (var i = 0; i < groups.length; i++)
+                  _ServiceTableRow(
+                    usage: groups[i].display,
+                    itemCount: groups[i].display.laundryOrderId != null
+                        ? groups[i].members.length
+                        : null,
+                    shaded: i.isOdd,
+                    onAddToRoom: () => onAddToRoom(groups[i]),
+                    onBill: () => onBill(groups[i]),
+                  ),
+              ],
             ),
           ),
         ),
@@ -1100,13 +1229,26 @@ class _ServiceTableRow extends StatelessWidget {
           SizedBox(
             width: _ServiceQueueTable._actionsWidth,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 6),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.s8,
+                vertical: 6,
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CompactActionButton(label: 'Add to room', color: AppTheme.sidebarBrandInk, fillColor: AppTheme.sidebarBrandWash, onTap: onAddToRoom),
+                  CompactActionButton(
+                    label: 'Add to room',
+                    color: AppTheme.sidebarBrandInk,
+                    fillColor: AppTheme.sidebarBrandWash,
+                    onTap: onAddToRoom,
+                  ),
                   const SizedBox(width: 6),
-                  CompactActionButton(label: 'Bill', color: AppTheme.accent, primary: true, onTap: onBill),
+                  CompactActionButton(
+                    label: 'Bill',
+                    color: AppTheme.accent,
+                    primary: true,
+                    onTap: onBill,
+                  ),
                 ],
               ),
             ),
@@ -1130,7 +1272,8 @@ class _AddServicesToRoomDialog extends ConsumerStatefulWidget {
       _AddServicesToRoomDialogState();
 }
 
-class _AddServicesToRoomDialogState extends ConsumerState<_AddServicesToRoomDialog> {
+class _AddServicesToRoomDialogState
+    extends ConsumerState<_AddServicesToRoomDialog> {
   List<InHouseGuest>? _guests;
   int? _bookingId;
   bool _busy = false;
@@ -1724,12 +1867,19 @@ class _Figure extends StatelessWidget {
 /// mirrors the same row in AssetsListPanel, reused here (and by
 /// EventBillingScreen) so room, food and event billing all search and
 /// switch views the same way.
-class BillingSearchAndViewToggle extends StatelessWidget {
+class BillingSearchAndViewToggle extends StatefulWidget {
   final TextEditingController controller;
   final String view;
   final ValueChanged<String> onViewChanged;
   final VoidCallback onSearchChanged;
   final String hint;
+
+  /// Optional filter icon beside the view toggle; null hides it. Tapping it
+  /// folds [filterPanelBuilder]'s panel open under the icon (the builder is
+  /// handed a callback that closes it again); [filterActive] lights the icon
+  /// while a filter is narrowing the list.
+  final bool filterActive;
+  final Widget Function(VoidCallback close)? filterPanelBuilder;
 
   const BillingSearchAndViewToggle({
     super.key,
@@ -1738,89 +1888,198 @@ class BillingSearchAndViewToggle extends StatelessWidget {
     required this.onViewChanged,
     required this.onSearchChanged,
     this.hint = 'Search guest, room, bill no.',
+    this.filterActive = false,
+    this.filterPanelBuilder,
   });
 
   @override
+  State<BillingSearchAndViewToggle> createState() =>
+      _BillingSearchAndViewToggleState();
+}
+
+class _BillingSearchAndViewToggleState
+    extends State<BillingSearchAndViewToggle> {
+  final _focus = FocusNode();
+  final _filterKey = GlobalKey();
+  final _filterPortal = OverlayPortalController();
+
+  // NeuFilterPanel's own fixed width.
+  static const _kFilterPanelWidth = 214.0;
+
+  void _toggleFilter() {
+    _filterPortal.toggle();
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _clearSearch() {
+    widget.controller.clear();
+    setState(() {});
+    widget.onSearchChanged();
+  }
+
+  Widget _iconButton(IconData icon, {bool active = false}) => Container(
+    width: 38,
+    height: 38,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: active ? AppTheme.accent : AppTheme.card,
+      shape: BoxShape.circle,
+      border: Border.all(
+        color: active ? AppTheme.accent : AppTheme.shadowDark,
+        width: 1.3,
+      ),
+      boxShadow: AppTheme.subtle,
+    ),
+    child: Icon(icon, size: 17, color: active ? Colors.white : AppTheme.accent),
+  );
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final field = Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppTheme.shadowDark, width: 1.3),
+        boxShadow: AppTheme.subtle,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.search_rounded,
+              size: 17,
+              color: AppTheme.accent,
+            ),
+          ),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              focusNode: _focus,
+              onChanged: (_) {
+                setState(() {});
+                widget.onSearchChanged();
+              },
+              style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: widget.hint,
+                hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 14),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+          if (controller.text.isNotEmpty)
+            GestureDetector(
+              onTap: _clearSearch,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: 26,
+                height: 26,
+                margin: const EdgeInsets.only(right: 2),
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: AppTheme.bg,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close_rounded,
+                  size: 15,
+                  color: AppTheme.muted,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(
-          child: Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
-            decoration: BoxDecoration(
-              color: AppTheme.card,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppTheme.shadowDark, width: 1.3),
-              boxShadow: AppTheme.subtle,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppTheme.accent.withValues(alpha: 0.10),
-                    shape: BoxShape.circle,
+        Expanded(child: field),
+        const SizedBox(width: AppTheme.s8),
+        if (widget.filterPanelBuilder != null) ...[
+          OverlayPortal(
+            controller: _filterPortal,
+            overlayChildBuilder: (overlayContext) {
+              // Hang the panel under the icon's right edge, but slide it
+              // back inside the screen — on a narrow phone the icon sits
+              // too far left for a right-aligned panel to fit.
+              final box =
+                  _filterKey.currentContext?.findRenderObject() as RenderBox?;
+              final screen = MediaQuery.of(overlayContext).size;
+              const margin = AppTheme.s8;
+              var left = margin;
+              var top = 0.0;
+              if (box != null && box.attached) {
+                final origin = box.localToGlobal(Offset.zero);
+                left = (origin.dx + box.size.width - _kFilterPanelWidth).clamp(
+                  margin,
+                  (screen.width - _kFilterPanelWidth - margin).clamp(
+                    margin,
+                    double.infinity,
                   ),
-                  child: const Icon(
-                    Icons.search_rounded,
-                    size: 17,
-                    color: AppTheme.accent,
-                  ),
-                ),
-                const SizedBox(width: AppTheme.s8),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    onChanged: (_) => onSearchChanged(),
-                    style: const TextStyle(
-                      color: AppTheme.heading,
-                      fontSize: 14,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: hint,
-                      hintStyle: const TextStyle(
-                        color: AppTheme.muted,
-                        fontSize: 14,
-                      ),
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                );
+                top = origin.dy + box.size.height + AppTheme.s8;
+              }
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: _toggleFilter,
                     ),
                   ),
-                ),
-                if (controller.text.isNotEmpty)
-                  GestureDetector(
-                    onTap: () {
-                      controller.clear();
-                      onSearchChanged();
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      margin: const EdgeInsets.only(right: 2),
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: AppTheme.bg,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        size: 15,
-                        color: AppTheme.muted,
-                      ),
+                  Positioned(
+                    left: left,
+                    top: top,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: widget.filterPanelBuilder!(_toggleFilter),
                     ),
                   ),
-              ],
+                ],
+              );
+            },
+            child: GestureDetector(
+              key: _filterKey,
+              onTap: _toggleFilter,
+              behavior: HitTestBehavior.opaque,
+              child: _iconButton(
+                Icons.filter_alt_rounded,
+                active: widget.filterActive,
+              ),
             ),
           ),
+          const SizedBox(width: AppTheme.s8),
+        ],
+        _BillingViewToggleButton(
+          view: widget.view,
+          onSelect: widget.onViewChanged,
         ),
-        const SizedBox(width: AppTheme.s8),
-        _BillingViewToggleButton(view: view, onSelect: onViewChanged),
       ],
     );
   }
@@ -1854,41 +2113,38 @@ bool matchesBillingDateRange(String? createdAt, DateTime? from, DateTime? to) {
   return true;
 }
 
+/// The common date shortcuts (BILL_DATE_PRESETS in Billing.jsx) — offered in
+/// the Bills filter panel instead of hunting for two dates by hand.
+const kBillDatePresets = [
+  ('all', 'All time'),
+  ('today', 'Today'),
+  ('month', 'This month'),
+  ('year', 'This year'),
+];
+
+const kBillDatePresetIcons = {
+  'all': Icons.all_inclusive_rounded,
+  'today': Icons.today_rounded,
+  'month': Icons.calendar_view_month_rounded,
+  'year': Icons.event_rounded,
+};
+
 /// The Bills tab's own date range — a From/To pair always visible, same as
-/// the web's own always-on date inputs, with a filter icon offering the
-/// common shortcuts (BILL_DATE_PRESETS in Billing.jsx) instead of hunting for
-/// two dates by hand.
+/// the web's own always-on date inputs. The shortcuts live in the filter
+/// panel beside the search bar, so there is only the one filter icon.
 class BillingDateFilterRow extends StatelessWidget {
-  final String filterKey;
   final DateTime? from;
   final DateTime? to;
-  final ValueChanged<String> onPresetSelected;
   final ValueChanged<DateTime?> onFromChanged;
   final ValueChanged<DateTime?> onToChanged;
 
   const BillingDateFilterRow({
     super.key,
-    required this.filterKey,
     required this.from,
     required this.to,
-    required this.onPresetSelected,
     required this.onFromChanged,
     required this.onToChanged,
   });
-
-  static const _presets = [
-    ('all', 'All time'),
-    ('today', 'Today'),
-    ('month', 'This month'),
-    ('year', 'This year'),
-  ];
-
-  static const _presetIcons = {
-    'all': Icons.all_inclusive_rounded,
-    'today': Icons.today_rounded,
-    'month': Icons.calendar_view_month_rounded,
-    'year': Icons.event_rounded,
-  };
 
   Future<void> _pick(
     BuildContext context,
@@ -1925,62 +2181,6 @@ class BillingDateFilterRow extends StatelessWidget {
             onTap: () => _pick(context, to, onToChanged),
           ),
         ),
-        const SizedBox(width: AppTheme.s8),
-        PopupMenuButton<String>(
-          tooltip: 'Date range',
-          onSelected: onPresetSelected,
-          padding: EdgeInsets.zero,
-          elevation: 12,
-          color: AppTheme.card,
-          surfaceTintColor: Colors.transparent,
-          shadowColor: const Color(0x40101828),
-          offset: const Offset(0, 48),
-          shape: neuMenuShape,
-          itemBuilder: (context) => [
-            for (final (key, label) in _presets)
-              PopupMenuItem(
-                value: key,
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-                child: NeuOptionRow(
-                  icon: _presetIcons[key]!,
-                  label: label,
-                  selected: filterKey == key,
-                ),
-              ),
-          ],
-          child: Container(
-            width: 46,
-            height: 46,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: filterKey == 'all'
-                  ? null
-                  : const LinearGradient(
-                      colors: [AppTheme.accent, AppTheme.sidebarBrand],
-                    ),
-              color: filterKey == 'all' ? AppTheme.card : null,
-              shape: BoxShape.circle,
-              border: filterKey == 'all'
-                  ? Border.all(color: AppTheme.shadowDark, width: 1.3)
-                  : null,
-              boxShadow: filterKey == 'all'
-                  ? AppTheme.subtle
-                  : [
-                      BoxShadow(
-                        color: AppTheme.accent.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-            ),
-            child: Icon(
-              Icons.filter_alt_rounded,
-              size: 19,
-              color: filterKey == 'all' ? AppTheme.accent : Colors.white,
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -2009,7 +2209,7 @@ class _DateField extends StatelessWidget {
         highlightColor: AppTheme.accent.withValues(alpha: 0.05),
         splashColor: AppTheme.accent.withValues(alpha: 0.08),
         child: Container(
-          height: 46,
+          height: 40,
           padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
           decoration: BoxDecoration(
             color: AppTheme.card,
@@ -2025,8 +2225,8 @@ class _DateField extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 30,
-                height: 30,
+                width: 26,
+                height: 26,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: AppTheme.accent.withValues(
@@ -2036,7 +2236,7 @@ class _DateField extends StatelessWidget {
                 ),
                 child: Icon(
                   Icons.calendar_today_rounded,
-                  size: 14,
+                  size: 13,
                   color: AppTheme.accent,
                 ),
               ),
@@ -2048,7 +2248,7 @@ class _DateField extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: filled ? AppTheme.heading : AppTheme.muted,
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: filled ? FontWeight.w700 : FontWeight.w600,
                   ),
                 ),
@@ -2062,6 +2262,197 @@ class _DateField extends StatelessWidget {
   }
 }
 
+/// One Ready-to-bill filter chip: its label and which stays it keeps.
+class _StayFilter {
+  final String label;
+  final bool Function(BillableStay) matches;
+  const _StayFilter(this.label, this.matches);
+}
+
+final _stayFilters = <String, _StayFilter>{
+  'all': _StayFilter('All', (_) => true),
+  'food': _StayFilter('Has food', (s) => (s.foodTotal ?? 0) > 0),
+  'advance': _StayFilter('Advance paid', (s) => (s.advanceAmount ?? 0) > 0),
+  'late': _StayFilter('Late checkout', (s) => (s.lateCheckoutCharge ?? 0) > 0),
+};
+
+const _stayFilterIcons = <String, IconData>{
+  'all': Icons.apps_rounded,
+  'food': Icons.restaurant_rounded,
+  'advance': Icons.payments_rounded,
+  'late': Icons.schedule_rounded,
+};
+
+/// One Bills filter: its label and which documents it keeps — the web's
+/// BILL_FILTERS (Billing.jsx): an advance receipt, versus everything else.
+class _BillKind {
+  final String label;
+  final IconData icon;
+  final bool Function(BillDocument) matches;
+  const _BillKind(this.label, this.icon, this.matches);
+}
+
+final _billKinds = <String, _BillKind>{
+  'all': _BillKind('All', Icons.apps_rounded, (_) => true),
+  'advance': _BillKind(
+    'Advance receipts',
+    Icons.payments_rounded,
+    (d) => d.kind == 'ADVANCE',
+  ),
+  'final': _BillKind(
+    'Final bills',
+    Icons.receipt_long_rounded,
+    (d) => d.kind != 'ADVANCE',
+  ),
+};
+
+/// The Bills filter: what kind of document, and the date shortcuts, in the
+/// one panel behind the one filter icon.
+class _BillFilterPanel extends StatelessWidget {
+  final String kind;
+  final String dateKey;
+  final List<BillDocument> docs;
+  final DateTime? from;
+  final DateTime? to;
+  final ValueChanged<String> onKind;
+  final ValueChanged<String> onDate;
+
+  const _BillFilterPanel({
+    required this.kind,
+    required this.dateKey,
+    required this.docs,
+    required this.from,
+    required this.to,
+    required this.onKind,
+    required this.onDate,
+  });
+
+  Widget _section(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: AppTheme.muted,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return NeuFilterPanel(
+      title: 'FILTER BY TYPE',
+      children: [
+        for (final e in _billKinds.entries)
+          NeuFilterRow(
+            label: e.value.label,
+            count: docs.where(e.value.matches).length,
+            on: e.key == kind,
+            icon: e.value.icon,
+            onTap: () => onKind(e.key),
+          ),
+        _section('DATE'),
+        for (final (key, label) in kBillDatePresets)
+          NeuFilterRow(
+            label: label,
+            // A hand-picked From/To range matches no preset, so none is lit.
+            on: dateKey == key,
+            icon: kBillDatePresetIcons[key]!,
+            onTap: () => onDate(key),
+          ),
+      ],
+    );
+  }
+}
+
+/// One Services-to-bill filter: its label and which groups it keeps. A use
+/// with a room number belongs to a staying guest, anything else is a walk-in
+/// (same rule as the "Entry" line in the service usage panel).
+class _ServiceFilter {
+  final String label;
+  final IconData icon;
+  final bool Function(_ServiceUsageGroup) matches;
+  const _ServiceFilter(this.label, this.icon, this.matches);
+}
+
+final _serviceFilters = <String, _ServiceFilter>{
+  'all': _ServiceFilter('All', Icons.apps_rounded, (_) => true),
+  'room': _ServiceFilter(
+    'Room guests',
+    Icons.king_bed_rounded,
+    (g) => g.display.roomNumber != null,
+  ),
+  'walkin': _ServiceFilter(
+    'Walk-in',
+    Icons.directions_walk_rounded,
+    (g) => g.display.roomNumber == null,
+  ),
+};
+
+class _ServiceFilterPanel extends StatelessWidget {
+  final String value;
+  final List<_ServiceUsageGroup> groups;
+  final ValueChanged<String> onChanged;
+
+  const _ServiceFilterPanel({
+    required this.value,
+    required this.groups,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return NeuFilterPanel(
+      title: 'FILTER BY ENTRY',
+      children: [
+        for (final e in _serviceFilters.entries)
+          NeuFilterRow(
+            label: e.value.label,
+            count: groups.where(e.value.matches).length,
+            on: e.key == value,
+            icon: e.value.icon,
+            onTap: () => onChanged(e.key),
+          ),
+      ],
+    );
+  }
+}
+
+/// The Ready-to-bill filter, in the app's shared filter-panel look: one row
+/// per cut with the number of stays it would show.
+class _StayFilterPanel extends StatelessWidget {
+  final String value;
+  final List<BillableStay> stays;
+  final ValueChanged<String> onChanged;
+
+  const _StayFilterPanel({
+    required this.value,
+    required this.stays,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return NeuFilterPanel(
+      title: 'FILTER BY STAY',
+      children: [
+        for (final e in _stayFilters.entries)
+          NeuFilterRow(
+            label: e.value.label,
+            count: stays.where(e.value.matches).length,
+            on: e.key == value,
+            icon: _stayFilterIcons[e.key]!,
+            onTap: () => onChanged(e.key),
+          ),
+      ],
+    );
+  }
+}
 
 class _BillingViewToggleButton extends StatelessWidget {
   final String view;
@@ -2077,8 +2468,8 @@ class _BillingViewToggleButton extends StatelessWidget {
         onTap: () => onSelect(v),
         behavior: HitTestBehavior.opaque,
         child: Container(
-          width: 40,
-          height: 40,
+          width: 34,
+          height: 34,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: isSelected ? AppTheme.accent : Colors.transparent,
@@ -2086,7 +2477,7 @@ class _BillingViewToggleButton extends StatelessWidget {
           ),
           child: Icon(
             icon,
-            size: 19,
+            size: 17,
             color: isSelected ? Colors.white : AppTheme.muted,
           ),
         ),
@@ -2179,44 +2570,47 @@ class BillingQueueTable extends StatelessWidget {
           child: SizedBox(
             width: width,
             child: StickyHeaderTable(
-                header: Container(
-                  decoration: const BoxDecoration(
-                    color: AppTheme.sidebarBrandWash,
-                    border: Border(
-                      bottom: BorderSide(color: AppTheme.sidebarBrandWashEdge, width: 0.8),
+              header: Container(
+                decoration: const BoxDecoration(
+                  color: AppTheme.sidebarBrandWash,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppTheme.sidebarBrandWashEdge,
+                      width: 0.8,
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      for (final c in _kQueueTableColumns)
-                        SizedBox(
-                          width: c.width,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.s8,
-                              vertical: 10,
-                            ),
-                            child: Text(
-                              c.label.toUpperCase(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.sidebarBrandInk,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
+                ),
+                child: Row(
+                  children: [
+                    for (final c in _kQueueTableColumns)
+                      SizedBox(
+                        width: c.width,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.s8,
+                            vertical: 10,
+                          ),
+                          child: Text(
+                            c.label.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.sidebarBrandInk,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
                             ),
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
-                rows: [
-                      for (var i = 0; i < rows.length; i++)
-                        _QueueTableRow(row: rows[i], shaded: i.isOdd),
-                      _QueueTableFooter(rows: rows),
-                ],
+              ),
+              rows: [
+                for (var i = 0; i < rows.length; i++)
+                  _QueueTableRow(row: rows[i], shaded: i.isOdd),
+                _QueueTableFooter(rows: rows),
+              ],
             ),
           ),
         ),
@@ -2421,7 +2815,7 @@ class ReadyToBillTable extends StatelessWidget {
   static const List<(String label, double width, bool numeric)> _columns = [
     ('Guest', 130, false),
     ('Room', 90, false),
-    ('Stay', 120, false),
+    ('Stay', 200, false),
     ('Room charge', 100, true),
     ('Food', 90, true),
     ('Subtotal', 100, true),
@@ -2429,7 +2823,7 @@ class ReadyToBillTable extends StatelessWidget {
     ('To collect', 110, true),
   ];
 
-  static const double _actionWidth = 140;
+  static const double _actionWidth = 170;
 
   @override
   Widget build(BuildContext context) {
@@ -2447,56 +2841,54 @@ class ReadyToBillTable extends StatelessWidget {
           child: SizedBox(
             width: width,
             child: StickyHeaderTable(
-                header: Container(
-                  decoration: const BoxDecoration(
-                    color: AppTheme.sidebarBrandWash,
-                    border: Border(
-                      bottom: BorderSide(
-                        color: AppTheme.sidebarBrandWashEdge,
-                        width: 0.8,
-                      ),
+              header: Container(
+                decoration: const BoxDecoration(
+                  color: AppTheme.sidebarBrandWash,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppTheme.sidebarBrandWashEdge,
+                      width: 0.8,
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      for (final c in _columns)
-                        SizedBox(
-                          width: c.$2,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.s8,
-                              vertical: 10,
-                            ),
-                            child: Text(
-                              c.$1.toUpperCase(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: c.$3
-                                  ? TextAlign.right
-                                  : TextAlign.left,
-                              style: const TextStyle(
-                                color: AppTheme.sidebarBrandInk,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
+                ),
+                child: Row(
+                  children: [
+                    for (final c in _columns)
+                      SizedBox(
+                        width: c.$2,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.s8,
+                            vertical: 10,
+                          ),
+                          child: Text(
+                            c.$1.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: c.$3 ? TextAlign.right : TextAlign.left,
+                            style: const TextStyle(
+                              color: AppTheme.sidebarBrandInk,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
                             ),
                           ),
                         ),
-                      SizedBox(width: _actionWidth),
-                    ],
-                  ),
+                      ),
+                    SizedBox(width: _actionWidth),
+                  ],
                 ),
-                rows: [
-                      for (var i = 0; i < stays.length; i++)
-                        _ReadyToBillRow(
-                          stay: stays[i],
-                          shaded: i.isOdd,
-                          onBill: () => onBill(stays[i]),
-                          onView: onView == null ? null : () => onView!(stays[i]),
-                        ),
-                      _ReadyToBillFooter(stays: stays),
-                ],
+              ),
+              rows: [
+                for (var i = 0; i < stays.length; i++)
+                  _ReadyToBillRow(
+                    stay: stays[i],
+                    shaded: i.isOdd,
+                    onBill: () => onBill(stays[i]),
+                    onView: onView == null ? null : () => onView!(stays[i]),
+                  ),
+                _ReadyToBillFooter(stays: stays),
+              ],
             ),
           ),
         ),
@@ -2598,7 +2990,7 @@ class _ReadyToBillRow extends StatelessWidget {
             ),
           ),
           SizedBox(
-            width: 120,
+            width: 200,
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.s8,
@@ -2828,7 +3220,10 @@ class _ReadyToBillFooter extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
-            width: 130 + 90 + 120,
+            // Guest + Room + Stay, read from the table so they can't drift.
+            width: ReadyToBillTable._columns
+                .take(3)
+                .fold<double>(0, (sum, c) => sum + c.$2),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.s8,
@@ -2948,53 +3343,50 @@ class BillingInvoiceTable extends StatelessWidget {
           child: SizedBox(
             width: width,
             child: StickyHeaderTable(
-                header: Container(
-                  decoration: const BoxDecoration(
-                    color: AppTheme.sidebarBrandWash,
-                    border: Border(
-                      bottom: BorderSide(
-                        color: AppTheme.sidebarBrandWashEdge,
-                        width: 0.8,
-                      ),
+              header: Container(
+                decoration: const BoxDecoration(
+                  color: AppTheme.sidebarBrandWash,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppTheme.sidebarBrandWashEdge,
+                      width: 0.8,
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      for (final c in _kInvoiceTableColumns)
-                        SizedBox(
-                          width: c.width,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.s8,
-                              vertical: 10,
-                            ),
-                            child: Text(
-                              c.label.toUpperCase(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: c.key == 'amount'
-                                  ? TextAlign.right
-                                  : TextAlign.left,
-                              style: const TextStyle(
-                                color: AppTheme.sidebarBrandInk,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
+                ),
+                child: Row(
+                  children: [
+                    for (final c in _kInvoiceTableColumns)
+                      SizedBox(
+                        width: c.width,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.s8,
+                            vertical: 10,
+                          ),
+                          child: Text(
+                            c.label.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: c.key == 'amount'
+                                ? TextAlign.right
+                                : TextAlign.left,
+                            style: const TextStyle(
+                              color: AppTheme.sidebarBrandInk,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
                             ),
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
-                rows: [
-                      for (var i = 0; i < documents.length; i++)
-                        _InvoiceTableRow(
-                          document: documents[i],
-                          shaded: i.isOdd,
-                        ),
-                      _InvoiceTableFooter(documents: documents),
-                ],
+              ),
+              rows: [
+                for (var i = 0; i < documents.length; i++)
+                  _InvoiceTableRow(document: documents[i], shaded: i.isOdd),
+                _InvoiceTableFooter(documents: documents),
+              ],
             ),
           ),
         ),

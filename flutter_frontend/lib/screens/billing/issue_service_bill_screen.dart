@@ -39,7 +39,9 @@ class IssueServiceBillScreen extends ConsumerWidget {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: const BoxConstraints(
+              maxWidth: AppTheme.maxContentWidth,
+            ),
             child: preview == null
                 ? Center(
                     child: state.previewing
@@ -118,7 +120,10 @@ class _Body extends ConsumerWidget {
                     ),
                   billHairline,
                   if ((amounts?.serviceSubtotal ?? 0) > 0)
-                    BillRowLine(label: 'Services', value: amounts!.serviceSubtotal),
+                    BillRowLine(
+                      label: 'Services',
+                      value: amounts!.serviceSubtotal,
+                    ),
                   if ((amounts?.discountAmount ?? 0) > 0)
                     BillRowLine(
                       label: 'Discount (${amounts!.discountPercent}%)',
@@ -139,7 +144,11 @@ class _Body extends ConsumerWidget {
                     ),
                   ],
                   if ((amounts?.roundOff ?? 0) != 0)
-                    BillRowLine(label: 'Round off', value: amounts!.roundOff, muted: true),
+                    BillRowLine(
+                      label: 'Round off',
+                      value: amounts!.roundOff,
+                      muted: true,
+                    ),
                   billHairline,
                   BillRowLine(
                     label: 'Grand total',
@@ -154,7 +163,10 @@ class _Body extends ConsumerWidget {
                         ? 'Issued under GSTIN ${preview.gstin ?? '—'}.'
                         : "This property isn't GST registered — every bill is a "
                               'cash receipt.',
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 11.5,
+                    ),
                   ),
                 ],
               ),
@@ -164,7 +176,10 @@ class _Body extends ConsumerWidget {
 
         // ── How it was paid ─────────────────────────────────────────────────
         const SizedBox(height: AppTheme.s16),
-        BillPaymentHeader(nothingDue: state.nothingDue, balanceDue: state.balanceDue),
+        BillPaymentHeader(
+          nothingDue: state.nothingDue,
+          balanceDue: state.balanceDue,
+        ),
         if (!state.nothingDue) ...[
           const SizedBox(height: AppTheme.s8),
           BillPanel(child: _PaymentRows(state: state)),
@@ -174,7 +189,9 @@ class _Body extends ConsumerWidget {
         if (state.error != null) ...[
           Text(
             state.error!,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
           ),
           const SizedBox(height: AppTheme.s12),
         ],
@@ -185,7 +202,11 @@ class _Body extends ConsumerWidget {
               ? null
               : () async {
                   final navigator = Navigator.of(context);
-                  final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
+                  final lodgeName = ref
+                      .read(authViewModelProvider)
+                      .me
+                      ?.lodge
+                      .name;
 
                   final invoice = await vm.issueServiceBill();
                   if (invoice == null) return;
@@ -227,9 +248,8 @@ class _Body extends ConsumerWidget {
                               '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
                               '${invoice.invoiceNumber ?? ''} issued',
                               textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: AppTheme.s8),
                             Text(
@@ -339,7 +359,11 @@ class _PaymentRows extends ConsumerWidget {
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add_rounded, size: 15, color: AppTheme.sidebarBrandInk),
+                  Icon(
+                    Icons.add_rounded,
+                    size: 15,
+                    color: AppTheme.sidebarBrandInk,
+                  ),
                   SizedBox(width: 4),
                   Text('Add another payment'),
                 ],
@@ -371,7 +395,9 @@ class _PaymentRows extends ConsumerWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               problem,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
             ),
           ),
         ],
@@ -379,4 +405,3 @@ class _PaymentRows extends ConsumerWidget {
     );
   }
 }
-

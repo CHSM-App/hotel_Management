@@ -112,7 +112,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                 children: [
                   Expanded(
                     child: Container(
-                      height: 48,
+                      height: 40,
                       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                       decoration: BoxDecoration(
                         color: AppTheme.card,
@@ -123,14 +123,14 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                       child: Row(
                         children: [
                           Container(
-                            width: 34,
-                            height: 34,
+                            width: 28,
+                            height: 28,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: AppTheme.accent.withValues(alpha: 0.10),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
+                            child: const Icon(Icons.search_rounded, size: 15, color: AppTheme.accent),
                           ),
                           const SizedBox(width: AppTheme.s8),
                           Expanded(
@@ -143,7 +143,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                                 hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
                                 border: InputBorder.none,
                                 isDense: true,
-                                contentPadding: EdgeInsets.symmetric(vertical: 13),
+                                contentPadding: EdgeInsets.symmetric(vertical: 10),
                               ),
                             ),
                           ),
@@ -152,8 +152,8 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                               onTap: () => setState(() => _search.clear()),
                               behavior: HitTestBehavior.opaque,
                               child: Container(
-                                width: 30,
-                                height: 30,
+                                width: 26,
+                                height: 26,
                                 margin: const EdgeInsets.only(right: 2),
                                 alignment: Alignment.center,
                                 decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
@@ -179,7 +179,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                 onClearFrom: _fromDate == null ? null : () => setState(() => _fromDate = null),
                 onClearTo: _toDate == null ? null : () => setState(() => _toDate = null),
               ),
-              const SizedBox(height: AppTheme.s12),
+              const SizedBox(height: AppTheme.s8),
               if (state.isLoading && state.income.isEmpty)
                 const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
               else if (state.error != null && state.income.isEmpty)
@@ -328,7 +328,7 @@ class _DateSegment extends StatelessWidget {
         highlightColor: AppTheme.accent.withValues(alpha: 0.05),
         splashColor: AppTheme.accent.withValues(alpha: 0.08),
         child: Container(
-          height: 48,
+          height: 40,
           padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
           decoration: BoxDecoration(
             color: AppTheme.card,
@@ -397,14 +397,14 @@ class _ViewToggleButton extends StatelessWidget {
         onTap: () => onSelect(v),
         behavior: HitTestBehavior.opaque,
         child: Container(
-          width: 40,
-          height: 40,
+          width: 34,
+          height: 34,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: isSelected ? AppTheme.accent : Colors.transparent,
             borderRadius: BorderRadius.circular(AppTheme.rSmall - 2),
           ),
-          child: Icon(icon, size: 19, color: isSelected ? Colors.white : AppTheme.muted),
+          child: Icon(icon, size: 17, color: isSelected ? Colors.white : AppTheme.muted),
         ),
       );
     }

@@ -174,15 +174,24 @@ class BillPdf {
                 children: [
                   pw.Center(
                     child: pw.Text(
-                      ascii(kDocumentLabels[inv.documentType]?.toUpperCase() ?? 'BILL'),
-                      style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                      ascii(
+                        kDocumentLabels[inv.documentType]?.toUpperCase() ??
+                            'BILL',
+                      ),
+                      style: pw.TextStyle(
+                        fontSize: 9,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
                     ),
                   ),
                   pw.SizedBox(height: 2),
                   pw.Center(
                     child: pw.Text(
                       ascii(name),
-                      style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
+                      style: pw.TextStyle(
+                        fontSize: 15,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
@@ -195,7 +204,10 @@ class BillPdf {
                     height: 26,
                     width: 26,
                     alignment: pw.Alignment.center,
-                    child: pw.Image(pw.MemoryImage(logo), fit: pw.BoxFit.contain),
+                    child: pw.Image(
+                      pw.MemoryImage(logo),
+                      fit: pw.BoxFit.contain,
+                    ),
                   ),
                 ),
               if (inv.lodgePhone != null)
@@ -205,10 +217,11 @@ class BillPdf {
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
-                      for (final p in inv.lodgePhone!
-                          .split(RegExp('[,/]'))
-                          .map((p) => p.trim())
-                          .where((p) => p.isNotEmpty))
+                      for (final p
+                          in inv.lodgePhone!
+                              .split(RegExp('[,/]'))
+                              .map((p) => p.trim())
+                              .where((p) => p.isNotEmpty))
                         pw.Text(
                           ascii('Mob. $p'),
                           style: pw.TextStyle(
@@ -369,7 +382,10 @@ class BillPdf {
                           color: _tintColor,
                           border: pw.Border(
                             top: pw.BorderSide(width: 0.6, color: _lineColor),
-                            bottom: pw.BorderSide(width: 0.6, color: _lineColor),
+                            bottom: pw.BorderSide(
+                              width: 0.6,
+                              color: _lineColor,
+                            ),
                           ),
                         ),
                         children: [
@@ -421,14 +437,22 @@ class BillPdf {
                         // double-charging the two GST lines right under it.
                         isGst ? 'TAXABLE VALUE (excl. GST)' : 'TOTAL AMOUNT',
                         _round2(
-                          inv.roomTaxable + inv.foodTaxable + inv.serviceTaxable,
+                          inv.roomTaxable +
+                              inv.foodTaxable +
+                              inv.serviceTaxable,
                         ),
                         rule: true,
                       ),
                       if (inv.cgstAmount > 0)
-                        _moneyRow('CGST ${inv.cgstRatePercent} %', inv.cgstAmount),
+                        _moneyRow(
+                          'CGST ${inv.cgstRatePercent} %',
+                          inv.cgstAmount,
+                        ),
                       if (inv.sgstAmount > 0)
-                        _moneyRow('SGST ${inv.sgstRatePercent} %', inv.sgstAmount),
+                        _moneyRow(
+                          'SGST ${inv.sgstRatePercent} %',
+                          inv.sgstAmount,
+                        ),
                       if (inv.foodCgstAmount > 0)
                         _moneyRow(
                           'CGST ${inv.foodCgstRatePercent} % (Misc)',
@@ -449,7 +473,8 @@ class BillPdf {
                           'SGST ${inv.serviceSgstRatePercent} % (Services)',
                           inv.serviceSgstAmount,
                         ),
-                      if (inv.roundOff != 0) _moneyRow('Round off', inv.roundOff),
+                      if (inv.roundOff != 0)
+                        _moneyRow('Round off', inv.roundOff),
                       _moneyRow(
                         'GRAND TOTAL',
                         inv.totalAmount,
@@ -473,7 +498,9 @@ class BillPdf {
                         // label, the way the web decorates it. With a split
                         // it is dropped here and each method gets its own
                         // row below, or the first would be named twice.
-                        sub: tenders.length == 1 ? _tenderLine(tenders.single) : null,
+                        sub: tenders.length == 1
+                            ? _tenderLine(tenders.single)
+                            : null,
                       ),
                       if (tenders.length > 1)
                         for (final (i, t) in tenders.indexed)
@@ -481,7 +508,9 @@ class BillPdf {
                             kPayLabels[t.method] ?? t.method,
                             t.amount,
                             last: i == tenders.length - 1,
-                            sub: t.reference == null ? null : 'Txn No. ${t.reference}',
+                            sub: t.reference == null
+                                ? null
+                                : 'Txn No. ${t.reference}',
                           ),
                     ],
                   ),
@@ -634,7 +663,9 @@ class BillPdf {
             _strip([
               _label(_rs),
               _filled(
-                inv.roomCharges.isEmpty ? '' : _amt(inv.roomCharges.first.amount),
+                inv.roomCharges.isEmpty
+                    ? ''
+                    : _amt(inv.roomCharges.first.amount),
                 width: 66,
               ),
               _label('Venue hire'),
@@ -689,7 +720,6 @@ class BillPdf {
               _filled(to.$2, width: 60),
             ]),
           ],
-
         ],
       ),
     );
@@ -725,7 +755,8 @@ class BillPdf {
     final sections = roomBillSections(inv.roomCharges);
     if (sections != null) {
       return [
-        for (final s in sections) (room: s.room, base: s.base, extras: s.extras),
+        for (final s in sections)
+          (room: s.room, base: s.base, extras: s.extras),
       ];
     }
     if (inv.roomCharges.isEmpty) return const [];
@@ -745,8 +776,9 @@ class BillPdf {
   static bool _chargeBlocksDatesDiffer(Invoice inv) {
     if (inv.isFoodBill || inv.isEventBill) return false;
     final blocks = _chargeBlocks(inv);
-    return {for (final b in blocks) '${b.base.firstDate}|${b.base.lastDate}'}
-            .length >
+    return {
+          for (final b in blocks) '${b.base.firstDate}|${b.base.lastDate}',
+        }.length >
         1;
   }
 
@@ -898,7 +930,10 @@ class BillPdf {
             padding: const pw.EdgeInsets.only(left: 2, top: 2),
             child: pw.Text(
               ascii('Rates above include GST'),
-              style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700),
+              style: const pw.TextStyle(
+                fontSize: 6.5,
+                color: PdfColors.grey700,
+              ),
             ),
           ),
         ),
@@ -946,7 +981,10 @@ class BillPdf {
     if (isGst && inv.roomSubtotal > 0) {
       rows.add(
         blankRow(
-          _strip([_label('SAC'), _filled(_sacAccommodation, width: 60, fine: true)]),
+          _strip([
+            _label('SAC'),
+            _filled(_sacAccommodation, width: 60, fine: true),
+          ]),
         ),
       );
     }
@@ -1016,13 +1054,19 @@ class BillPdf {
             pw.Expanded(
               child: pw.Text(
                 ascii('Misc Charges'),
-                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(
+                  fontSize: 7,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
             ),
             if (isGst)
               pw.Text(
                 ascii('SAC $_sacFood'),
-                style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+                style: const pw.TextStyle(
+                  fontSize: 6,
+                  color: PdfColors.grey700,
+                ),
               ),
           ],
         ),
@@ -1053,7 +1097,10 @@ class BillPdf {
               ),
               pw.Text(
                 ascii(_amt(item.lineTotal)),
-                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(
+                  fontSize: 7,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -1100,7 +1147,10 @@ class BillPdf {
               ),
               pw.Text(
                 ascii(_amt(item.lineTotal)),
-                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(
+                  fontSize: 7,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -1110,8 +1160,7 @@ class BillPdf {
 
   /// A count printed without a trailing ".0" — quantities arrive as `num` and
   /// a whole one is still a double under the hood.
-  static String _qty(num n) =>
-      n == n.roundToDouble() ? '${n.toInt()}' : '$n';
+  static String _qty(num n) => n == n.roundToDouble() ? '${n.toInt()}' : '$n';
 
   // ── Pieces ────────────────────────────────────────────────────────────────
 

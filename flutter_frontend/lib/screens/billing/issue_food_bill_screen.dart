@@ -38,7 +38,9 @@ class IssueFoodBillScreen extends ConsumerWidget {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: const BoxConstraints(
+              maxWidth: AppTheme.maxContentWidth,
+            ),
             child: preview == null
                 ? Center(
                     child: state.previewing
@@ -108,7 +110,8 @@ class _Body extends ConsumerWidget {
                   for (final item in preview.foodItems)
                     BillItemRow(
                       name: item.name,
-                      detail: '${item.quantity} × ${formatPrice(item.unitPrice)}',
+                      detail:
+                          '${item.quantity} × ${formatPrice(item.unitPrice)}',
                       value: item.lineTotal,
                     ),
                   if (preview.orderNumbers.isNotEmpty)
@@ -117,7 +120,10 @@ class _Body extends ConsumerWidget {
                       child: Text(
                         'From order${preview.orderNumbers.length == 1 ? '' : 's'} '
                         '${preview.orderNumbers.map((n) => '#$n').join(', ')}',
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 11.5,
+                        ),
                       ),
                     ),
                   billHairline,
@@ -146,7 +152,11 @@ class _Body extends ConsumerWidget {
                     ),
                   ],
                   if ((amounts?.roundOff ?? 0) != 0)
-                    BillRowLine(label: 'Round off', value: amounts!.roundOff, muted: true),
+                    BillRowLine(
+                      label: 'Round off',
+                      value: amounts!.roundOff,
+                      muted: true,
+                    ),
                   billHairline,
                   BillRowLine(
                     label: 'Grand total',
@@ -161,7 +171,10 @@ class _Body extends ConsumerWidget {
                         ? 'Issued under GSTIN ${preview.gstin ?? '—'}.'
                         : "This property isn't GST registered — every bill is a "
                               'cash receipt.',
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 11.5,
+                    ),
                   ),
                 ],
               ),
@@ -171,7 +184,10 @@ class _Body extends ConsumerWidget {
 
         // ── How it was paid ─────────────────────────────────────────────────
         const SizedBox(height: AppTheme.s16),
-        BillPaymentHeader(nothingDue: state.nothingDue, balanceDue: state.balanceDue),
+        BillPaymentHeader(
+          nothingDue: state.nothingDue,
+          balanceDue: state.balanceDue,
+        ),
         if (!state.nothingDue) ...[
           const SizedBox(height: AppTheme.s8),
           BillPanel(child: _PaymentRows(state: state)),
@@ -215,7 +231,9 @@ class _Body extends ConsumerWidget {
         if (state.error != null) ...[
           Text(
             state.error!,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppTheme.danger),
           ),
           const SizedBox(height: AppTheme.s12),
         ],
@@ -229,7 +247,11 @@ class _Body extends ConsumerWidget {
               ? null
               : () async {
                   final navigator = Navigator.of(context);
-                  final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
+                  final lodgeName = ref
+                      .read(authViewModelProvider)
+                      .me
+                      ?.lodge
+                      .name;
 
                   final invoice = await vm.issueFood();
                   if (invoice == null) return;
@@ -271,9 +293,8 @@ class _Body extends ConsumerWidget {
                               '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
                               '${invoice.invoiceNumber ?? ''} issued',
                               textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: AppTheme.s8),
                             Text(
@@ -401,7 +422,9 @@ class _PaymentRows extends ConsumerWidget {
               alignment: Alignment.centerLeft,
               child: Text(
                 problem,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
               ),
             ),
           ],
@@ -493,10 +516,7 @@ class _PaymentRowState extends State<_PaymentRow> {
                     widget.line.amount = v;
                     widget.onChanged();
                   },
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 13,
-                  ),
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 13),
                   decoration: const InputDecoration(
                     hintText: '0',
                     border: InputBorder.none,

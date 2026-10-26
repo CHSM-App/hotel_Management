@@ -780,7 +780,7 @@ class _DateFilterField extends StatelessWidget {
         onPick(iso);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: 7),
         decoration: BoxDecoration(
           color: AppTheme.card,
           borderRadius: BorderRadius.circular(AppTheme.rLarge),
@@ -791,13 +791,13 @@ class _DateFilterField extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 22,
-              height: 22,
+              width: 20,
+              height: 20,
               decoration: BoxDecoration(
                 color: AppTheme.accent,
                 borderRadius: BorderRadius.circular(7),
               ),
-              child: const Icon(Icons.calendar_today_rounded, size: 12, color: Colors.white),
+              child: const Icon(Icons.calendar_today_rounded, size: 11, color: Colors.white),
             ),
             const SizedBox(width: AppTheme.s8),
             Flexible(
@@ -805,7 +805,7 @@ class _DateFilterField extends StatelessWidget {
                 parsed == null ? label : '${parsed.day} ${_monthShort(parsed.month)} ${parsed.year}',
                 style: TextStyle(
                   color: parsed == null ? AppTheme.muted : AppTheme.heading,
-                  fontSize: 13,
+                  fontSize: 12.5,
                   fontWeight: FontWeight.w500,
                 ),
                 overflow: TextOverflow.ellipsis,
