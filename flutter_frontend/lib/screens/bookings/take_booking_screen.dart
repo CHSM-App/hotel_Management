@@ -1559,7 +1559,9 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       onPressed: (state.submitting || _savingDraft)
                           ? null
                           : _saveDraft,
-                      outlineColor: AppTheme.accent,
+                      soft: true,
+                      softColor: AppTheme.draft,
+                      softTextColor: Colors.black,
                       child: Text(
                         state.draftId != null ? 'Update draft' : 'Save draft',
                       ),
@@ -2264,18 +2266,6 @@ class _BookingTypeHeader extends ConsumerWidget {
               onTap: () => vm.setBookingType('RESERVATION'),
             ),
           ],
-        ),
-        const SizedBox(height: AppTheme.s4),
-        Text(
-          futureCheckIn
-              ? 'Walk-in isn’t available for a future check-in date — this '
-                    'holds the room for a guest arriving later.'
-              : walkIn
-              ? 'Guest is here now — creates the booking and checks them in '
-                    'immediately.'
-              : 'Holds the room for a guest arriving later. ID proof can be '
-                    'added at check-in.',
-          style: const TextStyle(color: AppTheme.text, fontSize: 12),
         ),
       ],
     );
@@ -3857,61 +3847,120 @@ class _PartyCounts extends StatelessWidget {
     final split =
         '$adults adult${adults == 1 ? '' : 's'}'
         '${children > 0 ? ' and $children child${children == 1 ? '' : 'ren'}' : ''}';
-    return NeuCard(
-      shadow: AppTheme.subtle,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.s8,
-        vertical: AppTheme.s8,
+    Widget row(
+      IconData icon,
+      String label,
+      int value,
+      ValueChanged<int> cb,
+      int min,
+    ) {
+      return Row(
+        children: [
+          Icon(icon, size: 18, color: AppTheme.accent),
+          const SizedBox(width: AppTheme.s8),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          _Stepper(
+            value: value,
+            onChanged: (v) {
+              if (v < min) return;
+              cb(v);
+            },
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rLarge),
+        border: Border.all(color: AppTheme.border2),
+        boxShadow: AppTheme.subtle,
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Total head count: $total guest${total == 1 ? '' : 's'}',
-            style: const TextStyle(
-              color: AppTheme.heading,
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppTheme.s12),
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withValues(alpha: 0.06),
+              border: const Border(bottom: BorderSide(color: AppTheme.border)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    gradient: AppTheme.accentGradient,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '$total',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Total head count: $total guest${total == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Including the primary guest · $split',
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          Text(
-            'Including the primary guest · $split',
-            style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-          ),
-          const SizedBox(height: AppTheme.s4),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Adults',
-                  style: TextStyle(color: AppTheme.muted, fontSize: 12.5),
-                ),
-              ),
-              _Stepper(
-                value: adults,
-                onChanged: (v) {
-                  if (v < minAdults) return;
-                  onAdults(v);
-                },
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s12,
+              vertical: AppTheme.s4,
+            ),
+            child: Column(
+              children: [
+                row(Icons.person_rounded, 'Adults', adults, onAdults, minAdults),
+                const Divider(height: 1, color: AppTheme.border),
+                row(
+                  Icons.child_care_rounded,
                   'Children',
-                  style: TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                  children,
+                  onChildren,
+                  minChildren,
                 ),
-              ),
-              _Stepper(
-                value: children,
-                onChanged: (v) {
-                  if (v < minChildren) return;
-                  onChildren(v);
-                },
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

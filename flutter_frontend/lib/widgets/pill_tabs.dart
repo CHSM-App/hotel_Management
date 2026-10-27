@@ -9,7 +9,14 @@ class PillTab {
   final IconData icon;
   final int? count;
 
-  const PillTab(this.key, this.label, this.icon, {this.count});
+  /// Amber count badge, as on the web's tab counts — same on selected and idle tabs.
+  static const Color countBg = Color(0xFFF59E0B);
+  static const Color countInk = Color(0xFF1F2937);
+
+  /// Overrides [countBg] for tabs whose count is an alert (e.g. open issues).
+  final Color? countColor;
+
+  const PillTab(this.key, this.label, this.icon, {this.count, this.countColor});
 }
 
 /// Card-style segmented tab bar: icon + label per tab, a sliding gradient pill
@@ -64,15 +71,13 @@ class PillTabs extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.white.withValues(alpha: 0.25)
-                          : AppTheme.accent.withValues(alpha: 0.12),
+                      color: tab.countColor ?? PillTab.countBg,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       '${tab.count}',
                       style: TextStyle(
-                        color: isSelected ? Colors.white : AppTheme.accent,
+                        color: tab.countColor != null ? Colors.white : PillTab.countInk,
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                       ),
@@ -280,13 +285,13 @@ class _ScrollTabsState extends State<_ScrollTabs> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(
-                    color: sel ? Colors.white.withValues(alpha: 0.25) : AppTheme.accent.withValues(alpha: 0.12),
+                    color: tab.countColor ?? PillTab.countBg,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     '${tab.count}',
                     style: TextStyle(
-                      color: sel ? Colors.white : AppTheme.accent,
+                      color: tab.countColor != null ? Colors.white : PillTab.countInk,
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
                     ),

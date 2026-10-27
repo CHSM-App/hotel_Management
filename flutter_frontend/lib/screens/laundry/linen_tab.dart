@@ -490,7 +490,7 @@ class _HeaderCell extends StatelessWidget {
           textAlign: alignStart ? TextAlign.left : TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: AppTheme.sidebarBrandInk, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.3),
+          style: const TextStyle(color: Colors.black, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.3),
         ),
       ),
     );
@@ -1015,7 +1015,7 @@ class _SortableHeaderCell extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: sortDir != null ? AppTheme.accent : AppTheme.sidebarBrandInk,
+                    color: sortDir != null ? AppTheme.accent : Colors.black,
                     fontSize: 10.5,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.3,

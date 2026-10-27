@@ -400,7 +400,7 @@ class EventReadyToBillTable extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             textAlign: c.$3 ? TextAlign.right : TextAlign.left,
                             style: const TextStyle(
-                              color: AppTheme.sidebarBrandInk,
+                              color: Colors.black,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.3,

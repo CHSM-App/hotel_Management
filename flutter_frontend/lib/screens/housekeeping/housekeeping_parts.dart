@@ -48,7 +48,7 @@ String timeLabel(String? timestamp) {
 /// The room board's five tones — mirrors each status's `tone` in
 /// HousekeepingPanel.jsx's ROOM_STATUS.
 const kRoomStatusTone = {
-  'DIRTY': AppTheme.danger,
+  'DIRTY': Color(0xFFB45309),
   'CLEANING': AppTheme.edit,
   'READY': AppTheme.vacant,
   'OCCUPIED': AppTheme.checkedIn,
@@ -65,7 +65,7 @@ class StatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
-      child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
+      child: Text(label, softWrap: true, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
     );
   }
 }
@@ -364,9 +364,8 @@ class HkTableHeaderCell extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
       child: Text(
         label.toUpperCase(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: AppTheme.sidebarBrandInk, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.3),
+        softWrap: true,
+        style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.3),
       ),
     );
   }

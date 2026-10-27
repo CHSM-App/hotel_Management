@@ -390,7 +390,7 @@ class _RoomCard extends StatelessWidget {
                     Expanded(
                       child: CompactActionButton(
                         label: actionLabel,
-                        color: room.status == 'CLEANING' ? AppTheme.accent : tone,
+                        color: room.status == 'CLEANING' ? AppTheme.accent : room.status == 'DIRTY' ? AppTheme.danger : tone,
                         primary: room.status == 'CLEANING',
                         expand: true,
                         onTap: actionTap,
@@ -449,12 +449,12 @@ class _RoomsTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final columns = [
-      (label: hasVenues ? 'Room / venue' : 'Room', width: 70.0),
-      (label: 'Type', width: 120.0),
-      (label: 'Status', width: 140.0),
-      (label: hasVenues ? 'Guest / function' : 'Guest', width: 150.0),
-      (label: 'Last cleaned', width: 120.0),
-      (label: 'Notes', width: 160.0),
+      (label: hasVenues ? 'Room / venue' : 'Room', width: 120.0),
+      (label: 'Type', width: 180.0),
+      (label: 'Status', width: 150.0),
+      (label: hasVenues ? 'Guest / function' : 'Guest', width: 190.0),
+      (label: 'Last cleaned', width: 130.0),
+      (label: 'Notes', width: 240.0),
     ];
     final width = columns.fold<double>(0, (sum, c) => sum + c.width) + _actionsWidth;
 
@@ -533,7 +533,7 @@ class _RoomTableRow extends StatelessWidget {
 
     Widget cell(double width, Widget child) => SizedBox(width: width, child: Padding(padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10), child: child));
     Widget text(String s, {Color color = AppTheme.text, FontWeight weight = FontWeight.w400}) =>
-        Text(s.isEmpty ? '—' : s, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s.isEmpty ? AppTheme.muted : color, fontSize: 12.5, fontWeight: weight));
+        Text(s.isEmpty ? '—' : s, softWrap: true, style: TextStyle(color: s.isEmpty ? AppTheme.muted : color, fontSize: 12.5, fontWeight: weight));
 
     return Container(
       decoration: BoxDecoration(
@@ -543,12 +543,12 @@ class _RoomTableRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          cell(70, text(room.roomNumber, color: AppTheme.heading, weight: FontWeight.w700)),
-          cell(120, text([room.categoryName, floorLabel(room.floor)].where((s) => s.isNotEmpty).join(', '))),
-          cell(140, Align(alignment: Alignment.centerLeft, child: StatusPill(label: _statusLabelOf(room), color: tone))),
-          cell(150, text(guest)),
-          cell(120, text(room.status == 'READY' ? cleaned : '—')),
-          cell(160, text(notes)),
+          cell(120, text(room.roomNumber, color: AppTheme.heading, weight: FontWeight.w700)),
+          cell(180, text([room.categoryName, floorLabel(room.floor)].where((s) => s.isNotEmpty).join(', '))),
+          cell(150, Align(alignment: Alignment.centerLeft, child: StatusPill(label: _statusLabelOf(room), color: tone))),
+          cell(190, text(guest)),
+          cell(130, text(room.status == 'READY' ? cleaned : '—')),
+          cell(240, text(notes)),
           SizedBox(
             width: _RoomsTable._actionsWidth,
             child: Padding(
@@ -557,7 +557,7 @@ class _RoomTableRow extends StatelessWidget {
               // ("Back in service") plus the ⋯ menu can't both fit at full size.
               child: FittedBox(
                 fit: BoxFit.scaleDown,
-                alignment: Alignment.centerRight,
+                alignment: Alignment.centerLeft,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -567,7 +567,7 @@ class _RoomTableRow extends StatelessWidget {
                         child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
                       )
                     else if (room.status == 'DIRTY')
-                      CompactActionButton(label: 'Start cleaning', color: tone, onTap: onStart)
+                      CompactActionButton(label: 'Start cleaning', color: AppTheme.danger, onTap: onStart)
                     else if (room.status == 'CLEANING')
                       CompactActionButton(label: 'Finish', color: AppTheme.accent, primary: true, onTap: onFinish)
                     else if (room.status == 'OUT_OF_ORDER')
