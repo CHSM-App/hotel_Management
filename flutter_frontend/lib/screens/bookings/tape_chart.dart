@@ -1792,7 +1792,7 @@ class _DateHeaderState extends State<_DateHeader> {
       children: [
         Row(
           children: [
-            Container(width: roomCol, height: 26, color: AppTheme.bg),
+            Container(width: roomCol, height: 26, color: AppTheme.card),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -1819,7 +1819,7 @@ class _DateHeaderState extends State<_DateHeader> {
                                 width: tile * span.$2,
                                 height: 26,
                                 decoration: const BoxDecoration(
-                                  color: AppTheme.bg,
+                                  color: AppTheme.card,
                                   border: Border(
                                     bottom: BorderSide(color: AppTheme.border),
                                   ),
@@ -1862,7 +1862,7 @@ class _DateHeaderState extends State<_DateHeader> {
                           top: 0,
                           bottom: 0,
                           child: Container(
-                            color: AppTheme.bg,
+                            color: AppTheme.card,
                             padding: const EdgeInsets.only(left: 8),
                             child: Center(
                               child: GestureDetector(
@@ -1911,7 +1911,7 @@ class _DateHeaderState extends State<_DateHeader> {
               alignment: Alignment.centerLeft,
               padding: const EdgeInsets.only(left: AppTheme.s12),
               decoration: const BoxDecoration(
-                color: AppTheme.bg,
+                color: AppTheme.card,
                 border: Border(right: BorderSide(color: AppTheme.border)),
               ),
               child: const Text(
@@ -1942,7 +1942,7 @@ class _DateHeaderState extends State<_DateHeader> {
                               ? AppTheme.accent.withValues(alpha: 0.08)
                               : _isWeekend(d)
                               ? AppTheme.muted.withValues(alpha: 0.06)
-                              : AppTheme.bg,
+                              : AppTheme.card,
                           alignment: Alignment.center,
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -2061,7 +2061,7 @@ class _CategoryBand extends StatelessWidget {
             vertical: AppTheme.s12,
           ),
           decoration: BoxDecoration(
-            color: AppTheme.accent.withValues(alpha: 0.04),
+            color: AppTheme.card,
             border: const Border(bottom: BorderSide(color: AppTheme.border)),
           ),
           child: Row(

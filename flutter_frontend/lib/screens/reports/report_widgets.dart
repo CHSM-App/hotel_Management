@@ -1302,7 +1302,7 @@ class ReportDataTable extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: header
                       ? Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppTheme.accent,
+                          color: Colors.black,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.4,
                           fontSize: 11.5,

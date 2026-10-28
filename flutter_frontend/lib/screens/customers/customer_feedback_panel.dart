@@ -198,7 +198,7 @@ class _FeedbackTable extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color: AppTheme.sidebarBrandInk,
+                                color: Colors.black,
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.3,

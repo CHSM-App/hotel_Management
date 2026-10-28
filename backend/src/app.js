@@ -31,6 +31,7 @@ const lodgeServicesRoutes = require('./modules/services/services.routes');
 const housekeepingRoutes = require('./modules/housekeeping/housekeeping.routes');
 const enquiriesRoutes = require('./modules/enquiries/enquiries.routes');
 const publicRoutes = require('./modules/public/public.routes');
+const billingIntegrationRoutes = require('./modules/billing/billingIntegration.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { UPLOAD_DIR: ROOM_IMAGE_DIR } = require('./middleware/roomImageUpload');
 const { UPLOAD_DIR: MENU_IMAGE_DIR } = require('./middleware/menuImageUpload');
@@ -286,6 +287,7 @@ const API_ROUTES = [
   ['/housekeeping', housekeepingRoutes],
   ['/enquiries', enquiriesRoutes],
   ['/public', publicRoutes],
+  ['/internal/billing', billingIntegrationRoutes],
 ];
 
 for (const [prefix, router] of API_ROUTES) {

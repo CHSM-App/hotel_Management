@@ -1039,8 +1039,8 @@ class _ServiceUsageRow extends StatelessWidget {
               children: [
                 CompactActionButton(
                   label: 'Add to room bill',
-                  color: AppTheme.sidebarBrandInk,
-                  fillColor: AppTheme.sidebarBrandWash,
+                  color: const Color(0xFF7C3AED),
+                  fillColor: const Color(0xFFF4EEFF),
                   onTap: onAddToRoom,
                 ),
                 const SizedBox(height: 6),
@@ -1121,7 +1121,7 @@ class _ServiceQueueTable extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: AppTheme.sidebarBrandInk,
+                              color: Colors.black,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.3,
@@ -1247,8 +1247,8 @@ class _ServiceTableRow extends StatelessWidget {
                 children: [
                   CompactActionButton(
                     label: 'Add to room',
-                    color: AppTheme.sidebarBrandInk,
-                    fillColor: AppTheme.sidebarBrandWash,
+                    color: const Color(0xFF7C3AED),
+                    fillColor: const Color(0xFFF4EEFF),
                     onTap: onAddToRoom,
                   ),
                   const SizedBox(width: 6),
@@ -2556,7 +2556,7 @@ class BillingQueueTable extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: AppTheme.sidebarBrandInk,
+                              color: Colors.black,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.3,
@@ -2828,7 +2828,7 @@ class ReadyToBillTable extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             textAlign: c.$3 ? TextAlign.right : TextAlign.left,
                             style: const TextStyle(
-                              color: AppTheme.sidebarBrandInk,
+                              color: Colors.black,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.3,
@@ -2891,15 +2891,32 @@ class _ReadyToBillRow extends StatelessWidget {
                 horizontal: AppTheme.s8,
                 vertical: 10,
               ),
-              child: Text(
-                stay.guestName ?? 'Guest',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppTheme.heading,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    stay.guestName ?? 'Guest',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppTheme.heading,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if ((stay.bookingNumber ?? '').isNotEmpty)
+                    Text(
+                      stay.bookingNumber!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -3000,7 +3017,7 @@ class _ReadyToBillRow extends StatelessWidget {
             110,
             formatPrice(stay.balanceDue),
             bold: true,
-            color: AppTheme.accent,
+            color: const Color(0xFFB8741A),
             fontSize: 13.5,
           ),
           SizedBox(
@@ -3073,18 +3090,23 @@ class _ViewPillButton extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
+            color: const Color(0xFFF4EEFF),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: AppTheme.accent),
+            border: Border.all(color: const Color(0xFFA78BFA)),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.visibility_outlined, size: 13, color: AppTheme.accent),
-              SizedBox(width: 4),
-              Text(
+              Icon(
+                Icons.visibility_outlined,
+                size: 13,
+                color: const Color(0xFF7C3AED),
+              ),
+              const SizedBox(width: 4),
+              const Text(
                 'View',
                 style: TextStyle(
-                  color: AppTheme.accent,
+                  color: Color(0xFF7C3AED),
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                 ),
@@ -3151,7 +3173,12 @@ class _ReadyToBillFooter extends StatelessWidget {
         stays.fold<num>(0, (sum, s) => sum + f(s));
     final advanceTotal = sumOf((s) => s.advanceAmount ?? 0);
 
-    Widget cell(double width, String text, {bool strong = false}) => SizedBox(
+    Widget cell(
+      double width,
+      String text, {
+      bool strong = false,
+      Color color = AppTheme.heading,
+    }) => SizedBox(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -3164,7 +3191,7 @@ class _ReadyToBillFooter extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.right,
           style: TextStyle(
-            color: AppTheme.heading,
+            color: color,
             fontSize: strong ? 13 : 12,
             fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
           ),
@@ -3206,7 +3233,12 @@ class _ReadyToBillFooter extends StatelessWidget {
           cell(90, formatPrice(sumOf((s) => s.foodTotal ?? 0))),
           cell(100, formatPrice(sumOf((s) => s.subtotal)), strong: true),
           cell(110, advanceTotal > 0 ? '− ${formatPrice(advanceTotal)}' : '—'),
-          cell(110, formatPrice(sumOf((s) => s.balanceDue)), strong: true),
+          cell(
+            110,
+            formatPrice(sumOf((s) => s.balanceDue)),
+            strong: true,
+            color: const Color(0xFFB8741A),
+          ),
           SizedBox(width: ReadyToBillTable._actionWidth),
         ],
       ),
@@ -3332,7 +3364,7 @@ class BillingInvoiceTable extends StatelessWidget {
                                 ? TextAlign.right
                                 : TextAlign.left,
                             style: const TextStyle(
-                              color: AppTheme.sidebarBrandInk,
+                              color: Colors.black,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.3,
@@ -3547,7 +3579,8 @@ class _InvoiceTableRow extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: AppTheme.muted,
-                                fontSize: 10.5,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                         ],

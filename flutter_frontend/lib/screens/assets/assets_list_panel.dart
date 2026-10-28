@@ -443,7 +443,7 @@ class _AssetTable extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               textAlign: c.align,
                               style: const TextStyle(
-                                color: AppTheme.sidebarBrandInk,
+                                color: Colors.black,
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.3,

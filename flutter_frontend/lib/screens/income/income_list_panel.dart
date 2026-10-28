@@ -659,7 +659,7 @@ class _IncomeTableState extends State<_IncomeTable> {
                                       c.label.toUpperCase(),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.3),
+                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.black, fontWeight: FontWeight.w700, letterSpacing: 0.3),
                                     ),
                                   ),
                                   const SizedBox(width: 2),

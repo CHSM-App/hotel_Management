@@ -60,7 +60,7 @@ class _SubTabs extends StatelessWidget {
       onSelect: onSelect,
       tabs: [
         PillTab('rooms', roomsLabel, Icons.bed_rounded),
-        PillTab('issues', 'Issues', Icons.report_problem_rounded, count: issueCount > 0 ? issueCount : null),
+        PillTab('issues', 'Issues', Icons.report_problem_rounded, count: issueCount > 0 ? issueCount : null, countColor: AppTheme.danger),
       ],
     );
   }
