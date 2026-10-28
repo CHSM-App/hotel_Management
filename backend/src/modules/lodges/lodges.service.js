@@ -397,6 +397,29 @@ async function updateLodge(id, input) {
       WHERE id = @id
     `);
 
+  // The owner's own login row, not a column on dbo.lodges — only touched when
+  // the caller actually sent one of these two fields, so an edit that never
+  // mentions the owner leaves their login exactly as they set it.
+  if (input.ownerName !== undefined || input.ownerPhone !== undefined || input.ownerEmail !== undefined) {
+    const ownerRow = (
+      await pool
+        .request()
+        .input('id', sql.BigInt, id)
+        .query("SELECT TOP 1 id, name, phone, email FROM dbo.users WHERE lodge_id = @id AND role = 'OWNER' ORDER BY created_at")
+    ).recordset[0];
+    if (ownerRow) {
+      await pool
+        .request()
+        .input('userId', sql.BigInt, ownerRow.id)
+        .input('name', sql.NVarChar, input.ownerName ?? ownerRow.name)
+        .input('phone', sql.NVarChar, input.ownerPhone ?? ownerRow.phone)
+        // '' clears it, same as every other optional text field here — an
+        // owner can legitimately have no email on file.
+        .input('email', sql.NVarChar, (input.ownerEmail !== undefined ? input.ownerEmail : ownerRow.email) || null)
+        .query('UPDATE dbo.users SET name = @name, phone = @phone, email = @email WHERE id = @userId');
+    }
+  }
+
   return getLodgeDetail(id);
 }
 

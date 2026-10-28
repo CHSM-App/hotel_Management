@@ -13,8 +13,19 @@ const PDFDocument = require('pdfkit');
 // `receipt` is the object advanceReceipts.service.js's mapReceipt already
 // returns — the same shape the browser's own document reads.
 
-const PAGE_W = 419.53; // A5 portrait, points
-const PAGE_H = 595.28;
+// Landscape, not A5 portrait: every field this layout lines up side by side
+// ("No.- X  Date - Y", "Received with thanks from X  Mob. No. Y", ...) needs
+// the room to actually sit on one line — at A5's 419.53pt width those pairs
+// wrapped, so the WhatsApp copy read as a taller, more cramped document than
+// the one the website renders at its natural (much wider) width. 612pt
+// matches the width of "Half Letter", the one landscape stock in the paper
+// picker (billPaper.js's PAPER_SIZES); the height is taller than that stock's
+// 396pt because this is a single-column layout with no page to spill a second
+// column onto — 580pt leaves a measured ~40-80pt of clearance under the
+// signature line against the longest real receipt (a GST event receipt, a
+// three-way split payment, booking id, long names) tried while sizing this.
+const PAGE_W = 612;
+const PAGE_H = 580;
 const MARGIN = 24;
 const INNER_L = MARGIN + 10;
 const INNER_R = PAGE_W - MARGIN - 10;
@@ -36,13 +47,29 @@ const PAY_METHODS = [
 // standard fonts (Helvetica, Times) use WinAnsi encoding, which has no rupee
 // sign — it would otherwise render as a garbled stray character. Mukta (SIL
 // OFL, vendored at build time from @fontsource/mukta) is Google's Devanagari
-// family for Indian currency/typesetting and carries it. Everything else on
-// the page stays on the standard fonts: a wider embed turned out to drop
-// digits and most letters from this particular compiled font (a fontkit
-// quirk with this file, not a licensing or coverage issue) — isolating it to
-// the ₹ sign alone sidesteps that entirely.
+// family for Indian currency/typesetting and carries it. Kept as its own font
+// rather than folded into Inter below: a wider embed of this particular
+// compiled font turned out to drop digits and most letters (a fontkit quirk
+// with this file, not a licensing or coverage issue) — isolating it to the ₹
+// sign alone sidesteps that entirely.
 const RUPEE_FONT = path.join(__dirname, '../../assets/fonts/mukta-rupee-700.woff');
 const RUPEE = '₹';
+
+// Everything else on the page used to stay on pdfkit's standard, unembedded
+// Helvetica/Times — fine in a desktop PDF viewer, but pdf.js (the renderer
+// behind the preview on the landing page a WhatsApp guest actually taps
+// through to) draws an unembedded standard font with its own generic
+// substitute glyphs, which read visibly softer than the website's own text.
+// Embedding the website's real faces — Inter (sans) and Fraunces (serif),
+// same families frontend/index.css names as --sans/--serif — makes every
+// viewer draw the actual outlines instead of guessing at a stand-in, so the
+// WhatsApp copy reads as crisp as the page it was built to match. Vendored as
+// static per-weight TTFs (Google's old css?family= endpoint, not the
+// variable-font file the current css2 endpoint serves, which a single
+// doc.registerFont call can't select a weight out of).
+const SANS_FONT = path.join(__dirname, '../../assets/fonts/inter-400.ttf');
+const SANS_BOLD_FONT = path.join(__dirname, '../../assets/fonts/inter-700.ttf');
+const SERIF_BOLD_FONT = path.join(__dirname, '../../assets/fonts/fraunces-700.ttf');
 
 // Indian numbering (Lakh/Crore), matching the words the printed pad uses —
 // ported from frontend/src/pages/lodge/numberToWords.js so the server-
@@ -134,7 +161,7 @@ function round2(n) {
 
 function renderReceiptPdf(receipt) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A5', margin: 0 });
+    const doc = new PDFDocument({ size: [PAGE_W, PAGE_H], margin: 0 });
     const chunks = [];
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -144,6 +171,9 @@ function renderReceiptPdf(receipt) {
     // load would leave every document after the first with no 'Rupee' font
     // to find.
     doc.registerFont('Rupee', RUPEE_FONT);
+    doc.registerFont('Inter', SANS_FONT);
+    doc.registerFont('Inter-Bold', SANS_BOLD_FONT);
+    doc.registerFont('Fraunces-Bold', SERIF_BOLD_FONT);
 
     // The ruled border the whole voucher sits inside, same as the printed
     // pad's own box (.bill-doc's 1px frame).
@@ -177,17 +207,17 @@ function renderReceiptPdf(receipt) {
 
     // --- Masthead --------------------------------------------------------
     y += 10;
-    doc.font('Helvetica').fontSize(9).fillColor('#000');
+    doc.font('Inter').fontSize(9).fillColor('#000');
     if (receipt.lodgePhone) {
       doc.text(`Mob. ${receipt.lodgePhone}`, INNER_L, y, { width: INNER_W, align: 'right' });
     }
     // Serif + underline, matching .memo__kind's font-family: var(--serif);
     // text-decoration: underline.
-    doc.font('Times-Bold').fontSize(12).text(kindLabel, INNER_L, y, { width: INNER_W, align: 'center', underline: true });
+    doc.font('Fraunces-Bold').fontSize(12).text(kindLabel, INNER_L, y, { width: INNER_W, align: 'center', underline: true });
     y += 17;
 
     // Serif display weight, matching .memo__name's heavy uppercase masthead.
-    doc.font('Times-Bold').fontSize(19).text((receipt.lodgeName || '').toUpperCase(), INNER_L, y, {
+    doc.font('Fraunces-Bold').fontSize(19).text((receipt.lodgeName || '').toUpperCase(), INNER_L, y, {
       width: INNER_W,
       align: 'center',
     });
@@ -195,7 +225,7 @@ function renderReceiptPdf(receipt) {
 
     const addrLine = [receipt.lodgeAddress, receipt.lodgeCity, receipt.lodgeState].filter(Boolean).join(', ');
     if (addrLine) {
-      doc.font('Helvetica').fontSize(9).text(addrLine, INNER_L, y, { width: INNER_W, align: 'center' });
+      doc.font('Inter').fontSize(9).text(addrLine, INNER_L, y, { width: INNER_W, align: 'center' });
       y = doc.y;
     }
     y += 6;
@@ -204,14 +234,14 @@ function renderReceiptPdf(receipt) {
     // --- No. / Date --------------------------------------------------------
     const halfW = INNER_W / 2;
     y += 6;
-    doc.font('Helvetica').fontSize(9.5);
-    doc.text('No.-', INNER_L, y, { continued: true }).font('Helvetica-Bold').text(` ${receipt.receiptNumber || '-'}`, {
+    doc.font('Inter').fontSize(9.5);
+    doc.text('No.-', INNER_L, y, { continued: true }).font('Inter-Bold').text(` ${receipt.receiptNumber || '-'}`, {
       continued: false,
     });
     doc
-      .font('Helvetica')
+      .font('Inter')
       .text('Date -', INNER_L + halfW, y, { continued: true })
-      .font('Helvetica-Bold')
+      .font('Inter-Bold')
       .text(` ${formatDate(receipt.createdAt) || '-'}`);
     y += 13;
     ruleUnder();
@@ -220,10 +250,10 @@ function renderReceiptPdf(receipt) {
     if (receipt.bookingNumber) {
       y += 6;
       doc
-        .font('Helvetica')
+        .font('Inter')
         .fontSize(9.5)
         .text('Booking ID', INNER_L, y, { continued: true })
-        .font('Helvetica-Bold')
+        .font('Inter-Bold')
         .text(`  ${receipt.bookingNumber}`);
       y += 13;
       ruleUnder();
@@ -232,16 +262,16 @@ function renderReceiptPdf(receipt) {
     // --- Received from / Mob. No. -------------------------------------------
     y += 6;
     doc
-      .font('Helvetica')
+      .font('Inter')
       .fontSize(9.5)
       .text('Received with thanks from', INNER_L, y, { continued: true })
-      .font('Helvetica-Bold')
+      .font('Inter-Bold')
       .text(` ${receipt.guestName || '-'}`);
     if (receipt.guestPhone) {
       doc
-        .font('Helvetica')
+        .font('Inter')
         .text('Mob. No.', INNER_L + halfW + 20, y, { continued: true })
-        .font('Helvetica-Bold')
+        .font('Inter-Bold')
         .text(` ${receipt.guestPhone}`);
     }
     y += 13;
@@ -249,7 +279,7 @@ function renderReceiptPdf(receipt) {
 
     // --- What the advance is against -----------------------------------------
     y += 6;
-    doc.font('Helvetica-Bold').fontSize(9.5);
+    doc.font('Inter-Bold').fontSize(9.5);
     if (isEvent) {
       const line = [
         receipt.venueName,
@@ -273,7 +303,7 @@ function renderReceiptPdf(receipt) {
       y = doc.y;
       if (receipt.isDormitory) {
         const bedLine = receipt.bedLabel ? `Dormitory bed — ${receipt.bedLabel}` : 'Dormitory (whole room)';
-        doc.font('Helvetica').fontSize(8.5).text(`Bed: ${bedLine}`, INNER_L, y, { width: INNER_W });
+        doc.font('Inter').fontSize(8.5).text(`Bed: ${bedLine}`, INNER_L, y, { width: INNER_W });
         y = doc.y;
       }
     }
@@ -283,17 +313,17 @@ function renderReceiptPdf(receipt) {
     // --- Sum of rupees in words --------------------------------------------
     y += 6;
     doc
-      .font('Helvetica')
+      .font('Inter')
       .fontSize(9.5)
       .text('the sum of Rupees', INNER_L, y, { continued: true })
-      .font('Helvetica-Bold')
+      .font('Inter-Bold')
       .text(` ${amountInWords(receipt.amountReceived)}`, { width: INNER_W });
     y = doc.y + 6;
     ruleUnder();
 
     // --- Payment method checkboxes ------------------------------------------
     y += 6;
-    doc.font('Helvetica').fontSize(9.5).text('by', INNER_L, y, { continued: false });
+    doc.font('Inter').fontSize(9.5).text('by', INNER_L, y, { continued: false });
     let boxX = INNER_L + 16;
     const boxY = y + 1;
     for (const { key, label } of PAY_METHODS) {
@@ -307,13 +337,13 @@ function renderReceiptPdf(receipt) {
           .lineWidth(1.1)
           .stroke();
       }
-      doc.font('Helvetica').fontSize(9).text(label, boxX + 11, y, { continued: false });
+      doc.font('Inter').fontSize(9).text(label, boxX + 11, y, { continued: false });
       boxX += 11 + doc.widthOfString(label) + 14;
     }
     if (split) {
-      doc.font('Helvetica').fontSize(8.5).text(splitSummary, boxX, y, { width: INNER_R - boxX });
+      doc.font('Inter').fontSize(8.5).text(splitSummary, boxX, y, { width: INNER_R - boxX });
     } else if (paymentLines[0]?.reference) {
-      doc.font('Helvetica').fontSize(9).text(`Txn No. ${paymentLines[0].reference}`, boxX, y, { width: INNER_R - boxX });
+      doc.font('Inter').fontSize(9).text(`Txn No. ${paymentLines[0].reference}`, boxX, y, { width: INNER_R - boxX });
     }
     y += 13;
     ruleUnder();
@@ -321,7 +351,7 @@ function renderReceiptPdf(receipt) {
     // --- Against bill (left blank at issue, same as the printed pad) ---------
     y += 6;
     doc
-      .font('Helvetica')
+      .font('Inter')
       .fontSize(8.5)
       .fillColor('#555')
       .text('against full/part payment of our Bill No. ____________   Dated ____________', INNER_L, y, { width: INNER_W });
@@ -334,15 +364,15 @@ function renderReceiptPdf(receipt) {
       y += 6;
       const supply = placeOfSupply(receipt);
       doc
-        .font('Helvetica')
+        .font('Inter')
         .fontSize(8.5)
         .text('Place of Supply', INNER_L, y, { continued: true })
-        .font('Helvetica-Bold')
+        .font('Inter-Bold')
         .text(`  ${supply || '-'}`, { continued: false });
       doc
-        .font('Helvetica')
+        .font('Inter')
         .text('Reverse Charge', INNER_L + halfW, y, { continued: true })
-        .font('Helvetica-Bold')
+        .font('Inter-Bold')
         .text('  No');
       y += 13;
       ruleUnder();
@@ -369,8 +399,14 @@ function renderReceiptPdf(receipt) {
       const tblTop = y;
       const tblH = rowH * totalRows.length;
       const totalsX = INNER_L + INNER_W * 0.42;
-      const dividerX = INNER_R - 76;
-      const psColX = INNER_R - 30;
+      // dividerX used to sit only 76pt from the right edge, leaving the whole-
+      // rupees column (psColX - dividerX - 8) just 38pt wide — enough for a
+      // four-digit stay total but not a six/seven-digit one (a lakh-plus
+      // function advance, easily over this page's digits with the Indian
+      // comma grouping), which wrapped onto a second line and collided with
+      // the paise column above or below it.
+      const dividerX = INNER_R - 100;
+      const psColX = INNER_R - 32;
 
       doc.rect(totalsX, tblTop, INNER_R - totalsX, tblH).lineWidth(0.75).strokeColor(LINE_COLOR).stroke();
       doc
@@ -396,7 +432,7 @@ function renderReceiptPdf(receipt) {
         const paiseTotal = Math.round(Math.abs(n) * 100);
         const whole = Math.floor(paiseTotal / 100);
         const paise = paiseTotal % 100;
-        const font = bold ? 'Helvetica-Bold' : 'Helvetica';
+        const font = bold ? 'Inter-Bold' : 'Inter';
         const textY = rowY + 3;
         doc.font(font).fontSize(9).text(label, totalsX + 6, textY, { width: dividerX - totalsX - 10 });
         doc.font(font).fontSize(9).text(`${sign}${whole.toLocaleString('en-IN')}`, dividerX + 4, textY, {
@@ -421,15 +457,15 @@ function renderReceiptPdf(receipt) {
     const advancePaise = Math.round(Number(receipt.amountReceived || 0) * 100) % 100;
     const figure = `${advanceWhole.toLocaleString('en-IN')}${advancePaise ? `.${String(advancePaise).padStart(2, '0')}` : '/-'}`;
     const rupeeW = doc.font('Rupee').fontSize(15).widthOfString(RUPEE);
-    const figureW = doc.font('Helvetica-Bold').fontSize(15).widthOfString(` ${figure}`);
+    const figureW = doc.font('Inter-Bold').fontSize(15).widthOfString(` ${figure}`);
     const startX = INNER_L + (boxW - rupeeW - figureW) / 2;
     const textY = y + 8;
     doc.font('Rupee').fontSize(15).fillColor('#000').text(RUPEE, startX, textY, { lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(15).text(` ${figure}`, startX + rupeeW, textY, { lineBreak: false });
+    doc.font('Inter-Bold').fontSize(15).text(` ${figure}`, startX + rupeeW, textY, { lineBreak: false });
     y += boxH + 12;
 
     // --- Footer terms ----------------------------------------------------------
-    doc.font('Helvetica').fontSize(7.5).fillColor('#444');
+    doc.font('Inter').fontSize(7.5).fillColor('#444');
     const adjustNote = isEvent
       ? paidInFull
         ? 'This payment settles the function named above in full. Please keep this receipt.'
@@ -449,7 +485,7 @@ function renderReceiptPdf(receipt) {
     }
     if (isVoid) {
       doc
-        .font('Helvetica-Bold')
+        .font('Inter-Bold')
         .fillColor('#b00')
         .text(`VOID${receipt.voidReason ? ` — ${receipt.voidReason}` : ''}`, INNER_L, y, { width: INNER_W });
       y = doc.y + 1;
@@ -458,9 +494,9 @@ function renderReceiptPdf(receipt) {
 
     // --- Signatures --------------------------------------------------------
     const signY = y + 24;
-    doc.font('Times-Bold').fontSize(11).text('THANK YOU!', INNER_L, signY - 15, { width: INNER_W, align: 'center' });
+    doc.font('Fraunces-Bold').fontSize(11).text('THANK YOU!', INNER_L, signY - 15, { width: INNER_W, align: 'center' });
 
-    doc.font('Helvetica').fontSize(9);
+    doc.font('Inter').fontSize(9);
     doc
       .moveTo(INNER_L, signY)
       .lineTo(INNER_L + 90, signY)

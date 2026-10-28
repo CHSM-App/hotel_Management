@@ -394,6 +394,10 @@ export default function LodgeDetail() {
   };
 
   const lodge = data?.lodge;
+  // The OWNER-role login, if the property has one yet — LodgeEditModal reads
+  // its name/phone from here rather than from `lodge` itself, since those two
+  // fields live on dbo.users, not dbo.lodges (see getLodgeDetail's `staff`).
+  const owner = data?.staff?.find((u) => u.role === 'OWNER');
   const stats = data?.stats;
 
   // The same flag-to-preset translation the list uses, so a property is
@@ -510,6 +514,7 @@ export default function LodgeDetail() {
       {editing && lodge && (
         <LodgeEditModal
           lodge={lodge}
+          owner={owner}
           stats={stats}
           onClose={() => setEditing(false)}
           onSaved={(detail) => {

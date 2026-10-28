@@ -22,6 +22,7 @@ const {
   sameDatesAcrossRooms,
   directionsFor,
   clean,
+  receiptLine,
   notifyStayBooked,
 } = require('../src/modules/notifications/bookingConfirmation');
 const whatsapp = require('../src/config/whatsapp');
@@ -70,15 +71,22 @@ test('a stay fills the ten template variables in order', () => {
     '14 Sep 2026 10:30 AM',
     '2000.00',
     '3000.00',
-    'https://lodge.example/public/receipts/abc123',
+    'Download your advance receipt here: https://lodge.example/public/receipts/abc123',
     'https://www.google.com/maps/search/?api=1&query=15.861%2C73.632',
     '02366-123456',
   ]);
 });
 
-test('with no receipt link the slot reads as a dash, not blank', () => {
+test('with no receipt link the slot carries no readable text — no advance, no constant label', () => {
   const sample = buildStaySample(stay, lodge);
-  assert.strictEqual(sample[7], '-');
+  assert.strictEqual(sample[7], '​');
+  assert.notStrictEqual(sample[7], '-');
+});
+
+test('receiptLine pairs the label with the link, or leaves nothing a guest can read', () => {
+  assert.strictEqual(receiptLine('https://lodge.example/r/abc'), 'Download your advance receipt here: https://lodge.example/r/abc');
+  assert.strictEqual(receiptLine(null), '​');
+  assert.strictEqual(receiptLine(undefined), '​');
 });
 
 test('a multi-room booking sends every room, not just the first', () => {

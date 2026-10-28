@@ -7,6 +7,7 @@ const assetsService = require('../assets/assets.service');
 const { orderItemsSchema } = require('../orders/orders.schema');
 const { ApiError } = require('../../middleware/errorHandler');
 const { UPLOAD_DIR: ASSET_BILL_UPLOAD_DIR } = require('../../middleware/assetBillUpload');
+const { publicBaseUrl } = require('../../config/publicBaseUrl');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -272,13 +273,31 @@ function escapeHtml(value) {
 // thing. `label` is what the page calls the document ("Bill" / "Receipt");
 // `viewHref` is the inline-PDF route the preview canvas fetches and renders;
 // `downloadHref` is the forced-download route the button points at.
-function shareLandingPage({ label, docNumber, lodgeName, viewHref, downloadHref }) {
+// `ogImageHref`/`description` are optional — only the receipt landing page
+// supplies them today (see getSharedReceiptHandler). Without an og:image,
+// WhatsApp's link-preview card falls back to screenshotting this page itself,
+// and since the preview canvas only ever fills in after pdf.js has run — a
+// crawler that doesn't execute JavaScript never sees that happen — the card
+// it shows is a blurry capture of nothing. A purpose-drawn og:image heads
+// that off: the unfurler is handed a real image directly instead of being
+// left to invent one.
+function shareLandingPage({ label, docNumber, lodgeName, viewHref, downloadHref, ogImageHref, description }) {
+  const title = `${escapeHtml(docNumber)} — ${escapeHtml(lodgeName)}`;
+  const ogTags = ogImageHref
+    ? `<meta property="og:type" content="website">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${escapeHtml(description || `${label} from ${lodgeName}`)}">
+<meta property="og:image" content="${escapeHtml(ogImageHref)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${escapeHtml(ogImageHref)}">`
+    : '';
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(docNumber)} — ${escapeHtml(lodgeName)}</title>
+<title>${title}</title>
+${ogTags}
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
@@ -370,9 +389,21 @@ async function downloadSharedBillHandler(req, res, next) {
 // Same two-step landing as a shared bill, against a shared advance receipt.
 async function getSharedReceiptHandler(req, res, next) {
   try {
-    const { receiptNumber, lodgeName } = await receiptShareService.readSharedReceipt(String(req.params.token || ''));
+    const { receiptNumber, lodgeName, amountReceived } = await receiptShareService.readSharedReceipt(
+      String(req.params.token || '')
+    );
     const token = String(req.params.token || '');
     res.setHeader('Cache-Control', 'no-store');
+    // Absolute, not relative: an og:image the unfurler resolves against its
+    // own crawler's base URL, rather than this page's, is a broken image —
+    // same reasoning publicBaseUrl() exists for everywhere else a guest-
+    // facing link is built.
+    let ogImageHref;
+    try {
+      ogImageHref = `${publicBaseUrl()}/public/receipts/${encodeURIComponent(token)}/preview.png`;
+    } catch {
+      ogImageHref = undefined; // PUBLIC_BASE_URL unset — the page still works, just without a card image
+    }
     res.type('html').send(
       shareLandingPage({
         label: 'Receipt',
@@ -380,8 +411,26 @@ async function getSharedReceiptHandler(req, res, next) {
         lodgeName,
         viewHref: `/public/receipts/${encodeURIComponent(token)}/view`,
         downloadHref: `/public/receipts/${encodeURIComponent(token)}/download`,
+        ogImageHref,
+        description: `Advance receipt for ₹${Number(amountReceived || 0).toFixed(2)}`,
       })
     );
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The og:image itself — a plain, purpose-drawn card (see
+// receiptShareService.buildReceiptPreviewImage), not a screenshot of the PDF.
+async function getSharedReceiptPreviewImageHandler(req, res, next) {
+  try {
+    const { receiptNumber, lodgeName, amountReceived } = await receiptShareService.readSharedReceipt(
+      String(req.params.token || '')
+    );
+    const png = await receiptShareService.buildReceiptPreviewImage({ lodgeName, receiptNumber, amountReceived });
+    res.type('png');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(png);
   } catch (err) {
     next(err);
   }
@@ -447,6 +496,7 @@ module.exports = {
   viewSharedBillHandler,
   downloadSharedBillHandler,
   getSharedReceiptHandler,
+  getSharedReceiptPreviewImageHandler,
   viewSharedReceiptHandler,
   downloadSharedReceiptHandler,
   getLodgePageHandler,

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 const { getPool, sql } = require('../../config/connection');
 const { logger } = require('../../config/logger');
 const { ApiError } = require('../../middleware/errorHandler');
@@ -248,7 +249,7 @@ async function readSharedReceipt(token) {
     .request()
     .input('token', sql.NVarChar(64), token)
     .query(`
-      SELECT s.filename, s.created_at, ar.receipt_number, l.name AS lodge_name
+      SELECT s.filename, s.created_at, ar.receipt_number, ar.amount_received, l.name AS lodge_name
       FROM dbo.receipt_shares s
       JOIN dbo.advance_receipts ar ON ar.id = s.receipt_id
       JOIN dbo.lodges l ON l.id = ar.lodge_id
@@ -269,7 +270,55 @@ async function readSharedReceipt(token) {
     throw new ApiError('This receipt link is no longer available.', 404);
   }
 
-  return { filePath, receiptNumber: row.receipt_number, lodgeName: row.lodge_name };
+  return {
+    filePath,
+    receiptNumber: row.receipt_number,
+    lodgeName: row.lodge_name,
+    amountReceived: Number(row.amount_received) || 0,
+  };
+}
+
+// The og:image WhatsApp (and every other link-unfurler) puts in the chat's
+// link-preview card. Without one, WhatsApp falls back to screenshotting the
+// landing page itself — a JS-rendered pdf.js canvas a crawler that doesn't
+// run JavaScript never sees fill in, so the card it shows instead is some
+// placeholder grabbed before anything rendered, soft and uninformative.
+// A plain, purpose-drawn card side-steps that: no PDF rendering involved, so
+// nothing here depends on a crawler executing JavaScript or on this process
+// being able to rasterise a PDF page (sharp's prebuilt binary on this host
+// has no PDF input support — see the empty `sharp.format.pdf.input` — so
+// reusing the real receipt's own pixels was never an option anyway).
+// 1200×630 is the size every major unfurler (WhatsApp included) expects for
+// a link-preview image; anything else gets cropped oddly rather than shown
+// whole.
+// A private copy of public.controller.js's escapeHtml — XML escaping is the
+// same five characters either way, and pulling in the controller module here
+// just for one function would be the tail wagging the dog.
+function escapeXml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
+async function buildReceiptPreviewImage({ lodgeName, receiptNumber, amountReceived }) {
+  const amount = Number(amountReceived || 0).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630">
+      <rect width="1200" height="630" fill="#f4f5f7"/>
+      <rect x="40" y="40" width="1120" height="550" rx="20" fill="#ffffff" stroke="#e5e7eb" stroke-width="2"/>
+      <text x="100" y="180" font-family="Arial, sans-serif" font-size="28" letter-spacing="3" fill="#6b7280">ADVANCE RECEIPT</text>
+      <text x="100" y="260" font-family="Georgia, 'Times New Roman', serif" font-weight="bold" font-size="56" fill="#111827">${escapeXml(lodgeName || '')}</text>
+      <text x="100" y="340" font-family="Arial, sans-serif" font-size="30" fill="#374151">Receipt No. ${escapeXml(receiptNumber || '-')}</text>
+      <text x="100" y="470" font-family="Arial, sans-serif" font-weight="bold" font-size="72" fill="#111827">₹ ${escapeXml(amount)}</text>
+    </svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
 }
 
 // What has been sent for one receipt, newest first.
@@ -306,6 +355,7 @@ module.exports = {
   listShares,
   whatsAppAvailable,
   buildReceiptSample,
+  buildReceiptPreviewImage,
   clean,
   amountForTemplate,
   LINK_TTL_DAYS,

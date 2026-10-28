@@ -14,22 +14,29 @@ const receiptShareService = require('../billing/receiptShare.service');
 //
 //   {{1}} name             {{6}} advance
 //   {{2}} hotel_name       {{7}} balance
-//   {{3}} room             {{8}} receipt_link
+//   {{3}} room             {{8}} receipt_line
 //   {{4}} checkin_at       {{9}} directions
 //   {{5}} checkout_at      {{10}} contact
 //
 // "Dear {{1}}, Thank you for choosing us! Your booking for {{2}} is
 //  confirmed. Room No: {{3}} / Check-in: {{4}} / Check-out: {{5}} /
-//  Advance Paid: ₹{{6}} / Balance Due: ₹{{7}} / Download your advance
-//  receipt here: {{8}} / Directions: {{9}} / Contact: {{10}} ..."
+//  Advance Paid: ₹{{6}} / Balance Due: ₹{{7}} / {{8}} / Directions: {{9}} /
+//  Contact: {{10}} ..."
 //
-// {{8}} is built by resolveReceiptLink below: the most recently ISSUED
-// advance receipt against this booking, if any was taken, rendered to a PDF
-// and handed a /public/receipts/:token link on the spot — see
+// Unlike every other slot, {{8}} carries its own label rather than sitting
+// after one baked into the template text — the template used to read
+// "Download your advance receipt here: {{8}}" unconditionally, which left a
+// guest who never paid an advance reading that line pointed at a dash. Now
+// the label and the link travel together (see receiptLine below), and a
+// booking with no advance on file gets a slot with nothing a guest can read
+// in it at all.
+//
+// {{8}}'s link half is built by resolveReceiptLink below: the most recently
+// ISSUED advance receipt against this booking, if any was taken, rendered to
+// a PDF and handed a /public/receipts/:token link on the spot — see
 // receiptShare.service.js's createAutoReceiptLink. No advance, or the PDF
-// could not be built, and the slot reads "-" the same way every other blank
-// template variable does; it never stops the confirmation itself from going
-// out.
+// could not be built, and the slot goes blank; it never stops the
+// confirmation itself from going out.
 //
 // One booking can hold rooms on different date ranges — dbo.booking_rooms
 // carries its own check_in_date/check_out_date per room, and
@@ -71,6 +78,17 @@ function clean(value) {
     .replace(/\s*,\s*/g, ' - ')
     .trim();
   return text || '-';
+}
+
+// {{8}}: the label and the link together, since the template no longer
+// prints a label of its own in front of this slot (see the file header). No
+// link — no advance taken, or the PDF couldn't be built — and this reads as
+// a zero-width space rather than clean()'s usual "-": the provider rejects a
+// genuinely empty template variable outright, but a guest must not see a
+// dash where there is nothing to download.
+function receiptLine(link) {
+  if (!link) return '​';
+  return clean(`Download your advance receipt here: ${link}`);
 }
 
 // A DATE column arrives from mssql as a Date at UTC midnight; the schemas
@@ -164,7 +182,7 @@ function buildStaySample(booking, lodge, receiptLink) {
   const times = stayTimes(booking, lodge);
   const advance = Number(booking.advance_amount || 0);
   const total = Number(booking.total_price || 0);
-  return [
+  const values = [
     booking.guest_name,
     lodge.name,
     booking.room_numbers,
@@ -172,10 +190,11 @@ function buildStaySample(booking, lodge, receiptLink) {
     times.checkOut,
     money(advance),
     money(total - advance),
-    receiptLink,
+    receiptLine(receiptLink),
     directionsFor(lodge),
     lodgeContact(lodge),
-  ].map(clean);
+  ];
+  return values.map((value, i) => (i === 7 ? value : clean(value)));
 }
 
 // The same ten values for one room out of a booking whose rooms don't all
@@ -196,7 +215,7 @@ function buildPerRoomSample(room, booking, lodge, roomCount, receiptLink) {
   const roomTotal = Number(room.total_price || 0);
   const share = bookingTotal > 0 ? roomTotal / bookingTotal : 1 / roomCount;
   const roomAdvance = round2(bookingAdvance * share);
-  return [
+  const values = [
     booking.guest_name,
     lodge.name,
     room.room_number,
@@ -204,10 +223,11 @@ function buildPerRoomSample(room, booking, lodge, roomCount, receiptLink) {
     times.checkOut,
     money(roomAdvance),
     money(roomTotal - roomAdvance),
-    receiptLink,
+    receiptLine(receiptLink),
     directionsFor(lodge),
     lodgeContact(lodge),
-  ].map(clean);
+  ];
+  return values.map((value, i) => (i === 7 ? value : clean(value)));
 }
 
 function round2(value) {
@@ -304,14 +324,14 @@ async function latestIssuedReceiptId(lodgeId, bookingId) {
   return issued ? issued.id : null;
 }
 
-// {{8}} in the template. Built here rather than by the desk's usual
-// "Share on WhatsApp" button — this message fires automatically right after
-// the booking is saved, before any desk action — so
+// The link half of {{8}} (see receiptLine). Built here rather than by the
+// desk's usual "Share on WhatsApp" button — this message fires automatically
+// right after the booking is saved, before any desk action — so
 // receiptShareService.createAutoReceiptLink renders the PDF itself and
 // mints the link on the spot. Best-effort, same reasoning as the rest of
 // this file: a link that can't be built must not stop the confirmation
-// itself from going out, so this never throws and the template just prints
-// "-" in its place.
+// itself from going out, so this never throws and just leaves the slot
+// blank.
 async function resolveReceiptLink(lodgeId, bookingId, phone) {
   try {
     const receiptId = await latestIssuedReceiptId(lodgeId, bookingId);
@@ -407,4 +427,5 @@ module.exports = {
   sameDatesAcrossRooms,
   directionsFor,
   clean,
+  receiptLine,
 };

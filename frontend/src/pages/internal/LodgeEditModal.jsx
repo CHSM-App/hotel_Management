@@ -31,13 +31,19 @@ const CHECKIN_MODES = [
 ];
 
 // Support correcting a property after onboarding. Everything the registration
-// form asked for can be put right here; what it deliberately does not touch
-// is the owner's login, which stays with the owner.
+// form asked for can be put right here, plus the owner login's own name,
+// phone and email — the desk often has those wrong until the owner actually
+// signs in and fixes their profile, and until then there was no way to
+// correct it without asking the owner to do it themselves. The password
+// stays with the owner; that's the login's credential, not its contact
+// details.
 //
 // The row arrives in the API's snake_case and is posted back in the camelCase
 // the schema reads, so the mapping is done once on the way in and once on the
-// way out rather than leaking either shape into the inputs.
-function formFromLodge(lodge) {
+// way out rather than leaking either shape into the inputs. `owner` is the
+// OWNER-role row from getLodgeDetail's `staff` list — those three fields live
+// on dbo.users, not on the lodge row, so they don't come from `lodge` itself.
+function formFromLodge(lodge, owner) {
   return {
     lodgeName: lodge.name ?? '',
     slug: lodge.slug ?? '',
@@ -67,6 +73,9 @@ function formFromLodge(lodge) {
     hasLaundry: !!lodge.has_laundry,
     isActive: !!lodge.is_active,
     showLogoOnReceipt: !!lodge.show_logo_on_receipt,
+    ownerName: owner?.name ?? '',
+    ownerPhone: owner?.phone ?? '',
+    ownerEmail: owner?.email ?? '',
   };
 }
 
@@ -82,9 +91,9 @@ function Check({ id, label, note, checked, onChange, disabled }) {
   );
 }
 
-export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
+export default function LodgeEditModal({ lodge, owner, stats, onSaved, onClose }) {
   const token = getSession()?.token;
-  const [form, setForm] = useState(() => formFromLodge(lodge));
+  const [form, setForm] = useState(() => formFromLodge(lodge, owner));
   const [error, setError] = useState('');
   const [fieldError, setFieldError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -157,6 +166,14 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
       failOn('edit-gstin', 'Enter a valid 15-character GSTIN.');
       return;
     }
+    if (owner && !form.ownerName.trim()) {
+      failOn('edit-owner-name', 'Enter the owner\'s name.');
+      return;
+    }
+    if (owner && !form.ownerPhone.trim()) {
+      failOn('edit-owner-phone', "Enter the owner's phone number.");
+      return;
+    }
     const coords = validateCoordinates(form);
     if (!coords.ok) {
       failOn('edit-location-lat', coords.message);
@@ -178,6 +195,14 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
         hasLaundry: form.hasRooms || form.hasEvents ? form.hasLaundry : false,
         gstin: form.isGstRegistered ? form.gstin : '',
       };
+      // No OWNER login exists on this property yet (possible right after a
+      // registration that skipped it) — omit rather than send blanks the
+      // schema would reject, since there's no login here to update anyway.
+      if (!owner) {
+        delete payload.ownerName;
+        delete payload.ownerPhone;
+        delete payload.ownerEmail;
+      }
       const detail = await apiPatch(`/internal/lodges/${lodge.id}`, payload, { token });
       onSaved(detail);
     } catch (err) {
@@ -487,6 +512,45 @@ export default function LodgeEditModal({ lodge, stats, onSaved, onClose }) {
               checked={form.showLogoOnReceipt}
               onChange={update('showLogoOnReceipt')}
             />
+          )}
+          {owner ? (
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="edit-owner-name">Owner name</label>
+                <input
+                  id="edit-owner-name"
+                  aria-invalid={invalid('edit-owner-name')}
+                  value={form.ownerName}
+                  onChange={update('ownerName')}
+                />
+                {fieldErr('edit-owner-name')}
+              </div>
+              <div className="field">
+                <label htmlFor="edit-owner-phone">Owner phone</label>
+                <input
+                  id="edit-owner-phone"
+                  aria-invalid={invalid('edit-owner-phone')}
+                  value={form.ownerPhone}
+                  onChange={update('ownerPhone')}
+                />
+                {fieldErr('edit-owner-phone')}
+              </div>
+              <div className="field">
+                <label htmlFor="edit-owner-email">Owner email</label>
+                <input
+                  id="edit-owner-email"
+                  type="email"
+                  aria-invalid={invalid('edit-owner-email')}
+                  value={form.ownerEmail}
+                  onChange={update('ownerEmail')}
+                  placeholder="owner@lodge.com"
+                />
+                <p className="reg-card__hint">These three are the owner's own login details. Their password stays theirs to change.</p>
+                {fieldErr('edit-owner-email')}
+              </div>
+            </div>
+          ) : (
+            <p className="reg-card__hint">This property has no owner login yet.</p>
           )}
         </section>
         </div>

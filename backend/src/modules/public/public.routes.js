@@ -16,6 +16,7 @@ const {
   viewSharedBillHandler,
   downloadSharedBillHandler,
   getSharedReceiptHandler,
+  getSharedReceiptPreviewImageHandler,
   viewSharedReceiptHandler,
   downloadSharedReceiptHandler,
   getAssetQrPageHandler,
@@ -82,6 +83,10 @@ router.get('/bills/:token/download', downloadSharedBillHandler);
 
 // Same for a shared advance receipt.
 router.get('/receipts/:token', getSharedReceiptHandler);
+// The link-preview card image for the landing page above — fetched by
+// WhatsApp's own unfurler, not by a guest, so it needs no rate limit beyond
+// the others here either.
+router.get('/receipts/:token/preview.png', getSharedReceiptPreviewImageHandler);
 router.get('/receipts/:token/view', viewSharedReceiptHandler);
 router.get('/receipts/:token/download', downloadSharedReceiptHandler);
 

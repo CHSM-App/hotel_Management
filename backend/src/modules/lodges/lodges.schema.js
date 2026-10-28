@@ -183,6 +183,16 @@ const updateLodgeSchema = z.object({
   hasLaundry: z.boolean().optional(),
   isActive: z.boolean().optional(),
   showLogoOnReceipt: z.boolean().optional(),
+  // The OWNER-role login's own name/phone/email — its password stays theirs
+  // to change, but a desk onboarding a property often has the rest wrong on
+  // file until the owner actually signs in, and internal staff need a way to
+  // correct it without asking the owner to do it themselves first.
+  ownerName: z.string().trim().min(1, 'Owner name cannot be blank.').max(200).optional(),
+  ownerPhone: z.string().trim().min(1, 'Owner phone cannot be blank.').max(20).optional(),
+  // Unlike name/phone, an owner can legitimately have none on file — same
+  // "optional, empty string allowed" shape createLodgeSchema's own ownerEmail
+  // uses at registration.
+  ownerEmail: z.string().trim().email('Enter a valid email.').optional().or(z.literal('')),
 });
 
 module.exports = { createLodgeSchema, updateLodgeSchema };
