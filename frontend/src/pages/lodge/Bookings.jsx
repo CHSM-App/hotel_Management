@@ -2665,7 +2665,9 @@ export default function Bookings({
       // Booked, so the chart with its confirmation is the right place to
       // stay — but the way back is spent, not carried onto the next form.
       cameFromRegister.current = false;
-      cameFromEnquiry.current = false;
+      // A booking confirmed from an enquiry sends the desk back to Enquiries,
+      // where the enquiry now reads Converted.
+      returnToEnquiriesIfCame();
       loadTapeChart();
     } catch (err) {
       reportFormError(
@@ -2751,6 +2753,12 @@ export default function Bookings({
   const [checkInForm, setCheckInForm] = useState(initialCheckInForm);
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
+  // The banner sits at the top of the booking modal, so a check-in refused from
+  // the bottom of a long form would otherwise fail out of sight.
+  const actionErrorRef = useRef(null);
+  useEffect(() => {
+    if (actionError) actionErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [actionError]);
   const [clearingLockout, setClearingLockout] = useState(false);
 
   // Non-null only while the late-checkout decision is on screen. The amount is
@@ -5510,7 +5518,7 @@ export default function Bookings({
                   </div>
                 )}
 
-                {actionError && <div className="form-banner form-banner--error">{actionError}</div>}
+                {actionError && <div ref={actionErrorRef} className="form-banner form-banner--error">{actionError}</div>}
 
                 {/* The receipt for money taken before the bill exists. Its own
                     row above the status actions, because it applies to a

@@ -3306,6 +3306,14 @@ async function cancelBooking(
       UPDATE dbo.booking_rooms SET status = 'CANCELLED'
       WHERE booking_id = @bookingId AND EXISTS (
         SELECT 1 FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'CANCELLED');
+      -- An enquiry confirmed into this booking has nothing left to confirm: it
+      -- moves to Closed (the link stays, so it still names the rooms it had).
+      UPDATE dbo.lodge_enquiries
+      SET status = 'CLOSED',
+          handled_at = SYSDATETIMEOFFSET()
+      WHERE lodge_id = @lodgeId AND converted_booking_id = @bookingId AND status = 'CONVERTED'
+        AND EXISTS (
+          SELECT 1 FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId AND status = 'CANCELLED');
       COMMIT TRANSACTION;
     `);
   if (result.recordset.length === 0) {

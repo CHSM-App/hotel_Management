@@ -2989,13 +2989,33 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     is cut, the same way the STAY section confirms the guest. */}
                 {(billTarget.kind === 'FOOD' || billTarget.kind === 'SERVICE') && preview.customerName && (
                   <div className="form-section">
-                    <div className="chart-list">
-                      <div className="chart-row">
-                        <span className="chart-row__name">Customer</span>
-                        <span className="chart-row__value">
-                          {preview.customerName}
-                          {preview.customerPhone ? ` · ${preview.customerPhone}` : ''}
-                        </span>
+                    <div className="issue-bill__summary issue-bill__summary--compact">
+                      <div className="issue-bill__summary-grid issue-bill__summary-grid--customer">
+                        <div>
+                          <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg></span>
+                          <span className="issue-bill__cell">
+                            <small>Customer</small>
+                            <strong>{preview.customerName}</strong>
+                          </span>
+                        </div>
+                        {/* A room guest's order carries "Room N" as its label;
+                            anyone else with a customer name is a walk-in. */}
+                        <div>
+                          <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7M3 18h18M3 14h18M7 9V6h4v3" /></svg></span>
+                          <span className="issue-bill__cell">
+                            <small>From</small>
+                            <strong>{/^room/i.test(preview.tableLabel || '') ? preview.tableLabel : 'Walk-in'}</strong>
+                          </span>
+                        </div>
+                        {preview.customerPhone && (
+                          <div>
+                            <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z" /></svg></span>
+                            <span className="issue-bill__cell">
+                              <small>Phone</small>
+                              <strong>{preview.customerPhone}</strong>
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

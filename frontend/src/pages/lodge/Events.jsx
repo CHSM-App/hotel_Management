@@ -1923,9 +1923,13 @@ export default function Events({
             if (fromEnquiry) onReturnToEnquiries?.();
           }}
           onSaved={(ev) => {
+            // A function confirmed from an enquiry sends the desk back to
+            // Enquiries; any other save stays here to show the new function.
+            const fromEnquiry = Boolean(creating.enquiryId);
             setCreating(null);
             bump();
-            setOpenId(ev.id);
+            if (fromEnquiry) onReturnToEnquiries?.();
+            else setOpenId(ev.id);
           }}
         />
       )}

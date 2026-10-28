@@ -10,7 +10,7 @@ import './Billing.css';
 import './Enquiries.css';
 
 const KIND_LABEL = { ROOM: 'Room', EVENT: 'Event', SERVICE: 'Service', GENERAL: 'General' };
-const STATUS_LABEL = { NEW: 'New', CONTACTED: 'Contacted', CONVERTED: 'Converted', CLOSED: 'Closed' };
+const STATUS_LABEL = { NEW: 'New', CONTACTED: 'Contacted', CONVERTED: 'Confirmed', CLOSED: 'Closed' };
 // Contacted dropped from the filter row: nothing sets that status any more
 // now that the manual "Contacted"/"Converted" buttons are gone for a ROOM/
 // EVENT enquiry (see the actions column below) — an enquiry here goes
@@ -148,7 +148,7 @@ function EnquiryActions({ e, busy, onConfirmBooking, onConfirmEventBooking, setS
               disabled={busy}
               onClick={() => setStatus(e.id, 'CONVERTED')}
             >
-              Converted
+              Confirmed
             </button>
           )}
           <button type="button" className="history-table__btn" disabled={busy} onClick={() => setStatus(e.id, 'CLOSED')}>
@@ -156,7 +156,14 @@ function EnquiryActions({ e, busy, onConfirmBooking, onConfirmEventBooking, setS
           </button>
         </>
       )}
-      {!open && (
+      {/* A confirmed enquiry is settled by its booking, so it can be closed but
+          not reopened; a cancelled booking closes it on its own. */}
+      {e.status === 'CONVERTED' && (
+        <button type="button" className="history-table__btn" disabled={busy} onClick={() => setStatus(e.id, 'CLOSED')}>
+          Close
+        </button>
+      )}
+      {!open && e.status !== 'CONVERTED' && (
         <button type="button" className="history-table__btn" disabled={busy} onClick={() => setStatus(e.id, 'NEW')}>
           Reopen
         </button>
@@ -301,7 +308,7 @@ export default function Enquiries({ onChanged, onConfirmBooking, onConfirmEventB
           <div className="billing-panel__filters">
             {FILTERS.map((f) => (
               <button key={f} type="button" className="billing-panel__filter" aria-pressed={filter === f} onClick={() => setFilter(f)}>
-                {f === 'ALL' ? 'All' : STATUS_LABEL[f]}
+                {f === 'ALL' ? 'All' : f === 'CONVERTED' ? 'Confirmed' : STATUS_LABEL[f]}
                 <span className="billing-panel__filter-count">{counts[f]}</span>
               </button>
             ))}
@@ -363,6 +370,7 @@ export default function Enquiries({ onChanged, onConfirmBooking, onConfirmEventB
                         {extrasFor(e, roomExtraNames, addonNames) && (
                           <div className="enquiries-sheet__note">+ {extrasFor(e, roomExtraNames, addonNames)}</div>
                         )}
+                        {e.bookedRooms && <div className="enquiries-sheet__note">Room {e.bookedRooms}</div>}
                         {e.notes && <div className="enquiries-sheet__note">“{e.notes}”</div>}
                       </td>
                       <td>{formatDateTime(e.createdAt)}</td>
@@ -394,7 +402,7 @@ export default function Enquiries({ onChanged, onConfirmBooking, onConfirmEventB
               </tfoot>
             </table>
           </div>
-          <p className="billing-sheet__note">Enquiries are kept for 30 days. Mark one Converted once the booking is made.</p>
+          <p className="billing-sheet__note">Enquiries are kept for 30 days. Mark one Confirmed once the booking is made.</p>
         </section>
       )}
 
@@ -425,6 +433,12 @@ export default function Enquiries({ onChanged, onConfirmBooking, onConfirmEventB
                 <dd>{formatDateLong(selected.checkOutDate) || '—'}</dd>
                 <dt>Room type</dt>
                 <dd>{roomTypeNames[selected.roomTypeId] || '—'}</dd>
+                {selected.bookedRooms && (
+                  <>
+                    <dt>Booked room</dt>
+                    <dd>{selected.bookedRooms}</dd>
+                  </>
+                )}
               </>
             )}
 

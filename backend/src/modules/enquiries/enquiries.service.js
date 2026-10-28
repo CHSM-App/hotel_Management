@@ -35,6 +35,9 @@ function mapEnquiry(row) {
     status: row.status,
     createdAt: row.created_at,
     handledAt: row.handled_at,
+    // "4 · Standard, 5 · Dormitory" — the rooms of the booking this enquiry was
+    // confirmed into. Null until then, and for an event enquiry.
+    bookedRooms: row.booked_rooms ?? null,
   };
 }
 
@@ -91,10 +94,19 @@ async function listEnquiries(lodgeId, { status } = {}) {
     request.input('status', sql.NVarChar, status);
     filter = 'AND status = @status';
   }
+  // Rooms are read off booking_rooms, cancelled ones included: a booking that
+  // was cancelled still names the rooms it had, and that is what the enquiry
+  // (closed by then) should keep saying.
   const result = await request.query(`
-    SELECT * FROM dbo.lodge_enquiries
-    WHERE lodge_id = @lodgeId ${filter}
-    ORDER BY created_at DESC
+    SELECT e.*,
+           (SELECT STRING_AGG(CONCAT(r.room_number, ' · ', c.name), ', ') WITHIN GROUP (ORDER BY br.id)
+            FROM dbo.booking_rooms br
+            JOIN dbo.rooms r ON r.id = br.room_id
+            JOIN dbo.room_categories c ON c.id = r.category_id
+            WHERE br.booking_id = e.converted_booking_id) AS booked_rooms
+    FROM dbo.lodge_enquiries e
+    WHERE e.lodge_id = @lodgeId ${filter.replace('status', 'e.status')}
+    ORDER BY e.created_at DESC
   `);
   return { enquiries: result.recordset.map(mapEnquiry) };
 }
@@ -136,7 +148,11 @@ async function updateStatus(lodgeId, userId, id, status) {
       UPDATE dbo.lodge_enquiries
       SET status = @status,
           handled_by = CASE WHEN @status = 'NEW' THEN NULL ELSE @userId END,
-          handled_at = CASE WHEN @status = 'NEW' THEN NULL ELSE SYSDATETIMEOFFSET() END
+          handled_at = CASE WHEN @status = 'NEW' THEN NULL ELSE SYSDATETIMEOFFSET() END,
+          -- Reopened means open for a fresh booking; a stale link would make
+          -- linkConvertedBooking refuse to claim it a second time.
+          converted_booking_id = CASE WHEN @status = 'NEW' THEN NULL ELSE converted_booking_id END,
+          converted_event_booking_id = CASE WHEN @status = 'NEW' THEN NULL ELSE converted_event_booking_id END
       OUTPUT inserted.*
       WHERE id = @id AND lodge_id = @lodgeId
     `);

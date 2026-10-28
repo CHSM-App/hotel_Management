@@ -930,3 +930,13 @@
 .room-card__chip--warn:hover {
   text-decoration: underline;
 }
+
+/* A long bed list ("1 Queen Bed + 1 Double Bed + 2 Single Beds") ran out of the
+   card under its neighbours. Chips stay on one line when they fit and otherwise
+   wrap inside the card, capped to its width. */
+.room-card__chip {
+  white-space: normal;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
