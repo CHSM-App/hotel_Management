@@ -125,8 +125,8 @@ async function listLodges() {
 
   const result = await pool.request().query(`
     SELECT
-      l.id, l.name, l.slug, l.phone AS lodge_phone, l.city, l.state, l.latitude, l.longitude,
-      l.checkin_mode, l.is_gst_registered,
+      l.id, l.name, l.slug, l.phone AS lodge_phone, l.address, l.city, l.state, l.latitude, l.longitude,
+      l.checkin_mode, l.is_gst_registered, l.gstin,
       l.is_specified_premises, l.is_active, l.created_at,
       l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
       l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry,

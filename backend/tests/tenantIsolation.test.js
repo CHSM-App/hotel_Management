@@ -70,8 +70,14 @@ test('no controller takes lodgeId from the request body, query or params', () =>
 
 test('every non-public route file requires authentication', () => {
   // public.routes.js is the deliberate exception — the guest ordering surface —
-  // and auth.routes.js is where sessions are created.
-  const EXEMPT = new Set(['public/public.routes.js', 'auth/auth.routes.js']);
+  // auth.routes.js is where sessions are created, and billingIntegration.routes.js
+  // guards itself with its own bearer-key middleware (requireBillingApiKey)
+  // instead of the site's JWT authenticate — see that file's header comment.
+  const EXEMPT = new Set([
+    'public/public.routes.js',
+    'auth/auth.routes.js',
+    'billing/billingIntegration.routes.js',
+  ]);
 
   const offenders = [];
   for (const file of sourceFiles(MODULES_DIR, '.routes.js')) {
