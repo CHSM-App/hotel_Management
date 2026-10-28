@@ -5,6 +5,7 @@ import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/draft.dart';
+import '../../domain/models/enquiry.dart';
 import '../../domain/models/event_booking.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
@@ -25,7 +26,12 @@ class EventFormScreen extends ConsumerStatefulWidget {
   final String? initialDate;
   final int? initialVenueId;
 
-  const EventFormScreen({super.key, this.event, this.initialDate, this.initialVenueId});
+  /// An enquiry the desk just tapped "Confirm booking" on — seeds a new
+  /// function with the organiser, type, pax, venue, date, notes and add-ons,
+  /// and rides its id to the save so the server marks it Converted.
+  final Enquiry? prefillEnquiry;
+
+  const EventFormScreen({super.key, this.event, this.initialDate, this.initialVenueId, this.prefillEnquiry});
 
   @override
   ConsumerState<EventFormScreen> createState() => _EventFormScreenState();
@@ -34,7 +40,7 @@ class EventFormScreen extends ConsumerStatefulWidget {
 class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   bool get _isEdit => widget.event != null;
 
-  late String _eventType = widget.event?.eventType ?? 'BIRTHDAY';
+  late String _eventType = widget.event?.eventType ?? _eventTypeKey(widget.prefillEnquiry?.eventType) ?? 'BIRTHDAY';
   int? _venueId;
   late String _slot = widget.event?.slot ?? 'EVENING';
   late DateTime _startDate;
@@ -43,10 +49,10 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   late TimeOfDay _endTime;
 
   late final _title = TextEditingController(text: widget.event?.title ?? '');
-  late final _organiserName = TextEditingController(text: widget.event?.organiserName ?? '');
-  late final _organiserPhone = TextEditingController(text: widget.event?.organiserPhone ?? '');
+  late final _organiserName = TextEditingController(text: widget.event?.organiserName ?? widget.prefillEnquiry?.name ?? '');
+  late final _organiserPhone = TextEditingController(text: widget.event?.organiserPhone ?? widget.prefillEnquiry?.phone ?? '');
   late final _organiserAltPhone = TextEditingController(text: widget.event?.organiserAltPhone ?? '');
-  late final _expectedPax = TextEditingController(text: widget.event?.expectedPax == null || widget.event!.expectedPax == 0 ? '' : widget.event!.expectedPax.toString());
+  late final _expectedPax = TextEditingController(text: widget.event == null ? (widget.prefillEnquiry?.guests?.toString() ?? '') : (widget.event!.expectedPax == 0 ? '' : widget.event!.expectedPax.toString()));
   late final _venueCharge = TextEditingController(text: widget.event?.venueCharge == null ? '' : widget.event!.venueCharge.toString());
   late bool _catering = (widget.event?.perPlateRate ?? 0) > 0;
   late final _perPlateRate = TextEditingController(text: (widget.event?.perPlateRate ?? 0) > 0 ? widget.event!.perPlateRate.toString() : '');
@@ -60,7 +66,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   late final _discountReason = TextEditingController(text: widget.event?.discountReason ?? '');
   late final _menuNotes = TextEditingController(text: widget.event?.menuNotes ?? '');
   late final _setupNotes = TextEditingController(text: widget.event?.setupNotes ?? '');
-  late final _scheduleNotes = TextEditingController(text: widget.event?.scheduleNotes ?? '');
+  late final _scheduleNotes = TextEditingController(text: widget.event?.scheduleNotes ?? widget.prefillEnquiry?.notes ?? '');
   late final _oneOffLabel = TextEditingController();
   late final _oneOffAmount = TextEditingController();
 
@@ -111,7 +117,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
       final hours = kSlotHours['EVENING']!;
       _startTime = _parseTime(hours[0]);
       _endTime = _parseTime(hours[1]);
-      _venueId = widget.initialVenueId;
+      _venueId = widget.initialVenueId ?? widget.prefillEnquiry?.venueId;
     }
 
     Future.microtask(() async {
@@ -136,6 +142,16 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
   }
 
+  /// An enquiry's free-text event type ("Corporate event") back to a form key.
+  static String? _eventTypeKey(String? label) {
+    final t = (label ?? '').trim().toLowerCase();
+    if (t.isEmpty) return null;
+    for (final e in kEventTypeLabel.entries) {
+      if (t == e.value.toLowerCase() || t.startsWith(e.key.toLowerCase())) return e.key;
+    }
+    return 'OTHER';
+  }
+
   static num _round2(num n) => (n * 100).round() / 100;
 
   List<_AddonLineDraft> _initialLines(List<EventAddon> addons) {
@@ -157,7 +173,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         // the venue's base charge — not left as a greyed placeholder the
         // desk has to notice and retype.
         agreedAmount: saved?.agreedAmount?.toString() ?? a.defaultAmount.toString(),
-        selected: saved != null,
+        selected: saved != null || (ev == null && (widget.prefillEnquiry?.addonIds.contains(a.id) ?? false)),
         isPerUnit: a.isPerUnit,
         autoAmount: autoAmount,
       );
@@ -494,6 +510,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final body = _body();
     if (!_isEdit) {
       body['status'] = status ?? 'DRAFT';
+      if (widget.prefillEnquiry != null) body['enquiryId'] = widget.prefillEnquiry!.id;
       final amount = _advanceAmount;
       if (amount > 0) {
         body['advanceAmount'] = amount;

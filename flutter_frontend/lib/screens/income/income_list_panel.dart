@@ -35,6 +35,43 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
   String? _fromDate;
   String? _toDate;
 
+  // Category / payment cuts, in the shared filter bottom sheet.
+  String? _category;
+  String? _method;
+  String? _payStatus;
+
+  // Category, payment method and payment status stay open so they can be
+  // combined; the date range lives in the From/To bar.
+  Widget _filterPanel(VoidCallback close, StateSetter setSheet, List<String> categories) {
+    void pick(VoidCallback change) {
+      setState(change);
+      setSheet(() {});
+    }
+
+    Widget group<T>(String title, String allLabel, T? current, Iterable<(T, String)> options, ValueChanged<T?> onPick) => NeuFilterPanel(
+      title: title,
+      children: [
+        NeuFilterRow(label: allLabel, on: current == null, icon: Icons.apps_rounded, onTap: () => pick(() => onPick(null))),
+        for (final (v, label) in options)
+          NeuFilterRow(label: label, on: current == v, icon: Icons.label_rounded, onTap: () => pick(() => onPick(v))),
+      ],
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (categories.isNotEmpty) ...[
+          group<String>('CATEGORY', 'All categories', _category, [for (final c in categories) (c, c)], (v) => _category = v),
+        ],
+        const SizedBox(height: AppTheme.s16),
+        group<String>('PAYMENT METHOD', 'All payment methods', _method, [for (final m in kPaymentMethods) (m, kPaymentMethodLabel[m] ?? m)], (v) => _method = v),
+        const SizedBox(height: AppTheme.s16),
+        group<String>('PAYMENT STATUS', 'All payment statuses', _payStatus, const [('PAID', 'Received'), ('PARTIAL', 'Partially received'), ('PENDING', 'Pending')], (v) => _payStatus = v),
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +121,9 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
     final needle = _search.text.trim().toLowerCase();
     final shown = [...state.income]
       ..removeWhere((e) =>
+          (_category != null && e.categoryName != _category) ||
+          (_method != null && e.paymentMethod != _method) ||
+          (_payStatus != null && e.paymentStatus != _payStatus) ||
           (_fromDate != null && e.incomeDate.compareTo(_fromDate!) < 0) ||
           (_toDate != null && e.incomeDate.compareTo(_toDate!) > 0) ||
           (needle.isNotEmpty &&
@@ -162,6 +202,19 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                             ),
                         ],
                       ),
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  NeuFilterButton(
+                    multi: true,
+                    onReset: () => setState(() {
+                      _category = null;
+                      _method = null;
+                      _payStatus = null;
+                    }),
+                    active: _category != null || _method != null || _payStatus != null,
+                    builder: (close) => StatefulBuilder(
+                      builder: (context, setSheet) => _filterPanel(close, setSheet, {for (final e in state.income) e.categoryName}.where((n) => n.isNotEmpty).toList()..sort()),
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
@@ -606,7 +659,7 @@ class _IncomeTableState extends State<_IncomeTable> {
                                       c.label.toUpperCase(),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.3),
+                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.black, fontWeight: FontWeight.w700, letterSpacing: 0.3),
                                     ),
                                   ),
                                   const SizedBox(width: 2),

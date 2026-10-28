@@ -34,28 +34,26 @@ class _BillsReportPanelState extends ConsumerState<BillsReportPanel> {
   String _search = '';
   final _searchController = TextEditingController();
 
-  bool _filterOpen = false;
-  final LayerLink _filterLink = LayerLink();
-  final OverlayPortalController _filterPortalController = OverlayPortalController();
-
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
 
-  void _toggleFilterOpen() {
-    setState(() => _filterOpen = !_filterOpen);
-    if (_filterOpen) {
-      _filterPortalController.show();
-    } else {
-      _filterPortalController.hide();
-    }
-  }
+  Future<void> _openFilter() => showNeuFilterSheet(
+    context,
+    (close) => _BillTypeChips(
+      selected: _type,
+      onSelect: (v) {
+        _selectType(v);
+        close();
+      },
+    ),
+    onReset: () => setState(() => _type = 'ALL'),
+  );
 
   void _selectType(String type) {
     setState(() => _type = type);
-    _toggleFilterOpen();
   }
 
   @override
@@ -128,40 +126,10 @@ class _BillsReportPanelState extends ConsumerState<BillsReportPanel> {
                 ),
               ),
               const SizedBox(width: AppTheme.s8),
-              CompositedTransformTarget(
-                link: _filterLink,
-                child: OverlayPortal(
-                  controller: _filterPortalController,
-                  overlayChildBuilder: (context) => Stack(
-                    children: [
-                      Positioned.fill(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: _toggleFilterOpen,
-                        ),
-                      ),
-                      CompositedTransformFollower(
-                        link: _filterLink,
-                        showWhenUnlinked: false,
-                        targetAnchor: Alignment.bottomRight,
-                        followerAnchor: Alignment.topRight,
-                        offset: const Offset(0, AppTheme.s8),
-                        child: Align(
-                          alignment: Alignment.topRight,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: _BillTypeChips(selected: _type, onSelect: _selectType),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  child: _BillTypeFilterButton(
-                    selected: _type,
-                    open: _filterOpen,
-                    onTap: _toggleFilterOpen,
-                  ),
-                ),
+              _BillTypeFilterButton(
+                selected: _type,
+                open: false,
+                onTap: _openFilter,
               ),
             ],
           ),

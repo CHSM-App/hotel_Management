@@ -1056,7 +1056,7 @@ class _DishTableHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const style = TextStyle(
-      color: AppTheme.accent,
+      color: Colors.black,
       fontWeight: FontWeight.w800,
       fontSize: 10.5,
       letterSpacing: 0.5,

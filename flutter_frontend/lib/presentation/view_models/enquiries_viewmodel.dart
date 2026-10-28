@@ -19,11 +19,15 @@ class EnquiriesState {
   /// Which enquiry a status change is in flight for.
   final int? busyId;
 
+  /// Names for the ids an enquiry carries; empty until (and unless) it loads.
+  final EnquiryCatalogue catalogue;
+
   const EnquiriesState({
     this.isLoading = false,
     this.error,
     this.rows,
     this.busyId,
+    this.catalogue = const EnquiryCatalogue(),
   });
 
   EnquiriesState copyWith({
@@ -33,11 +37,13 @@ class EnquiriesState {
     List<Enquiry>? rows,
     int? busyId,
     bool clearBusy = false,
+    EnquiryCatalogue? catalogue,
   }) => EnquiriesState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
     rows: rows ?? this.rows,
     busyId: clearBusy ? null : (busyId ?? this.busyId),
+    catalogue: catalogue ?? this.catalogue,
   );
 }
 
@@ -45,6 +51,18 @@ class EnquiriesViewModel extends StateNotifier<EnquiriesState> {
   final EnquiriesUsecase usecase;
 
   EnquiriesViewModel(this.usecase) : super(const EnquiriesState());
+
+  /// A nice-to-have, not core to the list loading — a failure is swallowed
+  /// and details just read as blank, same as the web.
+  Future<void> loadCatalogue() async {
+    try {
+      // Awaited first: `state.copyWith(...)` captures `state` before an await
+      // inside its arguments, which would write back a stale copy (rows still
+      // null) over a list that finished loading in the meantime.
+      final catalogue = await usecase.catalogue();
+      state = state.copyWith(catalogue: catalogue);
+    } catch (_) {}
+  }
 
   Future<void> load() async {
     state = state.copyWith(isLoading: true, clearError: true);

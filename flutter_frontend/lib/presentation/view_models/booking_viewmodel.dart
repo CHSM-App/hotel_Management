@@ -1717,6 +1717,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     List<VehicleDraft> vehicles = const [],
     List<PaymentDraft> advanceLines = const [],
     bool sendWhatsApp = false,
+    int? enquiryId,
   }) async {
     if (state.submitting) return null;
     final room = state.room;
@@ -1757,6 +1758,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
         // Not a fixed value: a stay starting today is a walk-in and is checked
         // in below, a later one is a reservation and waits.
         'bookingType': state.bookingType,
+        // Set only when the form was opened from an enquiry's "Confirm
+        // booking" — the server links it and marks it Converted.
+        if (enquiryId != null) 'enquiryId': '$enquiryId',
         // Sent whole. The quote the desk agreed to was priced with this off
         // it, so leaving it out here would book the stay at a total nobody
         // was shown.

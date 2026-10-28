@@ -27,6 +27,7 @@ class WorkOrdersPanel extends ConsumerStatefulWidget {
 
 class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
   final _search = TextEditingController();
+  String _status = 'ALL';
 
   @override
   void initState() {
@@ -60,6 +61,7 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
     final needle = _search.text.trim().toLowerCase();
     final shown = [...state.workOrders]
       ..removeWhere((w) =>
+          (_status != 'ALL' && w.status != _status) ||
           needle.isNotEmpty &&
           !w.assetName.toLowerCase().contains(needle) &&
           !(kIssueTypeLabel[w.issueType] ?? w.issueType).toLowerCase().contains(needle) &&
@@ -78,7 +80,10 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
             padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 88),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              Container(
+              Row(
+                children: [
+              Expanded(
+              child: Container(
                 height: 40,
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                 decoration: BoxDecoration(
@@ -129,6 +134,38 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
                       ),
                   ],
                 ),
+              ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              NeuFilterButton(
+                onReset: () => setState(() => _status = 'ALL'),
+                active: _status != 'ALL',
+                builder: (close) {
+                  final all = state.workOrders;
+                  return NeuFilterPanel(
+                    title: 'FILTER BY STATUS',
+                    children: [
+                      for (final (key, label, icon) in const [
+                        ('ALL', 'All', Icons.apps_rounded),
+                        ('OPEN', 'Open', Icons.error_outline_rounded),
+                        ('IN_PROGRESS', 'In progress', Icons.build_rounded),
+                        ('CLOSED', 'Closed', Icons.check_circle_outline_rounded),
+                      ])
+                        NeuFilterRow(
+                          label: label,
+                          count: key == 'ALL' ? all.length : all.where((w) => w.status == key).length,
+                          on: _status == key,
+                          icon: icon,
+                          onTap: () {
+                            setState(() => _status = key);
+                            close();
+                          },
+                        ),
+                    ],
+                  );
+                },
+              ),
+                ],
               ),
               const SizedBox(height: AppTheme.s12),
               if (state.workOrders.isNotEmpty) ...[

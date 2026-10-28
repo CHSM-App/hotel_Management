@@ -7,7 +7,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../bookings/receipt_download.dart';
 import '../theme.dart';
-import 'advance_receipt_pdf.dart';
+import '../bookings/advance_receipt_pdf.dart';
 
 /// The advance receipt, as the desk actually hands it over — mirrors
 /// AdvanceReceiptModal.jsx: the voucher itself with Print/Download/WhatsApp
@@ -138,7 +138,6 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
     final r = _receipt;
 
     return Scaffold(
@@ -169,8 +168,7 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                   clipBehavior: Clip.antiAlias,
                   child: PdfPreview(
                     key: ValueKey(r.id),
-                    build: (format) =>
-                        AdvanceReceiptPdf.build(r, lodgeName: lodgeName),
+                    build: (format) => AdvanceReceiptPdf.build(r),
                     canChangePageFormat: false,
                     canChangeOrientation: false,
                     canDebug: false,
@@ -187,12 +185,7 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                     tooltip: 'Print',
                     onPressed: _busy
                         ? null
-                        : () => _run(
-                            () => AdvanceReceiptPdf.print(
-                              r,
-                              lodgeName: lodgeName,
-                            ),
-                          ),
+                        : () => _run(() => AdvanceReceiptPdf.print(r)),
                     icon: const Icon(Icons.print_rounded),
                     color: AppTheme.text,
                   ),
@@ -203,10 +196,7 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                         ? null
                         : () => _run(() async {
                             final messenger = ScaffoldMessenger.of(context);
-                            final where = await AdvanceReceiptPdf.download(
-                              r,
-                              lodgeName: lodgeName,
-                            );
+                            final where = await AdvanceReceiptPdf.download(r);
                             if (!mounted) return;
                             messenger.showSnackBar(
                               SnackBar(
@@ -234,12 +224,7 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
                     tooltip: 'Share on WhatsApp',
                     onPressed: _busy
                         ? null
-                        : () => _run(
-                            () => AdvanceReceiptPdf.share(
-                              r,
-                              lodgeName: lodgeName,
-                            ),
-                          ),
+                        : () => _run(() => AdvanceReceiptPdf.share(r)),
                     icon: const Icon(Icons.send_rounded),
                     color: const Color(0xFF25D366),
                   ),

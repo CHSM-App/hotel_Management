@@ -154,12 +154,12 @@ class NeuOptionRow extends StatelessWidget {
               label,
               style: TextStyle(
                 color: selected ? tone : AppTheme.heading,
-                fontSize: 13.5,
+                fontSize: 12,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
               ),
             ),
           ),
-          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+          if (trailing != null) ...[const SizedBox(width: 6), trailing!],
           SizedBox(
             width: 20,
             child: selected ? Icon(Icons.check_circle_rounded, size: 16, color: tone) : null,
@@ -168,6 +168,169 @@ class NeuOptionRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A titled break between groups of [NeuFilterRow]s inside a
+/// [NeuFilterPanel] (own group heading in the sheet, small caps in the popup).
+class NeuFilterSection extends StatelessWidget {
+  final String title;
+  const NeuFilterSection(this.title, {super.key});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: AppTheme.muted,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+        ),
+      ),
+    ),
+  );
+}
+
+/// Marks a subtree as living inside a filter bottom sheet, so
+/// [NeuFilterPanel] drops its floating-card chrome.
+class NeuFilterSheetScope extends InheritedWidget {
+  /// Rebuilds the sheet's content — a picked option is reflected at once
+  /// while the sheet stays open for the next pick.
+  final VoidCallback refresh;
+
+  const NeuFilterSheetScope({super.key, required this.refresh, required super.child});
+
+  static bool of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<NeuFilterSheetScope>() != null;
+
+  static void refreshOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<NeuFilterSheetScope>()?.refresh();
+
+  @override
+  bool updateShouldNotify(NeuFilterSheetScope oldWidget) => false;
+}
+
+/// Opens [panel] (built by [builder], handed a close callback) in the app's
+/// standard filter bottom sheet: drag handle, "Filters" header with a close
+/// button, then the scrollable options.
+Future<void> showNeuFilterSheet(
+  BuildContext context,
+  Widget Function(VoidCallback close) builder, {
+  VoidCallback? onReset,
+
+  /// True when the sheet holds more than one group of options, so a pick
+  /// leaves it open (and a Done button closes it). A single group closes on
+  /// the pick, as there is nothing else to set.
+  bool multi = false,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: AppTheme.card,
+    showDragHandle: false,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    constraints: const BoxConstraints(maxWidth: 560),
+    builder: (sheetContext) {
+      void close() => Navigator.of(sheetContext).pop();
+      // With several groups, picking an option does not close the sheet — a
+      // date and a category can be set in one visit — so the panels get a
+      // no-op close; it closes from the X or Done. A single group closes on
+      // the pick.
+      void keepOpen() {}
+      return StatefulBuilder(
+        builder: (context, setSheet) => NeuFilterSheetScope(
+        refresh: () => setSheet(() {}),
+        child: SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.8,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.border,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 4, 0),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.tune_rounded, size: 18, color: AppTheme.accent),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Filters',
+                          style: TextStyle(
+                            color: AppTheme.heading,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      if (onReset != null)
+                        TextButton(
+                          onPressed: () {
+                            onReset();
+                            setSheet(() {});
+                          },
+                          style: TextButton.styleFrom(foregroundColor: AppTheme.accent, textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+                          child: const Text('Reset'),
+                        ),
+                      IconButton(
+                        onPressed: close,
+                        icon: const Icon(Icons.close_rounded, color: AppTheme.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: AppTheme.border.withValues(alpha: 0.7)),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(4, 10, 4, 14),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: builder(multi ? keepOpen : close),
+                    ),
+                  ),
+                ),
+                if (multi)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: FilledButton(
+                      onPressed: close,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.accent,
+                        shape: const StadiumBorder(),
+                        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                      ),
+                      child: const Text('Done'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        ),
+      );
+    },
+  );
 }
 
 /// The floating card that folds open under a screen's filter button: a small
@@ -180,6 +343,51 @@ class NeuFilterPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Inside a bottom sheet the panel goes full width and flat — the sheet
+    // supplies the card, shadow and header.
+    if (NeuFilterSheetScope.of(context)) {
+      // Options flow as chips — as many per line as fit — and each
+      // NeuFilterSection starts a new titled group.
+      Widget heading(String text, double top) => Padding(
+        padding: EdgeInsets.fromLTRB(12, top, 12, 6),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: AppTheme.muted,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+          ),
+        ),
+      );
+      final groups = <Widget>[heading(title, 0)];
+      var chips = <Widget>[];
+      void flush() {
+        if (chips.isEmpty) return;
+        groups.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(spacing: 5, runSpacing: 5, children: chips),
+          ),
+        );
+        chips = <Widget>[];
+      }
+
+      for (final c in children) {
+        if (c is NeuFilterSection) {
+          flush();
+          groups.add(heading(c.title, 14));
+        } else {
+          chips.add(c);
+        }
+      }
+      flush();
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: groups,
+      );
+    }
     return Container(
       width: 214,
       decoration: BoxDecoration(
@@ -239,6 +447,51 @@ class NeuFilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tint = color ?? AppTheme.accent;
+    if (NeuFilterSheetScope.of(context)) {
+      return Material(
+        color: on ? tint.withValues(alpha: 0.12) : AppTheme.card,
+        shape: StadiumBorder(
+          side: BorderSide(
+            color: on ? tint : AppTheme.border,
+            width: on ? 1.4 : 1,
+          ),
+        ),
+        child: InkWell(
+          onTap: () {
+            onTap();
+            NeuFilterSheetScope.refreshOf(context);
+          },
+          customBorder: const StadiumBorder(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: on ? tint : AppTheme.heading,
+                    fontSize: 12,
+                    fontWeight: on ? FontWeight.w800 : FontWeight.w600,
+                  ),
+                ),
+                if (count != null) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      color: on ? tint : AppTheme.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
       child: InkWell(
@@ -340,7 +593,7 @@ class NeuActionMenu<T> extends StatelessWidget {
               a.label,
               style: TextStyle(
                 color: color,
-                fontSize: 13.5,
+                fontSize: 12,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.1,
               ),
@@ -900,6 +1153,48 @@ class NeuNotice extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The round filter icon that sits beside a list's search box and view
+/// toggle. Tapping it opens [builder]'s panel in the standard filter bottom
+/// sheet; [active] lights it while a filter is narrowing the list. [builder]
+/// is handed a close callback, and the list is rebuilt when the sheet is
+/// dismissed.
+class NeuFilterButton extends StatelessWidget {
+  final bool active;
+  final Widget Function(VoidCallback close) builder;
+  final VoidCallback? onClosed;
+
+  /// Clears every filter this list has; shows a Reset action in the sheet.
+  final VoidCallback? onReset;
+
+  /// More than one group of options in the panel — see [showNeuFilterSheet].
+  final bool multi;
+
+  const NeuFilterButton({super.key, required this.builder, this.active = false, this.onClosed, this.onReset, this.multi = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        await showNeuFilterSheet(context, builder, onReset: onReset, multi: multi);
+        onClosed?.call();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 38,
+        height: 38,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? AppTheme.accent : AppTheme.card,
+          shape: BoxShape.circle,
+          border: Border.all(color: active ? AppTheme.accent : AppTheme.shadowDark, width: 1.3),
+          boxShadow: AppTheme.subtle,
+        ),
+        child: Icon(Icons.filter_alt_rounded, size: 17, color: active ? Colors.white : AppTheme.accent),
       ),
     );
   }

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../domain/models/enquiry.dart';
+import '../bookings/take_booking_screen.dart';
+import '../events/event_form_screen.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/h_scroll_table.dart';
@@ -23,7 +25,10 @@ const _statusLabel = {
   'CLOSED': 'Closed',
 };
 
-const _filters = ['ALL', 'NEW', 'CONTACTED', 'CONVERTED', 'CLOSED'];
+// Contacted isn't offered any more: nothing sets it now that ROOM/EVENT
+// enquiries convert through "Confirm booking". _statusLabel keeps it so an
+// older enquiry already in that status still reads properly.
+const _filters = ['ALL', 'NEW', 'CONVERTED', 'CLOSED'];
 
 Color _statusColor(String status) => switch (status) {
   'NEW' => AppTheme.accent,
@@ -46,7 +51,7 @@ String _shortDay(String? iso) {
 }
 
 /// What the guest actually asked for, as one short line. The full message
-/// they composed is stored on `summary`.
+/// they composed is on `notes`.
 String _lookingFor(Enquiry e) {
   final guests = e.guests == null
       ? ''
@@ -65,6 +70,24 @@ String _lookingFor(Enquiry e) {
     return (e.notes ?? '').isNotEmpty ? 'See note' : '—';
   }
   return parts.isEmpty ? '—' : parts.join(' · ');
+}
+
+/// ROOM and EVENT enquiries convert by opening a pre-filled booking form —
+/// "Confirm booking". Nothing else names a booking to confirm into, so those
+/// keep the plain "Converted" button.
+bool _canConfirm(Enquiry e) => e.kind == 'ROOM' || e.kind == 'EVENT';
+
+/// "12 Oct 2026" — the detail sheet names single dates on their own, so the
+/// year is part of the answer.
+String _longDay(String? iso) {
+  if (iso == null || iso.isEmpty) return '';
+  final d = DateTime.tryParse(iso);
+  if (d == null) return '';
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${d.day} ${months[d.month - 1]} ${d.year}';
 }
 
 /// 10-digit numbers get the country code; anything else is passed through as
@@ -93,13 +116,17 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
   final _search = TextEditingController();
   String _filter = 'NEW';
 
-  /// null = pick by screen width: cards on a phone, spreadsheet on wider screens.
+  /// null = the spreadsheet view; the toggle switches to cards.
   String? _view;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(enquiriesViewModelProvider.notifier).load());
+    Future.microtask(() {
+      final vm = ref.read(enquiriesViewModelProvider.notifier);
+      vm.load();
+      vm.loadCatalogue();
+    });
   }
 
   @override
@@ -133,6 +160,185 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
     ref.read(staffAlertsViewModelProvider.notifier).refreshEnquiries();
   }
 
+  /// A row/card action: the two non-status ones ride the same callback.
+  void _act(Enquiry e, String action) {
+    switch (action) {
+      case 'CONFIRM':
+        _confirm(e);
+      case 'DETAILS':
+        _showDetails(e);
+      default:
+        _setStatus(e, action);
+    }
+  }
+
+  /// "Confirm booking": opens the booking / function form pre-filled from the
+  /// enquiry. Nothing is saved here — the server marks the enquiry Converted
+  /// in the same transaction as the booking the desk actually saves. Closing
+  /// the form without saving just pops back to this list.
+  Future<void> _confirm(Enquiry e) async {
+    final catalogue = ref.read(enquiriesViewModelProvider).catalogue;
+    final Widget form;
+    if (e.kind == 'EVENT') {
+      final date = e.eventDate;
+      form = EventFormScreen(
+        prefillEnquiry: e,
+        initialDate: date != null && date.length >= 10
+            ? date.substring(0, 10)
+            : null,
+      );
+    } else {
+      final extras = catalogue.extrasFor(e);
+      form = TakeBookingScreen(
+        prefillEnquiry: e,
+        prefillExtrasNote: extras.isEmpty ? null : extras.join(', '),
+      );
+    }
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => form));
+    if (!mounted) return;
+    // It may have been converted by the save.
+    ref.read(enquiriesViewModelProvider.notifier).load();
+    ref.read(staffAlertsViewModelProvider.notifier).refreshEnquiries();
+  }
+
+  void _showDetails(Enquiry e) {
+    final catalogue = ref.read(enquiriesViewModelProvider).catalogue;
+    final rows = <(String, String)>[
+      ('Phone', e.phone),
+      ('Type', _kindLabel[e.kind] ?? e.kind),
+      ('Status', _statusLabel[e.status] ?? e.status),
+      if (e.kind == 'ROOM') ...[
+        if (e.checkInDate != null) ('Check-in', _longDay(e.checkInDate)),
+        if (e.checkOutDate != null) ('Check-out', _longDay(e.checkOutDate)),
+        if (e.roomTypeId != null && catalogue.roomTypes[e.roomTypeId] != null)
+          ('Room type', catalogue.roomTypes[e.roomTypeId]!),
+      ],
+      if (e.kind == 'EVENT') ...[
+        if (e.eventDate != null) ('Event date', _longDay(e.eventDate)),
+        if ((e.eventType ?? '').isNotEmpty) ('Event type', e.eventType!),
+        if (e.venueId != null && catalogue.venues[e.venueId] != null)
+          ('Venue', catalogue.venues[e.venueId]!),
+      ],
+      if (e.guests != null) ('Guests', '${e.guests}'),
+      if (catalogue.extrasFor(e).isNotEmpty)
+        ('Extras', catalogue.extrasFor(e).join(', ')),
+      if ((e.notes ?? '').isNotEmpty) ('Notes', e.notes!),
+      ('Received', formatDateTime(e.createdAt)),
+      if (e.handledAt != null) ('Handled', formatDateTime(e.handledAt)),
+    ];
+    showDialog<void>(
+      context: context,
+      builder: (sheet) => Dialog(
+        backgroundColor: AppTheme.card,
+        insetPadding: const EdgeInsets.all(AppTheme.s16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.rLarge),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppTheme.s16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(e.name, style: Theme.of(sheet).textTheme.titleMedium),
+                        Text(
+                          e.referenceCode,
+                          style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close_rounded, color: AppTheme.muted),
+                    onPressed: () => Navigator.of(sheet).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppTheme.s12),
+              for (final (label, value) in rows)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 96,
+                        child: Text(
+                          label,
+                          style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(value, style: const TextStyle(fontSize: 13.5)),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: AppTheme.s12),
+              Wrap(
+                spacing: AppTheme.s8,
+                runSpacing: AppTheme.s8,
+                children: [
+                  _ActionButton(
+                    label: 'WhatsApp',
+                    icon: Icons.chat_rounded,
+                    onTap: () => _openWhatsApp(e),
+                  ),
+                  if (e.isOpen && _canConfirm(e))
+                    _ActionButton(
+                      label: 'Confirm booking',
+                      primary: true,
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        _confirm(e);
+                      },
+                    ),
+                  if (e.isOpen && !_canConfirm(e))
+                    _ActionButton(
+                      label: 'Converted',
+                      primary: true,
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        _setStatus(e, 'CONVERTED');
+                      },
+                    ),
+                  if (e.isOpen)
+                    _ActionButton(
+                      label: 'Close enquiry',
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        _setStatus(e, 'CLOSED');
+                      },
+                    )
+                  else
+                    _ActionButton(
+                      label: 'Reopen',
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        _setStatus(e, 'NEW');
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openWhatsApp(Enquiry e) async {
     final digits = _whatsAppDigits(e.phone);
     if (digits.isEmpty) return;
@@ -164,7 +370,7 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
       ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
 
     final view =
-        _view ?? (MediaQuery.of(context).size.width < 600 ? 'cards' : 'table');
+        _view ?? 'table';
 
     return RefreshIndicator(
       notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
@@ -205,29 +411,32 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
                   ),
                 ),
                 const SizedBox(width: AppTheme.s8),
+                NeuFilterButton(
+                  onReset: () => setState(() => _filter = 'NEW'),
+                  active: _filter != 'NEW',
+                  builder: (close) => NeuFilterPanel(
+                    title: 'FILTER BY STATUS',
+                    children: [
+                      for (final f in _filters)
+                        NeuFilterRow(
+                          label: f == 'ALL' ? 'All' : _statusLabel[f]!,
+                          count: counts[f] ?? 0,
+                          on: _filter == f,
+                          icon: f == 'ALL' ? Icons.apps_rounded : Icons.mark_email_unread_rounded,
+                          onTap: () {
+                            setState(() => _filter = f);
+                            close();
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s8),
                 _ViewToggleButton(
                   view: view,
                   onSelect: (v) => setState(() => _view = v),
                 ),
               ],
-            ),
-            const SizedBox(height: AppTheme.s8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final f in _filters)
-                    Padding(
-                      padding: const EdgeInsets.only(right: AppTheme.s8),
-                      child: _FilterPill(
-                        label: f == 'ALL' ? 'All' : _statusLabel[f]!,
-                        count: counts[f] ?? 0,
-                        selected: _filter == f,
-                        onTap: () => setState(() => _filter = f),
-                      ),
-                    ),
-                ],
-              ),
             ),
             const SizedBox(height: AppTheme.s8),
             if (visible.isEmpty)
@@ -241,7 +450,7 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
                   enquiries: visible,
                   busyId: state.busyId,
                   onWhatsApp: _openWhatsApp,
-                  onStatus: _setStatus,
+                  onStatus: _act,
                 )
               else
                 LayoutBuilder(
@@ -264,7 +473,7 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
                               enquiry: e,
                               busy: state.busyId == e.id,
                               onWhatsApp: () => _openWhatsApp(e),
-                              onStatus: (s) => _setStatus(e, s),
+                              onStatus: (s) => _act(e, s),
                             ),
                           ),
                       ],
@@ -275,7 +484,7 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
                 padding: const EdgeInsets.only(top: AppTheme.s4),
                 child: Text(
                   '${visible.length} enquir${visible.length == 1 ? 'y' : 'ies'} · '
-                  'Enquiries are kept for 30 days. Mark one Converted once the booking is made.',
+                  'Enquiries are kept for 30 days. Tap Confirm booking to turn one into a booking.',
                   style: const TextStyle(color: AppTheme.muted, fontSize: 11),
                 ),
               ),
@@ -464,7 +673,7 @@ class _EnquiryTable extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: AppTheme.sidebarBrandInk,
+                              color: Colors.black,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.3,
@@ -522,7 +731,9 @@ class _EnquiryTableRow extends StatelessWidget {
       'received': formatDateTime(e.createdAt),
     };
 
-    return Container(
+    return InkWell(
+      onTap: () => onStatus('DETAILS'),
+      child: Container(
       decoration: BoxDecoration(
         color: shaded ? AppTheme.border.withValues(alpha: 0.25) : AppTheme.card,
         border: const Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
@@ -574,11 +785,12 @@ class _EnquiryTableRow extends StatelessWidget {
               iconSize: 18,
               actions: [
                 const NeuMenuAction('wa', Icons.chat_rounded, 'WhatsApp'),
-                if (e.status == 'NEW')
-                  const NeuMenuAction('CONTACTED', Icons.phone_in_talk_rounded, 'Mark contacted'),
-                if (e.isOpen) ...const [
-                  NeuMenuAction('CONVERTED', Icons.check_circle_outline_rounded, 'Mark converted'),
-                  NeuMenuAction('CLOSED', Icons.close_rounded, 'Close'),
+                if (e.isOpen) ...[
+                  if (_canConfirm(e))
+                    const NeuMenuAction('CONFIRM', Icons.event_available_rounded, 'Confirm booking')
+                  else
+                    const NeuMenuAction('CONVERTED', Icons.check_circle_outline_rounded, 'Mark converted'),
+                  const NeuMenuAction('CLOSED', Icons.close_rounded, 'Close'),
                 ] else
                   const NeuMenuAction('NEW', Icons.replay_rounded, 'Reopen'),
               ],
@@ -593,56 +805,6 @@ class _EnquiryTableRow extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _FilterPill extends StatelessWidget {
-  final String label;
-  final int count;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FilterPill({
-    required this.label,
-    required this.count,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.accent : AppTheme.card,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? Colors.white : AppTheme.text,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '$count',
-              style: TextStyle(
-                color: selected ? Colors.white70 : AppTheme.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -665,7 +827,10 @@ class _EnquiryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final e = enquiry;
     final color = _statusColor(e.status);
-    return NeuCard(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onStatus('DETAILS'),
+      child: NeuCard(
       shadow: AppTheme.subtle,
       padding: const EdgeInsets.all(AppTheme.s12),
       child: Column(
@@ -709,6 +874,27 @@ class _EnquiryCard extends StatelessWidget {
                   ),
                 ),
               ),
+              NeuActionMenu<String>(
+                iconSize: 18,
+                actions: [
+                  const NeuMenuAction('wa', Icons.chat_rounded, 'WhatsApp'),
+                  if (e.isOpen) ...[
+                    if (_canConfirm(e))
+                      const NeuMenuAction('CONFIRM', Icons.event_available_rounded, 'Confirm booking')
+                    else
+                      const NeuMenuAction('CONVERTED', Icons.check_circle_outline_rounded, 'Mark converted'),
+                    const NeuMenuAction('CLOSED', Icons.close_rounded, 'Close'),
+                  ] else
+                    const NeuMenuAction('NEW', Icons.replay_rounded, 'Reopen'),
+                ],
+                onSelected: (v) {
+                  if (v == 'wa') {
+                    onWhatsApp();
+                  } else if (!busy) {
+                    onStatus(v);
+                  }
+                },
+              ),
             ],
           ),
           const SizedBox(height: AppTheme.s8),
@@ -743,39 +929,8 @@ class _EnquiryCard extends StatelessWidget {
             'Received ${formatDateTime(e.createdAt)}',
             style: const TextStyle(color: AppTheme.muted, fontSize: 11),
           ),
-          const SizedBox(height: AppTheme.s8),
-          Wrap(
-            spacing: AppTheme.s8,
-            runSpacing: AppTheme.s8,
-            children: [
-              _ActionButton(
-                label: 'WhatsApp',
-                icon: Icons.chat_rounded,
-                onTap: onWhatsApp,
-              ),
-              if (e.status == 'NEW')
-                _ActionButton(
-                  label: 'Contacted',
-                  onTap: busy ? null : () => onStatus('CONTACTED'),
-                ),
-              if (e.isOpen) ...[
-                _ActionButton(
-                  label: 'Converted',
-                  primary: true,
-                  onTap: busy ? null : () => onStatus('CONVERTED'),
-                ),
-                _ActionButton(
-                  label: 'Close',
-                  onTap: busy ? null : () => onStatus('CLOSED'),
-                ),
-              ] else
-                _ActionButton(
-                  label: 'Reopen',
-                  onTap: busy ? null : () => onStatus('NEW'),
-                ),
-            ],
-          ),
         ],
+      ),
       ),
     );
   }

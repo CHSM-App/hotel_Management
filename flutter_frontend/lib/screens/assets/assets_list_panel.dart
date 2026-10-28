@@ -29,6 +29,8 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
   // AssetsPanel.jsx. 'cards' is one asset at a time, easier to read on a
   // phone, a toggle away.
   String _view = 'table';
+  String? _category;
+  String? _status;
 
   @override
   void initState() {
@@ -81,6 +83,8 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
     final shown = [...state.assets]
       ..removeWhere((a) =>
           a.status == 'RETIRED' ||
+          (_category != null && a.categoryName != _category) ||
+          (_status != null && a.status != _status) ||
           (needle.isNotEmpty &&
               !a.name.toLowerCase().contains(needle) &&
               !(a.assetTag ?? '').toLowerCase().contains(needle) &&
@@ -158,6 +162,75 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                         ],
                       ),
                     ),
+                  ),
+                  const SizedBox(width: AppTheme.s8),
+                  NeuFilterButton(
+                    multi: true,
+                    onReset: () => setState(() {
+                      _category = null;
+                      _status = null;
+                    }),
+                    active: _category != null || _status != null,
+                    builder: (close) {
+                      final live = state.assets.where((a) => a.status != 'RETIRED');
+                      final cats = {for (final a in live) a.categoryName}.where((n) => n.isNotEmpty).toList()..sort();
+                      final statuses = {'IN_USE', 'UNDER_REPAIR', for (final a in live) a.status}.toList();
+                      String nice(String k) => switch (k) {
+                        'IN_USE' => 'In use',
+                        'UNDER_REPAIR' => 'Under repair',
+                        _ => k.isEmpty ? k : k[0] + k.substring(1).toLowerCase().replaceAll('_', ' '),
+                      };
+                      return NeuFilterPanel(
+                        title: 'STATUS',
+                        children: [
+                          NeuFilterRow(
+                            label: 'All statuses',
+                            count: live.length,
+                            on: _status == null,
+                            icon: Icons.apps_rounded,
+                            onTap: () {
+                              setState(() => _status = null);
+                              close();
+                            },
+                          ),
+                          for (final st in statuses)
+                            NeuFilterRow(
+                              label: nice(st),
+                              count: live.where((a) => a.status == st).length,
+                              on: _status == st,
+                              icon: Icons.inventory_2_rounded,
+                              onTap: () {
+                                setState(() => _status = st);
+                                close();
+                              },
+                            ),
+                          if (cats.isNotEmpty) ...[
+                            const NeuFilterSection('CATEGORY'),
+                            NeuFilterRow(
+                              label: 'All categories',
+                              count: live.length,
+                              on: _category == null,
+                              icon: Icons.apps_rounded,
+                              onTap: () {
+                                setState(() => _category = null);
+                                close();
+                              },
+                            ),
+                            for (final cat in cats)
+                              NeuFilterRow(
+                                label: cat,
+                                count: live.where((a) => a.categoryName == cat).length,
+                                on: _category == cat,
+                                icon: Icons.label_rounded,
+                                onTap: () {
+                                  setState(() => _category = cat);
+                                  close();
+                                },
+                              ),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(width: AppTheme.s8),
                   _ViewToggleButton(view: _view, onSelect: (v) => setState(() => _view = v)),
@@ -370,7 +443,7 @@ class _AssetTable extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               textAlign: c.align,
                               style: const TextStyle(
-                                color: AppTheme.sidebarBrandInk,
+                                color: Colors.black,
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.3,

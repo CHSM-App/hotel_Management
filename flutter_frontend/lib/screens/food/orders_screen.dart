@@ -2104,7 +2104,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
         fontSize: 11,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.5,
-        color: AppTheme.sidebarBrandInk,
+        color: Colors.black,
       ),
     );
 

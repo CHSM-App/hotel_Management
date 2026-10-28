@@ -6,7 +6,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
-import '../housekeeping/housekeeping_parts.dart' show FilterOption, FilterDropdownButton, HkViewToggle, StatusPill, CompactActionButton;
+import '../housekeeping/housekeeping_parts.dart' show FilterOption, FilterDropdownButton, HkSearchBar, HkViewToggle, StatusPill, CompactActionButton;
 import '../theme.dart';
 import 'guest_laundry_form_screen.dart';
 import 'guest_laundry_receive_screen.dart';
@@ -128,67 +128,12 @@ class _GuestLaundryTabState extends ConsumerState<GuestLaundryTab> {
                 ErrorBanner(state.error!),
                 const SizedBox(height: AppTheme.s12),
               ],
-              if (state.orders.length > 5) ...[
-                Container(
-                  height: 48,
-                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.card,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppTheme.shadowDark, width: 1.3),
-                    boxShadow: AppTheme.subtle,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppTheme.accent.withValues(alpha: 0.10),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.search_rounded, size: 17, color: AppTheme.accent),
-                      ),
-                      const SizedBox(width: AppTheme.s8),
-                      Expanded(
-                        child: TextField(
-                          controller: _search,
-                          onChanged: (_) => setState(() {}),
-                          style: const TextStyle(color: AppTheme.heading, fontSize: 14),
-                          decoration: const InputDecoration(
-                            hintText: 'Find by tag or name',
-                            hintStyle: TextStyle(color: AppTheme.muted, fontSize: 14),
-                            border: InputBorder.none,
-                            isDense: true,
-                            contentPadding: EdgeInsets.symmetric(vertical: 13),
-                          ),
-                        ),
-                      ),
-                      if (_search.text.isNotEmpty)
-                        GestureDetector(
-                          onTap: () => setState(() => _search.clear()),
-                          behavior: HitTestBehavior.opaque,
-                          child: Container(
-                            width: 30,
-                            height: 30,
-                            margin: const EdgeInsets.only(right: 2),
-                            alignment: Alignment.center,
-                            decoration: const BoxDecoration(color: AppTheme.bg, shape: BoxShape.circle),
-                            child: const Icon(Icons.close_rounded, size: 15, color: AppTheme.muted),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppTheme.s12),
-              ],
-              Row(
-                children: [
-                  FilterDropdownButton(options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v)),
-                  const Spacer(),
-                  HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
-                ],
+              HkSearchBar(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                hint: 'Find by tag or name',
+                filter: FilterDropdownButton(compact: true, options: filters, selected: _filter, onSelect: (v) => setState(() => _filter = v)),
+                viewToggle: HkViewToggle(view: _view, onSelect: (v) => setState(() => _view = v)),
               ),
               const SizedBox(height: AppTheme.s12),
               if (shown.isEmpty)
@@ -482,7 +427,7 @@ class _OrderHeaderCell extends StatelessWidget {
           textAlign: alignStart ? TextAlign.left : TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: AppTheme.sidebarBrandInk, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.3),
+          style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.3),
         ),
       ),
     );
@@ -519,7 +464,7 @@ class _SortableOrderHeaderCell extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: sortDir != null ? AppTheme.accent : AppTheme.sidebarBrandInk,
+                    color: sortDir != null ? AppTheme.accent : Colors.black,
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.3,

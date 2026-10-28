@@ -65,26 +65,71 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
     _load();
   }
 
-  /// The status cut's own door — folds open right under the search bar
-  /// rather than in a menu, the same [_StatusChips] panel the room register
-  /// opens off its own filter icon.
-  bool _filterOpen = false;
-  final LayerLink _filterLink = LayerLink();
-  final OverlayPortalController _filterPortalController = OverlayPortalController();
+  static const _kRangePresets = [
+    ('today', 'Today'),
+    ('last7', 'Last 7 days'),
+    ('month', 'This month'),
+    ('lastMonth', 'Last month'),
+    ('next30', 'Next 30 days'),
+  ];
 
-  void _toggleFilterOpen() {
-    setState(() => _filterOpen = !_filterOpen);
-    if (_filterOpen) {
-      _filterPortalController.show();
-    } else {
-      _filterPortalController.hide();
-    }
+  static (String, String) _presetRange(String key) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return switch (key) {
+      'today' => (_iso(today), _iso(today)),
+      'last7' => (_iso(today.subtract(const Duration(days: 6))), _iso(today)),
+      'lastMonth' => (
+        _iso(DateTime(now.year, now.month - 1, 1)),
+        _iso(DateTime(now.year, now.month, 0)),
+      ),
+      'next30' => (_iso(today), _iso(today.add(const Duration(days: 30)))),
+      _ => (_iso(DateTime(now.year, now.month, 1)), _iso(DateTime(now.year, now.month + 1, 0))),
+    };
   }
+
+  /// Date shortcuts and the status cut, in one bottom sheet behind the
+  /// funnel icon. Picking either applies it and closes the sheet.
+  Future<void> _openFilter() => showNeuFilterSheet(
+    context,
+    multi: true,
+    (close) => NeuFilterPanel(
+      title: 'DATE',
+      children: [
+        for (final (key, label) in _kRangePresets)
+          NeuFilterRow(
+            label: label,
+            on: _presetRange(key) == (_fromDate, _toDate),
+            icon: Icons.event_rounded,
+            onTap: () {
+              final (from, to) = _presetRange(key);
+              _setRange(from, to);
+              close();
+            },
+          ),
+        const NeuFilterSection('STATUS'),
+        ..._EventStatusChips(
+          selected: _status,
+          onSelect: (v) {
+            _selectStatus(v);
+            close();
+          },
+        ).rows(),
+      ],
+    ),
+    onReset: () {
+      setState(() {
+        _status = '';
+        _fromDate = _iso(DateTime.now().subtract(const Duration(days: 30)));
+        _toDate = _iso(DateTime.now().add(const Duration(days: 182)));
+      });
+      _load();
+    },
+  );
 
   void _selectStatus(String status) {
     setState(() => _status = status);
     _load();
-    _toggleFilterOpen();
   }
 
   @override
@@ -191,43 +236,10 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
-                  CompositedTransformTarget(
-                    link: _filterLink,
-                    child: OverlayPortal(
-                      controller: _filterPortalController,
-                      overlayChildBuilder: (context) => Stack(
-                        children: [
-                          Positioned.fill(
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onTap: _toggleFilterOpen,
-                            ),
-                          ),
-                          CompositedTransformFollower(
-                            link: _filterLink,
-                            showWhenUnlinked: false,
-                            targetAnchor: Alignment.bottomRight,
-                            followerAnchor: Alignment.topRight,
-                            offset: const Offset(0, AppTheme.s8),
-                            child: Align(
-                              alignment: Alignment.topRight,
-                              child: Material(
-                                color: Colors.transparent,
-                                child: _EventStatusChips(
-                                  selected: _status,
-                                  onSelect: _selectStatus,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      child: _StatusFilterButton(
-                        selected: _status,
-                        open: _filterOpen,
-                        onTap: _toggleFilterOpen,
-                      ),
-                    ),
+                  _StatusFilterButton(
+                    selected: _status,
+                    open: false,
+                    onTap: _openFilter,
                   ),
                 ],
               ),
@@ -478,10 +490,7 @@ class _EventStatusChips extends StatelessWidget {
 
   const _EventStatusChips({required this.selected, required this.onSelect});
 
-  @override
-  Widget build(BuildContext context) {
-    return NeuFilterPanel(
-      children: [
+  List<Widget> rows() => [
         NeuFilterRow(
           label: 'All',
           on: selected.isEmpty,
@@ -496,9 +505,10 @@ class _EventStatusChips extends StatelessWidget {
             icon: _kEventStatusIcon[key]!,
             onTap: () => onSelect(key),
           ),
-      ],
-    );
-  }
+      ];
+
+  @override
+  Widget build(BuildContext context) => NeuFilterPanel(children: rows());
 }
 
 /// One icon-and-colour pair per function type — gives each card a glance-able
