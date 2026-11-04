@@ -720,8 +720,7 @@ export default function AssetsPanel({ onViewReport }) {
   // phone. 'table' is the sheet-style view for someone who wants every
   // asset's warranty/AMC/location on screen at once to scan or compare, the
   // way they'd open a spreadsheet to do the same job.
-  const [assetView, setAssetView] = useState('table');
-  const [tableSort, setTableSort] = useState({ key: null, dir: 'asc' });
+  const [assetView, setAssetView] = useState('table');  const [tableSort, setTableSort] = useState({ key: null, dir: 'asc' });
   const [selectedAssetId, setSelectedAssetId] = useState(null);
   // { assetId, workOrders } — keyed by asset so a stale list from the
   // previously open asset never renders as this one's history.
@@ -2432,50 +2431,35 @@ export default function AssetsPanel({ onViewReport }) {
               </table>
             </div>
           ) : (
-            <ul className="inv-list">
+            <ul className="asset-cards asset-cards--classic">
               {visibleAssets.map((asset) => {
                 const wFlag = expiryFlag(asset.warrantyExpiry);
                 const aFlag = expiryFlag(asset.amcExpiry);
                 const badFlag = wFlag === 'expired' || aFlag === 'expired' ? 'expired' : wFlag || aFlag;
-                // Named rather than a generic "Warranty/AMC" — a hotel with
-                // both on file needs to know which one to act on without
-                // opening the asset to check, and "AMC expired" reads as
-                // more urgent (someone to call) than "Warranty expired"
-                // (nothing to do, it just lapsed).
+                // Named rather than a generic "Warranty/AMC" — "AMC expired"
+                // reads as more urgent (someone to call) than "Warranty
+                // expired" (nothing to do, it just lapsed).
                 const expiredNames = [wFlag === 'expired' && 'Warranty', aFlag === 'expired' && 'AMC'].filter(Boolean);
                 const soonNames = [wFlag === 'soon' && 'Warranty', aFlag === 'soon' && 'AMC'].filter(Boolean);
+                const location = asset.roomNumber
+                  ? `Room ${asset.roomNumber}`
+                  : asset.department || (asset.floor ? `Floor ${asset.floor}` : '');
                 return (
                   <li
                     key={asset.id}
-                    className={`inv-item${badFlag === 'expired' ? ' inv-item--bad' : badFlag === 'soon' ? ' inv-item--low' : ''}`}
+                    className={`asset-card${badFlag === 'expired' ? ' asset-card--bad' : badFlag === 'soon' ? ' asset-card--low' : ''}`}
                   >
-                    <div className="inv-item__body" onClick={() => openAssetDetail(asset)} style={{ cursor: 'pointer' }}>
-                      <div className="inv-item__name">
-                        {asset.name}
-                        <span className={`inv-tag ${STATUS_TAG_CLASS[asset.status]}`}>{STATUS_LABEL[asset.status]}</span>
-                        {badFlag === 'expired' && (
-                          <span className="inv-tag inv-tag--bad">{expiredNames.join(' & ')} expired</span>
-                        )}
-                        {badFlag === 'soon' && (
-                          <span className="inv-tag inv-tag--low">{soonNames.join(' & ')} expiring soon</span>
-                        )}
-                        {asset.openWorkOrders > 0 && (
-                          <span className="inv-tag inv-tag--low">
-                            {asset.openWorkOrders} open work order{asset.openWorkOrders === 1 ? '' : 's'}
-                          </span>
-                        )}
+                    <div className="asset-card__head">
+                      <span className="asset-card__icon" aria-hidden="true">
+                        {(asset.name || '?').charAt(0).toUpperCase()}
+                      </span>
+                      <div className="asset-card__title" onClick={() => openAssetDetail(asset)}>
+                        <span className="asset-card__name">{asset.name}</span>
+                        <span className="asset-card__sub">
+                          {asset.assetTag} · {asset.categoryName}
+                        </span>
                       </div>
-                      <div className="inv-item__meta">
-                        {asset.assetTag} · {asset.categoryName}
-                        {asset.roomNumber && ` · Room ${asset.roomNumber}`}
-                        {!asset.roomNumber && asset.department && ` · ${asset.department}`}
-                        {!asset.roomNumber && !asset.department && asset.floor && ` · Floor ${asset.floor}`}
-                      </div>
-                    </div>
-                    <div className="inv-item__actions">
-                      <button type="button" className="btn-secondary" onClick={() => reportIssue(asset)}>
-                        Report issue
-                      </button>
+                      <span className={`inv-tag ${STATUS_TAG_CLASS[asset.status]}`}>{STATUS_LABEL[asset.status]}</span>
                       <RowMenu label={`More actions for ${asset.name}`}>
                         <button type="button" onClick={() => openAssetDetail(asset)}>
                           View details
@@ -2487,6 +2471,45 @@ export default function AssetsPanel({ onViewReport }) {
                           Delete asset
                         </button>
                       </RowMenu>
+                    </div>
+                    <div className="asset-card__body" onClick={() => openAssetDetail(asset)}>
+                      {(badFlag || asset.openWorkOrders > 0) && (
+                        <div className="asset-card__alerts">
+                          {badFlag === 'expired' && (
+                            <span className="inv-tag inv-tag--bad">{expiredNames.join(' & ')} expired</span>
+                          )}
+                          {badFlag === 'soon' && (
+                            <span className="inv-tag inv-tag--low">{soonNames.join(' & ')} expiring soon</span>
+                          )}
+                          {asset.openWorkOrders > 0 && (
+                            <span className="inv-tag inv-tag--low">
+                              {asset.openWorkOrders} open work order{asset.openWorkOrders === 1 ? '' : 's'}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <dl className="asset-card__facts">
+                        <div>
+                          <dt>Location</dt>
+                          <dd>{location || '—'}</dd>
+                        </div>
+                        <div>
+                          <dt>Warranty</dt>
+                          <dd>{asset.warrantyExpiry ? formatDate(asset.warrantyExpiry) : '—'}</dd>
+                        </div>
+                        <div>
+                          <dt>AMC</dt>
+                          <dd>{asset.amcExpiry ? formatDate(asset.amcExpiry) : '—'}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <div className="asset-card__foot">
+                      <button type="button" className="btn-secondary" onClick={() => reportIssue(asset)}>
+                        Report issue
+                      </button>
+                      <button type="button" className="btn-secondary" onClick={() => openAssetDetail(asset)}>
+                        View
+                      </button>
                     </div>
                   </li>
                 );

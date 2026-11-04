@@ -497,10 +497,108 @@
 /* Laundry → Hotel linen. Four steps across the top, each with its count and the
    one thing to do there; then the detail in titled panels underneath. */
 .hk-linen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 16px;
+  align-items: start;
+}
+
+/* The side column is narrow, so its cards are tighter: less padding, smaller
+   figures, and the cleaner's Receive button on its own line under their name. */
+.hk-linen .hk-linen__side {
+  gap: 12px;
+}
+
+.hk-linen__side .hk-panel {
+  padding: 12px;
+}
+
+.hk-linen__side .hk-panel__head {
+  margin-bottom: 8px;
+}
+
+.hk-linen__side .hk-today {
+  gap: 6px;
+}
+
+.hk-linen__side .hk-today > div {
+  padding: 8px 10px;
+}
+
+.hk-linen__side .hk-today strong {
+  font-size: 20px;
+}
+
+.hk-linen__side .hk-staff__head {
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.hk-linen__side .hk-staff__avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+}
+
+.hk-linen__side .hk-staff__head .hk-action {
+  flex: 1 1 100%;
+  min-height: 32px;
+  font-size: 13px;
+}
+
+.hk-linen__side .hk-staff__rooms {
+  padding: 2px 10px;
+}
+
+.hk-linen__main {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 1040px;
+  min-width: 0;
+}
+
+/* Today and recent activity: stays in view beside the working panels. */
+.hk-linen__side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.hk-today {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.hk-today > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--neu-sunken);
+  border-radius: 10px;
+}
+
+.hk-today strong {
+  font-size: 22px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.hk-today span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.hk-linen__side .hk-tabs {
+  margin-bottom: 12px;
+}
+
+.hk-step__btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-well-focus);
 }
 
 .hk-steps {
@@ -520,6 +618,11 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
+  transition: border-color 140ms ease;
+}
+
+.hk-step:hover {
+  border-color: var(--field-border-hover);
 }
 
 .hk-step__head {
@@ -675,6 +778,16 @@
 
 .hk-history .hk-activity {
   margin-top: 12px;
+}
+
+@media (max-width: 1100px) {
+  .hk-linen {
+    grid-template-columns: 1fr;
+  }
+
+  .hk-linen__side {
+    position: static;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1044,6 +1157,16 @@
   cursor: not-allowed;
 }
 
+/* The one amber button on the page: the step that sends linen out. */
+.hk-action--cta {
+  color: var(--ink);
+  background: var(--accent);
+}
+
+.hk-action--cta:hover:not(:disabled) {
+  background: #f2b600;
+}
+
 .hk-matrix {
   width: 100%;
   border-collapse: separate;
@@ -1077,10 +1200,12 @@
   font-weight: 500;
 }
 
+/* Numbers sit right-aligned under right-aligned headings, so a column reads
+   straight down; only the linen name is left-aligned. */
 .hk-matrix th,
 .hk-matrix td {
-  padding: 0 8px;
-  text-align: center;
+  padding: 0 16px;
+  text-align: right;
   vertical-align: middle;
 }
 
@@ -1120,10 +1245,18 @@ th.hk-matrix__item {
 
 .hk-matrix tbody td,
 .hk-matrix tfoot td {
-  font-family: var(--serif);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
+}
+
+.hk-matrix tbody tr {
+  transition: background-color 140ms ease;
+}
+
+.hk-matrix tbody tr:hover > * {
+  background: var(--neu-sunken);
 }
 
 .hk-matrix__name {
@@ -1191,6 +1324,7 @@ td.hk-matrix__low {
 .hk-matrix__menu {
   width: 48px;
   padding-right: 6px;
+  text-align: center;
 }
 
 .hk-matrix__foot {
@@ -1249,7 +1383,7 @@ td.hk-matrix__low {
 
   .hk-matrix th,
   .hk-matrix td {
-    padding: 0 4px;
+    padding: 0 8px;
   }
 
   th.hk-matrix__item {
@@ -2523,5 +2657,296 @@ th[aria-sort] .hk-sort__icon {
   .lg-card,
   .lg-card__btn {
     transition: none;
+  }
+}
+
+/* ======================================================== Laundry, one screen
+   Hotel linen: four compact stage tiles; the stock table and the activity log
+   share one panel behind tabs; the right column holds Today and who is waiting. Guest laundry: status tabs, the order table, and
+   the picked order in full beside it. */
+
+/* Stage tiles: the step and its count side by side, the one action under. */
+.hk-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.hk-step__head {
+  grid-area: 1 / 1;
+}
+
+.hk-step__count {
+  grid-area: 1 / 2 / 3 / 3;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  font-size: 11.5px;
+}
+
+.hk-step__count strong {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.hk-step__detail {
+  grid-area: 2 / 1;
+  align-self: start;
+  font-size: 12px;
+}
+
+.hk-step__note,
+.hk-step__btn {
+  grid-column: 1 / -1;
+}
+
+.hk-step__btn {
+  min-height: 32px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+/* One panel for stock and activity: the tab strip is the panel's header. */
+.hk-workspace > .hk-tabs {
+  margin-bottom: 12px;
+}
+
+.hk-workspace > .hk-tabs .hk-panel__sub {
+  align-self: center;
+  padding-bottom: 6px;
+}
+
+.hk-workspace .hk-activity .hk-section-head .hk-tabs {
+  margin-bottom: 10px;
+}
+
+/* Guest laundry: tabs and tools on one line. */
+.hk-guestbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hk-guestbar .hk-tabs--status {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.hk-guestbar__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.hk-guestbar .hk-search {
+  flex: 0 1 200px;
+  min-height: 36px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.hk-guestbar .hk-search:hover {
+  border-color: var(--field-border-hover);
+}
+
+.hk-guestbar .hk-search:focus {
+  outline: none;
+  box-shadow: var(--shadow-well-focus);
+}
+
+.hk-guestbar .hk-action {
+  min-height: 36px;
+}
+
+/* The order table and the picked order. */
+.hk-guest {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+  align-items: start;
+}
+
+.hk-guest .hk-sheet td:nth-child(4) {
+  min-width: 170px;
+  white-space: normal;
+}
+
+.hk-board .hk-sheet tbody tr.hk-sheet__row--pick {
+  cursor: pointer;
+}
+
+.hk-board .hk-sheet tbody tr.hk-sheet__row--pick:focus-visible {
+  outline: none;
+}
+
+.hk-board .hk-sheet tbody tr.hk-sheet__row--pick:focus-visible > td {
+  background: var(--brand-wash);
+}
+
+.hk-board .hk-sheet tbody tr.hk-sheet__row--sel > td {
+  background: var(--brand-wash);
+}
+
+.hk-board .hk-sheet tbody tr.hk-sheet__row--sel > td:first-child {
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+/* Rows lift to the brand's own tint, not the old violet. */
+.hk-board .hk-sheet tbody tr:hover > td,
+.hk-board .hk-matrix tbody tr:hover > * {
+  background: var(--neu-sunken);
+}
+
+.hk-board .hk-sheet tbody tr.hk-sheet__row--sel:hover > td {
+  background: var(--brand-wash);
+}
+
+.hk-board .hk-sheet tbody td {
+  transition: background-color 140ms ease;
+}
+
+/* A status is a dot and a word. */
+.hk-st {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.hk-st--wash {
+  --hk-tone: var(--link);
+}
+
+.hk-st--back {
+  --hk-tone: var(--success);
+}
+
+.hk-st--done,
+.hk-st--off {
+  --hk-tone: var(--text-muted);
+}
+
+.hk-detail {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hk-detail__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hk-detail__top h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hk-detail__who {
+  margin: -4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.hk-detail__lines {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.hk-detail__lines > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  border-bottom: 1px solid var(--border);
+}
+
+.hk-detail__lines > div:last-child {
+  font-weight: 700;
+  background: var(--neu-sunken);
+  border-bottom: none;
+  border-radius: 0 0 9px 9px;
+}
+
+.hk-detail__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.hk-detail__facts > div {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.hk-detail__facts dt {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.hk-detail__facts dd {
+  margin: 0;
+  font-weight: 500;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* The main action sits on the right, Cancel on the left. */
+.hk-detail__foot {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.hk-detail__foot .hk-action {
+  flex: 1;
+}
+
+.hk-detail__done {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 1100px) {
+  .hk-guest {
+    grid-template-columns: 1fr;
+  }
+
+  .hk-detail {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .hk-guestbar__tools {
+    width: 100%;
+  }
+
+  .hk-guestbar .hk-search {
+    flex: 1 1 140px;
   }
 }

@@ -174,6 +174,38 @@
   word-break: break-word;
 }
 
+/* The summary cards at the top of the Customers page rise a little on hover,
+   with the deeper card shadow, so they read as something you can look at. */
+.cust-kpis .kpi-card {
+  box-shadow: 0 1px 3px rgba(22, 33, 46, 0.08), 0 6px 16px -4px rgba(22, 33, 46, 0.14);
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+.cust-kpis .kpi-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 2px 6px rgba(22, 33, 46, 0.1), 0 16px 32px -8px rgba(22, 33, 46, 0.26);
+}
+
+/* The navy card throws a navy shadow, not a gray one. */
+.cust-kpis .kpi-card--primary {
+  box-shadow: 0 1px 3px rgba(7, 39, 72, 0.18), 0 8px 18px -4px rgba(7, 39, 72, 0.34);
+}
+
+.cust-kpis .kpi-card--primary:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 2px 6px rgba(7, 39, 72, 0.2), 0 18px 34px -8px rgba(7, 39, 72, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cust-kpis .kpi-card {
+    transition: none;
+  }
+
+  .cust-kpis .kpi-card:hover {
+    transform: none;
+  }
+}
+
 .cust-section-label {
   display: flex;
   align-items: center;

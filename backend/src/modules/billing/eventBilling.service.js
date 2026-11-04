@@ -293,6 +293,8 @@ async function previewEventBill(lodgeId, eventBookingId, { discountAmount = 0, t
     guestName: row.organiser_name,
     eventTitle: row.title,
     venueName: row.venue_name,
+    startAt: row.start_at,
+    endAt: row.end_at,
     billablePax: bill.pricing.billablePax,
     roomCharges: eventChargeLines(bill.pricing),
     // The stay-bill fields the billing screen reads, so one modal serves both.

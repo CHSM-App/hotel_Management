@@ -977,56 +977,137 @@ label.order-card__item:has(.order-card__tick:disabled) {
 /* Section shortcuts as a row of pills rather than a dropdown — the same
    control the guest's own QR menu jumps around its sections with. A click
    scrolls the one long list below to that section instead of filtering
-   everything else out of it. */
+   everything else out of it.
+
+   .counter-sections is the sticky bar (tinted glass); the pills scroll
+   sideways inside .counter-sections__track, and a rail under them shows how
+   far down the menu you are. */
 .counter-sections {
+  /* Pinned to the top of .counter-form__scroll — the menu scrolls inside that
+     box, not the page, so there is no topbar offset (that left the bar hanging
+     64px down with dishes visible above it). */
+  position: sticky;
+  top: -20px;
+  z-index: 5;
+  /* Bleeds across the box's own 24px side padding and 20px top padding, so
+     nothing scrolls past in those gutters; top: -20px pins it flush with the
+     box's top edge rather than 20px below it. */
+  margin: 0 -24px 10px;
+  padding-top: 30px;
+  /* Tinted glass: the brand blue washed thin, with the dishes scrolling
+     underneath blurred through it. The wash is heavy enough (~0.8 at the top)
+     that on a browser without backdrop-filter it still reads as a solid bar. */
+  background: linear-gradient(180deg, rgba(232, 240, 249, 0.86), rgba(232, 240, 249, 0.62));
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  backdrop-filter: blur(18px) saturate(1.6);
+  border-bottom: 1px solid rgba(10, 58, 107, 0.12);
+  box-shadow: 0 8px 24px -14px rgba(10, 58, 107, 0.45);
+  /* Its own compositor layer: the blur is repainted against the scrolling
+     dishes, and on its own layer that stays off the main thread. */
+  transform: translateZ(0);
+}
+
+.counter-sections__track {
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  scrollbar-width: none;
-  margin: 0 -4px 18px;
-  padding: 2px 4px;
-  /* A plain cut row of pills gives no sign there's more to the right —
-     fading the last ~28px of each edge toward transparent is the same
-     "there's more here" cue a horizontally-scrolled photo strip uses, so
-     the far pill doesn't read as the last one just because it's cut off. */
-  mask-image: linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent);
+  padding: 0 24px 12px;
+  scroll-behavior: smooth;
 }
 
-.counter-sections::-webkit-scrollbar {
+/* The browser's own scrollbar is hidden: it is invisible on overlay-scrollbar
+   systems and can't be aligned to the pills. .counter-sections__rail below
+   replaces it with a bar that is always there. */
+.counter-sections__track {
+  scrollbar-width: none;
+}
+
+.counter-sections__track::-webkit-scrollbar {
   display: none;
+}
+
+/* Empty room after the last pill, so even the final one can be scrolled to
+   the first slot instead of stopping where the row runs out. */
+.counter-sections__track::after {
+  content: '';
+  flex: 0 0 60%;
 }
 
 .counter-sections__tab {
   flex-shrink: 0;
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-raised);
-  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.78);
   color: var(--text);
   border-radius: 999px;
-  padding: 8px 16px;
+  padding: 8px 8px 8px 16px;
   font-family: inherit;
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
   min-height: 40px;
-  transition: var(--neu-transition);
+  transition: background 150ms ease, color 150ms ease;
 }
 
 .counter-sections__tab:hover {
-  box-shadow: var(--shadow-raised-hover);
+  background: #ffffff;
+}
+
+.counter-sections__count {
+  background: #ffffff;
+  color: var(--text-muted);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
 }
 
 .counter-sections__tab[aria-current='true'] {
   background: var(--brand);
-  border-color: var(--brand);
   color: #ffffff;
-  box-shadow: none;
+}
+
+.counter-sections__tab[aria-current='true'] .counter-sections__count {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+/* The pill row's scrollbar: inset to line up with the first and last pill
+   rather than the bar's edges, tall enough to grab, thumb sized to how much
+   of the row is showing (see syncSectionThumb). */
+.counter-sections__rail {
+  position: relative;
+  height: 8px;
+  margin: 0 24px 10px;
+  background: rgba(10, 58, 107, 0.14);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.counter-sections__rail > i {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  height: 100%;
+  background: var(--brand);
+  border-radius: 999px;
+  cursor: grab;
+  touch-action: none;
+  will-change: transform;
+}
+
+.counter-sections__rail > i:active {
+  cursor: grabbing;
 }
 
 .counter-section {
   margin-bottom: 10px;
+  /* Clears the sticky pill row when a pill scrolls here. */
+  scroll-margin-top: 80px;
 }
 
 .counter-line {
@@ -1302,6 +1383,21 @@ label.order-card__item:has(.order-card__tick:disabled) {
   .counter-foot {
     padding-left: 16px;
     padding-right: 16px;
+  }
+
+  .counter-sections {
+    margin-left: -16px;
+    margin-right: -16px;
+  }
+
+  .counter-sections__track {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .counter-sections__rail {
+    margin-left: 16px;
+    margin-right: 16px;
   }
 }
 

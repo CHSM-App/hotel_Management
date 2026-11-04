@@ -307,7 +307,7 @@ export default function Customers() {
           {!feedbackError && !feedback && <p className="inv-panel__hint">Loading feedback…</p>}
           {feedback && (
             <>
-              <div className="kpi-row" style={{ marginBottom: 16 }}>
+              <div className="kpi-row cust-kpis" style={{ marginBottom: 16 }}>
                 <div className="kpi-card kpi-card--primary">
                   <span className="kpi-label">Responses</span>
                   <span className="kpi-value">{feedback.totals.count}</span>
@@ -356,7 +356,7 @@ export default function Customers() {
         </>
       ) : (
         <>
-      <div className="kpi-row" style={{ marginBottom: 16 }}>
+      <div className="kpi-row cust-kpis" style={{ marginBottom: 16 }}>
         <div className="kpi-card kpi-card--primary">
           <span className="kpi-label">Customers</span>
           <span className="kpi-value">{stats.total}</span>

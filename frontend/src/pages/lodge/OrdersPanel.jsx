@@ -2189,6 +2189,136 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
   const scrollToSection = (id) => {
     sectionRefs.current.get(String(id))?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   };
+  const menuScrollRef = useRef(null);
+  const sectionTrackRef = useRef(null);
+  // Slides the pill row so this section's pill sits in the first slot.
+  const bringPillFirst = (id) => {
+    const track = sectionTrackRef.current;
+    const pill = track?.querySelector(`[data-section-id="${id}"]`);
+    if (!pill) return;
+    track.scrollTo({ left: pill.offsetLeft - parseFloat(getComputedStyle(track).paddingLeft), behavior: 'smooth' });
+  };
+  // The pill row's own scrollbar. The browser's native one is hidden (it is
+  // invisible on overlay-scrollbar systems and ignores styling elsewhere), so
+  // this thumb mirrors the row's scroll position and can be dragged. Written
+  // straight to the DOM — it changes on every scroll frame, not worth a
+  // re-render each time.
+  const sectionRailRef = useRef(null);
+  const sectionThumbRef = useRef(null);
+  const syncSectionThumb = () => {
+    const track = sectionTrackRef.current;
+    const rail = sectionRailRef.current;
+    const thumb = sectionThumbRef.current;
+    if (!track || !rail || !thumb) return;
+    const { scrollWidth, clientWidth, scrollLeft } = track;
+    const railWidth = rail.clientWidth;
+    if (scrollWidth <= clientWidth) {
+      thumb.style.display = 'none';
+      return;
+    }
+    const thumbWidth = Math.max(40, (clientWidth / scrollWidth) * railWidth);
+    const maxLeft = railWidth - thumbWidth;
+    const maxScroll = scrollWidth - clientWidth;
+    thumb.style.display = 'block';
+    thumb.style.width = `${thumbWidth}px`;
+    thumb.style.transform = `translateX(${(scrollLeft / maxScroll) * maxLeft}px)`;
+  };
+  const dragSectionThumb = (e) => {
+    const track = sectionTrackRef.current;
+    const rail = sectionRailRef.current;
+    const thumb = sectionThumbRef.current;
+    if (!track || !rail || !thumb) return;
+    e.preventDefault();
+    thumb.setPointerCapture(e.pointerId);
+    // The row's smooth scrolling would lag behind the pointer while dragging.
+    track.style.scrollBehavior = 'auto';
+    const startX = e.clientX;
+    const startScroll = track.scrollLeft;
+    const ratio = (track.scrollWidth - track.clientWidth) / Math.max(1, rail.clientWidth - thumb.offsetWidth);
+    const move = (ev) => {
+      track.scrollLeft = startScroll + (ev.clientX - startX) * ratio;
+    };
+    const up = () => {
+      track.style.scrollBehavior = '';
+      thumb.removeEventListener('pointermove', move);
+      thumb.removeEventListener('pointerup', up);
+      thumb.removeEventListener('pointercancel', up);
+    };
+    thumb.addEventListener('pointermove', move);
+    thumb.addEventListener('pointerup', up);
+    thumb.addEventListener('pointercancel', up);
+  };
+  // Click on the bar outside the thumb: jump the row there.
+  const clickSectionRail = (e) => {
+    if (e.target === sectionThumbRef.current) return;
+    const track = sectionTrackRef.current;
+    const rail = sectionRailRef.current;
+    if (!track || !rail) return;
+    const frac = (e.clientX - rail.getBoundingClientRect().left) / rail.clientWidth;
+    track.scrollTo({ left: frac * (track.scrollWidth - track.clientWidth), behavior: 'smooth' });
+  };
+  // Cheap, so every render: the menu loading in, a search clearing, or a
+  // pill count changing can all change how wide the row is.
+  useEffect(() => {
+    syncSectionThumb();
+  });
+  useEffect(() => {
+    window.addEventListener('resize', syncSectionThumb);
+    return () => window.removeEventListener('resize', syncSectionThumb);
+  }, []);
+
+  // Follows the menu as it scrolls: the pill for the section at the top lights
+  // up and the row slides to it.
+  //
+  // Two things keep that smooth. While a pill click is scrolling the list, the
+  // follow is paused — otherwise every section the list passes on the way
+  // lights its own pill and re-slides the row, so the highlight flickers
+  // through the in-between pills and fights the click. And the check runs at
+  // most once a frame rather than on every scroll event, since it measures
+  // every section.
+  const spyPausedRef = useRef(false);
+  const spyResumeTimer = useRef(null);
+  const spyFrame = useRef(0);
+  const pauseSectionFollow = () => {
+    spyPausedRef.current = true;
+    clearTimeout(spyResumeTimer.current);
+    // Fallback in case the list is already in place and no scroll event comes.
+    spyResumeTimer.current = setTimeout(() => {
+      spyPausedRef.current = false;
+    }, 900);
+  };
+  const followMenuScroll = () => {
+    spyFrame.current = 0;
+    const box = menuScrollRef.current;
+    if (!box) return;
+    const top = box.getBoundingClientRect().top + 90;
+    let current = null;
+    sectionRefs.current.forEach((el, id) => {
+      if (el.getBoundingClientRect().top <= top) current = id;
+    });
+    if (current != null && current !== activeSectionId) {
+      setActiveSectionId(current);
+      bringPillFirst(current);
+    }
+  };
+  const handleMenuScroll = () => {
+    if (spyPausedRef.current) {
+      // Still moving from the click: resume a moment after it stops.
+      clearTimeout(spyResumeTimer.current);
+      spyResumeTimer.current = setTimeout(() => {
+        spyPausedRef.current = false;
+      }, 150);
+      return;
+    }
+    if (!spyFrame.current) spyFrame.current = requestAnimationFrame(followMenuScroll);
+  };
+  useEffect(
+    () => () => {
+      clearTimeout(spyResumeTimer.current);
+      cancelAnimationFrame(spyFrame.current);
+    },
+    []
+  );
   const [error, setError] = useState('');
   const [fieldError, setFieldError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -2446,7 +2576,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
       </div>
 
       <form className="counter-form" onSubmit={handleSubmit} noValidate>
-        <div className="counter-form__scroll">
+        <div className="counter-form__scroll" ref={menuScrollRef} onScroll={handleMenuScroll}>
           {error && (
             <div ref={errorRef} className="form-banner form-banner--error form-banner--flash">
               {error}
@@ -2600,22 +2730,36 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
                   than hiding the rest, and the dish steppers underneath keep
                   working on whatever is already on screen. */}
               {!searching && sellable.length > 1 && (
-                <nav className="counter-sections" aria-label="Menu sections">
-                  {sellable.map((s) => (
-                    <button
-                      type="button"
-                      key={s.id}
-                      className="counter-sections__tab"
-                      aria-current={activeSectionId === String(s.id) ? 'true' : undefined}
-                      onClick={() => {
-                        setActiveSectionId(String(s.id));
-                        scrollToSection(s.id);
-                      }}
-                    >
-                      {s.name}
-                    </button>
-                  ))}
-                </nav>
+                <div className="counter-sections">
+                  <nav
+                    className="counter-sections__track"
+                    ref={sectionTrackRef}
+                    onScroll={syncSectionThumb}
+                    aria-label="Menu sections"
+                  >
+                    {sellable.map((s) => (
+                      <button
+                        type="button"
+                        key={s.id}
+                        data-section-id={s.id}
+                        className="counter-sections__tab"
+                        aria-current={activeSectionId === String(s.id) ? 'true' : undefined}
+                        onClick={() => {
+                          pauseSectionFollow();
+                          setActiveSectionId(String(s.id));
+                          scrollToSection(s.id);
+                          bringPillFirst(s.id);
+                        }}
+                      >
+                        {s.name}
+                        <small className="counter-sections__count">{s.items.length}</small>
+                      </button>
+                    ))}
+                  </nav>
+                  <div className="counter-sections__rail" ref={sectionRailRef} onClick={clickSectionRail}>
+                    <i ref={sectionThumbRef} onPointerDown={dragSectionThumb} />
+                  </div>
+                </div>
               )}
 
               {shownSections.length === 0 && (

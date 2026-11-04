@@ -69,6 +69,11 @@
    keep. */
 .reports-panel .dash-table-scroll {
   max-height: 640px;
+  /* The shared .dash-table-scroll is overflow: visible above 1300px, which
+     lets rows spill straight out of this max-height box and over whatever
+     sits below. A capped box has to scroll itself — and the sticky header
+     above now binds to it, which is what it was meant to pin against. */
+  overflow: auto;
 }
 
 .reports-panel .dash-table thead th {
@@ -76,9 +81,22 @@
   top: 0;
   background: var(--surface);
   z-index: 1;
-  /* thead th already carries the table's own padding; the sort button fills
-     it edge-to-edge instead so the whole cell — not just the label text — is
-     the click target. */
+  /* The table's own header text is white-on-brand; with the surface
+     background above it vanished on every plain (non-sortable) header, so the
+     colour is restated here to match the sort buttons. */
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  /* Same type and spacing as .reports-panel__sort-th below, so a plain header
+     sits in the same row as a sortable one without looking different. */
+  padding: 14px 20px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* The sort button fills its cell edge-to-edge instead of the cell's own
+   padding so the whole cell — not just the label text — is the click target. */
+.reports-panel .dash-table thead th:has(> .reports-panel__sort-th) {
   padding: 0;
 }
 
@@ -480,7 +498,12 @@
   min-width: 190px;
   padding: 13px 18px;
   background: var(--surface);
+  /* The shared .dash-table th is white-on-brand with a dark rule under it —
+     fine in a header band, but on these light row labels the text vanished and
+     the rule drew a black line through every row. Restated to match the cells. */
+  color: var(--text);
   border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   text-align: left;
 }
 

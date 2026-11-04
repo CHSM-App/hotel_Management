@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laundry – design options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens copied from frontend/src/index.css so these match the live site */
+:root{
+  --ink:#16212E; --text:#48566A; --text-muted:#78859A;
+  --paper:#F3F4F6; --surface:#fff; --border:#E5E7EB; --sunken:#EEF1F7;
+  --brand:#0A3A6B; --brand-ink:#072748; --brand-wash:#E6EDF4; --brand-wash-edge:#C7D6E6;
+  --accent:#FFC107; --accent-ink:#8A5B00;
+  --success:#28A745; --success-bg:#E8F6EC; --danger:#EA4335; --danger-bg:#FDECEA;
+  --focus:#00B0FF; --link:#0077B6; --field-border:#DDE3EC; --field-border-hover:#B6BFD0;
+  --t-recv:#0A3A6B; --t-dirty:#B7791F; --t-wash:#0077B6; --t-clean:#1E8E3E;
+  --sans:'Inter',system-ui,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;font:400 14px/1.5 var(--sans);color:var(--text);background:var(--paper);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;color:var(--ink);font-weight:700}
+.wrap{max-width:1140px;margin:0 auto;padding:0 16px 56px}
+
+/* demo chooser (not part of the design) */
+.chooser{background:var(--ink);color:#c9d2de;padding:10px 16px;font-size:13px}
+.chooser .in{max-width:1140px;margin:0 auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.chooser span{margin-right:8px;opacity:.8}
+.chooser button{font:inherit;font-size:13px;color:#c9d2de;background:none;border:1px solid #3a475a;border-radius:8px;padding:6px 12px;cursor:pointer}
+.chooser button[aria-pressed=true]{background:#fff;color:var(--ink);border-color:#fff;font-weight:600}
+.about{margin:16px 0;font-size:13px;color:var(--text-muted)}
+.about b{color:var(--ink)}
+.demo{display:none}.demo.on{display:block}
+
+/* shared page pieces */
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:20px 0 12px}
+.head h2{font-size:20px}
+.head p{margin:2px 0 0;color:var(--text-muted);font-size:13px}
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto}
+.tabs button{font:inherit;font-size:14px;font-weight:600;color:var(--text-muted);background:none;border:0;border-bottom:2px solid transparent;padding:8px 2px;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
+.tabs button:hover{color:var(--text)}
+.tabs button[aria-selected=true]{color:var(--brand-ink);border-bottom-color:var(--brand)}
+.tabs .n{margin-left:6px;font-size:12px;font-weight:600;padding:1px 7px;border-radius:99px;background:var(--sunken);color:var(--text-muted);font-variant-numeric:tabular-nums}
+.tabs button[aria-selected=true] .n{background:var(--brand-wash);color:var(--brand-ink)}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px}
+.panel__head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.panel__head h4{font-size:14.5px}
+.sub{font-size:12.5px;color:var(--text-muted)}
+.btn{font:inherit;font-size:13.5px;font-weight:600;min-height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--field-border);background:var(--surface);color:var(--ink);cursor:pointer;transition:background-color .14s,border-color .14s}
+.btn:hover{border-color:var(--field-border-hover);background:#fafbfc}
+.btn--pri{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn--pri:hover{background:var(--brand-ink);border-color:var(--brand-ink)}
+.btn--cta{background:var(--accent);border-color:var(--accent);color:var(--ink)}
+.btn--cta:hover{background:#f2b600;border-color:#f2b600}
+.btn--sm{min-height:32px;padding:0 12px;font-size:13px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,.tabs button:focus-visible,.row:focus-visible,input:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(0,176,255,.28)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:7px;vertical-align:1px}
+.num{font-variant-numeric:tabular-nums}
+.recv{--c:var(--t-recv)}.dirty{--c:var(--t-dirty)}.wash{--c:var(--t-wash)}.clean{--c:var(--t-clean)}.off{--c:var(--text-muted)}
+.st{font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap}
+
+/* ---------- A : hotel linen ---------- */
+.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;list-style:none;margin:0 0 12px;padding:0}
+.step{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.step__t{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--ink)}
+.step__n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;background:var(--sunken);color:var(--c)}
+.step__c{font-size:30px;font-weight:700;color:var(--ink);line-height:1.15;margin-top:4px;font-variant-numeric:tabular-nums}
+.step__c small{font-size:13px;font-weight:500;color:var(--text-muted);margin-left:5px}
+.step__d{font-size:12.5px;color:var(--text-muted);min-height:36px;margin:0}
+.step .btn{margin-top:6px;width:100%}
+.split{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;align-items:start}
+.stack{display:flex;flex-direction:column;gap:12px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 10px;border-bottom:1px solid var(--border);text-align:left}
+thead th{font-size:12px;font-weight:600;color:var(--text-muted);background:var(--sunken);white-space:nowrap}
+thead th:first-child{border-radius:8px 0 0 8px}thead th:last-child{border-radius:0 8px 8px 0}
+td.r,th.r{text-align:right}
+tbody td{color:var(--ink)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--sunken)}
+tfoot td{font-weight:700;border-top:1px solid var(--field-border);border-bottom:0}
+td .sub{display:block}
+.zero{color:#B6BFD0}.low{color:var(--danger);font-weight:600}
+.today{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.today div{background:var(--sunken);border-radius:10px;padding:9px 12px}
+.today strong{display:block;font-size:20px;color:var(--ink);line-height:1.15}
+.today span{font-size:12px;color:var(--text-muted)}
+.tl{list-style:none;margin:0;padding:0}
+.tl li{display:grid;grid-template-columns:10px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.tl li:last-child{border:0}
+.tl li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c);margin-top:6px}
+.tl b{display:block;font-weight:600;color:var(--ink);font-size:13.5px}
+
+/* ---------- B : guest laundry, table-first ---------- */
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.search{position:relative;flex:1;min-width:220px;max-width:340px}
+.search input{width:100%;height:38px;border:1px solid var(--field-border);border-radius:10px;padding:0 12px 0 34px;font:inherit;color:var(--ink);background:#fff;box-shadow:inset 0 1px 2px rgba(22,33,46,.06)}
+.search input:hover{border-color:var(--field-border-hover)}
+.search svg{position:absolute;left:11px;top:11px}
+.toggle{display:inline-flex;border:1px solid var(--field-border);border-radius:10px;overflow:hidden;margin-left:auto}
+.toggle button{font:inherit;font-size:13px;font-weight:600;padding:0 14px;height:36px;border:0;background:#fff;color:var(--text);cursor:pointer}
+.toggle button+button{border-left:1px solid var(--field-border)}
+.toggle button[aria-pressed=true]{background:var(--brand-wash);color:var(--brand-ink)}
+.tablewrap{padding:0;overflow:hidden}
+.tablewrap table th:first-child,.tablewrap table td:first-child{padding-left:16px}
+.tablewrap table th:last-child,.tablewrap table td:last-child{padding-right:16px}
+.tablewrap thead th{border-radius:0;border-bottom:1px solid var(--border)}
+.tag{font-weight:600;color:var(--brand)}
+.late{color:var(--danger);font-size:12.5px;font-weight:600}
+.act{display:flex;gap:6px;justify-content:flex-end}
+.link{font:inherit;font-size:13px;font-weight:600;color:var(--link);background:none;border:0;padding:4px 6px;cursor:pointer;border-radius:6px}
+.link:hover{background:var(--sunken)}
+.link.danger{color:var(--text-muted)}
+
+/* ---------- C : split view ---------- */
+.desk{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;align-items:start}
+.list{padding:0;overflow:hidden}
+.row{display:grid;grid-template-columns:62px 1fr auto;gap:12px;align-items:center;padding:11px 16px;border-bottom:1px solid var(--border);cursor:pointer;border-left:3px solid transparent}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--sunken)}
+.row[aria-selected=true]{background:var(--brand-wash);border-left-color:var(--brand)}
+.row b{color:var(--ink);font-weight:600;display:block}
+.drawer{position:sticky;top:12px}
+.drawer h3{font-size:16px}
+.kv{display:grid;grid-template-columns:104px 1fr;gap:6px 12px;margin:12px 0 0}
+.kv dt{color:var(--text-muted);font-size:13px}.kv dd{margin:0;color:var(--ink);font-weight:500}
+.lines{margin:12px 0 0;border:1px solid var(--border);border-radius:10px}
+.lines div{display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);color:var(--ink)}
+.lines div:last-child{border:0;background:var(--sunken);font-weight:700;border-radius:0 0 9px 9px}
+.prog{display:flex;align-items:center;margin:12px 0 4px}
+.prog i{width:10px;height:10px;border-radius:50%;background:var(--border);flex:none}
+.prog i.f{background:var(--brand)}
+.prog u{flex:1;height:2px;background:var(--border)}
+.prog u.f{background:var(--brand)}
+.proglabels{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-muted)}
+.foot{display:flex;gap:8px;margin-top:14px}.foot .btn{flex:1}
+
+/* ---------- D : recent activity options ---------- */
+.opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;align-items:start}
+.opt__label{font-size:12.5px;font-weight:600;color:var(--ink);margin:0 0 6px}
+.opt__label span{font-weight:400;color:var(--text-muted)}
+/* 1 timeline with a line */
+.vt{list-style:none;margin:0;padding:0 0 0 4px;position:relative}
+.vt::before{content:"";position:absolute;left:8px;top:8px;bottom:8px;width:2px;background:var(--border)}
+.vt li{position:relative;padding:0 0 14px 24px}
+.vt li:last-child{padding-bottom:0}
+.vt li::before{content:"";position:absolute;left:3px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px #fff}
+.vt .top{display:flex;justify-content:space-between;gap:8px}
+.vt b{font-weight:600;color:var(--ink);font-size:13.5px}
+.vt time{font-size:12px;color:var(--text-muted);white-space:nowrap}
+/* 2 grouped by day */
+.day{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);padding:8px 0 4px}
+.day:first-child{padding-top:0}
+.ev{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.ev:last-child{border-bottom:0}
+.ev b{display:block;font-weight:600;color:var(--ink);font-size:13.5px}
+.ev .q{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;text-align:right}
+.ev .q small{display:block;font-weight:500;font-size:11.5px;color:var(--text-muted)}
+/* 3 compact feed with filters */
+.mini-tabs{display:flex;gap:14px;border-bottom:1px solid var(--border);margin:-2px 0 4px;overflow-x:auto}
+.mini-tabs button{font:inherit;font-size:12.5px;font-weight:600;color:var(--text-muted);background:none;border:0;border-bottom:2px solid transparent;padding:6px 0;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
+.mini-tabs button[aria-selected=true]{color:var(--brand-ink);border-bottom-color:var(--brand)}
+.feed{display:grid;grid-template-columns:52px 1fr auto;gap:2px 10px;align-items:baseline;font-size:13px}
+.feed>*{padding:8px 0;border-bottom:1px solid var(--border)}
+.feed time{color:var(--text-muted);font-size:12px;font-variant-numeric:tabular-nums}
+.feed .a{color:var(--ink);font-weight:600}
+.feed .i{color:var(--text);text-align:right}
+/* 4 summary + last entries */
+.flow{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--sunken);margin:2px 0 8px}
+.flow span{background:var(--c)}
+.flowkey{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--text-muted);margin-bottom:10px}
+.flowkey b{color:var(--ink);font-weight:600}
+.more{display:block;width:100%;margin-top:8px;padding:8px;text-align:center;font:inherit;font-size:13px;font-weight:600;color:var(--link);background:var(--sunken);border:0;border-radius:8px;cursor:pointer}
+.more:hover{background:var(--brand-wash)}
+
+/* ---------- E : activity log, everything visible ---------- */
+.e-block{margin-bottom:28px}
+.e-block>.opt__label{font-size:14px}
+.log-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.log-tools .tabs{margin:0;border:0;flex:1;min-width:0}
+.log-count{font-size:12.5px;color:var(--text-muted)}
+.logwrap{padding:0;overflow-x:auto}
+.log{min-width:980px}
+.log th,.log td{padding:10px 12px;vertical-align:top}
+.log th:first-child,.log td:first-child{padding-left:16px}
+.log th:last-child,.log td:last-child{padding-right:16px}
+.log thead th{position:sticky;top:0;border-radius:0;border-bottom:1px solid var(--border);white-space:nowrap}
+.log td{color:var(--ink)}
+.log td.note{color:var(--text);min-width:180px}
+.log td.none{color:#B6BFD0}
+.log tbody tr{transition:background-color .14s}
+.log tfoot td{background:var(--sunken);font-weight:600;border-top:1px solid var(--border)}
+.log .when{white-space:nowrap}
+.log .when span{display:block;font-size:12px;color:var(--text-muted)}
+/* day groups */
+.daygrp+.daygrp{margin-top:14px}
+.dayhead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0 8px}
+.dayhead h4{font-size:14px}
+.sums{display:flex;gap:6px;flex-wrap:wrap}
+.sums span{font-size:12px;color:var(--text);background:var(--sunken);border-radius:999px;padding:2px 10px}
+.sums b{color:var(--ink)}
+.erows{padding:0;overflow:hidden}
+.er{display:grid;grid-template-columns:110px 1.1fr 1.2fr 1.4fr;gap:6px 16px;padding:12px 16px;border-bottom:1px solid var(--border);transition:background-color .14s}
+.er:last-child{border-bottom:0}
+.er:hover,.log tbody tr:hover td{background:var(--sunken)}
+.er .k{display:block;font-size:11.5px;color:var(--text-muted);margin-bottom:1px}
+.er .v{color:var(--ink);font-weight:500;overflow-wrap:anywhere}
+.er .v.big{font-weight:600}
+.er .tm{font-size:13px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.er .nt{grid-column:2/-1;color:var(--text);font-size:13px}
+/* ledger cards */
+.led{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
+.lc{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;transition:border-color .14s}
+.lc:hover{border-color:var(--field-border-hover)}
+.lc__top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.lc__top b{color:var(--ink);font-size:14px}
+.lc__qty{font-size:18px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.lc__item{font-size:13px;color:var(--text)}
+.lc dl{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin:12px 0 0;padding-top:12px;border-top:1px solid var(--border)}
+.lc dt{font-size:11.5px;color:var(--text-muted)}
+.lc dd{margin:0;color:var(--ink);font-weight:500;overflow-wrap:anywhere}
+.lc .nt{grid-column:1/-1}
+.lc .nt dd{font-weight:400;color:var(--text)}
+
+@media (max-width:900px){
+  .er{grid-template-columns:1fr 1fr}.er .nt{grid-column:1/-1}
+  .steps{grid-template-columns:1fr 1fr}.split,.desk{grid-template-columns:1fr}.drawer{position:static}
+}
+@media (max-width:560px){.steps{grid-template-columns:1fr}.toggle{margin-left:0}}
+</style>
+</head>
+<body>
+<div class="chooser"><div class="in"><span>Design options for the Laundry page:</span>
+  <button aria-pressed="true" data-d="a">A · Hotel linen</button>
+  <button aria-pressed="false" data-d="b">B · Guest laundry (table)</button>
+  <button aria-pressed="false" data-d="c">C · Guest laundry (split view)</button>
+  <button aria-pressed="false" data-d="d">Old activity card options</button>
+  <button aria-pressed="false" data-d="e">Activity log · full details</button>
+</div></div>
+
+<div class="wrap">
+
+<!-- ===================== A ===================== -->
+<section class="demo on" id="a">
+  <p class="about"><b>A · Hotel linen.</b> Keeps today's structure (four stages, linen table, activity on the right) with tidier spacing, one dot colour per stage and plain typography. Only one action per stage.</p>
+  <div class="head"><div><h2>Laundry</h2><p>Track hotel linen and guest clothes through the wash.</p></div></div>
+  <div class="tabs" role="tablist"><button role="tab" aria-selected="true">Hotel linen</button><button role="tab" aria-selected="false">Guest laundry<span class="n">9</span></button></div>
+
+  <ol class="steps">
+    <li class="step recv"><div class="step__t"><span class="step__n">1</span>With housekeeping</div><div class="step__c">18<small>pieces</small></div><p class="step__d">8 Bedsheet, 6 Towel, +1 more</p><button class="btn btn--pri">Receive from Sunita</button></li>
+    <li class="step dirty"><div class="step__t"><span class="step__n">2</span>Dirty</div><div class="step__c">32<small>pieces</small></div><p class="step__d">14 Towel, 10 Bedsheet, 8 Pillow cover</p><button class="btn btn--cta">Send for washing</button></li>
+    <li class="step wash"><div class="step__t"><span class="step__n">3</span>In wash</div><div class="step__c">46<small>pieces</small></div><p class="step__d">20 Towel, 14 Pillow cover, 12 Bedsheet</p><button class="btn btn--pri">Receive washed</button></li>
+    <li class="step clean"><div class="step__t"><span class="step__n">4</span>Clean</div><div class="step__c">118<small>pieces</small></div><p class="step__d">Ready in the store.</p></li>
+  </ol>
+
+  <div class="split">
+    <div class="stack">
+      <section class="panel">
+        <div class="panel__head"><h4>Your linen</h4><span class="sub">From Asset Inventory → Bedsheets &amp; Towels</span></div>
+        <table>
+          <thead><tr><th>Linen</th><th class="r"><span class="dot recv"></span>To receive</th><th class="r"><span class="dot dirty"></span>Dirty</th><th class="r"><span class="dot wash"></span>In wash</th><th class="r"><span class="dot clean"></span>Clean</th></tr></thead>
+          <tbody>
+            <tr><td>Bedsheet<span class="sub">80 owned</span></td><td class="r num">8</td><td class="r num">10</td><td class="r num">12</td><td class="r num">50</td></tr>
+            <tr><td>Towel<span class="sub">70 owned</span></td><td class="r num">6</td><td class="r num">14</td><td class="r num">20</td><td class="r num">30</td></tr>
+            <tr><td>Pillow cover<span class="sub">60 owned</span></td><td class="r num zero">0</td><td class="r num">8</td><td class="r num">14</td><td class="r num">38</td></tr>
+            <tr><td>Blanket<span class="sub">20 owned</span></td><td class="r num">4</td><td class="r num zero">0</td><td class="r num zero">0</td><td class="r num low">0</td></tr>
+          </tbody>
+          <tfoot><tr><td>All linen</td><td class="r num">18</td><td class="r num">32</td><td class="r num">46</td><td class="r num">118</td></tr></tfoot>
+        </table>
+      </section>
+    </div>
+    <aside class="stack">
+      <section class="panel"><div class="panel__head"><h4>Today</h4><span class="sub">4 Nov 2026</span></div>
+        <div class="today"><div><strong>12</strong><span>Changed in rooms</span></div><div><strong>46</strong><span>Sent to wash</span></div><div><strong>20</strong><span>Received washed</span></div><div><strong>1</strong><span>Lost or damaged</span></div></div></section>
+      <section class="panel"><div class="panel__head"><h4>Recent activity</h4><span class="sub">Latest first</span></div>
+        <ul class="tl">
+          <li class="clean"><span><b>Received washed</b><span class="sub">20 Towel · Sai Laundry · 12 min ago</span></span></li>
+          <li class="wash"><span><b>Sent for washing</b><span class="sub">46 pieces · 2 h ago</span></span></li>
+          <li class="recv"><span><b>Changed in a room</b><span class="sub">4 Bedsheet · Room 204 · 3 h ago</span></span></li>
+          <li class="off"><span><b>Marked damaged</b><span class="sub">1 Towel · yesterday</span></span></li>
+        </ul></section>
+    </aside>
+  </div>
+</section>
+
+<!-- ===================== B ===================== -->
+<section class="demo" id="b">
+  <p class="about"><b>B · Guest laundry, table first.</b> The same table staff already use, cleaned up: status tabs with counts, one search box, a Table/Cards switch, a status dot instead of coloured badges, and the next action at the end of each row.</p>
+  <div class="head"><div><h2>Laundry</h2><p>Track hotel linen and guest clothes through the wash.</p></div><button class="btn btn--cta">+ New order</button></div>
+  <div class="tabs" role="tablist"><button role="tab" aria-selected="false">Hotel linen</button><button role="tab" aria-selected="true">Guest laundry<span class="n">9</span></button></div>
+
+  <div class="bar">
+    <div class="tabs" style="margin:0;border:0;flex:none" role="tablist" id="bt">
+      <button role="tab" aria-selected="true">In wash<span class="n">5</span></button>
+      <button role="tab" aria-selected="false">Received<span class="n">4</span></button>
+      <button role="tab" aria-selected="false">Handed over<span class="n">18</span></button>
+      <button role="tab" aria-selected="false">All<span class="n">27</span></button>
+    </div>
+    <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#78859A" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" placeholder="Search tag or guest" aria-label="Search orders"></div>
+    <div class="toggle" role="group" aria-label="View"><button aria-pressed="true">Table</button><button aria-pressed="false">Cards</button></div>
+  </div>
+
+  <section class="panel tablewrap">
+    <table>
+      <thead><tr><th>Tag</th><th>Guest</th><th>Room</th><th>Items</th><th class="r">Pieces</th><th>Sent to wash</th><th>Status</th><th class="r">Amount</th><th class="r">Actions</th></tr></thead>
+      <tbody>
+        <tr><td class="tag num">#1042</td><td>Rahul Deshmukh</td><td>204</td><td>Shirt ×4, Trousers ×2, Saree ×1</td><td class="r num">7</td><td>03 Nov, 6:10 pm<span class="late sub">26 h · overdue</span></td><td class="st wash"><span class="dot"></span>In wash</td><td class="r num">₹560</td><td><div class="act"><button class="link danger">Cancel</button><button class="btn btn--sm btn--pri">Receive</button></div></td></tr>
+        <tr><td class="tag num">#1044</td><td>Priya Shah</td><td>308</td><td>Jeans ×2, Shirt ×1</td><td class="r num">3</td><td>04 Nov, 8:00 am</td><td class="st wash"><span class="dot"></span>In wash</td><td class="r num">₹260</td><td><div class="act"><button class="link danger">Cancel</button><button class="btn btn--sm btn--pri">Receive</button></div></td></tr>
+        <tr><td class="tag num">#1047</td><td>Meera Kulkarni</td><td>112</td><td>Kurta ×3, T-shirt ×5</td><td class="r num">8</td><td>04 Nov, 9:30 am</td><td class="st clean"><span class="dot"></span>Received</td><td class="r num">₹340</td><td><div class="act"><button class="link danger">Cancel</button><button class="btn btn--sm btn--cta">Hand over</button></div></td></tr>
+        <tr><td class="tag num">#1039</td><td>Anil <span class="sub" style="display:inline">(walk-in)</span></td><td>—</td><td>Jeans ×2</td><td class="r num">2</td><td>03 Nov, 4:00 pm</td><td class="st off"><span class="dot"></span>Handed over</td><td class="r num">₹180</td><td class="r sub">Billed to Services</td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<!-- ===================== C ===================== -->
+<section class="demo" id="c">
+  <p class="about"><b>C · Guest laundry, split view.</b> For a busy desk: pick an order from the list and everything about it, plus the next step, shows on the right. No popup to open.</p>
+  <div class="head"><div><h2>Laundry</h2><p>Track hotel linen and guest clothes through the wash.</p></div><button class="btn btn--cta">+ New order</button></div>
+  <div class="tabs" role="tablist"><button role="tab" aria-selected="false">Hotel linen</button><button role="tab" aria-selected="true">Guest laundry<span class="n">9</span></button></div>
+  <div class="desk">
+    <section class="panel list" id="list" role="listbox" aria-label="Orders"></section>
+    <aside class="panel drawer" id="drawer" aria-live="polite"></aside>
+  </div>
+</section>
+
+<!-- ===================== D ===================== -->
+<section class="demo" id="d">
+  <p class="about"><b>Recent activity options for design A.</b> Each card is drawn at the width it has next to the linen table. Pick one number (1–4), or tell me what to mix.</p>
+  <div class="opts">
+
+    <div>
+      <p class="opt__label">1 · Timeline <span>— a connecting line, time on the right</span></p>
+      <section class="panel"><div class="panel__head"><h4>Recent activity</h4><span class="sub">Latest first</span></div>
+        <ul class="vt">
+          <li class="clean"><div class="top"><b>Received washed</b><time>12 min ago</time></div><span class="sub">20 Towel · Sai Laundry</span></li>
+          <li class="wash"><div class="top"><b>Sent for washing</b><time>2 h ago</time></div><span class="sub">46 pieces · Sai Laundry</span></li>
+          <li class="recv"><div class="top"><b>Changed in a room</b><time>3 h ago</time></div><span class="sub">4 Bedsheet · Room 204</span></li>
+          <li class="off"><div class="top"><b>Marked damaged</b><time>Yesterday</time></div><span class="sub">1 Towel · Store</span></li>
+        </ul></section>
+    </div>
+
+    <div>
+      <p class="opt__label">2 · Grouped by day <span>— quantity on the right</span></p>
+      <section class="panel"><div class="panel__head"><h4>Recent activity</h4><span class="sub">Latest first</span></div>
+        <div class="day">Today</div>
+        <div class="ev"><span><b><span class="dot clean"></span>Received washed</b><span class="sub">Towel · Sai Laundry · 12 min ago</span></span><span class="q">20<small>pieces</small></span></div>
+        <div class="ev"><span><b><span class="dot wash"></span>Sent for washing</b><span class="sub">Mixed · Sai Laundry · 2 h ago</span></span><span class="q">46<small>pieces</small></span></div>
+        <div class="ev"><span><b><span class="dot recv"></span>Changed in a room</b><span class="sub">Bedsheet · Room 204 · 3 h ago</span></span><span class="q">4<small>pieces</small></span></div>
+        <div class="day">Yesterday</div>
+        <div class="ev"><span><b><span class="dot off"></span>Marked damaged</b><span class="sub">Towel · 5:40 pm</span></span><span class="q">1<small>piece</small></span></div>
+      </section>
+    </div>
+
+    <div>
+      <p class="opt__label">3 · Compact feed with filters <span>— same filters as Full history</span></p>
+      <section class="panel"><div class="panel__head"><h4>Recent activity</h4></div>
+        <div class="mini-tabs" role="tablist"><button role="tab" aria-selected="true">All</button><button role="tab" aria-selected="false">Sent</button><button role="tab" aria-selected="false">Received</button><button role="tab" aria-selected="false">Rooms</button></div>
+        <div class="feed">
+          <time>12 min</time><span class="a">Received washed</span><span class="i">20 Towel</span>
+          <time>2 h</time><span class="a">Sent for washing</span><span class="i">46 pieces</span>
+          <time>3 h</time><span class="a">Changed · Rm 204</span><span class="i">4 Bedsheet</span>
+          <time>5 h</time><span class="a">Changed · Rm 118</span><span class="i">2 Towel</span>
+          <time>Yest.</time><span class="a">Marked damaged</span><span class="i">1 Towel</span>
+        </div>
+        <button class="more">View full history</button>
+      </section>
+    </div>
+
+    <div>
+      <p class="opt__label">4 · Summary bar + last entries <span>— merges Today and Recent activity</span></p>
+      <section class="panel"><div class="panel__head"><h4>Today's movement</h4><span class="sub">4 Nov 2026</span></div>
+        <div class="flow" role="img" aria-label="12 changed, 46 sent, 20 received, 1 damaged"><span style="width:15%;--c:var(--t-recv)"></span><span style="width:58%;--c:var(--t-wash)"></span><span style="width:25%;--c:var(--t-clean)"></span><span style="width:2%;--c:var(--danger)"></span></div>
+        <div class="flowkey"><span><span class="dot recv"></span><b>12</b> changed</span><span><span class="dot wash"></span><b>46</b> sent</span><span><span class="dot clean"></span><b>20</b> received</span><span><span class="dot" style="--c:var(--danger)"></span><b>1</b> damaged</span></div>
+        <div class="ev"><span><b>Received washed</b><span class="sub">20 Towel · 12 min ago</span></span></div>
+        <div class="ev"><span><b>Sent for washing</b><span class="sub">46 pieces · 2 h ago</span></span></div>
+        <div class="ev"><span><b>Changed in a room</b><span class="sub">4 Bedsheet · Room 204 · 3 h ago</span></span></div>
+        <button class="more">View full history</button>
+      </section>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===================== E ===================== -->
+<section class="demo" id="e">
+  <p class="about"><b>Activity log with every detail shown.</b> The Recent activity card is gone from the side. These give the movements their own full-width space under the linen table, with nothing cut off or hidden in a menu: date, time, action, room or venue, item, quantity, who washed it, the charge, who entered it, and the note.</p>
+
+  <div class="e-block">
+    <p class="opt__label">E1 · Full-width log table <span>— all 10 columns, always open, with filters and Excel</span></p>
+    <section class="panel">
+      <div class="panel__head"><h4>Linen activity</h4><span class="sub">Newest first</span></div>
+      <div class="log-tools">
+        <div class="tabs" role="tablist"><button role="tab" aria-selected="true">All<span class="n">8</span></button><button role="tab" aria-selected="false">Sent<span class="n">2</span></button><button role="tab" aria-selected="false">Received<span class="n">2</span></button><button role="tab" aria-selected="false">Rooms<span class="n">3</span></button><button role="tab" aria-selected="false">Lost or damaged<span class="n">1</span></button></div>
+        <button class="btn btn--sm">Download Excel</button>
+      </div>
+      <div class="panel logwrap" id="e1"></div>
+    </section>
+  </div>
+
+  <div class="e-block">
+    <p class="opt__label">E2 · Grouped by day <span>— day totals at the top of each group, each field labelled</span></p>
+    <section class="panel">
+      <div class="panel__head"><h4>Linen activity</h4><span class="sub">Newest first</span></div>
+      <div id="e2"></div>
+    </section>
+  </div>
+
+  <div class="e-block">
+    <p class="opt__label">E3 · Entry cards <span>— one card per movement, two columns of labelled facts</span></p>
+    <div class="led" id="e3"></div>
+  </div>
+</section>
+
+</div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+$$('.chooser button').forEach(b=>b.onclick=()=>{
+  $$('.chooser button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  $$('.demo').forEach(d=>d.classList.toggle('on',d.id===b.dataset.d));
+});
+$$('.toggle').forEach(g=>g.onclick=e=>{const b=e.target.closest('button');if(b)$$('button',g).forEach(x=>x.setAttribute('aria-pressed',x===b))});
+$$('.tabs').forEach(g=>g.onclick=e=>{const b=e.target.closest('button');if(b)$$('button',g).forEach(x=>x.setAttribute('aria-selected',x===b))});
+
+const orders=[
+ {tag:1042,guest:'Rahul Deshmukh',room:'Room 204',s:1,st:'In wash',c:'wash',items:[['Shirt',4,60],['Trousers',2,100],['Saree',1,120]],by:'Sai Laundry',sent:'03 Nov, 6:10 pm',cta:'Receive from wash'},
+ {tag:1044,guest:'Priya Shah',room:'Room 308',s:1,st:'In wash',c:'wash',items:[['Jeans',2,100],['Shirt',1,60]],by:'Sai Laundry',sent:'04 Nov, 8:00 am',cta:'Receive from wash'},
+ {tag:1047,guest:'Meera Kulkarni',room:'Room 112',s:2,st:'Received',c:'clean',items:[['Kurta',3,40],['T-shirt',5,44]],by:'Own laundry',sent:'04 Nov, 9:30 am',cta:'Hand over'},
+ {tag:1039,guest:'Anil (walk-in)',room:'Walk-in',s:3,st:'Handed over',c:'off',items:[['Jeans',2,90]],by:'Own laundry',sent:'03 Nov, 4:00 pm',cta:null}
+];
+const stages=['Sent','In wash','Received','Handed over'];
+$('#list').innerHTML=orders.map((o,i)=>`<div class="row" role="option" tabindex="0" data-i="${i}"><span class="tag num">#${o.tag}</span><span><b>${o.guest}</b><span class="sub">${o.room} · ${o.items.reduce((n,x)=>n+x[1],0)} pieces</span></span><span class="st ${o.c}"><span class="dot"></span>${o.st}</span></div>`).join('');
+function show(i){
+  const o=orders[i], tot=o.items.reduce((n,x)=>n+x[1]*x[2],0);
+  $$('.row').forEach((r,n)=>r.setAttribute('aria-selected',n===i));
+  $('#drawer').innerHTML=`
+   <div style="display:flex;justify-content:space-between;align-items:center"><h3>Tag #${o.tag}</h3><span class="st ${o.c}"><span class="dot"></span>${o.st}</span></div>
+   <div class="sub">${o.guest} · ${o.room}</div>
+   <div class="prog">${stages.map((_,n)=>`<i class="${n<=o.s?'f':''}"></i>${n<3?`<u class="${n<o.s?'f':''}"></u>`:''}`).join('')}</div>
+   <div class="proglabels">${stages.map(s=>`<span>${s}</span>`).join('')}</div>
+   <div class="lines">${o.items.map(x=>`<div><span>${x[0]} × ${x[1]}</span><span class="num">₹${x[1]*x[2]}</span></div>`).join('')}<div><span>Total</span><span class="num">₹${tot}</span></div></div>
+   <dl class="kv"><dt>Sent to wash</dt><dd>${o.sent}</dd><dt>Washed by</dt><dd>${o.by}</dd></dl>
+   <div class="foot">${o.cta?`<button class="btn">Cancel order</button><button class="btn btn--pri">${o.cta}</button>`:`<span class="sub">Charge sent to Services to bill.</span>`}</div>`;
+}
+$('#list').onclick=e=>{const r=e.target.closest('.row');if(r)show(+r.dataset.i)};
+$('#list').onkeydown=e=>{const r=e.target.closest('.row');if(r&&(e.key==='Enter'||e.key===' ')){e.preventDefault();show(+r.dataset.i)}};
+show(0);
+
+/* ----- activity log demos (E) ----- */
+const T={CHANGED:['Changed in a room or venue','recv'],SENT:['Sent for washing','wash'],RECEIVED:['Received washed','clean'],LOST:['Marked lost','off'],DAMAGED:['Marked damaged','off']};
+const log=[
+ {d:'04 Nov 2026',t:'11:48 am',k:'RECEIVED',place:'—',item:'Towel',q:20,by:'Sai Laundry',ch:450,who:'Ramesh Patil',note:'2 towels short, checked with vendor'},
+ {d:'04 Nov 2026',t:'09:35 am',k:'SENT',place:'—',item:'Bedsheet',q:26,by:'Sai Laundry',ch:null,who:'Ramesh Patil',note:'Bag no. 14'},
+ {d:'04 Nov 2026',t:'08:50 am',k:'CHANGED',place:'Room 204',item:'Bedsheet',q:4,by:'',ch:null,who:'Sunita Jadhav',note:''},
+ {d:'04 Nov 2026',t:'08:12 am',k:'CHANGED',place:'Banquet Hall',item:'Table cover',q:12,by:'',ch:null,who:'Sunita Jadhav',note:'After wedding reception'},
+ {d:'03 Nov 2026',t:'05:40 pm',k:'DAMAGED',place:'—',item:'Towel',q:1,by:'',ch:null,who:'Ramesh Patil',note:'Torn at the edge'},
+ {d:'03 Nov 2026',t:'02:15 pm',k:'RECEIVED',place:'—',item:'Pillow cover',q:14,by:'Own laundry',ch:null,who:'Ramesh Patil',note:''},
+ {d:'03 Nov 2026',t:'10:05 am',k:'SENT',place:'—',item:'Pillow cover',q:14,by:'Own laundry',ch:null,who:'Ramesh Patil',note:''},
+ {d:'03 Nov 2026',t:'09:20 am',k:'CHANGED',place:'Room 118',item:'Towel',q:2,by:'',ch:null,who:'Sunita Jadhav',note:''}
+];
+const rs=n=>n==null?'':'₹'+n.toLocaleString('en-IN');
+const dash=v=>v?v:'<span class="none">—</span>';
+const lab=m=>`<span class="st ${T[m.k][1]}"><span class="dot"></span>${T[m.k][0]}</span>`;
+$('#e1').innerHTML=`<table class="log"><thead><tr><th>Date &amp; time</th><th>Action</th><th>Room / venue</th><th>Item</th><th class="r">Qty</th><th>Washed by</th><th class="r">Charge</th><th>Entered by</th><th>Note</th></tr></thead><tbody>${
+ log.map(m=>`<tr><td class="when num">${m.d}<span>${m.t}</span></td><td>${lab(m)}</td><td>${dash(m.place==='—'?'':m.place)}</td><td>${m.item}</td><td class="r num">${m.q}</td><td>${dash(m.by)}</td><td class="r num">${m.ch?rs(m.ch):'<span class="none">—</span>'}</td><td>${m.who}</td><td class="note ${m.note?'':'none'}">${m.note||'—'}</td></tr>`).join('')
+ }</tbody><tfoot><tr><td colspan="4">8 entries</td><td class="r num">93</td><td></td><td class="r num">₹450</td><td colspan="2"></td></tr></tfoot></table>`;
+const days=[...new Set(log.map(m=>m.d))];
+$('#e2').innerHTML=days.map(d=>{
+ const g=log.filter(m=>m.d===d), sum=k=>g.filter(m=>m.k===k).reduce((n,m)=>n+m.q,0);
+ return `<div class="daygrp"><div class="dayhead"><h4>${d}</h4><div class="sums"><span><b>${sum('CHANGED')}</b> changed</span><span><b>${sum('SENT')}</b> sent</span><span><b>${sum('RECEIVED')}</b> received</span><span><b>${sum('LOST')+sum('DAMAGED')}</b> lost or damaged</span></div></div>
+ <div class="panel erows" style="border-radius:10px">${g.map(m=>`<div class="er">
+  <div class="tm">${m.t}</div>
+  <div><span class="k">Action</span><span class="v big">${lab(m)}</span></div>
+  <div><span class="k">Item${m.place!=='—'?' · Location':''}</span><span class="v">${m.q} ${m.item}${m.place!=='—'?' · '+m.place:''}</span></div>
+  <div><span class="k">Washed by · Charge · Entered by</span><span class="v">${[m.by||null,m.ch?rs(m.ch):null,m.who].filter(Boolean).join(' · ')}</span></div>
+  ${m.note?`<div class="nt"><span class="k">Note</span>${m.note}</div>`:''}
+ </div>`).join('')}</div></div>`}).join('');
+$('#e3').innerHTML=log.map(m=>`<article class="lc"><div class="lc__top"><b>${lab(m)}</b><span class="lc__qty">${m.q}</span></div>
+ <div class="lc__item" style="margin-top:2px">${m.item}${m.place!=='—'?' · '+m.place:''} · ${m.d}, ${m.t}</div>
+ <dl><div><dt>Washed by</dt><dd>${m.by||'—'}</dd></div><div><dt>Charge</dt><dd>${m.ch?rs(m.ch):'—'}</dd></div><div><dt>Entered by</dt><dd>${m.who}</dd></div><div><dt>Room / venue</dt><dd>${m.place}</dd></div><div class="nt"><dt>Note</dt><dd>${m.note||'—'}</dd></div></dl></article>`).join('');
+</script>
+</body>
+</html>

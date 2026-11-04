@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laundry – full page layouts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#16212E; --text:#48566A; --muted:#78859A; --paper:#F3F4F6; --surface:#fff; --border:#E5E7EB; --sunken:#EEF1F7;
+  --brand:#0A3A6B; --brand-ink:#072748; --wash:#E6EDF4; --wash-edge:#C7D6E6;
+  --accent:#FFC107; --danger:#EA4335; --field:#DDE3EC; --field-h:#B6BFD0; --link:#0077B6;
+  --recv:#0A3A6B; --dirty:#B7791F; --wsh:#0077B6; --clean:#1E8E3E;
+  --sans:'Inter',system-ui,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font:400 13.5px/1.45 var(--sans);color:var(--text);background:var(--paper);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
+h2,h4{margin:0;color:var(--ink);font-weight:700}
+.chooser{flex:none;background:var(--ink);color:#c9d2de;padding:8px 16px;font-size:12.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.chooser button{font:inherit;font-size:12.5px;color:#c9d2de;background:none;border:1px solid #3a475a;border-radius:8px;padding:5px 12px;cursor:pointer}
+.chooser button[aria-pressed=true]{background:#fff;color:var(--ink);border-color:#fff;font-weight:600}
+.chooser .why{margin-left:auto;opacity:.75}
+.page{flex:1;min-height:0;max-width:1240px;width:100%;margin:0 auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+
+/* common */
+.hd{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hd h2{font-size:19px}
+.hd p{margin:0;color:var(--muted);font-size:12.5px}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--border);overflow-x:auto;flex:none}
+.tabs button{font:inherit;font-size:13.5px;font-weight:600;color:var(--muted);background:none;border:0;border-bottom:2px solid transparent;padding:7px 2px;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
+.tabs button:hover{color:var(--text)}
+.tabs button[aria-selected=true]{color:var(--brand-ink);border-bottom-color:var(--brand)}
+.n{margin-left:6px;font-size:11.5px;font-weight:600;padding:0 7px;border-radius:99px;background:var(--sunken);color:var(--muted)}
+[aria-selected=true]>.n{background:var(--wash);color:var(--brand-ink)}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;min-height:0}
+.pad{padding:12px 14px}
+.ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px}
+.ph h4{font-size:14px}.sub{font-size:12px;color:var(--muted)}
+.btn{font:inherit;font-size:13px;font-weight:600;min-height:34px;padding:0 14px;border-radius:9px;border:1px solid var(--field);background:#fff;color:var(--ink);cursor:pointer;transition:background-color .14s,border-color .14s;white-space:nowrap}
+.btn:hover{border-color:var(--field-h);background:#fafbfc}
+.btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}.btn.pri:hover{background:var(--brand-ink)}
+.btn.cta{background:var(--accent);border-color:var(--accent);color:var(--ink)}.btn.cta:hover{background:#f2b600}
+.btn.sm{min-height:28px;padding:0 10px;font-size:12.5px}
+.btn:focus-visible,.tabs button:focus-visible,.item:focus-visible,tr:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(0,176,255,.28)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:1px}
+.recv{--c:var(--recv)}.dirty{--c:var(--dirty)}.wsh{--c:var(--wsh)}.clean{--c:var(--clean)}.off{--c:var(--muted)}
+.st{font-weight:600;color:var(--ink);white-space:nowrap}
+.num{font-variant-numeric:tabular-nums}
+.scroll{overflow:auto;min-height:0}
+.fill{flex:1;min-height:0;display:flex;flex-direction:column}
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+thead th{position:sticky;top:0;z-index:1;font-size:11.5px;font-weight:600;color:var(--muted);background:var(--sunken);white-space:nowrap}
+td{color:var(--ink)}
+td.r,th.r{text-align:right}
+tbody tr{transition:background-color .14s}
+tbody tr:hover td{background:var(--sunken)}
+tr.sel td{background:var(--wash)}
+tbody tr.clk{cursor:pointer}
+tfoot td{font-weight:700;background:var(--sunken)}
+.z{color:#B6BFD0}.low{color:var(--danger);font-weight:700}
+.late{color:var(--danger);font-weight:600;font-size:12px}
+.inline-stats{display:flex;gap:8px;flex-wrap:wrap}
+.inline-stats div{flex:1;min-width:110px;background:var(--sunken);border-radius:10px;padding:7px 12px}
+.inline-stats strong{display:block;font-size:19px;line-height:1.15;color:var(--ink)}
+.inline-stats span{font-size:11.5px;color:var(--muted)}
+.search{position:relative;width:220px}
+.search input{width:100%;height:34px;border:1px solid var(--field);border-radius:9px;padding:0 10px 0 30px;font:inherit;color:var(--ink);box-shadow:inset 0 1px 2px rgba(22,33,46,.06)}
+.search input:focus{outline:none;box-shadow:0 0 0 3px rgba(0,176,255,.28)}
+.search svg{position:absolute;left:9px;top:9px}
+.row-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+/* stage tiles (L1) */
+.stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;flex:none}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;transition:border-color .14s}
+.tile:hover{border-color:var(--field-h)}
+.tile .t{font-weight:600;color:var(--ink);display:flex;align-items:center;gap:8px}
+.tile .c{font-size:26px;font-weight:700;color:var(--ink);line-height:1;grid-row:1/3;grid-column:2;text-align:right}
+.tile .d{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .btn{grid-column:1/-1;margin-top:6px;width:100%}
+.nb{width:20px;height:20px;border-radius:50%;background:var(--sunken);color:var(--c);display:grid;place-items:center;font-size:11.5px;font-weight:700;flex:none}
+
+/* two columns */
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;flex:1;min-height:0}
+.colL,.colR{display:flex;flex-direction:column;gap:12px;min-height:0}
+.colL>.panel{flex:1;display:flex;flex-direction:column}
+.waitrow{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border)}
+.waitrow:first-of-type{border-top:0}
+.av{width:30px;height:30px;border-radius:50%;background:var(--wash);color:var(--brand-ink);display:grid;place-items:center;font-weight:700;flex:none}
+.waitrow b{display:block;color:var(--ink)}
+.latest li{list-style:none;display:grid;grid-template-columns:44px 1fr auto;gap:8px;padding:6px 0;border-top:1px solid var(--border);align-items:center}
+.latest li:first-child{border-top:0}
+.latest{margin:0;padding:0}
+.latest time{font-size:11.5px;color:var(--muted)}
+.latest b{font-weight:600;color:var(--ink)}
+
+/* rail (L2) */
+.rail{display:grid;grid-template-columns:250px minmax(0,1fr);gap:12px;flex:1;min-height:0}
+.railcol{display:flex;flex-direction:column;gap:8px;min-height:0}
+.item{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--c);border-radius:10px;padding:9px 12px;transition:border-color .14s,background-color .14s;text-align:left;font:inherit;cursor:pointer;width:100%}
+.item:hover{background:#fafbfc;border-color:var(--field-h);border-left-color:var(--c)}
+.item .t{font-weight:600;color:var(--ink)}
+.item .c{font-size:22px;font-weight:700;color:var(--ink);grid-row:1/3;grid-column:2}
+.item .d{font-size:12px;color:var(--muted)}
+.item[aria-current=true]{background:var(--wash);border-color:var(--wash-edge);border-left-color:var(--c)}
+.item .act{grid-column:1/-1;margin-top:6px}
+.item .act .btn{width:100%}
+.filters .item{border-left-width:1px;padding:8px 12px}
+.filters .item[aria-current=true]{border-left-color:var(--brand);box-shadow:inset 3px 0 0 var(--brand)}
+
+/* stepper (L3) */
+.stepper{display:grid;grid-template-columns:repeat(4,1fr);position:relative;padding:12px 10px 12px}
+.sp{text-align:center;position:relative;padding:0 8px}
+.sp::before{content:"";position:absolute;top:13px;left:-50%;width:100%;height:2px;background:var(--border)}
+.sp:first-child::before{display:none}
+.sp i{position:relative;z-index:1;width:28px;height:28px;border-radius:50%;background:var(--surface);border:2px solid var(--c);color:var(--c);display:grid;place-items:center;margin:0 auto 4px;font-style:normal;font-weight:700;font-size:12.5px}
+.sp .t{font-weight:600;color:var(--ink)}
+.sp .c{font-size:24px;font-weight:700;color:var(--ink);line-height:1.15}
+.sp .d{font-size:12px;color:var(--muted);min-height:18px}
+.sp .btn{margin-top:6px;min-width:150px}
+.prog{display:inline-flex;align-items:center;width:110px}
+.prog i{width:9px;height:9px;border-radius:50%;background:var(--border);flex:none}.prog i.f{background:var(--brand)}
+.prog u{flex:1;height:2px;background:var(--border)}.prog u.f{background:var(--brand)}
+
+/* order detail */
+.det h4{font-size:15px}
+.lines{margin:10px 0;border:1px solid var(--border);border-radius:10px}
+.lines div{display:flex;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);color:var(--ink)}
+.lines div:last-child{border:0;background:var(--sunken);font-weight:700;border-radius:0 0 9px 9px}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:4px 10px;margin:0}
+.kv dt{color:var(--muted);font-size:12.5px}.kv dd{margin:0;color:var(--ink);font-weight:500}
+.foot{display:flex;gap:8px;margin-top:12px}.foot .btn{flex:1}
+
+@media (max-width:1000px){
+  html,body{height:auto}.page{flex:none}.cols,.rail{grid-template-columns:1fr}
+  .stages{grid-template-columns:1fr 1fr}.stepper{grid-template-columns:1fr 1fr;row-gap:14px}.sp::before{display:none}
+}
+@media (max-width:560px){.stages,.stepper{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="chooser" id="chooser">
+  <b style="color:#fff;margin-right:6px">Laundry page layouts</b>
+  <button data-l="1" aria-pressed="true">Layout 1 · Dashboard</button>
+  <button data-l="2" aria-pressed="false">Layout 2 · Side rail</button>
+  <button data-l="3" aria-pressed="false">Layout 3 · Stepper</button>
+  <span class="why">Each one fits a laptop screen; only the tables scroll inside themselves. Switch Hotel linen / Guest laundry inside.</span>
+</div>
+<main class="page" id="page"></main>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
+const S={l:1,tab:'linen',sub:'stock',filter:'wash',sel:0,stage:0};
+
+/* ---------- data ---------- */
+const stages=[
+ {k:'recv',t:'With housekeeping',c:18,d:'8 Bedsheet, 6 Towel +1',btn:'Receive from Sunita',cls:'pri'},
+ {k:'dirty',t:'Dirty',c:32,d:'14 Towel, 10 Bedsheet, 8 Pillow',btn:'Send for washing',cls:'cta'},
+ {k:'wsh',t:'In wash',c:46,d:'With Sai Laundry · 2 h ago',btn:'Receive washed',cls:'pri'},
+ {k:'clean',t:'Clean',c:118,d:'Ready in the store',btn:null}
+];
+const stock=[['Bedsheet',80,8,10,12,50],['Towel',70,6,14,20,30],['Pillow cover',60,0,8,14,38],['Blanket',20,4,0,0,0],['Table cover',40,12,0,0,28]];
+const T={CHANGED:['Changed in room','recv'],SENT:['Sent for washing','wsh'],RECEIVED:['Received washed','clean'],LOST:['Marked lost','off'],DAMAGED:['Marked damaged','off']};
+const log=[
+ {d:'04 Nov',t:'11:48 am',k:'RECEIVED',p:'',i:'Towel',q:20,by:'Sai Laundry',ch:450,w:'Ramesh',n:'2 towels short, checked with vendor'},
+ {d:'04 Nov',t:'09:35 am',k:'SENT',p:'',i:'Bedsheet',q:26,by:'Sai Laundry',ch:0,w:'Ramesh',n:'Bag no. 14'},
+ {d:'04 Nov',t:'08:50 am',k:'CHANGED',p:'Room 204',i:'Bedsheet',q:4,by:'',ch:0,w:'Sunita',n:''},
+ {d:'04 Nov',t:'08:12 am',k:'CHANGED',p:'Banquet Hall',i:'Table cover',q:12,by:'',ch:0,w:'Sunita',n:'After wedding reception'},
+ {d:'03 Nov',t:'05:40 pm',k:'DAMAGED',p:'',i:'Towel',q:1,by:'',ch:0,w:'Ramesh',n:'Torn at the edge'},
+ {d:'03 Nov',t:'02:15 pm',k:'RECEIVED',p:'',i:'Pillow cover',q:14,by:'Own laundry',ch:0,w:'Ramesh',n:''},
+ {d:'03 Nov',t:'10:05 am',k:'SENT',p:'',i:'Pillow cover',q:14,by:'Own laundry',ch:0,w:'Ramesh',n:''},
+ {d:'03 Nov',t:'09:20 am',k:'CHANGED',p:'Room 118',i:'Towel',q:2,by:'',ch:0,w:'Sunita',n:''}
+];
+const orders=[
+ {tag:1042,g:'Rahul Deshmukh',r:'204',s:1,k:'wash',st:'In wash',items:[['Shirt',4,60],['Trousers',2,100],['Saree',1,120]],by:'Sai Laundry',sent:'03 Nov, 6:10 pm',late:'26 h overdue',cta:'Receive'},
+ {tag:1044,g:'Priya Shah',r:'308',s:1,k:'wash',st:'In wash',items:[['Jeans',2,100],['Shirt',1,60]],by:'Sai Laundry',sent:'04 Nov, 8:00 am',cta:'Receive'},
+ {tag:1046,g:'Vikram Rao',r:'115',s:1,k:'wash',st:'In wash',items:[['Kurta',2,40]],by:'Own laundry',sent:'04 Nov, 10:20 am',cta:'Receive'},
+ {tag:1047,g:'Meera Kulkarni',r:'112',s:2,k:'back',st:'Received',items:[['Kurta',3,40],['T-shirt',5,44]],by:'Own laundry',sent:'04 Nov, 9:30 am',cta:'Hand over'},
+ {tag:1039,g:'Anil (walk-in)',r:'—',s:3,k:'done',st:'Handed over',items:[['Jeans',2,90]],by:'Own laundry',sent:'03 Nov, 4:00 pm',cta:null}
+];
+const counts={wash:3,back:1,done:1,all:5};
+const rs=n=>'₹'+n.toLocaleString('en-IN');
+const tot=o=>o.items.reduce((n,x)=>n+x[1]*x[2],0), pcs=o=>o.items.reduce((n,x)=>n+x[1],0);
+const dash=v=>v?v:'<span class="z">—</span>';
+
+/* ---------- pieces ---------- */
+const mainTabs=()=>`<div class="tabs" role="tablist"><button role="tab" data-tab="linen" aria-selected="${S.tab==='linen'}">Hotel linen</button><button role="tab" data-tab="guest" aria-selected="${S.tab==='guest'}">Guest laundry<span class="n">5</span></button></div>`;
+const head=()=>'';
+const tile=(s,n)=>`<div class="tile ${s.k}"><span class="t"><span class="nb">${n+1}</span>${s.t}</span><span class="c num">${s.c}</span><span class="d">${s.d}</span>${s.btn?`<button class="btn sm ${s.cls}">${s.btn}</button>`:''}</div>`;
+const stockTable=()=>`<table><thead><tr><th>Linen</th><th class="r"><span class="dot recv"></span>To receive</th><th class="r"><span class="dot dirty"></span>Dirty</th><th class="r"><span class="dot wsh"></span>In wash</th><th class="r"><span class="dot clean"></span>Clean</th><th class="r">Owned</th></tr></thead><tbody>${stock.map(r=>`<tr><td><b style="font-weight:600">${r[0]}</b></td>${[2,3,4,5].map(i=>`<td class="r num ${r[i]===0?(i===5?'low':'z'):''}">${r[i]}</td>`).join('')}<td class="r num">${r[1]}</td></tr>`).join('')}</tbody><tfoot><tr><td>All linen</td><td class="r num">18</td><td class="r num">32</td><td class="r num">46</td><td class="r num">116</td><td class="r num">270</td></tr></tfoot></table>`;
+const logTable=()=>`<table><thead><tr><th>Date &amp; time</th><th>Action</th><th>Room / venue</th><th>Item</th><th class="r">Qty</th><th>Washed by</th><th class="r">Charge</th><th>Entered by</th><th>Note</th></tr></thead><tbody>${log.map(m=>`<tr><td class="num" style="white-space:nowrap">${m.d}, ${m.t}</td><td class="st ${T[m.k][1]}"><span class="dot"></span>${T[m.k][0]}</td><td>${dash(m.p)}</td><td>${m.i}</td><td class="r num">${m.q}</td><td>${dash(m.by)}</td><td class="r num">${m.ch?rs(m.ch):'<span class="z">—</span>'}</td><td>${m.w}</td><td style="min-width:170px;color:var(--text)">${m.n||'<span class="z">—</span>'}</td></tr>`).join('')}</tbody></table>`;
+const subTabs=()=>`<div class="tabs" style="padding:0 14px" role="tablist"><button role="tab" data-sub="stock" aria-selected="${S.sub==='stock'}">Linen stock</button><button role="tab" data-sub="log" aria-selected="${S.sub==='log'}">Activity log<span class="n">${log.length}</span></button></div>`;
+const workspace=()=>`<section class="panel fill">${subTabs()}<div class="scroll" style="flex:1">${S.sub==='stock'?stockTable():logTable()}</div></section>`;
+const today=()=>`<div class="inline-stats"><div><strong>12</strong><span>Changed in rooms</span></div><div><strong>46</strong><span>Sent to wash</span></div><div><strong>20</strong><span>Received washed</span></div><div><strong>1</strong><span>Lost or damaged</span></div></div>`;
+const waiting=()=>`<section class="panel pad"><div class="ph"><h4>Waiting with housekeeping</h4><span class="sub">18 pieces</span></div><div class="waitrow"><span class="av">S</span><span style="flex:1"><b>Sunita Jadhav</b><span class="sub">3 places · 18 pieces</span></span><button class="btn sm pri">Receive</button></div></section>`;
+const latest=()=>`<section class="panel pad fill"><div class="ph"><h4>Latest</h4><button class="btn sm" data-sub="log">All details</button></div><ul class="latest scroll">${log.slice(0,5).map(m=>`<li><time>${m.t.replace(' am','a').replace(' pm','p')}</time><span><b class="st ${T[m.k][1]}"><span class="dot"></span>${T[m.k][0]}</b><br><span class="sub">${m.p||'Store'}${m.by?' · '+m.by:''}</span></span><span class="num" style="color:var(--ink);font-weight:600">${m.q} ${m.i}</span></li>`).join('')}</ul></section>`;
+
+const statusTabs=()=>`<div class="tabs" role="tablist">${[['wash','In wash'],['back','Received'],['done','Handed over'],['all','All']].map(([k,l])=>`<button role="tab" data-f="${k}" aria-selected="${S.filter===k}">${l}<span class="n">${counts[k]}</span></button>`).join('')}</div>`;
+const shown=()=>orders.filter(o=>S.filter==='all'||o.k===S.filter);
+const search=()=>`<div class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#78859A" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" placeholder="Search tag or guest" aria-label="Search orders"></div>`;
+const ordersTable=(sel,prog)=>`<table><thead><tr><th>Tag</th><th>Guest</th><th>Room</th><th>Items</th><th class="r">Pcs</th><th>Sent to wash</th><th>Status</th>${prog?'<th>Progress</th>':''}<th class="r">Amount</th><th class="r"></th></tr></thead><tbody>${shown().map(o=>{const i=orders.indexOf(o);return `<tr class="clk ${sel&&S.sel===i?'sel':''}" data-o="${i}"><td class="num" style="font-weight:700;color:var(--brand)">#${o.tag}</td><td>${o.g}</td><td>${o.r}</td><td style="color:var(--text)">${o.items.map(x=>x[0]+' ×'+x[1]).join(', ')}</td><td class="r num">${pcs(o)}</td><td style="white-space:nowrap">${o.sent}${o.late?`<br><span class="late">${o.late}</span>`:''}</td><td class="st ${o.k==='wash'?'wsh':o.k==='back'?'clean':'off'}"><span class="dot"></span>${o.st}</td>${prog?`<td><span class="prog">${[0,1,2,3].map(n=>`<i class="${n<=o.s?'f':''}"></i>${n<3?`<u class="${n<o.s?'f':''}"></u>`:''}`).join('')}</span></td>`:''}<td class="r num">${rs(tot(o))}</td><td class="r">${o.cta?`<button class="btn sm ${o.cta==='Hand over'?'cta':'pri'}">${o.cta}</button>`:'<span class="sub">Billed</span>'}</td></tr>`}).join('')}</tbody></table>`;
+const detail=()=>{const o=orders[S.sel];return `<section class="panel pad det fill"><div style="display:flex;justify-content:space-between;align-items:center"><h4>Tag #${o.tag}</h4><span class="st ${o.k==='wash'?'wsh':o.k==='back'?'clean':'off'}"><span class="dot"></span>${o.st}</span></div><div class="sub">${o.g} · ${o.r==='—'?'Walk-in':'Room '+o.r}</div><div class="lines">${o.items.map(x=>`<div><span>${x[0]} × ${x[1]}</span><span class="num">${rs(x[1]*x[2])}</span></div>`).join('')}<div><span>Total · ${pcs(o)} pieces</span><span class="num">${rs(tot(o))}</span></div></div><dl class="kv"><dt>Sent to wash</dt><dd>${o.sent}</dd><dt>Washed by</dt><dd>${o.by}</dd></dl><div class="foot">${o.cta?`<button class="btn">Cancel</button><button class="btn ${o.cta==='Hand over'?'cta':'pri'}">${o.cta}</button>`:'<span class="sub">Charge sent to Services to bill.</span>'}</div></section>`};
+
+/* ---------- layouts ---------- */
+function L1(){
+  if(S.tab==='linen') return `<div class="stages">${stages.map(tile).join('')}</div><div class="cols"><div class="colL">${workspace()}</div><div class="colR">${today().replace('inline-stats','inline-stats" style="display:grid;grid-template-columns:1fr 1fr')}${waiting()}${latest()}</div></div>`;
+  return `<div class="row-tools">${statusTabs().replace('class="tabs"','class="tabs" style="flex:1"')}${search()}</div><div class="cols"><div class="colL"><section class="panel fill"><div class="scroll" style="flex:1">${ordersTable(true)}</div></section></div><div class="colR">${detail()}</div></div>`;
+}
+function L2(){
+  if(S.tab==='linen'){
+    const rail=stages.map((s,n)=>`<div class="item ${s.k}" tabindex="0" aria-current="${S.stage===n}" data-stage="${n}"><span class="t">${n+1}. ${s.t}</span><span class="c num">${s.c}</span><span class="d">${s.d}</span>${s.btn?`<span class="act"><button class="btn sm ${s.cls}">${s.btn}</button></span>`:''}</div>`).join('');
+    return `<div class="rail"><div class="railcol">${rail}<div class="panel pad"><div class="sub" style="margin-bottom:4px">Today</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px"><span><b style="color:var(--ink)">12</b> changed</span><span><b style="color:var(--ink)">46</b> sent</span><span><b style="color:var(--ink)">20</b> received</span><span><b style="color:var(--ink)">1</b> lost / damaged</span></div></div></div><div class="railcol">${workspace()}</div></div>`;
+  }
+  const f=[['wash','In wash','wsh'],['back','Received','clean'],['done','Handed over','off'],['all','All orders','recv']];
+  return `<div class="rail"><div class="railcol filters"><button class="btn cta" style="min-height:38px">+ New order</button>${f.map(([k,l,c])=>`<button class="item ${c}" aria-current="${S.filter===k}" data-f="${k}"><span class="t">${l}</span><span class="c num" style="font-size:18px">${counts[k]}</span></button>`).join('')}<div class="search" style="width:100%;margin-top:4px">${search().replace(/^<div class="search">|<\/div>$/g,'')}</div></div><div class="railcol"><section class="panel fill"><div class="scroll" style="flex:1">${ordersTable(false)}</div></section></div></div>`;
+}
+function L3(){
+  if(S.tab==='linen'){
+    const st=`<section class="panel"><div class="stepper">${stages.map((s,n)=>`<div class="sp ${s.k}"><i>${n+1}</i><div class="t">${s.t}</div><div class="c num">${s.c}</div><div class="d">${s.d}</div>${s.btn?`<button class="btn sm ${s.cls}">${s.btn}</button>`:'<span class="sub" style="display:block;margin-top:6px">&nbsp;</span>'}</div>`).join('')}</div></section>`;
+    return `${st}${today()}${workspace()}`;
+  }
+  return `<div class="row-tools">${statusTabs().replace('class="tabs"','class="tabs" style="flex:1"')}${search()}</div><section class="panel fill"><div class="scroll" style="flex:1">${ordersTable(false,true)}</div></section>`;
+}
+
+function render(){
+  $('#page').innerHTML=head()+mainTabs()+({1:L1,2:L2,3:L3}[S.l])();
+  $$('#chooser button').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.l===S.l));
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-l],[data-tab],[data-sub],[data-f],[data-o],[data-stage]');
+  if(!t||e.target.closest('.btn:not([data-sub])'))return;
+  const d=t.dataset;
+  if(d.l)S.l=+d.l; if(d.tab)S.tab=d.tab; if(d.sub)S.sub=d.sub; if(d.f)S.filter=d.f; if(d.o!==undefined)S.sel=+d.o; if(d.stage!==undefined)S.stage=+d.stage;
+  if(d.f){const f=shown();if(f.length&&!f.includes(orders[S.sel]))S.sel=orders.indexOf(f[0])}
+  render();
+});
+render();
+</script>
+</body>
+</html>

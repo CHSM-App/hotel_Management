@@ -847,6 +847,89 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
     foodOrderSortAccessors
   );
 
+  const serviceSortAccessors = useMemo(
+    () => ({
+      serviceName: (s) => s.serviceName,
+      uses: (s) => s.uses,
+      quantity: (s) => s.quantity,
+      value: (s) => s.value,
+    }),
+    []
+  );
+  const [sortedServices, serviceSort, toggleServiceSort] = useSortedRows(
+    servicesReport?.byService,
+    serviceSortAccessors
+  );
+
+  const serviceUsageSortAccessors = useMemo(
+    () => ({
+      startedAt: (u) => u.startedAt,
+      serviceName: (u) => u.serviceName,
+      guestName: (u) => u.guestName,
+      status: (u) => (u.voided ? 'Voided' : u.status),
+      invoiceNumber: (u) => u.invoiceNumber || (u.onRoomBill ? 'Room bill' : ''),
+      lineTotal: (u) => u.lineTotal,
+    }),
+    []
+  );
+  const [sortedServiceUsages, serviceUsageSort, toggleServiceUsageSort] = useSortedRows(
+    servicesReport?.usages,
+    serviceUsageSortAccessors
+  );
+
+  const linenItemSortAccessors = useMemo(
+    () => ({
+      name: (i) => i.name,
+      changed: (i) => i.changed,
+      sent: (i) => i.sent,
+      received: (i) => i.received,
+      lost: (i) => i.lost,
+      damaged: (i) => i.damaged,
+      owned: (i) => i.owned,
+      inWashNow: (i) => i.inWashNow,
+    }),
+    []
+  );
+  const [sortedLinenItems, linenItemSort, toggleLinenItemSort] = useSortedRows(
+    laundryReport?.linen?.byItem,
+    linenItemSortAccessors
+  );
+
+  const linenWasherSortAccessors = useMemo(
+    () => ({
+      washedBy: (w) => w.washedBy,
+      sent: (w) => w.sent,
+      received: (w) => w.received,
+      lost: (w) => w.lost,
+      damaged: (w) => w.damaged,
+      notBack: (w) => w.notBack,
+      charge: (w) => w.charge,
+    }),
+    []
+  );
+  const [sortedLinenWashers, linenWasherSort, toggleLinenWasherSort] = useSortedRows(
+    laundryReport?.linen?.byWasher,
+    linenWasherSortAccessors
+  );
+
+  const guestLaundrySortAccessors = useMemo(
+    () => ({
+      tagNumber: (o) => o.tagNumber,
+      guestName: (o) => o.guestName,
+      pieces: (o) => o.pieces,
+      status: (o) => LAUNDRY_ORDER_STATUS_LABEL[o.status] || o.status,
+      receivedAt: (o) => o.receivedAt,
+      deliveredAt: (o) => o.deliveredAt,
+      total: (o) => o.total,
+      profit: (o) => o.profit,
+    }),
+    []
+  );
+  const [sortedGuestLaundry, guestLaundrySort, toggleGuestLaundrySort] = useSortedRows(
+    laundryReport?.guest?.orders,
+    guestLaundrySortAccessors
+  );
+
   return (
     <div className="reports-panel">
       {TABS.length > 1 && (
@@ -1876,14 +1959,14 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                     <table className="dash-table">
                       <thead>
                         <tr>
-                          <th>Service</th>
-                          <th>Uses</th>
-                          <th>Quantity</th>
-                          <th>Value</th>
+                          <SortTh label="Service" sortKey="serviceName" sort={serviceSort} onSort={toggleServiceSort} />
+                          <SortTh label="Uses" sortKey="uses" sort={serviceSort} onSort={toggleServiceSort} />
+                          <SortTh label="Quantity" sortKey="quantity" sort={serviceSort} onSort={toggleServiceSort} />
+                          <SortTh label="Value" sortKey="value" sort={serviceSort} onSort={toggleServiceSort} />
                         </tr>
                       </thead>
                       <tbody>
-                        {servicesReport.byService.map((s) => (
+                        {sortedServices.map((s) => (
                           <tr key={s.serviceName}>
                             <td>{s.serviceName}</td>
                             <td>{s.uses}</td>
@@ -1904,16 +1987,16 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                     <table className="dash-table">
                       <thead>
                         <tr>
-                          <th>Started</th>
-                          <th>Service</th>
-                          <th>Guest</th>
-                          <th>Status</th>
-                          <th>Bill no.</th>
-                          <th>Amount</th>
+                          <SortTh label="Started" sortKey="startedAt" sort={serviceUsageSort} onSort={toggleServiceUsageSort} />
+                          <SortTh label="Service" sortKey="serviceName" sort={serviceUsageSort} onSort={toggleServiceUsageSort} />
+                          <SortTh label="Guest" sortKey="guestName" sort={serviceUsageSort} onSort={toggleServiceUsageSort} />
+                          <SortTh label="Status" sortKey="status" sort={serviceUsageSort} onSort={toggleServiceUsageSort} />
+                          <SortTh label="Bill no." sortKey="invoiceNumber" sort={serviceUsageSort} onSort={toggleServiceUsageSort} />
+                          <SortTh label="Amount" sortKey="lineTotal" sort={serviceUsageSort} onSort={toggleServiceUsageSort} />
                         </tr>
                       </thead>
                       <tbody>
-                        {servicesReport.usages.map((u) => (
+                        {sortedServiceUsages.map((u) => (
                           <tr key={u.id}>
                             <td>{formatTimestamp(u.startedAt)}</td>
                             <td>
@@ -2006,18 +2089,18 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                     <table className="dash-table">
                       <thead>
                         <tr>
-                          <th>Item</th>
-                          <th>Changed in rooms</th>
-                          <th>Sent</th>
-                          <th>Received</th>
-                          <th>Lost</th>
-                          <th>Damaged</th>
-                          <th>Owned now</th>
-                          <th>In wash now</th>
+                          <SortTh label="Item" sortKey="name" sort={linenItemSort} onSort={toggleLinenItemSort} />
+                          <SortTh label="Changed in rooms" sortKey="changed" sort={linenItemSort} onSort={toggleLinenItemSort} />
+                          <SortTh label="Sent" sortKey="sent" sort={linenItemSort} onSort={toggleLinenItemSort} />
+                          <SortTh label="Received" sortKey="received" sort={linenItemSort} onSort={toggleLinenItemSort} />
+                          <SortTh label="Lost" sortKey="lost" sort={linenItemSort} onSort={toggleLinenItemSort} />
+                          <SortTh label="Damaged" sortKey="damaged" sort={linenItemSort} onSort={toggleLinenItemSort} />
+                          <SortTh label="Owned now" sortKey="owned" sort={linenItemSort} onSort={toggleLinenItemSort} />
+                          <SortTh label="In wash now" sortKey="inWashNow" sort={linenItemSort} onSort={toggleLinenItemSort} />
                         </tr>
                       </thead>
                       <tbody>
-                        {laundryReport.linen.byItem.map((i) => (
+                        {sortedLinenItems.map((i) => (
                           <tr key={i.name}>
                             <td>{i.name}</td>
                             <td>{i.changed}</td>
@@ -2044,17 +2127,17 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                     <table className="dash-table">
                       <thead>
                         <tr>
-                          <th>Washed by</th>
-                          <th>Sent</th>
-                          <th>Received</th>
-                          <th>Lost</th>
-                          <th>Damaged</th>
-                          <th>Not back</th>
-                          <th>Charged</th>
+                          <SortTh label="Washed by" sortKey="washedBy" sort={linenWasherSort} onSort={toggleLinenWasherSort} />
+                          <SortTh label="Sent" sortKey="sent" sort={linenWasherSort} onSort={toggleLinenWasherSort} />
+                          <SortTh label="Received" sortKey="received" sort={linenWasherSort} onSort={toggleLinenWasherSort} />
+                          <SortTh label="Lost" sortKey="lost" sort={linenWasherSort} onSort={toggleLinenWasherSort} />
+                          <SortTh label="Damaged" sortKey="damaged" sort={linenWasherSort} onSort={toggleLinenWasherSort} />
+                          <SortTh label="Not back" sortKey="notBack" sort={linenWasherSort} onSort={toggleLinenWasherSort} />
+                          <SortTh label="Charged" sortKey="charge" sort={linenWasherSort} onSort={toggleLinenWasherSort} />
                         </tr>
                       </thead>
                       <tbody>
-                        {laundryReport.linen.byWasher.map((w) => (
+                        {sortedLinenWashers.map((w) => (
                           <tr key={w.washedBy || '-'}>
                             <td>{w.washedBy || <span className="reports-panel__muted">Not recorded</span>}</td>
                             <td>{w.sent}</td>
@@ -2121,18 +2204,18 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                         <table className="dash-table">
                           <thead>
                             <tr>
-                              <th>Tag</th>
-                              <th>Guest</th>
-                              <th>Pieces</th>
-                              <th>Status</th>
-                              <th>Taken in</th>
-                              <th>Handed over</th>
-                              <th>Amount</th>
-                              <th>Profit</th>
+                              <SortTh label="Tag" sortKey="tagNumber" sort={guestLaundrySort} onSort={toggleGuestLaundrySort} />
+                              <SortTh label="Guest" sortKey="guestName" sort={guestLaundrySort} onSort={toggleGuestLaundrySort} />
+                              <SortTh label="Pieces" sortKey="pieces" sort={guestLaundrySort} onSort={toggleGuestLaundrySort} />
+                              <SortTh label="Status" sortKey="status" sort={guestLaundrySort} onSort={toggleGuestLaundrySort} />
+                              <SortTh label="Taken in" sortKey="receivedAt" sort={guestLaundrySort} onSort={toggleGuestLaundrySort} />
+                              <SortTh label="Handed over" sortKey="deliveredAt" sort={guestLaundrySort} onSort={toggleGuestLaundrySort} />
+                              <SortTh label="Amount" sortKey="total" sort={guestLaundrySort} onSort={toggleGuestLaundrySort} />
+                              <SortTh label="Profit" sortKey="profit" sort={guestLaundrySort} onSort={toggleGuestLaundrySort} />
                             </tr>
                           </thead>
                           <tbody>
-                            {laundryReport.guest.orders.map((o) => (
+                            {sortedGuestLaundry.map((o) => (
                               <tr key={o.id}>
                                 <td>{o.tagNumber}</td>
                                 <td>

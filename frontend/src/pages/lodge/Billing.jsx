@@ -2763,24 +2763,49 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
                 {billTarget.kind === 'EVENT' && (
                   <div className="form-section">
-                    <div className="form-section__title">Function</div>
+                    <div className="issue-bill__summary">
+                      <div className="issue-bill__summary-head">
+                        <span className="issue-bill__label">Event summary</span>
+                      </div>
+                      <div className="issue-bill__summary-grid">
+                        <div>
+                          <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg></span>
+                          <span className="issue-bill__cell">
+                            <small>Organiser</small>
+                            <strong>{preview.guestName}</strong>
+                          </span>
+                        </div>
+                        <div>
+                          <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" /></svg></span>
+                          <span className="issue-bill__cell">
+                            <small>Function</small>
+                            <strong>{preview.eventTitle} · {preview.venueName}</strong>
+                          </span>
+                        </div>
+                        {/* The larger of the final count and the guarantee —
+                            what the kitchen bought for is what gets billed. */}
+                        <div>
+                          <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3v8a2 2 0 0 0 2 2v8M11 3v8M7 7h4M17 21V3c-2 1-3 4-3 7s1 4 3 4" /></svg></span>
+                          <span className="issue-bill__cell">
+                            <small>Plates billed</small>
+                            <strong>{preview.billablePax}</strong>
+                          </span>
+                        </div>
+                        {preview.startAt && (
+                          <div>
+                            <span className="issue-bill__cell-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg></span>
+                            <span className="issue-bill__cell">
+                              <small>Date</small>
+                              <strong>
+                                {billDay(preview.startAt)}
+                                {preview.endAt && billDay(preview.endAt) !== billDay(preview.startAt) && ` – ${billDay(preview.endAt)}`}
+                              </strong>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <div className="chart-list">
-                      <div className="chart-row">
-                        <span className="chart-row__name">Organiser</span>
-                        <span className="chart-row__value">{preview.guestName}</span>
-                      </div>
-                      <div className="chart-row">
-                        <span className="chart-row__name">Function</span>
-                        <span className="chart-row__value">
-                          {preview.eventTitle} · {preview.venueName}
-                        </span>
-                      </div>
-                      {/* The larger of the final count and the guarantee —
-                          what the kitchen bought for is what gets billed. */}
-                      <div className="chart-row">
-                        <span className="chart-row__name">Plates billed</span>
-                        <span className="chart-row__value">{preview.billablePax}</span>
-                      </div>
                       {(preview.roomCharges ?? []).map((line) => (
                         <div className="chart-row" key={line.label}>
                           <span className="chart-row__name">{line.label}</span>
