@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
@@ -82,6 +83,7 @@ const dayLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN'
 // ---------------------------------------------------------------------------
 
 function RoomsTab({ token, hasLaundry, hasEvents, view, toolsHost }) {
+  const reduceMotion = useReducedMotion();
   const [rooms, setRooms] = useState(null);
   // Event venues sit on the same board. Empty where the property has no Events.
   const [venues, setVenues] = useState([]);
@@ -364,13 +366,21 @@ function RoomsTab({ token, hasLaundry, hasEvents, view, toolsHost }) {
 
       {view === 'cards' && (
         <div className="hk-list">
-          {rows.map((row) => {
+          {rows.map((row, i) => {
             const { r, s, detail, arriving, arrivingLabel, guest, leaves, cleaned, issues } = row;
             // One quiet line of whatever applies: the guest and when they go, or
             // when the room was last cleaned.
             const extra = guest ? [guest, r.leavingToday ? '' : leaves].filter(Boolean).join(' · ') : r.status === 'READY' && cleaned ? `Cleaned ${cleaned}` : '';
             return (
-              <article className={`hk-card hk-card--${s.tone}`} key={keyOf(r)}>
+              // Cards rise in one after another, capped so a long list does not
+              // take seconds to arrive.
+              <motion.article
+                className={`hk-card hk-card--${s.tone}`}
+                key={keyOf(r)}
+                initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: [0.2, 0.7, 0.2, 1], delay: Math.min(i, 12) * 0.04 }}
+              >
                 {/* A room is known by its number, so that is the tile. A venue's
                     name is too long for one: the tile says what it is and the
                     name leads the line beside it. */}
@@ -395,7 +405,7 @@ function RoomsTab({ token, hasLaundry, hasEvents, view, toolsHost }) {
                   {extra && <div className="hk-card__detail hk-card__extra">{extra}</div>}
                 </div>
                 <div className="hk-card__side">{actionsFor(row)}</div>
-              </article>
+              </motion.article>
             );
           })}
         </div>

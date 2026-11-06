@@ -14,6 +14,11 @@ import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import SectionTabs from './SectionTabs';
+import MotionButton from '../../components/MotionButton';
+import { KpiCalendar, KpiFunnel, KpiPie, KpiWave } from '../../components/KpiGlyphs';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import FilterPopover from '../../components/FilterPopover';
+import { FxBackdrop, FxPanel, FxReveal, FxSaveLabel } from '../../components/FxModal';
 import RowMenu from './RowMenu';
 import Req from '../../components/RequiredMark';
 import {
@@ -24,6 +29,7 @@ import {
 } from './paymentMethods';
 import './forms.css';
 import './InventoryPanel.css';
+import { CountText } from './AnalyticsCharts';
 import './AnalyticsCharts.css';
 import './FinanceTabs.css';
 
@@ -78,6 +84,16 @@ function focusFirstError(errors, fieldIds) {
   if (!el) return;
   el.focus({ preventScroll: true });
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+// The wallet in the lead tile's round badge.
+function IncomeWalletIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" />
+      <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" />
+    </svg>
+  );
 }
 
 function formatDate(value) {
@@ -316,7 +332,15 @@ const emptyTemplateForm = {
 
 const emptyPayerForm = { name: '', contactPerson: '', phone: '', altPhone: '', email: '', specialty: '', notes: '' };
 
+// Subtle hover and press for the modal's buttons.
+const FX_HOVER = { scale: 1.03 };
+const FX_TAP = { scale: 0.97 };
+
+// How long Save shows its green tick before the modal closes. UI only.
+const SAVED_FLASH_MS = 650;
+
 export default function IncomePanel({ onViewReport }) {
+  const reduceMotion = useReducedMotion();
   const session = getSession();
   const [tab, setTab] = useState('income');
 
@@ -335,7 +359,6 @@ export default function IncomePanel({ onViewReport }) {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [showDateRange, setShowDateRange] = useState(false);
 
   // Card vs table view, same toggle as ExpensesPanel's register.
   const [incomeView, setIncomeView] = useState('table');
@@ -348,6 +371,7 @@ export default function IncomePanel({ onViewReport }) {
   const [incomeReceiptFile, setIncomeReceiptFile] = useState(null);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false); // UI only: the green tick on Save
   const [incomeFieldErrors, setIncomeFieldErrors] = useState({});
   // A row click opens this modal read-only — "Edit details" flips it into
   // the form. Always false for a brand-new entry.
@@ -471,6 +495,49 @@ export default function IncomePanel({ onViewReport }) {
     return (categories || []).filter((c) => usedIds.has(c.id));
   }, [categories, income]);
 
+  // The filters panel clears only what is inside it; "Clear all" in the chip row
+  // also empties the search box, as the old "Clear filters" link did.
+  const clearPanelFilters = () => {
+    setCategoryFilter('');
+    setPaymentMethodFilter('');
+    setPaymentStatusFilter('');
+    setFromDate('');
+    setToDate('');
+  };
+  const clearAllFilters = () => {
+    setQuery('');
+    clearPanelFilters();
+  };
+  // One removable chip per applied filter, shown under the toolbar.
+  const filterChips = [
+    query.trim() && { key: 'q', label: `Search: “${query.trim()}”`, clear: () => setQuery('') },
+    categoryFilter && {
+      key: 'category',
+      label: `Category: ${categoriesWithSpend.find((c) => String(c.id) === String(categoryFilter))?.name || '…'}`,
+      clear: () => setCategoryFilter(''),
+    },
+    paymentMethodFilter && {
+      key: 'method',
+      label: `Received via: ${PAYMENT_LABEL[paymentMethodFilter] || paymentMethodFilter}`,
+      clear: () => setPaymentMethodFilter(''),
+    },
+    paymentStatusFilter && {
+      key: 'status',
+      label: `Status: ${PAYMENT_STATUS_LABEL[paymentStatusFilter] || paymentStatusFilter}`,
+      clear: () => setPaymentStatusFilter(''),
+    },
+    (fromDate || toDate) && {
+      key: 'date',
+      label: fromDate && toDate ? `${formatDate(fromDate)} – ${formatDate(toDate)}` : fromDate ? `From ${formatDate(fromDate)}` : `Until ${formatDate(toDate)}`,
+      clear: () => {
+        setFromDate('');
+        setToDate('');
+      },
+    },
+  ].filter(Boolean);
+  // What the Filters button counts: the filters inside its panel, not the search box.
+  const panelFilterCount = filterChips.filter((c) => c.key !== 'q').length;
+
   const categoryOptions = useMemo(
     () => [...new Set([...categories.map((c) => c.name), ...SUGGESTED_CATEGORIES])].sort((a, b) => a.localeCompare(b)),
     [categories]
@@ -564,6 +631,7 @@ export default function IncomePanel({ onViewReport }) {
       setIncomeForm(emptyIncomeForm);
       setReceipts([]);
     }
+    setSavedFlash(false);
     setShowIncomeForm(true);
   };
 
@@ -588,6 +656,7 @@ export default function IncomePanel({ onViewReport }) {
       incomeDate: template.nextDueDate?.slice(0, 10) || todayIso(),
     });
     setReceipts([]);
+    setSavedFlash(false);
     setShowIncomeForm(true);
   };
 
@@ -683,6 +752,11 @@ export default function IncomePanel({ onViewReport }) {
         await apiPatch(`/income/${editingIncomeId}`, payload, { token: session?.token });
       } else {
         await apiPost(logUrl || '/income', payload, { token: session?.token });
+      }
+      // UI only: let the Save button show its tick for a moment, then close as before.
+      if (!reduceMotion) {
+        setSavedFlash(true);
+        await new Promise((resolve) => setTimeout(resolve, SAVED_FLASH_MS));
       }
       setShowIncomeForm(false);
       setLoggingTemplate(null);
@@ -894,41 +968,66 @@ export default function IncomePanel({ onViewReport }) {
   ];
 
   return (
-    <div>
+    <div className="income-panel">
       {error && <div className="form-banner form-banner--error">{error}</div>}
 
       <div className="finance-tabs-row">
         <div className="finance-tabs">
           <SectionTabs ariaLabel="Income sections" activeId={tab} onChange={setTab} tabs={tabs} />
         </div>
-        <button type="button" className="btn-secondary" onClick={onViewReport}>
+        <MotionButton type="button" className="btn-secondary" onClick={onViewReport}>
           View Report
-        </button>
+        </MotionButton>
       </div>
 
       {tab === 'income' && (
         <div>
           {summary && (
             <div className="kpi-row" style={{ marginBottom: 16 }}>
-              <div className="kpi-card kpi-card--primary">
-                <span className="kpi-label">Earned this year</span>
-                <span className="kpi-value">{formatPrice(summary.byMonth.reduce((s, m) => s + m.total, 0))}</span>
+              <div className="kpi-card kpi-card--primary kpi-card--royal kpi-card--icon">
+                <div className="kpi-card__top">
+                  <span className="kpi-card__badge" aria-hidden="true">
+                    <IncomeWalletIcon />
+                  </span>
+                  <div className="kpi-card__main">
+                    <span className="kpi-label">Earned this year</span>
+                    <span className="kpi-value"><CountText value={formatPrice(summary.byMonth.reduce((s, m) => s + m.total, 0))} /></span>
+                  </div>
+                </div>
                 <span className="kpi-sub">Across every category and payer</span>
               </div>
-              <div className="kpi-card">
-                <span className="kpi-label">This month</span>
-                <span className="kpi-value">{formatPrice(summary.byMonth.find((m) => m.month === new Date().getMonth() + 1)?.total || 0)}</span>
-                <span className="kpi-sub">{new Date().toLocaleDateString('en-IN', { month: 'long' })} so far</span>
+              <div className="kpi-card kpi-card--tone">
+                <KpiWave />
+                <span className="kpi-card__badge" aria-hidden="true">
+                  <KpiCalendar />
+                </span>
+                <div className="kpi-card__main">
+                  <span className="kpi-label">This month</span>
+                  <span className="kpi-value"><CountText value={formatPrice(summary.byMonth.find((m) => m.month === new Date().getMonth() + 1)?.total || 0)} /></span>
+                  <span className="kpi-sub">{new Date().toLocaleDateString('en-IN', { month: 'long' })} so far</span>
+                </div>
               </div>
-              <div className="kpi-card">
-                <span className="kpi-label">Top category</span>
-                <span className="kpi-value" style={{ fontSize: 18 }}>{summary.byCategory[0]?.categoryName || '—'}</span>
-                <span className="kpi-sub">{summary.byCategory[0] ? formatPrice(summary.byCategory[0].total) : 'No income logged yet'}</span>
+              <div className="kpi-card kpi-card--tone">
+                <KpiWave />
+                <span className="kpi-card__badge" aria-hidden="true">
+                  <KpiPie />
+                </span>
+                <div className="kpi-card__main">
+                  <span className="kpi-label">Top category</span>
+                  <span className="kpi-value kpi-value--name">{summary.byCategory[0]?.categoryName || '—'}</span>
+                  <span className={`kpi-sub${summary.byCategory[0] ? ' kpi-sub--amount' : ''}`}>{summary.byCategory[0] ? formatPrice(summary.byCategory[0].total) : 'No income logged yet'}</span>
+                </div>
               </div>
-              <div className="kpi-card">
-                <span className="kpi-label">Filtered total</span>
-                <span className="kpi-value">{formatPrice(filteredTotal)}</span>
-                <span className="kpi-sub">{filteredIncome.length} entr{filteredIncome.length === 1 ? 'y' : 'ies'} in view</span>
+              <div className="kpi-card kpi-card--tone">
+                <KpiWave />
+                <span className="kpi-card__badge" aria-hidden="true">
+                  <KpiFunnel />
+                </span>
+                <div className="kpi-card__main">
+                  <span className="kpi-label">Filtered total</span>
+                  <span className="kpi-value"><CountText value={formatPrice(filteredTotal)} /></span>
+                  <span className="kpi-sub">{filteredIncome.length} entr{filteredIncome.length === 1 ? 'y' : 'ies'} in view</span>
+                </div>
               </div>
             </div>
           )}
@@ -940,80 +1039,68 @@ export default function IncomePanel({ onViewReport }) {
                   <span className="inv-search__icon" />
                   <input placeholder="Search income…" value={query} onChange={(e) => setQuery(e.target.value)} />
                 </div>
-                {categoriesWithSpend.length > 0 && (
-                  <select
-                    className="asset-category-filter"
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    aria-label="Filter by category"
-                  >
-                    <option value="">All categories</option>
-                    {categoriesWithSpend.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                )}
-                <select
-                  className="asset-category-filter"
-                  value={paymentMethodFilter}
-                  onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                  aria-label="Filter by received via"
-                >
-                  <option value="">All payment methods</option>
-                  {PAYMENT_METHOD_OPTIONS.map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
-                  ))}
-                </select>
-                <select
-                  className="asset-category-filter"
-                  value={paymentStatusFilter}
-                  onChange={(e) => setPaymentStatusFilter(e.target.value)}
-                  aria-label="Filter by payment status"
-                >
-                  <option value="">All payment statuses</option>
-                  {Object.entries(PAYMENT_STATUS_LABEL).map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
-                  ))}
-                </select>
-                {showDateRange ? (
-                  <div className="asset-toolbar-row__date-pair">
-                    <input
-                      type="date"
-                      value={fromDate}
-                      max={toDate || undefined}
-                      onChange={(e) => setFromDate(e.target.value)}
-                      aria-label="From date"
-                    />
-                    <input
-                      type="date"
-                      value={toDate}
-                      min={fromDate || undefined}
-                      onChange={(e) => setToDate(e.target.value)}
-                      aria-label="To date"
-                    />
+                <FilterPopover count={panelFilterCount} onClear={clearPanelFilters} title="Filter income">
+                  {categoriesWithSpend.length > 0 && (
+                    <div className="field">
+                      <label htmlFor="incomeFilterCategory">Category</label>
+                      <select
+                        id="incomeFilterCategory"
+                        value={categoryFilter}
+                        onChange={(e) => setCategoryFilter(e.target.value)}
+                      >
+                        <option value="">All categories</option>
+                        {categoriesWithSpend.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="field">
+                    <label htmlFor="incomeFilterMethod">Received via</label>
+                    <select
+                      id="incomeFilterMethod"
+                      value={paymentMethodFilter}
+                      onChange={(e) => setPaymentMethodFilter(e.target.value)}
+                    >
+                      <option value="">All payment methods</option>
+                      {PAYMENT_METHOD_OPTIONS.map(([key, label]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
                   </div>
-                ) : (
-                  <button type="button" className="inv-linkbtn" onClick={() => setShowDateRange(true)}>
-                    + Date range
-                  </button>
-                )}
-                {(query || categoryFilter || paymentMethodFilter || paymentStatusFilter || fromDate || toDate) && (
-                  <button
-                    type="button"
-                    className="inv-linkbtn"
-                    onClick={() => {
-                      setQuery('');
-                      setCategoryFilter('');
-                      setPaymentMethodFilter('');
-                      setPaymentStatusFilter('');
-                      setFromDate('');
-                      setToDate('');
-                      setShowDateRange(false);
-                    }}
-                  >
-                    Clear filters
-                  </button>
-                )}
+                  <div className="field">
+                    <label htmlFor="incomeFilterStatus">Payment status</label>
+                    <select
+                      id="incomeFilterStatus"
+                      value={paymentStatusFilter}
+                      onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                    >
+                      <option value="">All payment statuses</option>
+                      {Object.entries(PAYMENT_STATUS_LABEL).map(([key, label]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <span className="field__group-label">Date range</span>
+                    <div className="filter-pop__pair">
+                      <input
+                        type="date"
+                        value={fromDate}
+                        max={toDate || undefined}
+                        onChange={(e) => setFromDate(e.target.value)}
+                        aria-label="From date"
+                      />
+                      <input
+                        type="date"
+                        value={toDate}
+                        min={fromDate || undefined}
+                        onChange={(e) => setToDate(e.target.value)}
+                        aria-label="To date"
+                      />
+                    </div>
+                  </div>
+                </FilterPopover>
               </div>
               <div className="asset-toolbar-row__end">
                 <div className="toggle-group asset-view-toggle" role="group" aria-label="Income list view">
@@ -1048,11 +1135,38 @@ export default function IncomePanel({ onViewReport }) {
                     </svg>
                   </button>
                 </div>
-                <button type="button" className="btn-accent" onClick={() => openIncomeForm(null)}>
+                <MotionButton type="button" className="btn-accent btn-sheen" onClick={() => openIncomeForm(null)}>
                   + New income
-                </button>
+                </MotionButton>
               </div>
             </div>
+            {filterChips.length > 0 && (
+              <div className="filter-chips">
+                <span className="filter-chips__label">Filtered by</span>
+                <AnimatePresence initial={false}>
+                  {filterChips.map((chip) => (
+                    <motion.span
+                      key={chip.key}
+                      className="filter-chip"
+                      initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.85 }}
+                      transition={{ duration: 0.18 }}
+                    >
+                      {chip.label}
+                      <button type="button" aria-label={`Remove filter: ${chip.label}`} onClick={chip.clear}>
+                        ×
+                      </button>
+                    </motion.span>
+                  ))}
+                </AnimatePresence>
+                {filterChips.length > 1 && (
+                  <button type="button" className="inv-linkbtn" onClick={clearAllFilters}>
+                    Clear all
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {filteredIncome.length === 0 ? (
@@ -1347,9 +1461,10 @@ export default function IncomePanel({ onViewReport }) {
       )}
 
       {/* New / edit income entry */}
-      {showIncomeForm && (
-        <div className="glass-backdrop inv-panel__backdrop">
-          <div
+      <AnimatePresence>
+        {showIncomeForm && (
+        <FxBackdrop key="income-modal" className="glass-backdrop inv-panel__backdrop">
+          <FxPanel
             className="glass-panel inv-panel__modal inv-panel__modal--wide modal-form__panel"
             role="dialog"
             aria-modal="true"
@@ -1602,8 +1717,9 @@ export default function IncomePanel({ onViewReport }) {
                           </select>
                         </div>
 
+                        <AnimatePresence initial={false}>
                         {incomeForm.paymentStatus !== 'PENDING' && (
-                          <div className="field">
+                          <FxReveal key="method" className="field">
                             <label htmlFor="incomePaymentMethod">
                               Received via <Req />
                             </label>
@@ -1618,22 +1734,22 @@ export default function IncomePanel({ onViewReport }) {
                                 </option>
                               ))}
                             </select>
-                          </div>
+                          </FxReveal>
                         )}
 
                         {incomeForm.paymentStatus !== 'PENDING' && PAYMENT_REFERENCE_LABEL[incomeForm.paymentMethod] && (
-                          <div className="field">
+                          <FxReveal key="reference" className="field">
                             <label htmlFor="incomeReferenceNumber">{PAYMENT_REFERENCE_LABEL[incomeForm.paymentMethod]}</label>
                             <input
                               id="incomeReferenceNumber"
                               value={incomeForm.referenceNumber}
                               onChange={(e) => setIncomeForm((f) => ({ ...f, referenceNumber: e.target.value }))}
                             />
-                          </div>
+                          </FxReveal>
                         )}
 
                         {incomeForm.paymentStatus === 'PARTIAL' && (
-                          <div className="field">
+                          <FxReveal key="received" className="field">
                             <label htmlFor="incomeAmountReceived">Amount received so far</label>
                             <input
                               id="incomeAmountReceived"
@@ -1644,8 +1760,9 @@ export default function IncomePanel({ onViewReport }) {
                               value={incomeForm.amountReceived}
                               onChange={(e) => setIncomeForm((f) => ({ ...f, amountReceived: e.target.value }))}
                             />
-                          </div>
+                          </FxReveal>
                         )}
+                        </AnimatePresence>
                       </>
                     )}
 
@@ -1771,25 +1888,29 @@ export default function IncomePanel({ onViewReport }) {
                             onChange={(e) => setNewReceipt((f) => ({ ...f, receivedDate: e.target.value }))}
                           />
                         </div>
+                        <AnimatePresence initial={false}>
                         {PAYMENT_REFERENCE_LABEL[newReceipt.paymentMethod] && (
-                          <div className="field" style={{ gridColumn: '1 / -1' }}>
+                          <FxReveal key="receipt-ref" className="field" style={{ gridColumn: '1 / -1' }}>
                             <label htmlFor="newReceiptReference">{PAYMENT_REFERENCE_LABEL[newReceipt.paymentMethod]}</label>
                             <input
                               id="newReceiptReference"
                               value={newReceipt.referenceNumber}
                               onChange={(e) => setNewReceipt((f) => ({ ...f, referenceNumber: e.target.value }))}
                             />
-                          </div>
+                          </FxReveal>
                         )}
+                        </AnimatePresence>
                         <div style={{ gridColumn: '1 / -1' }}>
-                          <button
+                          <MotionButton
                             type="button"
-                            className="btn-accent"
+                            className="btn-accent btn-sheen"
+                            hover={FX_HOVER}
+                            tap={FX_TAP}
                             disabled={addingReceipt}
                             onClick={(e) => handleAddReceipt(e)}
                           >
                             {addingReceipt ? 'Adding…' : 'Add payment'}
-                          </button>
+                          </MotionButton>
                         </div>
                       </div>
                     )}
@@ -1801,29 +1922,37 @@ export default function IncomePanel({ onViewReport }) {
                 <div className="modal-form__foot-actions">
                   {viewMode ? (
                     <>
-                      <button type="button" className="btn-secondary" onClick={() => setShowIncomeForm(false)}>
+                      <MotionButton type="button" className="btn-secondary" hover={FX_HOVER} tap={FX_TAP} onClick={() => setShowIncomeForm(false)}>
                         Close
-                      </button>
-                      <button type="button" className="btn-accent" onClick={() => setViewMode(false)}>
+                      </MotionButton>
+                      <MotionButton type="button" className="btn-accent btn-sheen" hover={FX_HOVER} tap={FX_TAP} onClick={() => setViewMode(false)}>
                         Edit details
-                      </button>
+                      </MotionButton>
                     </>
                   ) : (
                     <>
-                      <button type="button" className="btn-secondary" onClick={() => setShowIncomeForm(false)} disabled={submitting}>
+                      <MotionButton type="button" className="btn-secondary" hover={FX_HOVER} tap={FX_TAP} onClick={() => setShowIncomeForm(false)} disabled={submitting}>
                         Cancel
-                      </button>
-                      <button type="button" className="btn-accent" disabled={submitting} onClick={handleIncomeSubmit}>
-                        {submitting ? 'Saving…' : 'Save'}
-                      </button>
+                      </MotionButton>
+                      <MotionButton
+                        type="button"
+                        className={`btn-accent btn-sheen fx-save${savedFlash ? ' fx-save--ok' : ''}`}
+                        hover={FX_HOVER}
+                        tap={FX_TAP}
+                        disabled={submitting}
+                        onClick={handleIncomeSubmit}
+                      >
+                        <FxSaveLabel busy={submitting} saved={savedFlash} />
+                      </MotionButton>
                     </>
                   )}
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </FxPanel>
+        </FxBackdrop>
+        )}
+      </AnimatePresence>
 
       {/* New / edit recurring template */}
       {showTemplateForm && (

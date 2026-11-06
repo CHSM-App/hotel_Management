@@ -1,15 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { apiGet, apiPost, apiPut, apiPostForm, apiPatchForm, apiPatch, apiDelete, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { matchesSearch } from '../../lib/searchContext';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import IconButton from '../../components/IconButton';
+import ActionModal from '../../components/ActionModal';
 import { EditIcon, TrashIcon } from '../../components/ActionIcons';
 import Req from '../../components/RequiredMark';
 import StepNum from '../../components/StepNum';
 import './forms.css';
 import './RoomsPanel.css';
+
+// Room card motion. Cards rise in one after another, capped so a long list does
+// not take seconds to finish arriving. The hover behaviour (photo zoom, the
+// caption strip opening) is CSS; see RoomsPanel.css.
+const CARD_VARIANTS = {
+  hidden: { opacity: 0, y: 10 },
+  visible: (i) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.38, ease: [0.2, 0.7, 0.2, 1], delay: Math.min(i, 12) * 0.045 },
+  }),
+};
 import PageLoader from '../../components/PageLoader';
 
 const BED_SIZES = ['SINGLE', 'DOUBLE', 'QUEEN', 'KING'];
@@ -196,6 +210,9 @@ export default function RoomsPanel() {
   const [deleteModalError, setDeleteModalError] = useState('');
   const [deleteModalBusy, setDeleteModalBusy] = useState(false);
   const [statusModalRoom, setStatusModalRoom] = useState(null);
+  // The last room the status dialog was opened for. It outlives
+  // statusModalRoom so the wording holds while the dialog animates out.
+  const [statusRoomShown, setStatusRoomShown] = useState(null);
   const [statusModalError, setStatusModalError] = useState('');
   const [statusModalBusy, setStatusModalBusy] = useState(false);
   const [existingImages, setExistingImages] = useState([]);
@@ -446,6 +463,7 @@ export default function RoomsPanel() {
 
   const openStatusModal = (room) => {
     setStatusModalRoom(room);
+    setStatusRoomShown(room);
     setStatusModalError('');
   };
 
@@ -665,6 +683,9 @@ export default function RoomsPanel() {
   const hasCover = (room) =>
     room.images.length > 0 && !brokenPhotos.has(room.images[0].filename);
 
+  const reduceMotion = useReducedMotion();
+
+
   // Lives in this panel rather than the shared topbar box: "Rooms & Rates" has
   // three other sub-tabs the box did nothing on, so it moved down here, right
   // by the list it actually filters.
@@ -814,130 +835,148 @@ export default function RoomsPanel() {
       )}
 
       {!error && rooms && visibleRooms.length > 0 && (
-        <div className="room-grid">
-          {visibleRooms.map((room) => (
-            <div className="room-card" key={room.id}>
-              <div
-                className={`room-card__cover${
-                  hasCover(room) ? '' : ' room-card__cover--empty'
-                }`}
+        <div className="room-grid room-grid--photo">
+          {visibleRooms.map((room, idx) => {
+            const cover = hasCover(room);
+            const noBeds = room.isDormitory && (room.dormitoryBeds?.length ?? 0) === 0;
+            return (
+              <motion.article
+                key={room.id}
+                className={`rcg${room.isActive ? '' : ' rcg--off'}`}
+                variants={CARD_VARIANTS}
+                custom={idx}
+                initial={reduceMotion ? false : 'hidden'}
+                animate="visible"
               >
-                {hasCover(room) ? (
-                  <button
-                    type="button"
-                    className="room-card__cover-btn"
-                    onClick={() => openLightbox(room.images, 0)}
-                    aria-label={`View photos of room ${room.roomNumber}`}
-                  >
+                {/* Photo layer. Clipping lives here, not on the card, so the
+                    action buttons' hover tooltips can still rise past the edge. */}
+                <div className={`rcg__media${cover ? '' : ' rcg__media--empty'}`}>
+                  {cover ? (
                     <img
                       src={`${API_BASE}/room-images/${room.images[0].filename}`}
-                      alt={`Room ${room.roomNumber}`}
-                      className="room-card__cover-img"
+                      alt=""
+                      className="rcg__img"
                       loading="lazy"
                       decoding="async"
                       onError={() =>
                         setBrokenPhotos((prev) => new Set(prev).add(room.images[0].filename))
                       }
                     />
-                  </button>
-                ) : (
-                  <div className="room-card__cover-placeholder">{room.roomNumber}</div>
-                )}
-                <button
-                  type="button"
-                  className={`room-card__status badge ${room.isActive ? 'badge--on' : 'badge--off'}`}
-                  onClick={() => openStatusModal(room)}
-                  title={`Click to ${room.isActive ? 'deactivate' : 'activate'} room ${room.roomNumber}`}
-                  aria-label={`Room ${room.roomNumber} is ${
-                    room.isActive ? 'active' : 'inactive'
-                  }. Click to ${room.isActive ? 'deactivate' : 'activate'}.`}
-                >
-                  {room.isActive ? 'Active' : 'Inactive'}
-                </button>
-                {room.images.length > 1 && (
-                  <span className="room-card__photo-count">+{room.images.length - 1}</span>
-                )}
-              </div>
-
-              <div className="room-card__body">
-                <div className="room-card__top">
-                  {/* On a photoless card the band above already carries the room
-                      number at 30px, so repeating it here is the card saying the
-                      same word twice. A photo card has no such band, and needs
-                      it. */}
-                  {hasCover(room) && (
-                    <span className="room-card__number">{room.roomNumber}</span>
+                  ) : (
+                    <span className="rcg__nophoto">No photo</span>
                   )}
-                  <span className="room-card__rate">
-                    {formatPrice(room.price)}
-                    <span className="room-card__rate-unit"> /night</span>
-                  </span>
                 </div>
-                <div className="room-card__category">{room.category.name}</div>
 
-                {(room.floor || room.bedSize || room.bathroomType || room.maxOccupancy || room.isDormitory) && (
-                  <div className="room-card__chips">
-                    {room.floor && <span className="room-card__chip">Floor {room.floor}</span>}
-                    {room.isDormitory && (room.dormitoryBeds?.length ?? 0) === 0 ? (
-                      // No beds yet means this room can't actually be
-                      // booked — flagged as a warning, not just a fact,
-                      // and clicking it goes straight to where that gets
-                      // fixed instead of making the desk find Edit first.
-                      <button
-                        type="button"
-                        className="room-card__chip room-card__chip--dormitory room-card__chip--warn"
-                        onClick={() => openEditForm(room)}
-                        title="This dormitory has no beds yet — click to add some."
-                      >
-                        Dormitory · no beds yet
-                      </button>
-                    ) : (
-                      room.isDormitory && (
-                        <span className="room-card__chip room-card__chip--dormitory">
-                          Dormitory · {room.dormitoryBeds.length} bed{room.dormitoryBeds.length === 1 ? '' : 's'}
-                        </span>
-                      )
-                    )}
-                    {room.isDormitory && room.dormitoryGender && (
-                      <span className="room-card__chip">{dormitoryGenderLabel[room.dormitoryGender]}</span>
-                    )}
-                    {room.isDormitory && room.dormitoryIsAc && (
-                      <span className="room-card__chip">{dormitoryAcLabel[room.dormitoryIsAc]}</span>
-                    )}
-                    {bedSummary(room) && <span className="room-card__chip">{bedSummary(room)}</span>}
-                    {room.bathroomType && (
-                      <span className="room-card__chip">
-                        <BathIcon />
-                        {bathroomTypeLabel[room.bathroomType]}
-                      </span>
-                    )}
-                    {room.maxOccupancy && (
-                      <span className="room-card__chip room-card__chip--occupancy">
-                        <GuestIcon />
-                        Max {room.maxOccupancy} Guest{room.maxOccupancy === 1 ? '' : 's'}
-                      </span>
+                {cover && (
+                  <button
+                    type="button"
+                    className="rcg__open"
+                    onClick={() => openLightbox(room.images, 0)}
+                    aria-label={`View photos of room ${room.roomNumber}`}
+                  />
+                )}
+
+                <div className="rcg__top">
+                  <div className="rcg__top-left">
+                    <button
+                      type="button"
+                      className={`rcg__status ${room.isActive ? 'rcg__status--on' : 'rcg__status--off'}`}
+                      onClick={() => openStatusModal(room)}
+                      title={`Click to ${room.isActive ? 'deactivate' : 'activate'} room ${room.roomNumber}`}
+                      aria-label={`Room ${room.roomNumber} is ${
+                        room.isActive ? 'active' : 'inactive'
+                      }. Click to ${room.isActive ? 'deactivate' : 'activate'}.`}
+                    >
+                      {room.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                    {room.images.length > 1 && (
+                      <span className="rcg__count">{room.images.length} photos</span>
                     )}
                   </div>
-                )}
+                  <div className="rcg__actions">
+                    <IconButton
+                      animated
+                      label={`Edit room ${room.roomNumber}`}
+                      icon={<EditIcon />}
+                      onClick={() => openEditForm(room)}
+                    />
+                    <IconButton
+                      animated
+                      label={`Delete room ${room.roomNumber}`}
+                      icon={<TrashIcon />}
+                      tone="danger"
+                      onClick={() => openDeleteModal(room)}
+                    />
+                  </div>
+                </div>
 
-                {room.description && <div className="room-card__description">{room.description}</div>}
-              </div>
+                {/* The caption strip. At rest it is one slim line (number,
+                    category, rate) so most of the photo stays clear; on hover
+                    or keyboard focus it opens to show the room's details. */}
+                <div className="rcg__strip">
+                  <div className="rcg__head">
+                    <span className="rcg__title">
+                      <span className="rcg__number">{room.roomNumber}</span>
+                      <span className="rcg__category">{room.category.name}</span>
+                    </span>
+                    <span className="rcg__rate">
+                      {formatPrice(room.price)}
+                      <span className="rcg__rate-unit"> /night</span>
+                    </span>
+                  </div>
 
-              <div className="room-card__actions">
-                <IconButton
-                  label={`Edit room ${room.roomNumber}`}
-                  icon={<EditIcon />}
-                  onClick={() => openEditForm(room)}
-                />
-                <IconButton
-                  label={`Delete room ${room.roomNumber}`}
-                  icon={<TrashIcon />}
-                  tone="danger"
-                  onClick={() => openDeleteModal(room)}
-                />
-              </div>
-            </div>
-          ))}
+                  <div className="rcg__more">
+                    <div className="rcg__more-inner">
+                      {(room.floor || room.bedSize || room.bathroomType || room.maxOccupancy || room.isDormitory) && (
+                        <div className="rcg__chips">
+                          {room.floor && <span className="rcg__chip">Floor {room.floor}</span>}
+                          {noBeds ? (
+                            // No beds yet means this room can't actually be
+                            // booked, so it is flagged as a warning and
+                            // clicking it goes straight to where that gets fixed.
+                            <button
+                              type="button"
+                              className="rcg__chip rcg__chip--warn"
+                              onClick={() => openEditForm(room)}
+                              title="This dormitory has no beds yet — click to add some."
+                            >
+                              Dormitory · no beds yet
+                            </button>
+                          ) : (
+                            room.isDormitory && (
+                              <span className="rcg__chip rcg__chip--dorm">
+                                Dormitory · {room.dormitoryBeds.length} bed{room.dormitoryBeds.length === 1 ? '' : 's'}
+                              </span>
+                            )
+                          )}
+                          {room.isDormitory && room.dormitoryGender && (
+                            <span className="rcg__chip">{dormitoryGenderLabel[room.dormitoryGender]}</span>
+                          )}
+                          {room.isDormitory && room.dormitoryIsAc && (
+                            <span className="rcg__chip">{dormitoryAcLabel[room.dormitoryIsAc]}</span>
+                          )}
+                          {bedSummary(room) && <span className="rcg__chip">{bedSummary(room)}</span>}
+                          {room.bathroomType && (
+                            <span className="rcg__chip">
+                              <BathIcon />
+                              {bathroomTypeLabel[room.bathroomType]}
+                            </span>
+                          )}
+                          {room.maxOccupancy && (
+                            <span className="rcg__chip">
+                              <GuestIcon />
+                              Max {room.maxOccupancy} Guest{room.maxOccupancy === 1 ? '' : 's'}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {room.description && <div className="rcg__description">{room.description}</div>}
+                    </div>
+                  </div>
+                </div>
+              </motion.article>
+            );
+          })}
         </div>
       )}
 
@@ -1505,30 +1544,24 @@ export default function RoomsPanel() {
         </div>
       )}
 
-      {statusModalRoom && (
-        <div className="glass-backdrop rooms-panel__backdrop" onClick={closeStatusModal}>
-          <div className="glass-panel rooms-panel__delete-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>
-              {statusModalRoom.isActive ? 'Deactivate' : 'Activate'} room {statusModalRoom.roomNumber}?
-            </h3>
-            <p className="rooms-panel__delete-hint">
-              {statusModalRoom.isActive
-                ? 'It will be hidden from new bookings, but its history stays intact.'
-                : 'It will be available for new bookings again.'}
-            </p>
-
-            {statusModalError && <div className="form-banner form-banner--error">{statusModalError}</div>}
-
-            <div className="rooms-panel__actions">
-              <button type="button" className="btn-secondary" onClick={closeStatusModal} disabled={statusModalBusy}>
-                Cancel
-              </button>
-              <button type="button" className="btn-primary" onClick={handleToggleStatus} disabled={statusModalBusy}>
-                {statusModalBusy ? 'Saving…' : statusModalRoom.isActive ? 'Deactivate' : 'Activate'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* The room is held in a ref while the dialog animates out, otherwise
+          the wording would blank the moment the room is cleared. */}
+      {statusRoomShown && (
+        <ActionModal
+          open={!!statusModalRoom}
+          tone={statusRoomShown.isActive ? 'warning' : 'success'}
+          title={`${statusRoomShown.isActive ? 'Deactivate' : 'Activate'} room ${statusRoomShown.roomNumber}?`}
+          message={
+            statusRoomShown.isActive
+              ? 'It will be hidden from new bookings, but its history stays intact.'
+              : 'It will be available for new bookings again.'
+          }
+          confirmLabel={statusRoomShown.isActive ? 'Deactivate' : 'Activate'}
+          busy={statusModalBusy}
+          error={statusModalError}
+          onConfirm={handleToggleStatus}
+          onCancel={closeStatusModal}
+        />
       )}
 
       {deleteModalRoom && (

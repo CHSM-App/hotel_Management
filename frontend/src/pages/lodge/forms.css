@@ -1223,3 +1223,35 @@
     font-size: 14px;
   }
 }
+
+
+/* A light sheen crosses the primary (amber) button in a modal's footer once
+   when the pointer arrives. The lift and the press squash come from
+   MotionButton (see animateFooter in HousekeepingParts.jsx). */
+.modal-form__foot-actions .btn-accent {
+  position: relative;
+  overflow: hidden;
+}
+
+.modal-form__foot-actions .btn-accent::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+}
+
+.modal-form__foot-actions .btn-accent:hover:not(:disabled)::after {
+  left: 130%;
+  transition: left 0.55s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-form__foot-actions .btn-accent:hover:not(:disabled)::after {
+    transition: none;
+  }
+}

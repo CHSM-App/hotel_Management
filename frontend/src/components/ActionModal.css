@@ -1,0 +1,239 @@
+/* ActionModal — see ActionModal.jsx for the props. Colour comes from one place,
+   the data-tone on the panel, which sets four custom properties; the badge, the
+   confirm button and its glow all read them, so a new tone is four lines. */
+
+.am__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  /* Above the other modals: this is raised from inside them. */
+  z-index: 200;
+}
+
+.am {
+  --am-solid: var(--brand);
+  --am-solid-hover: var(--brand-ink);
+  --am-on-solid: #fff;
+  --am-soft: var(--brand-wash, #E6EDF4);
+  --am-glow: rgba(10, 58, 107, 0.34);
+
+  width: 100%;
+  max-width: 420px;
+  padding: 24px 24px 20px;
+  outline: none;
+}
+
+.am[data-tone='success'] {
+  --am-solid: var(--success);
+  --am-solid-hover: #1e7e34;
+  --am-soft: var(--success-bg);
+  --am-glow: rgba(40, 167, 69, 0.38);
+}
+
+/* Amber carries dark text: white on a light fill fails contrast. */
+.am[data-tone='warning'] {
+  --am-solid: var(--accent);
+  --am-solid-hover: #f2b600;
+  --am-on-solid: var(--ink);
+  --am-soft: #fff4d1;
+  --am-glow: rgba(255, 193, 7, 0.5);
+}
+
+.am[data-tone='danger'] {
+  --am-solid: var(--danger);
+  --am-solid-hover: #c0392b;
+  --am-soft: var(--danger-bg);
+  --am-glow: rgba(234, 67, 53, 0.38);
+}
+
+.am__head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.am__badge {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--am-soft);
+  /* The tone's own solid colour is too light for a glyph in the amber case,
+     so the glyph always takes ink and the badge's tint carries the colour. */
+  color: var(--ink);
+}
+
+.am[data-tone='success'] .am__badge {
+  color: var(--success);
+}
+
+.am[data-tone='danger'] .am__badge {
+  color: var(--danger);
+}
+
+.am[data-tone='brand'] .am__badge {
+  color: var(--brand);
+}
+
+.am__text {
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.am__title {
+  margin: 0 0 4px;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.am__message {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+.am__body {
+  margin-top: 14px;
+}
+
+.am__error {
+  overflow: hidden;
+  margin-top: 14px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.am__error span {
+  display: block;
+  padding: 9px 12px;
+}
+
+.am__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+/* ---- buttons ----------------------------------------------------------------
+   Cancel is outlined and quiet; confirm is filled in the tone. Hover lift and
+   press are springs from framer-motion (see ModalButton); what is here is the
+   colour change, the glow and the sheen. */
+
+.am__btn {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease,
+    box-shadow 0.2s ease;
+}
+
+.am__btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.am__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.am__btn--cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.am__btn--cancel:hover:not(:disabled) {
+  background: var(--paper);
+  border-color: color-mix(in srgb, var(--text-muted) 55%, white);
+  color: var(--ink);
+}
+
+.am__btn--confirm {
+  border: 1px solid transparent;
+  background: var(--am-solid);
+  color: var(--am-on-solid);
+  box-shadow: 0 1px 2px rgba(22, 33, 46, 0.12);
+}
+
+.am__btn--confirm:hover:not(:disabled) {
+  background: var(--am-solid-hover);
+  box-shadow: 0 8px 18px -6px var(--am-glow);
+}
+
+/* A light sheen crosses the confirm button once on hover. */
+.am__btn--confirm::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+}
+
+.am__btn--confirm:hover:not(:disabled)::after {
+  left: 130%;
+  transition: left 0.55s ease;
+}
+
+.am__spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: am-spin 0.7s linear infinite;
+}
+
+@keyframes am-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 480px) {
+  .am__actions {
+    flex-direction: column-reverse;
+  }
+
+  .am__btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am__spinner {
+    animation-duration: 1.6s;
+  }
+
+  .am__btn--confirm:hover:not(:disabled)::after {
+    transition: none;
+  }
+}

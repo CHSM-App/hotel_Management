@@ -103,3 +103,13 @@
     margin-right: -2px;
   }
 }
+
+/* The sliding underline (see SectionTabs.jsx). Hidden in the pill look, where
+   selection is the tinted pill; FinanceTabs.css shows it. */
+.tabstrip__tab {
+  position: relative;
+}
+
+.tabstrip__ink {
+  display: none;
+}

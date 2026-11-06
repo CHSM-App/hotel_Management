@@ -22,6 +22,7 @@ import IconButton from '../../components/IconButton';
 import Req from '../../components/RequiredMark';
 import StepNum from '../../components/StepNum';
 import QtyStepper from '../../components/QtyStepper';
+import MotionButton from '../../components/MotionButton';
 import { useToast } from '../../components/Toast';
 // Aliased: this file already has a local TrashIcon, drawn at 15px for the
 // inline row-remove buttons. The shared glyph is 18px, sized for the 34px
@@ -4589,16 +4590,17 @@ export default function Bookings({
                   {/* Since the backdrop no longer dismisses, the way out has
                       to be visible without scrolling to the bottom of a form
                       this tall. The one in the footer is the same door. */}
-                  <button
+                  <MotionButton
                     type="button"
                     className="booking-form__close"
+                    hover={{ rotate: 90, scale: 1.15 }}
                     onClick={requestCloseBookingForm}
                     disabled={submitting}
                     aria-label="Close"
                     title="Close"
                   >
                     ×
-                  </button>
+                  </MotionButton>
                 </div>
                 {/* Below the head row, not inside it — that row is a flex line
                     of title, toggle and close button, and a message dropped
@@ -5307,17 +5309,17 @@ export default function Bookings({
                   )}
                 </div>
                 <div className="booking-form__foot-actions">
-                  <button type="button" className="btn-secondary" onClick={requestCloseBookingForm} disabled={submitting}>
+                  <MotionButton type="button" className="btn-secondary" onClick={requestCloseBookingForm} disabled={submitting}>
                     Close
-                  </button>
+                  </MotionButton>
                   {/* New bookings only. An edit already has somewhere to keep
                       its answers — the booking it is editing. */}
                   {!editing && (
-                    <button type="button" className="btn-secondary" onClick={saveDraft} disabled={submitting}>
+                    <MotionButton type="button" className="btn-secondary" onClick={saveDraft} disabled={submitting}>
                       {draftId ? 'Update draft' : 'Save draft'}
-                    </button>
+                    </MotionButton>
                   )}
-                  <button className="btn-accent" type="submit" disabled={submitting}>
+                  <MotionButton className="btn-accent" type="submit" disabled={submitting}>
                     {editing
                       ? submitting
                         ? 'Saving…'
@@ -5327,7 +5329,7 @@ export default function Bookings({
                         : bookingForm.bookingType === 'WALK_IN'
                           ? 'Add and check in'
                           : 'Create reservation'}
-                  </button>
+                  </MotionButton>
                 </div>
               </div>
             </form>

@@ -2207,3 +2207,235 @@
   gap: 4px;
   line-height: 1.2;
 }
+
+
+/* ------------------------------------------------------------------ add-ons tab
+   The add-ons list: rows that respond to the pointer, a colour-coded
+   Deactivate / Activate button, and an Add button with a sheen. The row entrance
+   and the Inactive badge are in Events.jsx (AddonsTab). Scoped to .addons-tab so
+   the shared .chart-row styles used by other lists are not touched. */
+
+.addons-tab .addons-tab__row {
+  position: relative;
+  margin: 0 -12px;
+  padding-left: 12px;
+  padding-right: 12px;
+  border-radius: 10px;
+  transition: background-color 0.18s ease;
+}
+
+/* The rule between rows stays; the tint sits over it, and a short brand bar
+   marks the row you are on. */
+.addons-tab .addons-tab__row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand);
+  transform: scaleY(0);
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.addons-tab .addons-tab__row:hover,
+.addons-tab .addons-tab__row:focus-within {
+  background: color-mix(in srgb, var(--brand) 4%, transparent);
+}
+
+.addons-tab .addons-tab__row:hover::before,
+.addons-tab .addons-tab__row:focus-within::before {
+  transform: scaleY(1);
+}
+
+.addons-tab .addons-tab__row--off .chart-row__name,
+.addons-tab .addons-tab__row--off .addons-tab__price {
+  opacity: 0.6;
+}
+
+.addons-tab .addons-tab__price {
+  display: inline-block;
+  transition: transform 0.22s ease;
+}
+
+.addons-tab .addons-tab__row:hover .addons-tab__price {
+  transform: translateX(-3px);
+}
+
+/* Deactivate is amber, Activate is green. Soft tint at rest, solid on hover with
+   a glow in its own colour; the press squish comes from MotionButton. It was an
+   underlined link in the page's amber, which is hard to read on white. */
+.addons-tab .addons-tab__toggle {
+  --btn: var(--accent);
+  --btn-ink: var(--ink);
+  --btn-text: #8a5a00;
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: color-mix(in srgb, var(--btn) 16%, var(--surface));
+  color: var(--btn-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.2s ease;
+}
+
+.addons-tab .addons-tab__toggle--on {
+  --btn: var(--success);
+  --btn-ink: #fff;
+  --btn-text: var(--success);
+}
+
+.addons-tab .addons-tab__toggle:hover:not(:disabled) {
+  background: var(--btn);
+  color: var(--btn-ink);
+  box-shadow: 0 8px 16px -8px var(--btn);
+}
+
+.addons-tab .addons-tab__toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.addons-tab .addons-tab__toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* The Add button: lifts and presses (MotionButton), and a light sheen crosses
+   it once when the pointer arrives. */
+.addons-tab .addons-tab__add {
+  position: relative;
+  overflow: hidden;
+}
+
+.addons-tab .addons-tab__add::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+}
+
+.addons-tab .addons-tab__add:hover::after {
+  left: 130%;
+  transition: left 0.55s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .addons-tab .addons-tab__row,
+  .addons-tab .addons-tab__row::before,
+  .addons-tab .addons-tab__price,
+  .addons-tab .addons-tab__toggle {
+    transition: none;
+  }
+
+  .addons-tab .addons-tab__row:hover .addons-tab__price {
+    transform: none;
+  }
+
+  .addons-tab .addons-tab__add:hover::after {
+    transition: none;
+  }
+}
+
+
+/* ------------------------------------------------------------------ venue motion
+   The venue cards are driven by Motion (entrance and hover lift, in
+   VenuesTab). The room-card rules they inherit transition `transform` and shift
+   it on :hover; with Motion setting the transform every frame, a CSS transition
+   on the same property makes it lag. So here the transform is left to Motion
+   and only the shadow keeps its CSS transition. */
+.venue-card {
+  transition: box-shadow 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.venue-card:hover {
+  transform: none;
+}
+
+/* The status badge is a label only now, so it takes no clicks and no hover. */
+.venue-card .room-card__status {
+  pointer-events: none;
+  cursor: default;
+}
+
+
+/* ---- venue card buttons: Deactivate / Activate beside Edit ---------------
+   Both are small labelled buttons in the card's footer. Edit carries its icon and
+   its name; the status button is amber to deactivate and green to activate. */
+.venue-card .room-card__actions {
+  gap: 8px;
+}
+
+.venue-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.2s ease;
+}
+
+.venue-act svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.venue-act:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.venue-act:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.venue-act--edit {
+  background: var(--surface);
+  color: var(--brand);
+  box-shadow: var(--shadow-raised);
+}
+
+.venue-act--edit:hover:not(:disabled) {
+  background: var(--brand-wash);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.venue-act--off {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: #8a5b00;
+}
+
+.venue-act--off:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--ink);
+  box-shadow: 0 8px 16px -8px var(--accent);
+}
+
+.venue-act--on {
+  background: color-mix(in srgb, var(--success) 14%, var(--surface));
+  color: var(--success);
+}
+
+.venue-act--on:hover:not(:disabled) {
+  background: var(--success);
+  color: #fff;
+  box-shadow: 0 8px 16px -8px var(--success);
+}

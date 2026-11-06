@@ -6,6 +6,7 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { toQrDataUrl, assetUrl } from '../../lib/qr';
 import { formatPrice } from './priceFormat';
 import SectionTabs from './SectionTabs';
+import MotionButton from '../../components/MotionButton';
 import RowMenu from './RowMenu';
 import VendorDirectory from './VendorDirectory';
 import Req from '../../components/RequiredMark';
@@ -2250,9 +2251,9 @@ export default function AssetsPanel({ onViewReport }) {
             ]}
           />
         </div>
-        <button type="button" className="btn-secondary" onClick={onViewReport}>
+        <MotionButton type="button" className="btn-secondary" onClick={onViewReport}>
           View Report
-        </button>
+        </MotionButton>
       </div>
 
       {tab === 'register' && (
@@ -2329,9 +2330,9 @@ export default function AssetsPanel({ onViewReport }) {
                     </svg>
                   </button>
                 </div>
-                <button type="button" className="btn-accent" onClick={() => openAssetForm(null)}>
+                <MotionButton type="button" className="btn-accent btn-sheen" onClick={() => openAssetForm(null)}>
                   Register asset
-                </button>
+                </MotionButton>
               </div>
             </div>
           </div>

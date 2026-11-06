@@ -276,3 +276,397 @@
 .staff-roles__sort:hover .staff-roles__sort-arrow--on {
   opacity: 1;
 }
+
+/* ============================================================ staff list
+   Status chips with counts, search and a role filter above a quiet list.
+   The edit and "more" buttons show when a row is hovered or focused, and stay
+   while its menu is open; on a touch screen, which has no hover, they are
+   always there. */
+
+.staff-roles__tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.staff-roles__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.staff-roles__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 13px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.staff-roles__chip span {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.staff-roles__chip:hover {
+  border-color: var(--field-border-hover);
+}
+
+.staff-roles__chip[aria-pressed='true'] {
+  color: var(--brand-ink);
+  background: var(--brand-wash);
+  border-color: var(--brand-wash-edge);
+}
+
+.staff-roles__chip:focus-visible,
+.staff-menu__btn:focus-visible,
+.staff-menu__list button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-well-focus);
+}
+
+.staff-roles__search {
+  position: relative;
+  display: block;
+  width: 230px;
+}
+
+.staff-roles__search svg {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  color: var(--text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.staff-roles__search input,
+.staff-roles__select {
+  height: 40px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-well);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.staff-roles__search input {
+  width: 100%;
+  padding: 0 12px 0 36px;
+}
+
+.staff-roles__select {
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.staff-roles__search input:hover,
+.staff-roles__select:hover {
+  border-color: var(--field-border-hover);
+  box-shadow: var(--shadow-well-hover);
+}
+
+.staff-roles__search input:focus,
+.staff-roles__select:focus {
+  outline: none;
+  box-shadow: var(--shadow-well-focus);
+}
+
+.staff-sheet {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.staff-sheet__scroll {
+  overflow-x: auto;
+  border-radius: 12px;
+}
+
+.staff-sheet__empty {
+  padding: 28px 16px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.staff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.staff-table th {
+  padding: 11px 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--neu-sunken);
+}
+
+.staff-table td {
+  padding: 12px 20px;
+  vertical-align: middle;
+  border-top: 1px solid var(--border);
+}
+
+.staff-table tbody tr {
+  transition: background-color 140ms ease;
+  box-shadow: inset 3px 0 0 transparent;
+}
+
+.staff-table tbody tr:hover,
+.staff-table tbody tr:focus-within,
+.staff-table tbody tr.staff-table__row--open {
+  background: var(--brand-wash);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.staff-table__who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.staff-table__avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand-ink);
+  background: var(--brand-wash);
+  border-radius: 50%;
+  transition: box-shadow 140ms ease;
+}
+
+.staff-table tbody tr:hover .staff-table__avatar {
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.staff-table__name {
+  font-weight: 600;
+}
+
+.staff-table__phone {
+  font-variant-numeric: tabular-nums;
+}
+
+.staff-table__role {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--neu-sunken);
+  border-radius: 6px;
+}
+
+.staff-table tbody tr:hover .staff-table__role:not(.staff-table__role--owner) {
+  background: var(--surface);
+}
+
+.staff-table__role--owner {
+  font-weight: 600;
+  color: var(--brand-ink);
+  background: var(--brand-wash);
+}
+
+.staff-table__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.staff-table__status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--success);
+  border-radius: 50%;
+}
+
+.staff-table__status--off {
+  color: var(--text-muted);
+}
+
+.staff-table__status--off::before {
+  background: var(--text-muted);
+}
+
+.staff-table__row--off td:not(:last-child) {
+  color: var(--text-muted);
+}
+
+.staff-table__row--off .staff-table__avatar {
+  opacity: 0.6;
+}
+
+.staff-table td:last-child {
+  width: 1%;
+}
+
+.staff-table .staff-roles__row-actions {
+  flex-wrap: nowrap;
+  gap: 4px;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.staff-table tbody tr:hover .staff-roles__row-actions,
+.staff-table tbody tr:focus-within .staff-roles__row-actions,
+.staff-table tbody tr.staff-table__row--open .staff-roles__row-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .staff-table .staff-roles__row-actions {
+    opacity: 1;
+  }
+}
+
+/* The "⋯" menu. */
+.staff-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.staff-menu__btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.staff-menu__btn:hover,
+.staff-menu__btn[aria-expanded='true'] {
+  color: var(--brand);
+  background: var(--surface);
+}
+
+.staff-menu__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.staff-menu__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 21;
+  min-width: 176px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-elevated);
+}
+
+.staff-menu__list button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.staff-menu__list button:hover {
+  background: var(--neu-sunken);
+}
+
+.staff-menu__list hr {
+  margin: 4px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.staff-menu__list .staff-menu__danger {
+  color: var(--danger);
+}
+
+.staff-menu__list .staff-menu__danger:hover {
+  background: var(--danger-bg);
+}
+
+@media (max-width: 640px) {
+  .staff-roles__tools {
+    width: 100%;
+  }
+
+  .staff-roles__search {
+    flex: 1 1 160px;
+    width: auto;
+  }
+
+  .staff-table th,
+  .staff-table td {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-table tbody tr,
+  .staff-table__avatar,
+  .staff-roles__chip,
+  .staff-table .staff-roles__row-actions {
+    transition: none;
+  }
+}
+
+/* The Actions heading is for screen readers only. */
+.staff-table .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -93,3 +93,70 @@
     margin-right: 16px;
   }
 }
+
+/* ------------------------------------------------------------------ motion
+   Expenses, Income and Asset Inventory. */
+
+/* The underline is now one element that slides between tabs (SectionTabs.jsx),
+   so the selected tab's own border steps aside, and hovering an idle tab hints
+   at where the line would go. */
+.finance-tabs .tabstrip__ink {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--brand);
+}
+
+.finance-tabs .tabstrip__tab--on,
+.finance-tabs .tabstrip__tab--on:hover {
+  border-bottom-color: transparent;
+}
+
+.finance-tabs .tabstrip__tab {
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.finance-tabs .tabstrip__tab:not(.tabstrip__tab--on):hover {
+  border-bottom-color: var(--border);
+}
+
+/* Table rows rise in, a little after one another, when a list appears. The first
+   ten are staggered; anything below them is already off screen. */
+@keyframes finance-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.finance-table tbody tr {
+  animation: finance-row-in 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.finance-table tbody tr:nth-child(2) { animation-delay: 0.035s; }
+.finance-table tbody tr:nth-child(3) { animation-delay: 0.07s; }
+.finance-table tbody tr:nth-child(4) { animation-delay: 0.105s; }
+.finance-table tbody tr:nth-child(5) { animation-delay: 0.14s; }
+.finance-table tbody tr:nth-child(6) { animation-delay: 0.175s; }
+.finance-table tbody tr:nth-child(7) { animation-delay: 0.21s; }
+.finance-table tbody tr:nth-child(8) { animation-delay: 0.245s; }
+.finance-table tbody tr:nth-child(9) { animation-delay: 0.28s; }
+.finance-table tbody tr:nth-child(n + 10) { animation-delay: 0.315s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .finance-table tbody tr {
+    animation: none;
+  }
+
+  .finance-tabs .tabstrip__tab {
+    transition: none;
+  }
+}

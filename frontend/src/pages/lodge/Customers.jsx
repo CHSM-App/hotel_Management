@@ -6,10 +6,33 @@ import { formatPrice } from './priceFormat';
 import Req from '../../components/RequiredMark';
 import RowMenu from './RowMenu';
 import SectionTabs from './SectionTabs';
+import { KpiCheck, KpiFunnel, KpiStar, KpiWave } from '../../components/KpiGlyphs';
 import './forms.css';
 import './InventoryPanel.css';
+import { CountText } from './AnalyticsCharts';
 import './AnalyticsCharts.css';
 import './Customers.css';
+
+// Round-badge glyphs for the two lead tiles (same stroke style as the wallet on
+// the Expenses and Income tiles).
+function PeopleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" />
+      <path d="M16 5.2a3 3 0 0 1 0 5.6M18.5 14.8c1.6.8 2.5 2.4 2.5 5.2" />
+    </svg>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 5h16v11H9l-5 4z" />
+      <path d="M8.5 9.5h7M8.5 12.5h4.5" />
+    </svg>
+  );
+}
 
 function formatDate(value) {
   if (!value) return '—';
@@ -286,7 +309,7 @@ export default function Customers() {
   };
 
   return (
-    <div>
+    <div className="customers-panel">
       {error && <div className="form-banner form-banner--error">{error}</div>}
 
       <div style={{ marginBottom: 16 }}>
@@ -308,15 +331,28 @@ export default function Customers() {
           {feedback && (
             <>
               <div className="kpi-row cust-kpis" style={{ marginBottom: 16 }}>
-                <div className="kpi-card kpi-card--primary">
-                  <span className="kpi-label">Responses</span>
-                  <span className="kpi-value">{feedback.totals.count}</span>
+                <div className="kpi-card kpi-card--primary kpi-card--royal kpi-card--icon">
+                  <div className="kpi-card__top">
+                    <span className="kpi-card__badge" aria-hidden="true">
+                      <ChatIcon />
+                    </span>
+                    <div className="kpi-card__main">
+                      <span className="kpi-label">Responses</span>
+                      <span className="kpi-value"><CountText value={feedback.totals.count} /></span>
+                    </div>
+                  </div>
                   <span className="kpi-sub">Every submitted response, all-time</span>
                 </div>
-                <div className="kpi-card">
-                  <span className="kpi-label">Average rating</span>
-                  <span className="kpi-value">{feedback.totals.averageRating == null ? '—' : `${feedback.totals.averageRating} / 5`}</span>
-                  <span className="kpi-sub">Across every response on file</span>
+                <div className="kpi-card kpi-card--tone">
+                  <KpiWave />
+                  <span className="kpi-card__badge" aria-hidden="true">
+                    <KpiStar />
+                  </span>
+                  <div className="kpi-card__main">
+                    <span className="kpi-label">Average rating</span>
+                    <span className="kpi-value"><CountText value={feedback.totals.averageRating == null ? '—' : `${feedback.totals.averageRating} / 5`} /></span>
+                    <span className="kpi-sub">Across every response on file</span>
+                  </div>
                 </div>
               </div>
 
@@ -357,20 +393,39 @@ export default function Customers() {
       ) : (
         <>
       <div className="kpi-row cust-kpis" style={{ marginBottom: 16 }}>
-        <div className="kpi-card kpi-card--primary">
-          <span className="kpi-label">Customers</span>
-          <span className="kpi-value">{stats.total}</span>
+        <div className="kpi-card kpi-card--primary kpi-card--royal kpi-card--icon">
+          <div className="kpi-card__top">
+            <span className="kpi-card__badge" aria-hidden="true">
+              <PeopleIcon />
+            </span>
+            <div className="kpi-card__main">
+              <span className="kpi-label">Customers</span>
+              <span className="kpi-value"><CountText value={stats.total} /></span>
+            </div>
+          </div>
           <span className="kpi-sub">One record per person, across stays and functions</span>
         </div>
-        <div className="kpi-card">
-          <span className="kpi-label">Opted in to offers</span>
-          <span className="kpi-value">{stats.optedIn}</span>
-          <span className="kpi-sub">Will matter once marketing messages are built</span>
+        <div className="kpi-card kpi-card--tone">
+          <KpiWave />
+          <span className="kpi-card__badge" aria-hidden="true">
+            <KpiCheck />
+          </span>
+          <div className="kpi-card__main">
+            <span className="kpi-label">Opted in to offers</span>
+            <span className="kpi-value"><CountText value={stats.optedIn} /></span>
+            <span className="kpi-sub">Will matter once marketing messages are built</span>
+          </div>
         </div>
-        <div className="kpi-card">
-          <span className="kpi-label">In view</span>
-          <span className="kpi-value">{filtered.length}</span>
-          <span className="kpi-sub">Matching the search and filters below</span>
+        <div className="kpi-card kpi-card--tone">
+          <KpiWave />
+          <span className="kpi-card__badge" aria-hidden="true">
+            <KpiFunnel />
+          </span>
+          <div className="kpi-card__main">
+            <span className="kpi-label">In view</span>
+            <span className="kpi-value"><CountText value={filtered.length} /></span>
+            <span className="kpi-sub">Matching the search and filters below</span>
+          </div>
         </div>
       </div>
 

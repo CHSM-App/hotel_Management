@@ -4,6 +4,7 @@ import { useUrlState } from '../../lib/urlState';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import IconButton from '../../components/IconButton';
+import MotionButton from '../../components/MotionButton';
 import { EditIcon, TrashIcon } from '../../components/ActionIcons';
 import Req from '../../components/RequiredMark';
 import '../internal/LodgesDashboard.css';
@@ -29,6 +30,25 @@ const SORT_COLUMNS = {
   phone: { label: 'Phone', get: (u) => u.phone || '' },
   role: { label: 'Role', get: (u) => u.roleName || '' },
   status: { label: 'Status', get: (u) => (u.isActive ? 'Active' : 'Disabled') },
+};
+
+// What the status chips above the list offer. Counts beside each are taken from
+// the whole list, not from what the search and role filter leave in view, so a
+// chip says how many there are, not how many survived the other filters.
+const STATUS_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'active', label: 'Active' },
+  { key: 'disabled', label: 'Disabled' },
+];
+const matchesStatus = (u, key) => key === 'all' || (key === 'active') === Boolean(u.isActive);
+
+// Two letters for the avatar: first and last word of the name, so "Rajesh More"
+// is RM and a single name is one letter.
+const initials = (name) => {
+  const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  const pick = words.length === 1 ? [words[0]] : [words[0], words[words.length - 1]];
+  return pick.map((w) => w[0].toUpperCase()).join('');
 };
 
 // Compared with localeCompare rather than < so "Staff 10" sorts after "Staff 9"
@@ -411,6 +431,37 @@ export default function StaffAndRoles() {
       })
     : staff;
 
+  // ---- Staff filters ----
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [menuId, setMenuId] = useState(null); // the row whose "⋯" menu is open
+
+  const list = sortedStaff ?? [];
+  const roleOptions = [...new Map(list.map((u) => [u.roleKey, u.roleName])).entries()];
+  const query = search.trim().toLowerCase();
+  const visibleStaff = list.filter(
+    (u) =>
+      matchesStatus(u, statusFilter) &&
+      (!roleFilter || u.roleKey === roleFilter) &&
+      (!query || [u.name, u.phone, u.email].some((v) => String(v ?? '').toLowerCase().includes(query)))
+  );
+  const countFor = (key) => list.filter((u) => matchesStatus(u, key)).length;
+  const filtering = statusFilter !== 'all' || roleFilter !== '' || query !== '';
+  const clearFilters = () => {
+    setStatusFilter('all');
+    setRoleFilter('');
+    setSearch('');
+  };
+
+  const startPasswordReset = (u) => {
+    setMenuId(null);
+    setPwUser(u);
+    setPwValue('');
+    setPwError('');
+    setPwDone(false);
+  };
+
   return (
     <div className="staff-roles">
       <div className="subtabs">
@@ -441,12 +492,51 @@ export default function StaffAndRoles() {
       {!error && !loading && activeTab === 'staff' && (
         <>
           <div className="staff-roles__toolbar">
-            <span className="staff-roles__count">
-              {staff.length} staff member{staff.length === 1 ? '' : 's'}
-            </span>
-            <button type="button" className="btn-accent" onClick={openCreateStaff}>
-              + Add staff
-            </button>
+            <div className="staff-roles__chips" role="group" aria-label="Show staff">
+              {STATUS_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  className="staff-roles__chip"
+                  aria-pressed={statusFilter === f.key}
+                  onClick={() => setStatusFilter(f.key)}
+                >
+                  {f.label}
+                  <span>{countFor(f.key)}</span>
+                </button>
+              ))}
+            </div>
+            <div className="staff-roles__tools">
+              <label className="staff-roles__search">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.5-3.5" />
+                </svg>
+                <input
+                  type="search"
+                  placeholder="Search name or phone"
+                  aria-label="Search staff by name, phone or email"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </label>
+              <select
+                className="staff-roles__select"
+                aria-label="Filter by role"
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+              >
+                <option value="">All roles</option>
+                {roleOptions.map(([key, name]) => (
+                  <option key={key} value={key}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="btn-accent" onClick={openCreateStaff}>
+                + Add staff
+              </button>
+            </div>
           </div>
 
           {staff.length === 0 ? (
@@ -454,9 +544,9 @@ export default function StaffAndRoles() {
               <div className="dash-state">No staff logins yet.</div>
             </div>
           ) : (
-            <div className="dash-card">
-              <div className="dash-table-scroll">
-                <table className="dash-table">
+            <div className="staff-sheet">
+              <div className="staff-sheet__scroll">
+                <table className="staff-table">
                   <thead>
                     <tr>
                       {/* Each heading is the control that sorts its own column —
@@ -513,54 +603,87 @@ export default function StaffAndRoles() {
                           </button>
                         </th>
                       ))}
-                      <th />
+                      <th>
+                        <span className="sr-only">Actions</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedStaff.map((u) => (
-                      <tr key={u.id}>
+                    {visibleStaff.map((u) => (
+                      <tr key={u.id} className={`${u.isActive ? '' : 'staff-table__row--off '}${menuId === u.id ? 'staff-table__row--open' : ''}`}>
                         <td>
-                          {u.name}
-                          {u.email && <div className="staff-roles__sub">{u.email}</div>}
+                          <div className="staff-table__who">
+                            <span className="staff-table__avatar" aria-hidden="true">
+                              {initials(u.name)}
+                            </span>
+                            <span className="staff-table__name">
+                              {u.name}
+                              {u.email && <span className="staff-roles__sub">{u.email}</span>}
+                            </span>
+                          </div>
                         </td>
-                        <td>{u.phone}</td>
-                        <td>{u.roleName}</td>
+                        <td className="staff-table__phone">{u.phone}</td>
                         <td>
-                          <span className={`badge ${u.isActive ? 'badge--on' : 'badge--off'}`}>
+                          <span className={`staff-table__role${u.roleKey === 'OWNER' ? ' staff-table__role--owner' : ''}`}>{u.roleName}</span>
+                        </td>
+                        <td>
+                          <span className={`staff-table__status${u.isActive ? '' : ' staff-table__status--off'}`}>
                             {u.isActive ? 'Active' : 'Disabled'}
                           </span>
                         </td>
                         <td>
+                          {/* Edit and "more": the hand-over of a password and the
+                              switch between active and disabled are the rarer
+                              actions, so they sit behind the menu. The pair
+                              shows on hover or focus and stays while it is open. */}
                           <div className="staff-roles__row-actions">
                             <IconButton
                               label={`Edit ${u.name}`}
                               icon={<EditIcon />}
                               onClick={() => openEditStaff(u)}
                             />
-                            <button
-                              type="button"
-                              className="chart-row__link-btn"
-                              onClick={() => {
-                                setPwUser(u);
-                                setPwValue('');
-                                setPwError('');
-                                setPwDone(false);
-                              }}
-                            >
-                              Reset password
-                            </button>
-                            {/* Owners can't be disabled from here — the backend
-                                refuses the last active owner anyway, and the
-                                button only ever offered an error. */}
-                            {u.roleKey !== 'OWNER' && (
+                            <span className="staff-menu">
                               <button
                                 type="button"
-                                className="chart-row__link-btn chart-row__link-btn--danger"
-                                onClick={() => toggleStaffActive(u)}
+                                className="staff-menu__btn"
+                                aria-label={`More actions for ${u.name}`}
+                                aria-haspopup="menu"
+                                aria-expanded={menuId === u.id}
+                                onClick={() => setMenuId(menuId === u.id ? null : u.id)}
+                                onKeyDown={(e) => e.key === 'Escape' && setMenuId(null)}
                               >
-                                {u.isActive ? 'Disable' : 'Enable'}
+                                ⋯
                               </button>
-                            )}
+                              {menuId === u.id && (
+                                <>
+                                  <button type="button" className="staff-menu__backdrop" aria-label="Close menu" tabIndex={-1} onClick={() => setMenuId(null)} />
+                                  <span className="staff-menu__list" role="menu" onKeyDown={(e) => e.key === 'Escape' && setMenuId(null)}>
+                                    <button type="button" role="menuitem" onClick={() => startPasswordReset(u)}>
+                                      Reset password
+                                    </button>
+                                    {/* Owners can't be disabled from here — the backend
+                                        refuses the last active owner anyway, and the
+                                        button only ever offered an error. */}
+                                    {u.roleKey !== 'OWNER' && (
+                                      <>
+                                        <hr />
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          className={u.isActive ? 'staff-menu__danger' : undefined}
+                                          onClick={() => {
+                                            setMenuId(null);
+                                            toggleStaffActive(u);
+                                          }}
+                                        >
+                                          {u.isActive ? 'Disable account' : 'Enable account'}
+                                        </button>
+                                      </>
+                                    )}
+                                  </span>
+                                </>
+                              )}
+                            </span>
                           </div>
                         </td>
                       </tr>
@@ -568,6 +691,16 @@ export default function StaffAndRoles() {
                   </tbody>
                 </table>
               </div>
+              {visibleStaff.length === 0 && (
+                <div className="staff-sheet__empty">
+                  No staff match these filters.{' '}
+                  {filtering && (
+                    <button type="button" className="chart-row__link-btn" onClick={clearFilters}>
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </>
@@ -658,16 +791,17 @@ export default function StaffAndRoles() {
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
                   <h3>{staffModal.mode === 'create' ? 'Add staff' : 'Edit staff'}</h3>
-                  <button
+                  <MotionButton
                     type="button"
                     className="modal-form__close"
+                    hover={{ rotate: 90, scale: 1.15 }}
                     onClick={closeStaffModal}
                     disabled={staffBusy}
                     aria-label="Close"
                     title="Close"
                   >
                     ×
-                  </button>
+                  </MotionButton>
                 </div>
                 <p className="modal-form__sub">
                   {staffModal.mode === 'create'
@@ -788,17 +922,17 @@ export default function StaffAndRoles() {
                   </span>
                 </div>
                 <div className="modal-form__foot-actions">
-                  <button
+                  <MotionButton
                     type="button"
                     className="btn-secondary"
                     onClick={closeStaffModal}
                     disabled={staffBusy}
                   >
                     Cancel
-                  </button>
-                  <button className="btn-accent" type="submit" disabled={staffBusy}>
+                  </MotionButton>
+                  <MotionButton className="btn-accent" type="submit" disabled={staffBusy}>
                     {staffBusy ? 'Saving…' : 'Save'}
-                  </button>
+                  </MotionButton>
                 </div>
               </div>
             </form>
@@ -818,15 +952,16 @@ export default function StaffAndRoles() {
                 <div className="modal-form__head">
                   <div className="modal-form__head-row">
                     <h3>Reset password</h3>
-                    <button
+                    <MotionButton
                       type="button"
                       className="modal-form__close"
+                    hover={{ rotate: 90, scale: 1.15 }}
                       onClick={() => setPwUser(null)}
                       aria-label="Close"
                       title="Close"
                     >
                       ×
-                    </button>
+                    </MotionButton>
                   </div>
                 </div>
                 <div className="modal-form__body">
@@ -836,9 +971,9 @@ export default function StaffAndRoles() {
                 </div>
                 <div className="modal-form__foot">
                   <div className="modal-form__foot-actions">
-                    <button type="button" className="btn-accent" onClick={() => setPwUser(null)}>
+                    <MotionButton type="button" className="btn-accent" onClick={() => setPwUser(null)}>
                       Close
-                    </button>
+                    </MotionButton>
                   </div>
                 </div>
               </div>
@@ -847,16 +982,17 @@ export default function StaffAndRoles() {
                 <div className="modal-form__head">
                   <div className="modal-form__head-row">
                     <h3>Reset password</h3>
-                    <button
+                    <MotionButton
                       type="button"
                       className="modal-form__close"
+                    hover={{ rotate: 90, scale: 1.15 }}
                       onClick={() => setPwUser(null)}
                       disabled={pwBusy}
                       aria-label="Close"
                       title="Close"
                     >
                       ×
-                    </button>
+                    </MotionButton>
                   </div>
                   <p className="modal-form__sub">
                     Sets a password for {pwUser.name} to sign in with once. They are asked to choose
@@ -888,17 +1024,17 @@ export default function StaffAndRoles() {
 
                 <div className="modal-form__foot">
                   <div className="modal-form__foot-actions">
-                    <button
+                    <MotionButton
                       type="button"
                       className="btn-secondary"
                       onClick={() => setPwUser(null)}
                       disabled={pwBusy}
                     >
                       Cancel
-                    </button>
-                    <button className="btn-accent" type="submit" disabled={pwBusy}>
+                    </MotionButton>
+                    <MotionButton className="btn-accent" type="submit" disabled={pwBusy}>
                       {pwBusy ? 'Saving…' : 'Reset password'}
-                    </button>
+                    </MotionButton>
                   </div>
                 </div>
               </form>
@@ -920,16 +1056,17 @@ export default function StaffAndRoles() {
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
                   <h3>{roleModal.mode === 'create' ? 'Add role' : `Edit ${roleModal.role.name}`}</h3>
-                  <button
+                  <MotionButton
                     type="button"
                     className="modal-form__close"
+                    hover={{ rotate: 90, scale: 1.15 }}
                     onClick={closeRoleModal}
                     disabled={roleBusy}
                     aria-label="Close"
                     title="Close"
                   >
                     ×
-                  </button>
+                  </MotionButton>
                 </div>
                 <p className="modal-form__sub">
                   A job title and what it can reach. Staff are given a role rather than individual
@@ -1036,17 +1173,17 @@ export default function StaffAndRoles() {
                   </span>
                 </div>
                 <div className="modal-form__foot-actions">
-                  <button
+                  <MotionButton
                     type="button"
                     className="btn-secondary"
                     onClick={closeRoleModal}
                     disabled={roleBusy}
                   >
                     Cancel
-                  </button>
-                  <button className="btn-accent" type="submit" disabled={roleBusy}>
+                  </MotionButton>
+                  <MotionButton className="btn-accent" type="submit" disabled={roleBusy}>
                     {roleBusy ? 'Saving…' : 'Save access'}
-                  </button>
+                  </MotionButton>
                 </div>
               </div>
             </form>
@@ -1062,12 +1199,12 @@ export default function StaffAndRoles() {
             <p className="staff-roles__sub">This can&apos;t be undone.</p>
             {deleteRoleError && <div className="form-banner form-banner--error">{deleteRoleError}</div>}
             <div className="staff-roles__actions">
-              <button type="button" className="btn-secondary" onClick={() => setDeleteRoleTarget(null)}>
+              <MotionButton type="button" className="btn-secondary" onClick={() => setDeleteRoleTarget(null)}>
                 Cancel
-              </button>
-              <button type="button" className="btn-accent" onClick={handleDeleteRole}>
+              </MotionButton>
+              <MotionButton type="button" className="btn-accent" onClick={handleDeleteRole}>
                 Delete role
-              </button>
+              </MotionButton>
             </div>
           </div>
         </div>

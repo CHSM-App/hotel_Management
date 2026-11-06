@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatPrice } from './priceFormat';
-import { Donut, BarList, RankList } from './AnalyticsCharts';
+import { Donut, BarList, RankList, CountText } from './AnalyticsCharts';
 import { downloadAssetsReportExcel, downloadAssetsReportPdf, buildAssetsReportPdf } from './assetReportFile';
 import './AnalyticsCharts.css';
 import './ExpensesReportPanel.css';
@@ -176,22 +176,22 @@ export default function AssetsReportPanel({ assets: allAssets, workOrders: allWo
       <div className="kpi-row" style={{ marginBottom: 16 }}>
         <div className="kpi-card kpi-card--primary">
           <span className="kpi-label">Purchase value</span>
-          <span className="kpi-value">{formatPrice(totals.purchaseValue)}</span>
+          <span className="kpi-value"><CountText value={formatPrice(totals.purchaseValue)} /></span>
           <span className="kpi-sub">Across {totals.assetCount} asset{totals.assetCount === 1 ? '' : 's'}</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Repair spend</span>
-          <span className="kpi-value">{formatPrice(totals.repairSpend)}</span>
+          <span className="kpi-value"><CountText value={formatPrice(totals.repairSpend)} /></span>
           <span className="kpi-sub">Parts + labor, all work orders</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Open work orders</span>
-          <span className="kpi-value">{totals.openWorkOrders}</span>
+          <span className="kpi-value"><CountText value={totals.openWorkOrders} /></span>
           <span className="kpi-sub">Not yet closed</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Warranty / AMC expiring</span>
-          <span className="kpi-value">{totals.expiringSoonCount}</span>
+          <span className="kpi-value"><CountText value={totals.expiringSoonCount} /></span>
           <span className="kpi-sub">Within 30 days</span>
         </div>
       </div>

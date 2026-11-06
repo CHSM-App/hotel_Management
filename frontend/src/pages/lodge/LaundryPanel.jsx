@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { apiGet, apiPost, apiPatch, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
@@ -6,6 +7,7 @@ import { triggerDownload } from './bookingReportFile';
 import PageLoader from '../../components/PageLoader';
 import Req from '../../components/RequiredMark';
 import { Modal, Stepper, StatusIcon } from './HousekeepingParts';
+import { CountText } from './AnalyticsCharts';
 import { ago } from './housekeepingFormat';
 import './forms.css';
 import './chartSections.css';
@@ -563,7 +565,7 @@ function LinenSide({ movements, now, children }) {
         <div className="hk-today">
           {stats.map((st) => (
             <div key={st.label}>
-              <strong>{st.value}</strong>
+              <strong><CountText value={st.value} /></strong>
               <span>{st.label}</span>
             </div>
           ))}
@@ -576,6 +578,7 @@ function LinenSide({ movements, now, children }) {
 }
 
 function LinenTab({ token }) {
+  const reduceMotion = useReducedMotion();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [modal, setModal] = useState(null); // { kind: 'item'|'send'|'receive'|'loss', ... }
@@ -907,13 +910,20 @@ function LinenTab({ token }) {
               to do there. The numbers answer "what is waiting on me?" at a glance. */}
           <ol className="hk-steps" aria-label="Where the linen is now">
             {steps.map((step, n) => (
-              <li className={`hk-step hk-step--${step.tone}`} key={step.key}>
+              // The four stage cards rise in left to right, and their counts tick up.
+              <motion.li
+                className={`hk-step hk-step--${step.tone}`}
+                key={step.key}
+                initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.38, ease: [0.2, 0.7, 0.2, 1], delay: n * 0.07 }}
+              >
                 <div className="hk-step__head">
                   <span className="hk-step__n">{n + 1}</span>
                   <span className="hk-step__title">{step.title}</span>
                 </div>
                 <div className="hk-step__count">
-                  <strong>{step.total}</strong>
+                  <strong><CountText value={step.total} /></strong>
                   <span>{step.total === 1 ? 'piece' : 'pieces'}</span>
                 </div>
                 <p className="hk-step__detail">{step.total > 0 ? step.detail || breakdown(step.key) : step.empty}</p>
@@ -928,7 +938,7 @@ function LinenTab({ token }) {
                     {step.action}
                   </button>
                 )}
-              </li>
+              </motion.li>
             ))}
           </ol>
 

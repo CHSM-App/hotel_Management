@@ -1,4 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  animate,
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useSpring,
+  useTransform,
+} from 'framer-motion';
 import PageLoader from '../../components/PageLoader';
 import {
   apiGet,
@@ -18,6 +27,7 @@ import StepNum from '../../components/StepNum';
 import MenuExcelImport from '../../components/MenuExcelImport';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
+import MotionButton from '../../components/MotionButton';
 import Req from '../../components/RequiredMark';
 import './forms.css';
 import './MenuPanel.css';
@@ -304,6 +314,94 @@ function FoodTypeMark({ type }) {
   return <span className={className} title={label} aria-label={label} />;
 }
 
+
+// One dish on the menu grid. Wraps the card so it can react in two ways.
+//
+// Pointer: on a mouse the card tilts a few degrees toward the pointer and
+// rises 2 px, then springs flat when the pointer leaves. Touch and pen input do
+// not tilt (there is no pointer to follow), and nothing moves for someone who
+// asks their system for reduced motion.
+//
+// Availability: marking a dish out stamps SOLD OUT across the card and gives it
+// one short shake; putting it back lifts the stamp and the card bounces. That
+// motion runs when the saved state changes, not on the click, so a failed
+// request never stamps a dish that is still on sale. A card that is already out
+// when the page loads simply shows the stamp, without the slam.
+//
+// Everything is driven through motion values on one element, so the tilt, the
+// lift, the shake and the bounce add together instead of overwriting each other.
+// The menu's buttons change colour on hover (see MenuPanel.css) rather than
+// lift, so MotionButton's default rise is turned off and only the press squish
+// is kept.
+const NO_LIFT = { y: 0 };
+const PRESS = { scale: 0.93, y: 0 };
+
+const TILT_DEG = 8;
+const TILT_SPRING = { stiffness: 220, damping: 18 };
+
+function DishCardShell({ item, children }) {
+  const reduce = useReducedMotion();
+  const prev = useRef(item.isAvailable);
+
+  const shakeX = useMotionValue(0);
+  const bounceY = useMotionValue(0);
+  const tiltX = useSpring(useMotionValue(0), TILT_SPRING);
+  const tiltY = useSpring(useMotionValue(0), TILT_SPRING);
+  const lift = useSpring(useMotionValue(0), { stiffness: 320, damping: 22 });
+  const y = useTransform([bounceY, lift], ([a, b]) => a + b);
+
+  useEffect(() => {
+    if (prev.current === item.isAvailable) return;
+    prev.current = item.isAvailable;
+    if (reduce) return;
+    if (!item.isAvailable) {
+      animate(shakeX, [0, -6, 6, -4, 0], { duration: 0.35, delay: 0.12 });
+    } else {
+      animate(bounceY, [0, -8, 0], { duration: 0.4, ease: 'easeOut' });
+    }
+  }, [item.isAvailable, reduce, shakeX, bounceY]);
+
+  const onPointerMove = (e) => {
+    if (reduce || e.pointerType !== 'mouse') return;
+    const b = e.currentTarget.getBoundingClientRect();
+    const px = (e.clientX - b.left) / b.width - 0.5;
+    const py = (e.clientY - b.top) / b.height - 0.5;
+    tiltY.set(px * TILT_DEG);
+    tiltX.set(-py * TILT_DEG);
+    lift.set(-2);
+  };
+  const onPointerLeave = () => {
+    tiltX.set(0);
+    tiltY.set(0);
+    lift.set(0);
+  };
+
+  return (
+    <motion.li
+      className={`dish-card ${item.isAvailable ? '' : 'dish-card--out'}`}
+      style={{ x: shakeX, y, rotateX: tiltX, rotateY: tiltY, transformPerspective: 800 }}
+      onPointerMove={onPointerMove}
+      onPointerLeave={onPointerLeave}
+    >
+      {children}
+      <AnimatePresence initial={false}>
+        {!item.isAvailable && (
+          <motion.span
+            key="stamp"
+            className="dish-card__stamp"
+            aria-hidden="true"
+            initial={reduce ? { opacity: 0, rotate: -8 } : { opacity: 0, scale: 2.4, rotate: -22 }}
+            animate={{ opacity: 1, scale: 1, rotate: -8 }}
+            exit={{ opacity: 0, scale: reduce ? 1 : 0.8, rotate: -8, transition: { duration: 0.2 } }}
+            transition={reduce ? { duration: 0.15 } : { type: 'spring', stiffness: 420, damping: 18 }}
+          >
+            Sold out
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </motion.li>
+  );
+}
 
 // Matched against the name and the description both — an owner looking for the
 // paneer dishes shouldn't have to remember which ones are named for it.
@@ -872,21 +970,39 @@ export default function MenuPanel() {
           </p>
         </div>
         <div className="menu-section__actions">
-          <button type="button" onClick={() => openItemForm(null, section.id)}>
+          <MotionButton
+            type="button"
+            className="menu-act menu-act--primary"
+            hover={NO_LIFT}
+            tap={PRESS}
+            onClick={() => openItemForm(null, section.id)}
+          >
             Add item
-          </button>
+          </MotionButton>
           {/* The day-end action, in the open. When the fish is off,
               every fish dish goes off together — see
               setCategoryItemsAvailable in menu.service.js. */}
           {section.items.length > 0 &&
             (section.items.every((i) => !i.isAvailable) ? (
-              <button type="button" onClick={() => setSectionAvailability(section, true)}>
+              <MotionButton
+                type="button"
+                className="menu-act menu-act--ok"
+                hover={NO_LIFT}
+                tap={PRESS}
+                onClick={() => setSectionAvailability(section, true)}
+              >
                 Bring all back
-              </button>
+              </MotionButton>
             ) : (
-              <button type="button" onClick={() => setSectionAvailability(section, false)}>
+              <MotionButton
+                type="button"
+                className="menu-act menu-act--danger"
+                hover={NO_LIFT}
+                tap={PRESS}
+                onClick={() => setSectionAvailability(section, false)}
+              >
                 Mark all out
-              </button>
+              </MotionButton>
             ))}
           <RowMenu label={`More actions for ${section.name}`}>
             <button type="button" onClick={() => openSectionForm(section)}>
@@ -1078,10 +1194,7 @@ export default function MenuPanel() {
                     </div>
                     <ul className="dish-grid">
                       {group.items.map((item) => (
-                        <li
-                          className={`dish-card ${item.isAvailable ? '' : 'dish-card--out'}`}
-                          key={item.id}
-                        >
+                        <DishCardShell item={item} key={item.id}>
                           {/* Only where there is one. An empty frame on every
                               dish would make a menu of forty look unfinished
                               rather than photographed selectively. */}
@@ -1124,13 +1237,15 @@ export default function MenuPanel() {
                               {/* The one action a kitchen repeats mid-service
                                   stays in the open; the rest are behind the ⋮. */}
                               <div className="dish-card__actions">
-                                <button
+                                <MotionButton
                                   type="button"
                                   className="dish-card__toggle"
+                                  hover={NO_LIFT}
+                                  tap={PRESS}
                                   onClick={() => toggleAvailability(item)}
                                 >
                                   {item.isAvailable ? 'Mark out' : 'Back in'}
-                                </button>
+                                </MotionButton>
                                 <RowMenu label={`More actions for ${item.name}`}>
                                   <button type="button" onClick={() => openItemForm(item)}>
                                     Edit dish
@@ -1146,7 +1261,7 @@ export default function MenuPanel() {
                               </div>
                             </div>
                           </div>
-                        </li>
+                        </DishCardShell>
                       ))}
                     </ul>
                   </div>

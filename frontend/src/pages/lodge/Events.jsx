@@ -4,10 +4,14 @@ import { apiGet, apiPatch, apiPost, apiPostForm, apiPatchForm, apiDelete, API_BA
 import { getSession } from '../../lib/auth';
 import { useUrlState } from '../../lib/urlState';
 import { formatPrice } from './priceFormat';
+import { CountText } from './AnalyticsCharts';
 import EventForm from './EventForm';
 import EventDetail from './EventDetail';
 import PageLoader from '../../components/PageLoader';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import IconButton from '../../components/IconButton';
+import MotionButton from '../../components/MotionButton';
+import ActionModal from '../../components/ActionModal';
 import { EditIcon } from '../../components/ActionIcons';
 import Req from '../../components/RequiredMark';
 import { Modal } from './HousekeepingParts';
@@ -814,7 +818,7 @@ function EventStatTile({ label, value, note, active, hint, onClick, className = 
       title={hint}
     >
       <span className="guest-register__stat-label">{label}</span>
-      <strong className="guest-register__stat-value">{value}</strong>
+      <strong className="guest-register__stat-value"><CountText value={value} /></strong>
       {note && <span className="guest-register__stat-note">{note}</span>}
     </button>
   );
@@ -1267,6 +1271,7 @@ function PhotoStrip({ existing = [], files = [], urlFor, onRemoveFile, onDeleteE
 // popup. The same popup edits one.
 function AddonsTab({ addons, reloadCatalogue }) {
   const token = getSession()?.token;
+  const reduceMotion = useReducedMotion();
   const [form, setForm] = useState(null); // { id, name, defaultAmount, isPerUnit }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -1329,7 +1334,7 @@ function AddonsTab({ addons, reloadCatalogue }) {
 
   return (
     <div className="events-setup">
-      <div className="dash-card chart-section">
+      <div className="dash-card chart-section addons-tab">
         <div className="chart-section__header">
           <h3>Add-ons</h3>
           <span className="chart-section__hint">Extras quoted on top of venue and plates — DJ, decor, mandap. Priced per day.</span>
@@ -1337,29 +1342,60 @@ function AddonsTab({ addons, reloadCatalogue }) {
         {error && <div className="form-banner form-banner--error">{error}</div>}
         <div className="chart-list">
           {addons.length === 0 && <div className="events-detail__empty">Nothing set up yet.</div>}
-          {addons.map((a) => (
-            <div key={a.id} className="chart-row">
+          {addons.map((a, i) => (
+            // Rows rise in one after another when the tab opens; hover tint,
+            // the edit icon's motion and the Deactivate / Activate button are
+            // styled under .addons-tab in Events.css.
+            <motion.div
+              key={a.id}
+              className={`chart-row addons-tab__row${a.isActive ? '' : ' addons-tab__row--off'}`}
+              initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.2, 0.7, 0.2, 1], delay: Math.min(i, 10) * 0.05 }}
+            >
               <span className="chart-row__name">
                 {a.name}
-                {!a.isActive && <span className="badge badge--off chart-row__badge">Inactive</span>}
+                <AnimatePresence initial={false}>
+                  {!a.isActive && (
+                    <motion.span
+                      key="off"
+                      className="badge badge--off chart-row__badge"
+                      initial={{ opacity: 0, scale: 0.6 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.6 }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 18 }}
+                    >
+                      Inactive
+                    </motion.span>
+                  )}
+                </AnimatePresence>
               </span>
               <span className="chart-row__value">
-                {formatPrice(a.defaultAmount)}
-                {a.isPerUnit ? ' per unit/day' : '/day'}
+                <span className="addons-tab__price">
+                  {formatPrice(a.defaultAmount)}
+                  {a.isPerUnit ? ' per unit/day' : '/day'}
+                </span>
                 <span className="chart-row__actions">
-                  <IconButton label={`Edit ${a.name}`} icon={<EditIcon />} onClick={() => open(a)} />
-                  <button type="button" className="chart-row__link-btn" disabled={busy} onClick={() => toggleActive(a)}>
+                  <IconButton animated label={`Edit ${a.name}`} icon={<EditIcon />} onClick={() => open(a)} />
+                  <MotionButton
+                    type="button"
+                    className={`addons-tab__toggle${a.isActive ? '' : ' addons-tab__toggle--on'}`}
+                    hover={{ y: 0 }}
+                    tap={{ y: 0, scale: 0.93 }}
+                    disabled={busy}
+                    onClick={() => toggleActive(a)}
+                  >
                     {a.isActive ? 'Deactivate' : 'Activate'}
-                  </button>
+                  </MotionButton>
                 </span>
               </span>
-            </div>
+            </motion.div>
           ))}
         </div>
         <div className="chart-section__add">
-          <button type="button" className="btn-accent" onClick={() => open(null)}>
+          <MotionButton type="button" className="btn-accent addons-tab__add" onClick={() => open(null)}>
             + Add New Add-on
-          </button>
+          </MotionButton>
         </div>
       </div>
 
@@ -1433,6 +1469,11 @@ function AddonsTab({ addons, reloadCatalogue }) {
 // venue and edits one. The cards borrow the room card's own classes so the two
 // screens cannot drift apart.
 function VenuesTab({ venues, reloadCatalogue }) {
+  const reduceMotion = useReducedMotion();
+  // The venue awaiting an activate / deactivate answer, and the last one asked
+  // about (kept so the wording holds while the dialog animates out).
+  const [statusVenue, setStatusVenue] = useState(null);
+  const [statusShown, setStatusShown] = useState(null);
   const token = getSession()?.token;
   const [search, setSearch] = useState('');
   const [form, setForm] = useState(null); // { id, name, capacityPax, baseCharge, imageFiles }
@@ -1508,15 +1549,24 @@ function VenuesTab({ venues, reloadCatalogue }) {
     }
   };
 
-  const toggleActive = async (v) => {
-    if (!window.confirm(v.isActive ? `Deactivate ${v.name}? It can no longer be booked for new functions.` : `Activate ${v.name}?`)) return;
+  // Clicking the badge asks first; the change itself is confirmToggle.
+  const toggleActive = (v) => {
+    setStatusShown(v);
+    setStatusVenue(v);
+  };
+
+  const confirmToggle = async () => {
+    const v = statusVenue;
+    if (!v) return;
     setBusy(true);
     setError('');
     try {
       await apiPatch(`/events/venues/${v.id}`, { isActive: !v.isActive }, { token });
       await reloadCatalogue();
+      setStatusVenue(null);
     } catch (err) {
       setError(err.message);
+      setStatusVenue(null);
     } finally {
       setBusy(false);
     }
@@ -1558,9 +1608,9 @@ function VenuesTab({ venues, reloadCatalogue }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button type="button" className="btn-accent" onClick={openAdd}>
+        <MotionButton type="button" className="btn-accent btn-sheen" onClick={openAdd}>
           + Add venue
-        </button>
+        </MotionButton>
       </div>
 
       {error && <div className="form-banner form-banner--error">{error}</div>}
@@ -1578,10 +1628,20 @@ function VenuesTab({ venues, reloadCatalogue }) {
 
       {shown.length > 0 && (
         <div className="room-grid">
-          {shown.map((v) => {
+          {shown.map((v, i) => {
             const cover = v.images?.[0];
             return (
-              <div className="room-card venue-card" key={v.id}>
+              // Cards rise in one after another (capped), and lift on a spring
+              // under the pointer. The lift is here rather than in CSS because
+              // the entrance leaves an inline transform that would override a
+              // CSS :hover one.
+              <motion.div
+                className="room-card venue-card"
+                key={v.id}
+                initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.2, 0.7, 0.2, 1], delay: Math.min(i, 10) * 0.06 } }}
+                whileHover={reduceMotion ? undefined : { y: -3, transition: { type: 'spring', stiffness: 320, damping: 22 } }}
+              >
                 <div className={`room-card__cover${cover ? '' : ' room-card__cover--empty'}`}>
                   {cover ? (
                     <img
@@ -1594,16 +1654,17 @@ function VenuesTab({ venues, reloadCatalogue }) {
                   ) : (
                     <div className="room-card__cover-placeholder">{v.name}</div>
                   )}
-                  <button
-                    type="button"
+                  {/* Status only: it shows whether the venue is active and does nothing
+                      when clicked. Changing it is the button beside Edit. Keyed on the
+                      state, so it pops when the venue is switched. */}
+                  <motion.span
+                    key={v.isActive ? 'on' : 'off'}
                     className={`room-card__status badge ${v.isActive ? 'badge--on' : 'badge--off'}`}
-                    disabled={busy}
-                    onClick={() => toggleActive(v)}
-                    title={`Click to ${v.isActive ? 'deactivate' : 'activate'} ${v.name}`}
-                    aria-label={`${v.name} is ${v.isActive ? 'active' : 'inactive'}. Click to ${v.isActive ? 'deactivate' : 'activate'}.`}
+                    initial={reduceMotion ? false : { scale: 0.7, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
                   >
                     {v.isActive ? 'Active' : 'Inactive'}
-                  </button>
+                  </motion.span>
                   {v.images?.length > 1 && <span className="room-card__photo-count">+{v.images.length - 1}</span>}
                 </div>
 
@@ -1612,7 +1673,7 @@ function VenuesTab({ venues, reloadCatalogue }) {
                     {/* The photoless band above already carries the name. */}
                     {cover && <span className="room-card__number">{v.name}</span>}
                     <span className="room-card__rate">
-                      {formatPrice(v.baseCharge)}
+                      <CountText value={formatPrice(v.baseCharge)} />
                       <span className="room-card__rate-unit"> /day</span>
                     </span>
                   </div>
@@ -1625,12 +1686,49 @@ function VenuesTab({ venues, reloadCatalogue }) {
                 </div>
 
                 <div className="room-card__actions">
-                  <IconButton label={`Edit ${v.name}`} icon={<EditIcon />} onClick={() => openEdit(v)} />
+                  <MotionButton
+                    type="button"
+                    className={`venue-act venue-act--${v.isActive ? 'off' : 'on'}`}
+                    hover={{ scale: 1.04 }}
+                    tap={{ scale: 0.95 }}
+                    disabled={busy}
+                    onClick={() => toggleActive(v)}
+                  >
+                    {v.isActive ? 'Deactivate' : 'Activate'}
+                  </MotionButton>
+                  <MotionButton
+                    type="button"
+                    className="venue-act venue-act--edit"
+                    hover={{ scale: 1.04 }}
+                    tap={{ scale: 0.95 }}
+                    aria-label={`Edit ${v.name}`}
+                    onClick={() => openEdit(v)}
+                  >
+                    <EditIcon />
+                    Edit
+                  </MotionButton>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>
+      )}
+
+      {statusShown && (
+        <ActionModal
+          open={!!statusVenue}
+          tone={statusShown.isActive ? 'warning' : 'success'}
+          title={`${statusShown.isActive ? 'Deactivate' : 'Activate'} ${statusShown.name}?`}
+          message={
+            statusShown.isActive
+              ? 'It can no longer be booked for new functions, but its history stays intact.'
+              : 'It will be available for new function bookings again.'
+          }
+          confirmLabel={statusShown.isActive ? 'Deactivate' : 'Activate'}
+          busy={busy}
+          onConfirm={confirmToggle}
+          onCancel={() => setStatusVenue(null)}
+        />
       )}
 
       {form && (

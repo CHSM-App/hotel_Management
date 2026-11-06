@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from 'framer-motion';
 import './IconButton.css';
 
 // An icon-only action button that names itself on hover.
@@ -14,13 +15,25 @@ import './IconButton.css';
 // icon-only control is usable at all without a mouse.
 //
 // `tone="danger"` tints the button red — for Delete and the like.
+//
+// `animated` adds a spring on hover and press. The button lifts and grows, and
+// the glyph moves with it: a normal icon tilts like a pen being picked up, a
+// danger icon gives a short shake. It is opt-in because most of the app's icon
+// buttons sit in dense rows where movement would be noise. Nothing moves for
+// someone who asks their system for reduced motion.
+const SPRING = { type: 'spring', stiffness: 420, damping: 20 };
+const GLYPH_NORMAL = { rotate: -12, scale: 1.12, transition: SPRING };
+const GLYPH_DANGER = { rotate: [0, -14, 12, -8, 0], transition: { duration: 0.45 } };
+
 export default function IconButton({
   label,
   icon,
   tone,
   className = '',
+  animated = false,
   ...rest
 }) {
+  const reduceMotion = useReducedMotion();
   const classes = [
     'icon-btn',
     tone === 'danger' ? 'icon-btn--danger' : '',
@@ -28,6 +41,31 @@ export default function IconButton({
   ]
     .filter(Boolean)
     .join(' ');
+
+  if (animated && !reduceMotion) {
+    return (
+      <motion.button
+        type="button"
+        className={classes}
+        aria-label={label}
+        data-tooltip={label}
+        whileHover="hover"
+        whileTap="tap"
+        variants={{
+          hover: { y: -2, scale: 1.08, transition: SPRING },
+          tap: { y: 0, scale: 0.92, transition: SPRING },
+        }}
+        {...rest}
+      >
+        <motion.span
+          className="icon-btn__glyph"
+          variants={{ hover: tone === 'danger' ? GLYPH_DANGER : GLYPH_NORMAL }}
+        >
+          {icon}
+        </motion.span>
+      </motion.button>
+    );
+  }
 
   return (
     <button

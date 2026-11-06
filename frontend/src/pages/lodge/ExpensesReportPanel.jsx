@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatPrice } from './priceFormat';
-import { TrendChart, Donut, BarList, RankList } from './AnalyticsCharts';
+import { TrendChart, Donut, BarList, RankList, CountText } from './AnalyticsCharts';
 import { downloadExpensesReportExcel, downloadExpensesReportPdf, buildExpensesReportPdf } from './expenseReportFile';
 import './AnalyticsCharts.css';
 import './ExpensesReportPanel.css';
@@ -149,17 +149,17 @@ export default function ExpensesReportPanel({ expenses: allExpenses, onClose }) 
       <div className="kpi-row" style={{ marginBottom: 16 }}>
         <div className="kpi-card kpi-card--primary">
           <span className="kpi-label">Total spend</span>
-          <span className="kpi-value">{formatPrice(totals.total)}</span>
+          <span className="kpi-value"><CountText value={formatPrice(totals.total)} /></span>
           <span className="kpi-sub">Across {totals.count} expense{totals.count === 1 ? '' : 's'}</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Paid so far</span>
-          <span className="kpi-value">{formatPrice(totals.paid)}</span>
+          <span className="kpi-value"><CountText value={formatPrice(totals.paid)} /></span>
           <span className="kpi-sub">{totals.total > 0 ? Math.round((totals.paid / totals.total) * 100) : 0}% settled</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Outstanding</span>
-          <span className="kpi-value">{formatPrice(totals.outstanding)}</span>
+          <span className="kpi-value"><CountText value={formatPrice(totals.outstanding)} /></span>
           <span className="kpi-sub">Partial + pending bills</span>
         </div>
         <div className="kpi-card">

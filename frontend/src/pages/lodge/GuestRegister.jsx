@@ -6,6 +6,7 @@ import { readCache, writeCache } from '../../lib/dataCache';
 import { useUrlState } from '../../lib/urlState';
 import { STAY_STATUS_CHIP_LABEL } from './stayFormat';
 import { formatPrice } from './priceFormat';
+import { CountText } from './AnalyticsCharts';
 import { describeAdvance } from './paymentSplit';
 import BillDocument from './BillDocument';
 import IconButton from '../../components/IconButton';
@@ -221,7 +222,7 @@ function StatTile({ label, value, note, active, hint, onClick, className = '' })
       title={hint}
     >
       <span className="guest-register__stat-label">{label}</span>
-      <strong className="guest-register__stat-value">{value}</strong>
+      <strong className="guest-register__stat-value"><CountText value={value} /></strong>
       {note && <span className="guest-register__stat-note">{note}</span>}
     </button>
   );

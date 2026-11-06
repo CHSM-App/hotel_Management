@@ -263,3 +263,375 @@
   color: var(--text-muted);
   padding: 8px 2px;
 }
+
+/* ---------- Motion: KPI tiles ----------
+   The tiles rise in left to right when a screen opens (the figures inside count
+   up; see CountText in AnalyticsCharts.jsx), and deepen their shadow on hover.
+   Hover is a shadow rather than a lift so it never competes with the entrance's
+   transform. */
+@keyframes kpi-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.kpi-row > .kpi-card {
+  animation: kpi-rise 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  transition: box-shadow 0.22s ease;
+}
+
+.kpi-row > .kpi-card:nth-child(2) { animation-delay: 0.06s; }
+.kpi-row > .kpi-card:nth-child(3) { animation-delay: 0.12s; }
+.kpi-row > .kpi-card:nth-child(4) { animation-delay: 0.18s; }
+.kpi-row > .kpi-card:nth-child(n + 5) { animation-delay: 0.24s; }
+
+.kpi-row > .kpi-card:hover {
+  box-shadow: 0 2px 4px rgba(22, 33, 46, 0.08), 0 14px 26px -14px rgba(22, 33, 46, 0.32);
+}
+
+.kpi-row > .kpi-card--primary:hover {
+  box-shadow: 0 2px 6px rgba(7, 39, 72, 0.2), 0 16px 30px -12px rgba(7, 39, 72, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-row > .kpi-card {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* A brighter royal blue for the lead tile where a screen asks for it
+   (Expenses' "Spent this year"): a vertical fade from #025FC9 at the top to
+   #012B68 at the bottom, matched to the reference card. White text on the top
+   of it measures about 6.0:1, so the label and figure stay readable. The
+   shadow takes the same blue. */
+.kpi-card--royal {
+  background: linear-gradient(180deg, #025fc9 0%, #012b68 100%);
+}
+
+.kpi-row > .kpi-card--royal:hover {
+  box-shadow: 0 2px 6px rgba(1, 43, 104, 0.22), 0 16px 30px -12px rgba(2, 89, 190, 0.5);
+}
+
+/* Lead tile with a round icon badge on the left: the badge, then the label and
+   figure beside it, then the note along the bottom. Used on Expenses'
+   "Spent this year". The badge is a translucent white disc, so it picks up
+   whatever blue the tile is. */
+.kpi-card--icon {
+  gap: 10px;
+}
+
+.kpi-card--icon .kpi-card__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.kpi-card--icon .kpi-card__badge {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.kpi-card--icon .kpi-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kpi-card--icon .kpi-value {
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+/* ---------- Tinted summary cards (compact, brand navy) ----------
+   A round badge in a pale tint of the brand navy with a filled glyph, the label,
+   figure and note beside it, and one long soft wave sweeping up the bottom right.
+   Used on Expenses ("This month", "Top category", "Filtered total"). The icons and
+   the wave are in components/KpiGlyphs.jsx. The colours are the variables below;
+   change them on a card to recolour it (e.g. a blue or green version). */
+.kpi-card--tone {
+  --tone-ic: var(--brand);
+  --tone-circle: #dae5f1;
+  --tone-wave: #d0dfee;
+  --tone-bg: #f1f5f9;
+  --tone-inner: #e8eff7;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: 108px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: linear-gradient(150deg, #fcfdff 0%, var(--tone-bg) 100%);
+  box-shadow: 0 1px 2px rgba(50, 70, 150, 0.06), 0 14px 32px -16px rgba(50, 70, 150, 0.28);
+}
+
+.kpi-row > .kpi-card--tone:hover {
+  box-shadow: 0 2px 4px rgba(50, 70, 150, 0.08), 0 18px 36px -16px rgba(50, 70, 150, 0.36);
+}
+
+/* The wave sits behind the text, in the bottom-right corner, and stretches with
+   the card's width. */
+.kpi-card__wave {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 62%;
+  min-width: 150px;
+  height: 34px;
+  pointer-events: none;
+}
+
+.kpi-card__wave svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.kpi-card--tone .kpi-card__badge,
+.kpi-card--tone .kpi-card__main {
+  position: relative;
+  z-index: 1;
+}
+
+.kpi-card--tone .kpi-card__badge {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--tone-circle);
+  color: var(--tone-ic);
+}
+
+.kpi-card--tone .kpi-card__badge svg {
+  display: block;
+  width: 31px;
+  height: 31px;
+}
+
+.kpi-card--tone .kpi-card__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.kpi-card--tone .kpi-label {
+  color: var(--brand);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.kpi-card--tone .kpi-value {
+  margin-top: 4px;
+  color: var(--brand-ink);
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+
+/* A category name is text, not a figure: smaller, and allowed to wrap. */
+.kpi-card--tone .kpi-value--name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.kpi-card--tone .kpi-sub {
+  margin-top: 5px;
+  color: #3e5573;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+/* The category's amount sits under its name as a figure of its own. */
+.kpi-card--tone .kpi-sub--amount {
+  margin-top: 3px;
+  color: var(--brand-ink);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Motion for the tinted cards ----------
+   On arrival the badge pops in and the wave slides in from the right, after the
+   card's own rise-in. On hover the card lifts, the badge grows and gains a soft
+   halo, the wave swells, and the icon does something of its own: the calendar
+   wiggles, the pie's wedges spread apart, the funnel dips.
+   Hover uses the separate `translate` and `scale` properties rather than
+   `transform`, because the rise-in animation (kpi-rise, above) holds its final
+   `transform` and would otherwise override a hover transform. */
+
+@keyframes kpi-badge-pop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes kpi-wave-in {
+  from {
+    transform: translateX(28px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes kpi-wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-11deg);
+  }
+  60% {
+    transform: rotate(8deg);
+  }
+}
+
+@keyframes kpi-dip {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(-2px) scale(1.05);
+  }
+  65% {
+    transform: translateY(1px);
+  }
+}
+
+/* arrival */
+.kpi-row > .kpi-card--tone .kpi-card__badge {
+  animation: kpi-badge-pop 0.55s cubic-bezier(0.2, 0.8, 0.3, 1) 0.2s both;
+}
+
+.kpi-row > .kpi-card--tone:nth-child(3) .kpi-card__badge { animation-delay: 0.26s; }
+.kpi-row > .kpi-card--tone:nth-child(4) .kpi-card__badge { animation-delay: 0.32s; }
+
+.kpi-row > .kpi-card--tone .kpi-card__wave {
+  animation: kpi-wave-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.35s both;
+}
+
+/* hover: the card. Written with the .kpi-row prefix because the tiles' general
+   rule (.kpi-row > .kpi-card) sets `transition` with that specificity and would
+   otherwise win, making the lift jump instead of ease. */
+.kpi-row > .kpi-card--tone {
+  transition: box-shadow 0.25s ease, translate 0.28s cubic-bezier(0.2, 0.8, 0.3, 1.2);
+}
+
+.kpi-card--tone:hover {
+  translate: 0 -3px;
+}
+
+/* hover: the badge */
+.kpi-card--tone .kpi-card__badge {
+  transition: scale 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+}
+
+.kpi-card--tone:hover .kpi-card__badge {
+  scale: 1.07;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--tone-circle) 55%, transparent);
+}
+
+/* hover: the wave swells upward from its bottom-right corner */
+.kpi-card__wave svg {
+  transform-origin: 100% 100%;
+  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.kpi-card--tone:hover .kpi-card__wave svg {
+  transform: scaleY(1.32);
+}
+
+/* hover: the icons */
+.kpi-glyph {
+  overflow: visible;
+}
+
+.kpi-glyph--cal {
+  transform-origin: 50% 70%;
+}
+
+.kpi-card--tone:hover .kpi-glyph--cal {
+  animation: kpi-wiggle 0.65s ease;
+}
+
+.kpi-pie__a,
+.kpi-pie__b,
+.kpi-pie__c {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.kpi-pie__a { transform: translate(-0.2px, 0.2px); }
+.kpi-pie__b { transform: translate(0.1px, -0.1px); }
+.kpi-pie__c { transform: translate(0.3px, 0.3px); }
+
+.kpi-card--tone:hover .kpi-pie__a { transform: translate(-0.6px, 0.6px); }
+.kpi-card--tone:hover .kpi-pie__b { transform: translate(1px, -1px); }
+.kpi-card--tone:hover .kpi-pie__c { transform: translate(1.4px, 1px); }
+
+.kpi-card--tone:hover .kpi-glyph--funnel {
+  animation: kpi-dip 0.7s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-row > .kpi-card--tone .kpi-card__badge,
+  .kpi-row > .kpi-card--tone .kpi-card__wave,
+  .kpi-card--tone:hover .kpi-glyph--cal,
+  .kpi-card--tone:hover .kpi-glyph--funnel {
+    animation: none;
+  }
+
+  .kpi-row > .kpi-card--tone,
+  .kpi-card--tone .kpi-card__badge,
+  .kpi-card__wave svg,
+  .kpi-pie__a,
+  .kpi-pie__b,
+  .kpi-pie__c {
+    transition: none;
+  }
+
+  .kpi-card--tone:hover,
+  .kpi-card--tone:hover .kpi-card__badge {
+    translate: none;
+    scale: none;
+  }
+
+  .kpi-card--tone:hover .kpi-card__wave svg {
+    transform: none;
+  }
+}

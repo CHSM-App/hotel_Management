@@ -440,6 +440,52 @@
   box-shadow: var(--shadow-raised-hover);
 }
 
+/* Anchors the SOLD OUT stamp. */
+.dish-card {
+  position: relative;
+}
+
+/* A dish that is out: the photo drains of colour and the text steps back, but
+   the controls stay at full strength so "Back in" is as easy to hit as ever. */
+.dish-card--out .dish-card__photo {
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+
+.dish-card--out .dish-card__name,
+.dish-card--out .dish-card__desc,
+.dish-card--out .dish-card__price {
+  opacity: 0.65;
+}
+
+.dish-card__photo,
+.dish-card__name,
+.dish-card__desc,
+.dish-card__price {
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+/* The stamp. Entrance and exit are in DishCardShell; this is its look. Sits in
+   the middle of the card, tilted, over the dimmed content, and takes no clicks. */
+.dish-card__stamp {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  margin-top: -16px;
+  z-index: 2;
+  padding: 3px 11px;
+  border: 2px solid var(--danger);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
 .dish-card--out {
   background: repeating-linear-gradient(
     -45deg,
@@ -530,33 +576,109 @@
    passable in a wide row, too loud beside a price in a card this size. A quiet
    pill that only commits to a colour on the way back in, since "Back in" is
    the good news. */
+/* Soft tint at rest, solid on hover, with a glow in the button's own colour.
+   The colour says what the button does: amber for taking a dish off the menu,
+   green for putting it back. The press squish comes from MotionButton. */
 .dish-card__toggle {
+  --btn: var(--accent);
+  --btn-ink: var(--ink);
+  --btn-text: #8a5a00;
   border: none;
   border-radius: 999px;
-  background: var(--surface);
-  padding: 4px 10px;
+  background: color-mix(in srgb, var(--btn) 16%, var(--surface));
+  padding: 4px 11px;
   font: inherit;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--btn-text);
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: var(--shadow-raised);
-  transition: var(--neu-transition);
+  box-shadow: none;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.2s ease;
 }
 
 .dish-card__toggle:hover {
-  color: var(--ink);
-  box-shadow: var(--shadow-raised-hover);
+  background: var(--btn);
+  color: var(--btn-ink);
+  box-shadow: 0 8px 16px -8px var(--btn);
 }
 
-.dish-card__toggle:active {
-  box-shadow: var(--shadow-pressed);
+.dish-card__toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
+/* "Back in" is the good news, so it turns green. */
 .dish-card--out .dish-card__toggle {
-  border-color: var(--color-success, #1f9254);
-  color: var(--color-success, #1f9254);
+  --btn: var(--success);
+  --btn-ink: #fff;
+  --btn-text: var(--success);
+}
+
+/* ---- section buttons: Add item, Mark all out, Bring all back ----
+   Same behaviour as the dish buttons, in each button's own colour. Declared
+   with the section-actions prefix so they replace its raised-button look. */
+.menu-section__actions .menu-act {
+  --btn: var(--brand);
+  --btn-ink: #fff;
+  --btn-text: var(--brand);
+  background: color-mix(in srgb, var(--btn) 12%, var(--surface));
+  color: var(--btn-text);
+  box-shadow: none;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.2s ease;
+}
+
+.menu-section__actions .menu-act--danger {
+  --btn: var(--danger);
+  --btn-text: var(--danger);
+}
+
+.menu-section__actions .menu-act--ok {
+  --btn: var(--success);
+  --btn-text: var(--success);
+}
+
+.menu-section__actions .menu-act:hover {
+  background: var(--btn);
+  color: var(--btn-ink);
+  box-shadow: 0 10px 18px -8px var(--btn);
+}
+
+.menu-section__actions .menu-act:active {
+  box-shadow: none;
+}
+
+.menu-section__actions .menu-act:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The ⋮ on the menu: a round tint on hover, and the dots turn a quarter-turn.
+   Scoped to this panel because RowMenu is shared with the Inventory tab. */
+.menu-panel .rowmenu__trigger {
+  border-radius: 50%;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.25s ease;
+}
+
+.menu-panel .rowmenu__trigger:hover,
+.menu-panel .rowmenu__trigger[aria-expanded='true'] {
+  background: var(--brand-wash, #E6EDF4);
+  color: var(--brand);
+  box-shadow: none;
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dish-card__toggle,
+  .menu-section__actions .menu-act,
+  .menu-panel .rowmenu__trigger {
+    transition: none;
+  }
+
+  .menu-panel .rowmenu__trigger:hover,
+  .menu-panel .rowmenu__trigger[aria-expanded='true'] {
+    transform: none;
+  }
 }
 
 /* The square-in-a-square veg/non-veg mark used on every Indian menu and
@@ -1149,4 +1271,39 @@
     flex: 1;
     width: auto;
   }
+}
+
+/* Dish cards in "Mist", the faintest sky blue, with a matching outline. The group
+   header behind them is a pale grey-blue, and plain white cards looked flat on it;
+   the faint blue lifts them off it while the outline marks every edge, including the
+   top. The outline darkens a little on hover. */
+.dish-card {
+  background: #f9fcff;
+  border: 1px solid #d3e3f3;
+  box-shadow: 0 1px 2px rgba(22, 33, 46, 0.08), 0 6px 14px -6px rgba(22, 33, 46, 0.2);
+  transition: border-color 0.2s ease, box-shadow 0.22s ease;
+}
+
+.dish-card:hover {
+  border-color: #a9c5e2;
+}
+
+/* A dish that is out keeps its faint red stripes, now over the Mist colour (the
+   rule above would otherwise replace them, as both set `background`). */
+.dish-card.dish-card--out {
+  background: repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 8px,
+      rgba(234, 67, 53, 0.045) 8px,
+      rgba(234, 67, 53, 0.045) 16px
+    ),
+    #f9fcff;
+}
+
+/* No line along the top of a dish card; the other three sides keep theirs. The top
+   border stays in the box (transparent) so the card does not change size. */
+.dish-card,
+.dish-card:hover {
+  border-top-color: transparent;
 }

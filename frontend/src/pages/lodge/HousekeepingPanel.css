@@ -2950,3 +2950,89 @@ th[aria-sort] .hk-sort__icon {
     flex: 1 1 140px;
   }
 }
+
+
+/* ------------------------------------------------------------------ motion
+   The Housekeeping and Laundry screens. Entrances (cards, stage tiles) and the
+   count-up numbers are Motion, in the .jsx files; what is here is the hover and
+   press feel of the buttons and a shadow on hover for the cards. The cards and
+   tiles lift by shadow rather than by moving, because Motion's entrance leaves
+   an inline transform that a CSS :hover transform could not override. */
+
+.hk-action {
+  position: relative;
+  overflow: hidden;
+  transition: background-color 140ms ease, box-shadow 200ms ease, transform 120ms ease;
+}
+
+.hk-action:hover:not(:disabled) {
+  box-shadow: 0 8px 16px -8px rgba(7, 39, 72, 0.55);
+  transform: translateY(-1px);
+}
+
+.hk-action:active:not(:disabled) {
+  transform: scale(0.96);
+  box-shadow: none;
+}
+
+.hk-action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The amber button glows amber, and a sheen crosses it once on hover. */
+.hk-action--cta:hover:not(:disabled) {
+  box-shadow: 0 8px 16px -8px rgba(138, 91, 0, 0.6);
+}
+
+.hk-action--cta::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+}
+
+.hk-action--cta:hover:not(:disabled)::after {
+  left: 130%;
+  transition: left 0.55s ease;
+}
+
+.hk-link {
+  transition: color 0.15s ease;
+}
+
+.hk-link:hover:not(:disabled) {
+  color: var(--brand-ink);
+}
+
+.hk-step,
+.hk-card {
+  transition: box-shadow 0.22s ease;
+}
+
+.hk-step:hover,
+.hk-card:hover {
+  box-shadow: 0 2px 4px rgba(22, 33, 46, 0.08), 0 14px 26px -14px rgba(22, 33, 46, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hk-action,
+  .hk-step,
+  .hk-card {
+    transition: none;
+  }
+
+  .hk-action:hover:not(:disabled),
+  .hk-action:active:not(:disabled) {
+    transform: none;
+  }
+
+  .hk-action--cta:hover:not(:disabled)::after {
+    transition: none;
+  }
+}

@@ -14,6 +14,8 @@ import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
 import SectionTabs from './SectionTabs';
+import MotionButton from '../../components/MotionButton';
+import { KpiCalendar, KpiFunnel, KpiPie, KpiWave } from '../../components/KpiGlyphs';
 import RowMenu from './RowMenu';
 import Req from '../../components/RequiredMark';
 import VendorDirectory from './VendorDirectory';
@@ -25,6 +27,7 @@ import {
 } from './paymentMethods';
 import './forms.css';
 import './InventoryPanel.css';
+import { CountText } from './AnalyticsCharts';
 import './AnalyticsCharts.css';
 import './FinanceTabs.css';
 
@@ -86,6 +89,16 @@ function focusFirstError(errors, fieldIds) {
   if (!el) return;
   el.focus({ preventScroll: true });
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+// The wallet in the lead tile's round badge.
+function WalletIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" />
+      <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" />
+    </svg>
+  );
 }
 
 function formatDate(value) {
@@ -994,9 +1007,9 @@ export default function ExpensesPanel({ onViewReport }) {
         <div className="finance-tabs">
           <SectionTabs ariaLabel="Expenses sections" activeId={tab} onChange={setTab} tabs={tabs} />
         </div>
-        <button type="button" className="btn-secondary" onClick={onViewReport}>
+        <MotionButton type="button" className="btn-secondary" onClick={onViewReport}>
           View Report
-        </button>
+        </MotionButton>
       </div>
 
       {tab === 'expenses' && (
@@ -1004,25 +1017,50 @@ export default function ExpensesPanel({ onViewReport }) {
           {summary && (
             <>
               <div className="kpi-row" style={{ marginBottom: 16 }}>
-                <div className="kpi-card kpi-card--primary">
-                  <span className="kpi-label">Spent this year</span>
-                  <span className="kpi-value">{formatPrice(summary.byMonth.reduce((s, m) => s + m.total, 0))}</span>
+                <div className="kpi-card kpi-card--primary kpi-card--royal kpi-card--icon">
+                  <div className="kpi-card__top">
+                    <span className="kpi-card__badge" aria-hidden="true">
+                      <WalletIcon />
+                    </span>
+                    <div className="kpi-card__main">
+                      <span className="kpi-label">Spent this year</span>
+                      <span className="kpi-value"><CountText value={formatPrice(summary.byMonth.reduce((s, m) => s + m.total, 0))} /></span>
+                    </div>
+                  </div>
                   <span className="kpi-sub">Across every category and vendor</span>
                 </div>
-                <div className="kpi-card">
-                  <span className="kpi-label">This month</span>
-                  <span className="kpi-value">{formatPrice(summary.byMonth.find((m) => m.month === new Date().getMonth() + 1)?.total || 0)}</span>
-                  <span className="kpi-sub">{new Date().toLocaleDateString('en-IN', { month: 'long' })} so far</span>
+                <div className="kpi-card kpi-card--tone">
+                  <KpiWave />
+                  <span className="kpi-card__badge" aria-hidden="true">
+                    <KpiCalendar />
+                  </span>
+                  <div className="kpi-card__main">
+                    <span className="kpi-label">This month</span>
+                    <span className="kpi-value"><CountText value={formatPrice(summary.byMonth.find((m) => m.month === new Date().getMonth() + 1)?.total || 0)} /></span>
+                    <span className="kpi-sub">{new Date().toLocaleDateString('en-IN', { month: 'long' })} so far</span>
+                  </div>
                 </div>
-                <div className="kpi-card">
-                  <span className="kpi-label">Top category</span>
-                  <span className="kpi-value" style={{ fontSize: 18 }}>{summary.byCategory[0]?.categoryName || '—'}</span>
-                  <span className="kpi-sub">{summary.byCategory[0] ? formatPrice(summary.byCategory[0].total) : 'No expenses logged yet'}</span>
+                <div className="kpi-card kpi-card--tone">
+                  <KpiWave />
+                  <span className="kpi-card__badge" aria-hidden="true">
+                    <KpiPie />
+                  </span>
+                  <div className="kpi-card__main">
+                    <span className="kpi-label">Top category</span>
+                    <span className="kpi-value kpi-value--name">{summary.byCategory[0]?.categoryName || '—'}</span>
+                    <span className={`kpi-sub${summary.byCategory[0] ? ' kpi-sub--amount' : ''}`}>{summary.byCategory[0] ? formatPrice(summary.byCategory[0].total) : 'No expenses logged yet'}</span>
+                  </div>
                 </div>
-                <div className="kpi-card">
-                  <span className="kpi-label">Filtered total</span>
-                  <span className="kpi-value">{formatPrice(filteredTotal)}</span>
-                  <span className="kpi-sub">{filteredExpenses.length} expense{filteredExpenses.length === 1 ? '' : 's'} in view</span>
+                <div className="kpi-card kpi-card--tone">
+                  <KpiWave />
+                  <span className="kpi-card__badge" aria-hidden="true">
+                    <KpiFunnel />
+                  </span>
+                  <div className="kpi-card__main">
+                    <span className="kpi-label">Filtered total</span>
+                    <span className="kpi-value"><CountText value={formatPrice(filteredTotal)} /></span>
+                    <span className="kpi-sub">{filteredExpenses.length} expense{filteredExpenses.length === 1 ? '' : 's'} in view</span>
+                  </div>
                 </div>
               </div>
 
@@ -1144,9 +1182,9 @@ export default function ExpensesPanel({ onViewReport }) {
                     </svg>
                   </button>
                 </div>
-                <button type="button" className="btn-accent" onClick={() => openExpenseForm(null)}>
+                <MotionButton type="button" className="btn-accent btn-sheen" onClick={() => openExpenseForm(null)}>
                   + New expense
-                </button>
+                </MotionButton>
               </div>
             </div>
           </div>

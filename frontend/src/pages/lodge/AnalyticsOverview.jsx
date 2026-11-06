@@ -1,5 +1,5 @@
 import { formatPrice } from './priceFormat';
-import { TrendChart, Donut, BarList } from './AnalyticsCharts';
+import { TrendChart, Donut, BarList, CountText } from './AnalyticsCharts';
 import './AnalyticsCharts.css';
 import PageLoader from '../../components/PageLoader';
 
@@ -151,23 +151,23 @@ export default function AnalyticsOverview({ lodge, bookings, occupancy, gst, eve
       <div className="kpi-row">
         <div className="kpi-card kpi-card--primary">
           <span className="kpi-label">Revenue billed</span>
-          <span className="kpi-value">{formatPrice(totalRevenue)}</span>
+          <span className="kpi-value"><CountText value={formatPrice(totalRevenue)} /></span>
           {showComparison && <DeltaBadge current={currentTrendTotal} prior={priorTotal} />}
           <span className="kpi-sub">Rooms + functions + food · billed only</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Occupancy</span>
-          <span className="kpi-value">{occupancy.summary.occupancyPercent}%</span>
+          <span className="kpi-value"><CountText value={`${occupancy.summary.occupancyPercent}%`} /></span>
           <span className="kpi-sub">{occupancy.summary.occupiedRoomNights} of {occupancy.summary.totalRoomNights} room-nights sold</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Avg. daily rate</span>
-          <span className="kpi-value">{formatPrice(adr)}</span>
+          <span className="kpi-value"><CountText value={formatPrice(adr)} /></span>
           <span className="kpi-sub">RevPAR {formatPrice(revpar)}</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Not yet billed</span>
-          <span className="kpi-value" style={{ fontSize: 18 }}>{formatPrice(totalUnbilled)}</span>
+          <span className="kpi-value" style={{ fontSize: 18 }}><CountText value={formatPrice(totalUnbilled)} /></span>
           <span className="kpi-sub">Follow up before month close</span>
         </div>
       </div>

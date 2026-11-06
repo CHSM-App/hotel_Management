@@ -1,3 +1,7 @@
+import { Children, Fragment, isValidElement } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
+import MotionButton from '../../components/MotionButton';
+
 // The small pieces the Housekeeping and Laundry panels both use.
 
 // One small glyph per state, so a room reads at a glance without relying on
@@ -35,10 +39,39 @@ export function Stepper({ value, onChange, label, max = Infinity }) {
   );
 }
 
+// Turns the plain <button>s a modal passes as its footer into MotionButtons, so
+// every dialog's Cancel and primary button lift on hover and squash when pressed
+// without each caller changing. Fragments are looked through; anything that is
+// not a plain button (a link, text, a component) is left exactly as it was.
+function animateFooter(node) {
+  return Children.map(node, (child) => {
+    if (!isValidElement(child)) return child;
+    if (child.type === 'button') return <MotionButton {...child.props} key={child.key} />;
+    if (child.type === Fragment) return animateFooter(child.props.children);
+    return child;
+  });
+}
+
+// Opens with a short fade on the backdrop and a spring rise on the panel. Callers
+// mount it only while it is open, so there is no exit animation; the entrance is
+// the part people notice. Skipped for anyone who asks for reduced motion.
 export function Modal({ title, sub, onClose, busy, children, footer }) {
+  const reduce = useReducedMotion();
   return (
-    <div className="glass-backdrop menu-panel__backdrop" onClick={() => !busy && onClose()}>
-      <div className="glass-panel menu-panel__modal modal-form__panel" onClick={(e) => e.stopPropagation()}>
+    <motion.div
+      className="glass-backdrop menu-panel__backdrop"
+      initial={reduce ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18 }}
+      onClick={() => !busy && onClose()}
+    >
+      <motion.div
+        className="glass-panel menu-panel__modal modal-form__panel"
+        initial={reduce ? false : { opacity: 0, y: 18, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-form">
           <div className="modal-form__head">
             <div className="modal-form__head-row">
@@ -51,11 +84,11 @@ export function Modal({ title, sub, onClose, busy, children, footer }) {
           </div>
           <div className="modal-form__body">{children}</div>
           <div className="modal-form__foot">
-            <div className="modal-form__foot-actions">{footer}</div>
+            <div className="modal-form__foot-actions">{animateFooter(footer)}</div>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

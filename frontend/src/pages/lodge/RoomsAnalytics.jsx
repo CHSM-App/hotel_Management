@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { apiGet, ApiError } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
-import { TrendChart, BarList } from './AnalyticsCharts';
+import { TrendChart, BarList, CountText } from './AnalyticsCharts';
 import './AnalyticsCharts.css';
 import PageLoader from '../../components/PageLoader';
 
@@ -53,22 +53,22 @@ export default function RoomsAnalytics({ fromDate, toDate, validRange, bookings 
       <div className="kpi-row">
         <div className="kpi-card kpi-card--primary">
           <span className="kpi-label">RevPAR</span>
-          <span className="kpi-value">{formatPrice(data.revpar)}</span>
+          <span className="kpi-value"><CountText value={formatPrice(data.revpar)} /></span>
           <span className="kpi-sub">Revenue per available room-night</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Avg. length of stay</span>
-          <span className="kpi-value">{data.alos.toFixed(2)} <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>nights</span></span>
+          <span className="kpi-value"><CountText value={data.alos.toFixed(2)} /> <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>nights</span></span>
           <span className="kpi-sub">{bookings.summary.totalBookings} bookings in this period</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Cancellation rate</span>
-          <span className="kpi-value">{data.cancellationRate}%</span>
+          <span className="kpi-value"><CountText value={`${data.cancellationRate}%`} /></span>
           <span className="kpi-sub">{bookings.summary.byStatus.CANCELLED || 0} cancelled</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Room nights sold</span>
-          <span className="kpi-value">{bookings.summary.roomNights}</span>
+          <span className="kpi-value"><CountText value={bookings.summary.roomNights} /></span>
           <span className="kpi-sub">{formatPrice(bookings.summary.billedAmount)} billed</span>
         </div>
       </div>

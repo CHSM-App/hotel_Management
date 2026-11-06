@@ -6,20 +6,28 @@
 // counts as the minimum.
 //
 // Styled by .qty-stepper in pages/lodge/forms.css.
+import MotionButton from './MotionButton';
+
+// The buttons are small (28px), so they grow more than a footer button does.
+const STEP_HOVER = { scale: 1.18 };
+const STEP_TAP = { scale: 0.86 };
+
 export default function QtyStepper({ value, onChange, label, min = 1 }) {
   const typed = Math.floor(Number(value));
   const count = Number.isFinite(typed) && typed >= min ? typed : min;
 
   return (
     <span className="qty-stepper">
-      <button
+      <MotionButton
         type="button"
+        hover={STEP_HOVER}
+        tap={STEP_TAP}
         aria-label={`One fewer ${label}`}
         disabled={count <= min}
         onClick={() => onChange(String(count - 1))}
       >
         −
-      </button>
+      </MotionButton>
       <input
         className="qty-stepper__input"
         type="number"
@@ -30,9 +38,9 @@ export default function QtyStepper({ value, onChange, label, min = 1 }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
-      <button type="button" aria-label={`One more ${label}`} onClick={() => onChange(String(count + 1))}>
+      <MotionButton type="button" hover={STEP_HOVER} tap={STEP_TAP} aria-label={`One more ${label}`} onClick={() => onChange(String(count + 1))}>
         +
-      </button>
+      </MotionButton>
     </span>
   );
 }
