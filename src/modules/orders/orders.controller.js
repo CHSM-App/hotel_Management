@@ -1,0 +1,414 @@
+const { counterOrderSchema, updateStatusSchema, updateItemReadySchema, editOrderSchema, cancelItemsSchema } = require('./orders.schema');
+const ordersService = require('./orders.service');
+const { getPool, sql } = require('../../config/connection');
+const { ApiError } = require('../../middleware/errorHandler');
+
+function parse(schema, body) {
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    throw new ApiError(parsed.error.issues[0].message, 400);
+  }
+  return parsed.data;
+}
+
+async function listOrdersHandler(req, res, next) {
+  try {
+    // Everyone who can see orders sees all of them — table and room QR orders
+    // have no captain behind them, and any captain may need to serve them.
+    // A period is from..to inclusive; capped at a year so one request can't
+    // pull the whole history.
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
+    const { from, to } = req.query;
+    if ((from || to) && !(iso.test(String(from)) && iso.test(String(to)) && from <= to)) {
+      throw new ApiError('Choose a valid from and to date.', 400);
+    }
+    if (from && (new Date(to) - new Date(from)) / 86400000 > 366) {
+      throw new ApiError('Choose a period of a year or less.', 400);
+    }
+    const orders = await ordersService.listOrders(req.user.lodgeId, {
+      status: req.query.status,
+      date: req.query.date,
+      from,
+      to,
+      
+    });
+    res.json({ orders });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The kitchen screen polls this. Kept separate from the day list so the screen
+// never has to reason about dates — it asks for "what's still cooking".
+async function listQueueHandler(req, res, next) {
+  try {
+    const orders = await ordersService.listOrders(req.user.lodgeId, {
+      live: true,
+      // Owner / reception (who can bill) keep delivered orders in the queue until billed.
+      awaitingBill: req.permissions.includes('billing.manage'),
+    });
+    res.json({ orders });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getOrderHandler(req, res, next) {
+  try {
+    const order = await ordersService.getOrder(req.user.lodgeId, Number(req.params.id));
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// A counter order attached to a room is charged to whoever is in it, so the
+// room's live booking is resolved here rather than trusted from the client.
+async function resolveRoomBooking(lodgeId, roomId, bookingId = null) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('roomId', sql.BigInt, roomId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT TOP 1 b.id FROM dbo.booking_rooms br
+      JOIN dbo.bookings b ON b.id = br.booking_id
+      WHERE b.lodge_id = @lodgeId AND br.room_id = @roomId AND br.status = 'CHECKED_IN'
+        AND (@bookingId IS NULL OR b.id = @bookingId)
+      ORDER BY br.actual_check_in_at DESC
+    `);
+  return result.recordset[0]?.id ?? null;
+}
+
+// Who the desk is about to charge. Staff pick a room from the dropdown and
+// see the name and phone of whoever is actually checked into it, so a walk-in
+// claiming "room 12, put it on my bill" is checked against the register before
+// the food is charged to a stranger's stay.
+//
+// Deliberately not the guest's food PIN. The PIN authenticates an anonymous
+// phone as being in a room; staff are already authenticated, and asking them
+// to type it would let a desk typo trip the guest's own 15-minute lockout.
+// This answers the question staff actually have — "is this the right guest?" —
+// and answers it by showing them the register rather than by taking a secret.
+async function roomOccupancyHandler(req, res, next) {
+  try {
+    const lodgeId = req.user.lodgeId;
+    const roomId = Number(req.params.roomId);
+    if (!Number.isSafeInteger(roomId) || roomId <= 0) {
+      throw new ApiError('Unknown room.', 400);
+    }
+
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('roomId', sql.BigInt, roomId)
+      // A dormitory holds several guests at once; the form says which one.
+      .input('bookingId', sql.BigInt, Number(req.query.bookingId) || null)
+      .query(`
+        SELECT TOP 1 r.room_number, b.id AS booking_id, b.guest_name, b.guest_phone
+        FROM dbo.rooms r
+        LEFT JOIN dbo.booking_rooms br ON br.room_id = r.id AND br.status = 'CHECKED_IN'
+          AND (@bookingId IS NULL OR br.booking_id = @bookingId)
+        LEFT JOIN dbo.bookings b ON b.id = br.booking_id AND b.lodge_id = @lodgeId
+        WHERE r.id = @roomId AND r.lodge_id = @lodgeId
+        ORDER BY br.actual_check_in_at DESC
+      `);
+
+    const row = result.recordset[0];
+    if (!row) {
+      throw new ApiError('Room not found.', 404);
+    }
+
+    // An empty room is a normal answer, not an error: the desk may still serve
+    // food to it, and the screen says "nobody checked in" rather than failing.
+    res.json({
+      occupancy: {
+        roomNumber: row.room_number,
+        occupied: !!row.booking_id,
+        guestName: row.guest_name || '',
+        guestPhone: row.guest_phone || '',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Everyone checked in right now, one row per room and booking, so the order
+// form can list each guest with their room — a guest holding two rooms appears
+// twice, and a dormitory shows each of its guests.
+async function roomGuestsHandler(req, res, next) {
+  try {
+    const result = await (await getPool())
+      .request()
+      .input('lodgeId', sql.BigInt, req.user.lodgeId)
+      .query(`
+        SELECT DISTINCT br.room_id, b.id AS booking_id, b.guest_name, b.guest_phone
+        FROM dbo.booking_rooms br
+        JOIN dbo.bookings b ON b.id = br.booking_id
+        WHERE b.lodge_id = @lodgeId AND br.status = 'CHECKED_IN' AND b.status = 'CHECKED_IN'
+        ORDER BY br.room_id, b.id
+      `);
+    res.json({
+      guests: result.recordset.map((g) => ({
+        roomId: g.room_id,
+        bookingId: g.booking_id,
+        guestName: g.guest_name || '',
+        guestPhone: g.guest_phone || '',
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createCounterOrderHandler(req, res, next) {
+  try {
+    const input = parse(counterOrderSchema, req.body);
+    const lodgeId = req.user.lodgeId;
+
+    let source = 'COUNTER';
+    let roomId = null;
+    let tableId = null;
+    let bookingId = null;
+
+    if (input.roomId) {
+      const roomResult = await (await getPool())
+        .request()
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('roomId', sql.BigInt, input.roomId)
+        .query('SELECT id FROM dbo.rooms WHERE id = @roomId AND lodge_id = @lodgeId');
+      if (roomResult.recordset.length === 0) {
+        throw new ApiError('Room not found.', 404);
+      }
+      bookingId = input.bookingId
+        ? await resolveRoomBooking(lodgeId, input.roomId, input.bookingId)
+        : await resolveRoomBooking(lodgeId, input.roomId);
+      // No active booking on the room, so there is nobody to charge the food
+      // to. Refused here rather than just noted on the screen — the client
+      // check is only a courtesy, and a direct API call has to obey this too.
+      if (!bookingId) {
+        throw new ApiError('This room has no guest checked in — a food order can’t be placed for it.', 409);
+      }
+      source = 'ROOM';
+      roomId = input.roomId;
+    } else if (input.tableId) {
+      const tableResult = await (await getPool())
+        .request()
+        .input('lodgeId', sql.BigInt, lodgeId)
+        .input('tableId', sql.BigInt, input.tableId)
+        .query('SELECT id FROM dbo.dining_tables WHERE id = @tableId AND lodge_id = @lodgeId');
+      if (tableResult.recordset.length === 0) {
+        throw new ApiError('Table not found.', 404);
+      }
+      source = 'TABLE';
+      tableId = input.tableId;
+    }
+
+    // Staff typed it in, so there is nothing to verify — it joins the queue
+    // directly rather than waiting for the kitchen to accept it.
+    const result = await ordersService.createOrder(lodgeId, {
+      source,
+      roomId,
+      bookingId,
+      tableId,
+      guestName: input.guestName,
+      guestPhone: input.guestPhone,
+      note: input.note,
+      items: input.items,
+      status: 'QUEUED',
+      createdBy: req.user.sub,
+    });
+
+    res.status(201).json(await ordersService.getOrder(lodgeId, result.id));
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Who may make which move: accepting or cancelling is front-of-house
+// (orders.manage or the captain's orders.take), starting and finishing cooking is the kitchen (orders.cook),
+// and cancelling or handing the food over is the captain's (orders.take) — the
+// kitchen can do neither. Checked against the requested status because PATCH
+// /status is the one endpoint all three jobs share.
+const STATUS_PERMISSION = {
+  QUEUED: ['orders.manage', 'orders.take'],
+  CANCELLED: 'orders.take',
+  PREPARING: 'orders.cook',
+  READY: 'orders.cook',
+  DELIVERED: 'orders.take',
+};
+
+async function updateStatusHandler(req, res, next) {
+  try {
+    const input = parse(updateStatusSchema, req.body);
+    const needed = [].concat(STATUS_PERMISSION[input.status]);
+    if (!needed.some((p) => req.permissions.includes(p))) {
+      throw new ApiError('Not allowed.', 403);
+    }
+    // The kitchen (orders.cook without orders.take) cooks what front-of-house
+    // has accepted; it doesn't accept guest QR orders itself.
+    if (input.status === 'QUEUED' && req.permissions.includes('orders.cook') && !req.permissions.includes('orders.take')) {
+      throw new ApiError('Not allowed.', 403);
+    }
+    // The owner views orders but doesn't hand food over.
+    if (input.status === 'DELIVERED' && req.user.role === 'OWNER') {
+      throw new ApiError('Not allowed.', 403);
+    }
+    const order = await ordersService.updateStatus(req.user.lodgeId, Number(req.params.id), input.status, {
+      cancelReason: input.cancelReason,
+      userId: req.user.sub,
+      
+    });
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// A captain changing an order until it is billed. Whoever also holds
+// orders.manage (owner, reception) may edit anyone's; a captain only their own.
+async function editOrderHandler(req, res, next) {
+  try {
+    const input = parse(editOrderSchema, req.body);
+    const order = await ordersService.replaceOrderItems(req.user.lodgeId, Number(req.params.id), input.items, {
+      note: input.note,
+      
+    });
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The kitchen ticking a single dish off a ticket. Returns the whole order so
+// the screen re-renders from the server's answer rather than guessing at what
+// the tick did to the rest of the ticket. Cooking work, so orders.cook only —
+// see updateStatusHandler.
+async function updateItemReadyHandler(req, res, next) {
+  try {
+    if (!req.permissions.includes('orders.cook')) {
+      throw new ApiError('Not allowed.', 403);
+    }
+    const input = parse(updateItemReadySchema, req.body);
+    const order = await ordersService.setItemReady(
+      req.user.lodgeId,
+      Number(req.params.id),
+      Number(req.params.itemId),
+      input.ready,
+      { userId: req.user.sub }
+    );
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Correcting food that already came out (a returned dish). Same rules as
+// editing: unbilled, the captain's to do.
+async function returnItemsHandler(req, res, next) {
+  try {
+    const input = parse(cancelItemsSchema, req.body);
+    const order = await ordersService.cancelOrderItems(req.user.lodgeId, Number(req.params.id), input.itemIds, {
+      cancelReason: input.cancelReason,
+      returning: true,
+    });
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function readyToBillHandler(req, res, next) {
+  try {
+    res.json({ order: await ordersService.markReadyToBill(req.user.lodgeId, Number(req.params.id)) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listTabsHandler(req, res, next) {
+  try {
+    res.json({ tabs: await ordersService.listRunningTabs(req.user.lodgeId) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Partial cancel — see cancelOrderItems. Same captain-owns-it rule as editing.
+async function cancelItemsHandler(req, res, next) {
+  try {
+    const input = parse(cancelItemsSchema, req.body);
+    const order = await ordersService.cancelOrderItems(req.user.lodgeId, Number(req.params.id), input.itemIds, {
+      cancelReason: input.cancelReason,
+      
+    });
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The captain taking a whole ticket out (every dish ready). Not the owner, who
+// watches the floor but does not hand food over.
+async function deliverAllHandler(req, res, next) {
+  try {
+    if (req.user.role === 'OWNER') throw new ApiError('Not allowed.', 403);
+    res.json({ order: await ordersService.deliverAllItems(req.user.lodgeId, Number(req.params.id)) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The captain carrying one dish out. A captain may only hand over dishes on
+// orders they rang in; owner and reception (orders.manage) on any.
+async function updateItemDeliveredHandler(req, res, next) {
+  try {
+    if (req.user.role === 'OWNER') {
+      throw new ApiError('Not allowed.', 403);
+    }
+    const order = await ordersService.setItemDelivered(
+      req.user.lodgeId,
+      Number(req.params.id),
+      Number(req.params.itemId),
+      {}
+    );
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// A guest who fumbles the PIN five times locks their own room out of ordering
+// for fifteen minutes. They'll phone the desk about it, so reception needs to
+// be able to clear it without waiting for the timer.
+async function clearPinLockoutHandler(req, res, next) {
+  try {
+    const publicService = require('../public/public.service');
+    await publicService.clearPinLockout(req.user.lodgeId, String(req.params.roomNumber || '').trim());
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  listOrdersHandler,
+  listQueueHandler,
+  getOrderHandler,
+  createCounterOrderHandler,
+  roomOccupancyHandler,
+  roomGuestsHandler,
+  updateStatusHandler,
+  updateItemReadyHandler,
+  editOrderHandler,
+  cancelItemsHandler,
+  returnItemsHandler,
+  readyToBillHandler,
+  listTabsHandler,
+  updateItemDeliveredHandler,
+  deliverAllHandler,
+  clearPinLockoutHandler,
+};
