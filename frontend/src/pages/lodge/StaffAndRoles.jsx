@@ -794,7 +794,7 @@ export default function StaffAndRoles() {
                   <MotionButton
                     type="button"
                     className="modal-form__close"
-                    hover={{ rotate: 90, scale: 1.15 }}
+                    hover={{ rotate: 90, scale: 1.08 }}
                     onClick={closeStaffModal}
                     disabled={staffBusy}
                     aria-label="Close"
@@ -955,7 +955,7 @@ export default function StaffAndRoles() {
                     <MotionButton
                       type="button"
                       className="modal-form__close"
-                    hover={{ rotate: 90, scale: 1.15 }}
+                    hover={{ rotate: 90, scale: 1.08 }}
                       onClick={() => setPwUser(null)}
                       aria-label="Close"
                       title="Close"
@@ -985,7 +985,7 @@ export default function StaffAndRoles() {
                     <MotionButton
                       type="button"
                       className="modal-form__close"
-                    hover={{ rotate: 90, scale: 1.15 }}
+                    hover={{ rotate: 90, scale: 1.08 }}
                       onClick={() => setPwUser(null)}
                       disabled={pwBusy}
                       aria-label="Close"
@@ -1059,7 +1059,7 @@ export default function StaffAndRoles() {
                   <MotionButton
                     type="button"
                     className="modal-form__close"
-                    hover={{ rotate: 90, scale: 1.15 }}
+                    hover={{ rotate: 90, scale: 1.08 }}
                     onClick={closeRoleModal}
                     disabled={roleBusy}
                     aria-label="Close"

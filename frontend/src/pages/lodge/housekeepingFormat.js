@@ -18,12 +18,9 @@ export const ISSUES_CHANGED = 'hk-issues-changed';
 // must still open.
 const VIEW_KEY = 'hm_hk_rooms_view';
 
+// Every visit opens the table; the Cards switch only lasts until they leave.
 export function readView() {
-  try {
-    return localStorage.getItem(VIEW_KEY) === 'table' ? 'table' : 'cards';
-  } catch {
-    return 'cards';
-  }
+  return 'table';
 }
 
 export function saveView(view) {

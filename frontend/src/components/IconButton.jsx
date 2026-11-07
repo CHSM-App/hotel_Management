@@ -22,7 +22,7 @@ import './IconButton.css';
 // buttons sit in dense rows where movement would be noise. Nothing moves for
 // someone who asks their system for reduced motion.
 const SPRING = { type: 'spring', stiffness: 420, damping: 20 };
-const GLYPH_NORMAL = { rotate: -12, scale: 1.12, transition: SPRING };
+const GLYPH_NORMAL = { rotate: -6, scale: 1.06, transition: SPRING };
 const GLYPH_DANGER = { rotate: [0, -14, 12, -8, 0], transition: { duration: 0.45 } };
 
 export default function IconButton({
@@ -52,7 +52,7 @@ export default function IconButton({
         whileHover="hover"
         whileTap="tap"
         variants={{
-          hover: { y: -2, scale: 1.08, transition: SPRING },
+          hover: { y: -1, scale: 1.04, transition: SPRING },
           tap: { y: 0, scale: 0.92, transition: SPRING },
         }}
         {...rest}

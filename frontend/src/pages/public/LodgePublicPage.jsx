@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { animate, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, animate, motion, useReducedMotion } from 'framer-motion';
 import { useParams } from 'react-router-dom';
 import { apiGet, apiPost, ApiError, API_BASE } from '../../lib/api';
 import { formatPrice } from '../lodge/priceFormat';
@@ -109,11 +109,11 @@ function useCardMotion() {
   const reduce = useReducedMotion();
   if (reduce) return {};
   return {
-    initial: { opacity: 0, y: 28 },
+    initial: { opacity: 0, y: 12 },
     whileInView: { opacity: 1, y: 0 },
     viewport: { once: true, margin: '-40px' },
     transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] },
-    whileHover: { y: -6, transition: { type: 'spring', stiffness: 300, damping: 24 } },
+    whileHover: { y: -1, transition: { type: 'spring', stiffness: 300, damping: 30 } },
   };
 }
 
@@ -260,204 +260,325 @@ function menuItemPrice(item) {
   return formatPrice(item.price);
 }
 
-// One category as a looping rail of dish cards. The card you click takes the
-// first slot, lifted and gold-edged as if hovered; the card before it tucks
-// into a sliver at the left edge and the ones after it wait on the right. It
-// never runs out: after the last dish comes the first again, and before the
-// first comes the last. Every card is one fixed size, so a photo added later
-// never moves anything.
-const RAIL_GAP = 18;
+// Phone: an endless swipeable row where the fan effect follows the finger. Each
+// card is posed from its live distance to the middle of the row, so the card
+// crossing the centre stands straight and rises, and the ones beside it lean
+// away to their sides, lower and smaller. Three copies of the list sit side by
+// side; when a swipe settles near either end the row quietly jumps one whole
+// copy back to the middle, so it never runs out.
+const FAN_W = 206;
+const FAN_OVERLAP = 94;
+const FAN_STEP = FAN_W - FAN_OVERLAP;
 
-// The focused card sits in the middle of the row, lifted; the dishes either side
-// of it are lined up at its left and right, a little smaller, and fade out
-// toward the edges.
-function railPose(pos, cw, width) {
-  const centre = (width - cw) / 2;
-  const far = Math.abs(pos);
-  return {
-    x: centre + pos * (cw + RAIL_GAP),
-    y: pos === 0 ? -14 : 0,
-    scale: pos === 0 ? 1.05 : 0.94,
-    opacity: far <= 1 ? 1 : far === 2 ? 0.75 : 0.45,
-  };
-}
-
-// A soft, slightly heavy spring so the cards glide and settle without a bounce;
-// the opacity eases on its own timing so a card fades rather than pops. A card
-// wrapping around the ends repositions without moving, and just fades.
-function railTransition(reduce, jumped) {
-  if (reduce) return { duration: 0 };
-  const soft = { type: 'spring', stiffness: 120, damping: 24, mass: 1.1 };
-  const fade = { duration: 0.5, ease: [0.22, 1, 0.36, 1] };
-  return jumped ? { x: { duration: 0 }, y: { duration: 0 }, scale: { duration: 0 }, opacity: fade } : { x: soft, y: soft, scale: soft, opacity: fade };
-}
-
-function MenuShelf({ section, onOpenPhotos }) {
+function FanRow({ section, onOpenPhotos }) {
   const reduce = useReducedMotion();
-  const [focus, setFocus] = useState({ active: 0, prev: 0 });
-  const { active, prev } = focus;
-  const [cw, setCw] = useState(250);
-  const [stageW, setStageW] = useState(900);
-  const stageRef = useRef(null);
   const rowRef = useRef(null);
+  const [dot, setDot] = useState(0);
   const items = section.items;
   const n = items.length;
+  const loop = n > 1;
+  const copies = loop ? [0, 1, 2] : [0];
 
   useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return undefined;
-    const fit = () => {
-      // the stage bleeds 20px past the section on each side
-      const w = el.clientWidth + 40;
-      setCw(w < 560 ? 214 : 250);
-      setStageW(w);
+    const row = rowRef.current;
+    if (!row) return undefined;
+    const cards = Array.from(row.querySelectorAll('.fan-card'));
+    const setW = n * FAN_STEP;
+    let raf = 0;
+    let settle = 0;
+    let lastDot = -1;
+    // Card positions are measured once (and on resize), never inside the scroll
+    // frame: reading layout for every card on every frame is what made it stutter.
+    let centres = [];
+    const measure = () => {
+      centres = cards.map((c) => c.offsetLeft + FAN_W / 2);
     };
-    fit();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const ro = new ResizeObserver(fit);
-    ro.observe(el);
-    return () => ro.disconnect();
+    const wasOn = new Array(cards.length).fill(false);
+    // inner layers that drift at their own speed (the parallax)
+    const photos = cards.map((c) => c.querySelector('.fan-card__photo img, .fan-card__photo--none span'));
+    const bodies = cards.map((c) => c.querySelector('.fan-card__body'));
+
+    const frame = () => {
+      raf = 0;
+      const mid = row.scrollLeft + row.clientWidth / 2;
+      let best = 0;
+      let bestD = Infinity;
+      for (let k = 0; k < cards.length; k += 1) {
+        const c = cards[k];
+        const d = (centres[k] - mid) / FAN_STEP;
+        const a = Math.abs(d);
+        if (a > 2.6) {
+          // far off screen: park it, no per-frame work
+          if (c.style.opacity !== '0') c.style.opacity = '0';
+          continue;
+        }
+        // Parallax: the card stays flat and slides; the photo inside drifts at a
+        // different speed and the text trails behind it.
+        const y = a < 1 ? -10 * (1 - a) : 4;
+        const sc = a < 1 ? 1.03 - a * 0.1 : 0.93;
+        const shift = reduce ? 0 : d * 34;
+        c.style.transform = `translate3d(0, ${y}px, 0) scale(${sc})`;
+        c.style.opacity = a <= 1.5 ? 1 : Math.max(0, 2.5 - a);
+        if (photos[k]) photos[k].style.transform = `translate3d(${shift}px, 0, 0)`;
+        if (bodies[k]) bodies[k].style.transform = `translate3d(${reduce ? 0 : d * 14}px, 0, 0)`;
+        c.style.zIndex = Math.round(100 - a * 10);
+        // description and price fade in continuously as the card nears the centre
+        c.style.setProperty('--fan-text', String(Math.max(0, Math.min(1, 1.6 - a * 1.6))));
+        const on = a < 0.5;
+        if (on !== wasOn[k]) {
+          wasOn[k] = on;
+          c.classList.toggle('fan-card--on', on);
+        }
+        if (a < bestD) {
+          bestD = a;
+          best = Number(c.dataset.i);
+        }
+      }
+      // only touch React when the centred dish actually changes
+      if (best !== lastDot) {
+        lastDot = best;
+        setDot(best);
+      }
+    };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(frame);
+    };
+
+    const rim = () => {
+      // jump a whole copy so the row always has cards on both sides
+      if (!loop) return;
+      if (row.scrollLeft < setW * 0.5 || row.scrollLeft > setW * 1.5) {
+        row.style.scrollSnapType = 'none';
+        row.scrollLeft += row.scrollLeft < setW * 0.5 ? setW : -setW;
+        requestAnimationFrame(() => {
+          row.style.scrollSnapType = '';
+          schedule();
+        });
+      }
+    };
+    const onScroll = () => {
+      schedule();
+      clearTimeout(settle);
+      settle = setTimeout(rim, 120);
+    };
+
+    const place = () => {
+      measure();
+      row.style.setProperty('--fan-sp', `${Math.max(0, (row.clientWidth - FAN_W) / 2)}px`);
+      measure();
+      if (loop) {
+        row.style.scrollSnapType = 'none';
+        row.scrollLeft = setW;
+        row.style.scrollSnapType = '';
+      }
+      frame();
+    };
+    place();
+    row.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', place);
+    return () => {
+      row.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', place);
+      cancelAnimationFrame(raf);
+      clearTimeout(settle);
+    };
+  }, [n, loop, reduce]);
+
+  const centre = (el) => {
+    const row = rowRef.current;
+    if (row) row.scrollTo({ left: el.offsetLeft + FAN_W / 2 - row.clientWidth / 2, behavior: reduce ? 'auto' : 'smooth' });
+  };
+
+  return (
+    <div className="fan">
+      <ul className="fan-row" ref={rowRef} aria-label={`${section.name} dishes`}>
+        {copies.map((k) =>
+          items.map((item, i) => (
+            <li
+              key={`${k}-${item.id}`}
+              className="fan-card"
+              data-i={i}
+              aria-hidden={loop && k !== 1 ? 'true' : undefined}
+              onClick={(e) => centre(e.currentTarget)}
+            >
+              {item.image ? (
+                <button
+                  type="button"
+                  className="fan-card__photo"
+                  tabIndex={k === 1 || !loop ? 0 : -1}
+                  onClick={(e) => {
+                    const card = e.currentTarget.closest('.fan-card');
+                    if (card.classList.contains('fan-card--on')) {
+                      e.stopPropagation();
+                      onOpenPhotos([menuImageUrl(item.image)], 0);
+                    }
+                  }}
+                  aria-label={`View photo of ${item.name}`}
+                >
+                  {/* Not lazy: cards in a sideways scroller sit off-screen, which keeps lazy images from ever loading. */}
+                  <img src={menuImageUrl(item.image)} alt="" decoding="async" />
+                </button>
+              ) : (
+                <div className="fan-card__photo fan-card__photo--none" aria-hidden="true">
+                  <span>{item.name.trim().charAt(0).toUpperCase()}</span>
+                </div>
+              )}
+              <div className="fan-card__body">
+                <div className="fan-card__name">
+                  <FoodMark type={item.foodType} />
+                  <span>{item.name}</span>
+                </div>
+                {item.description && <p className="fan-card__desc">{item.description}</p>}
+                <div className="fan-card__price">{menuItemPrice(item)}</div>
+              </div>
+            </li>
+          ))
+        )}
+      </ul>
+      {n > 1 && (
+        <div className="fan-dots" aria-hidden="true">
+          {items.map((it, i) => (
+            <i key={it.id} className={i === dot ? 'on' : undefined} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One dish: photo (or a lettered tile), name with its veg mark, description and
+// price. On hover the card rises a few pixels on a soft spring and its photo
+// eases in a little; nothing moves otherwise, and with reduced motion not at all.
+// A touch lower than before, and the way back is slower than the way in, so a
+// card settles instead of snapping down when the pointer leaves.
+// The hover adds a soft gold glow around the card; both states carry the same two
+// shadows so one can ease into the other.
+const dishCardVariants = {
+  rest: {
+    y: 0,
+    boxShadow: '0 12px 24px -16px rgba(8, 22, 52, 0.7), 0 0 0 0 rgba(199, 154, 43, 0)',
+    transition: { type: 'spring', stiffness: 130, damping: 22 },
+  },
+  hover: {
+    y: -3,
+    boxShadow: '0 14px 28px -16px rgba(8, 22, 52, 0.7), 0 0 22px 0 rgba(199, 154, 43, 0.45)',
+    transition: { type: 'spring', stiffness: 320, damping: 26 },
+  },
+};
+const dishPhotoVariants = {
+  rest: { scale: 1, transition: { duration: 0.8, ease: [0.22, 1, 0.36, 1] } },
+  hover: { scale: 1.04, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } },
+};
+
+function DishCard({ item, onOpenPhotos }) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.li
+      className="pubmenu-card"
+      variants={dishCardVariants}
+      initial={false}
+      animate="rest"
+      whileHover={reduce ? undefined : 'hover'}
+    >
+      {item.image ? (
+        <button
+          type="button"
+          className="rl-card__photo"
+          onClick={() => onOpenPhotos([menuImageUrl(item.image)], 0)}
+          aria-label={`View photo of ${item.name}`}
+        >
+          <motion.img
+            src={menuImageUrl(item.image)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            variants={dishPhotoVariants}
+          />
+        </button>
+      ) : (
+        <div className="rl-card__photo rl-card__photo--none" aria-hidden="true">
+          <motion.span variants={dishPhotoVariants}>
+            {item.name.trim().charAt(0).toUpperCase()}
+          </motion.span>
+        </div>
+      )}
+      <div className="rl-card__body">
+        <div className="rl-card__name">
+          <FoodMark type={item.foodType} />
+          <span>{item.name}</span>
+        </div>
+        {item.description && <p className="rl-card__desc">{item.description}</p>}
+        <div className="rl-card__price">{menuItemPrice(item)}</div>
+      </div>
+    </motion.li>
+  );
+}
+
+// One category. On a PC: one line of equal cards that scrolls sideways, with an
+// arrow on each side. On a phone: the swipe row.
+function MenuShelf({ section, onOpenPhotos }) {
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 560px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 560px)');
+    const on = () => setPhone(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
   }, []);
 
-  // Signed distance from a focused card, wrapped around the list so dishes sit
-  // on both sides of it and the row never runs out.
-  const posAt = (i, a) => {
-    const d = (i - a + n) % n;
-    return d > n / 2 ? d - n : d;
-  };
-  const pos = items.map((_, i) => posAt(i, active));
-  // A card that wraps from one end to the other jumps without crossing the
-  // stage; everything else springs.
-  const jumped = items.map((_, i) => Math.abs(pos[i] - posAt(i, prev)) > 1);
-
-  const go = (i) => setFocus((f) => ({ active: ((i % n) + n) % n, prev: f.active }));
-  const onKeyDown = (e) => {
-    if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      go(active + 1);
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      go(active - 1);
-    }
-  };
+  // The arrows only show when the line is wider than the screen, and each goes
+  // pale at its end.
+  const rowRef = useRef(null);
+  const [reach, setReach] = useState({ over: false, left: false, right: false });
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return undefined;
+    const measure = () =>
+      setReach({
+        over: row.scrollWidth > row.clientWidth + 2,
+        left: row.scrollLeft > 2,
+        right: row.scrollLeft + row.clientWidth < row.scrollWidth - 2,
+      });
+    measure();
+    row.addEventListener('scroll', measure, { passive: true });
+    window.addEventListener('resize', measure);
+    return () => {
+      row.removeEventListener('scroll', measure);
+      window.removeEventListener('resize', measure);
+    };
+  }, [phone, section.items.length]);
+  const scrollRow = (dir) => rowRef.current?.scrollBy({ left: dir * rowRef.current.clientWidth * 0.8 });
 
   return (
     <section className="lodge-public__shelf" aria-label={section.name}>
       <div className="lodge-public__shelf-head">
         <h3 className="lodge-public__shelf-title">
           {section.name}
-          <span className="lodge-public__menu-section-count">{n}</span>
+          <span className="lodge-public__menu-section-count">{section.items.length}</span>
         </h3>
-        {n > 1 && (
-          <div className="lodge-public__shelf-arrows">
-            <button type="button" className="lodge-public__shelf-arrow" onClick={() => go(active - 1)} aria-label={`Previous dish in ${section.name}`}>
+      </div>
+      {phone ? (
+        <div className="rl-wrap">
+          <FanRow section={section} onOpenPhotos={onOpenPhotos} />
+        </div>
+      ) : (
+        <div className="pubmenu-wrap">
+          {reach.over && (
+            <button type="button" className="pubmenu-arrow pubmenu-arrow--left" onClick={() => scrollRow(-1)} disabled={!reach.left} aria-label={`Scroll ${section.name} left`}>
               &lsaquo;
             </button>
-            <button type="button" className="lodge-public__shelf-arrow" onClick={() => go(active + 1)} aria-label={`Next dish in ${section.name}`}>
+          )}
+          <ul className="pubmenu-row" ref={rowRef} aria-label={`${section.name} dishes`}>
+            {section.items.map((item) => (
+              <DishCard key={item.id} item={item} onOpenPhotos={onOpenPhotos} />
+            ))}
+          </ul>
+          {reach.over && (
+            <button type="button" className="pubmenu-arrow pubmenu-arrow--right" onClick={() => scrollRow(1)} disabled={!reach.right} aria-label={`Scroll ${section.name} right`}>
               &rsaquo;
             </button>
-          </div>
-        )}
-      </div>
-
-      <div className="rl-wrap" ref={stageRef}>
-      {stageW < 560 ? (
-        <ul className="rl-row" ref={rowRef} aria-label={`${section.name} dishes`}>
-          {items.map((item, i) => (
-            <motion.li
-              key={item.id}
-              className={`rl-card${i === active ? ' rl-card--on' : ''}`}
-              initial={false}
-              animate={{ y: i === active ? -12 : 0, scale: i === active ? 1.04 : 1 }}
-              transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 150, damping: 20, mass: 0.9 }}
-              whileTap={reduce ? undefined : { scale: 0.97 }}
-              onClick={() => {
-                setFocus((f) => ({ active: i, prev: f.active }));
-                const row = rowRef.current;
-                const card = row?.children[i];
-                if (row && card) row.scrollTo({ left: card.offsetLeft - 20, behavior: reduce ? 'auto' : 'smooth' });
-              }}
-            >
-              {item.image ? (
-                <button
-                  type="button"
-                  className="rl-card__photo"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenPhotos([menuImageUrl(item.image)], 0);
-                  }}
-                  aria-label={`View photo of ${item.name}`}
-                >
-                  <img src={menuImageUrl(item.image)} alt="" loading="lazy" decoding="async" />
-                </button>
-              ) : (
-                <div className="rl-card__photo rl-card__photo--none" aria-hidden="true">
-                  <span>{item.name.trim().charAt(0).toUpperCase()}</span>
-                </div>
-              )}
-              <div className="rl-card__body">
-                <div className="rl-card__name">
-                  <FoodMark type={item.foodType} />
-                  <span>{item.name}</span>
-                </div>
-                {item.description && <p className="rl-card__desc">{item.description}</p>}
-                <div className="rl-card__price">{menuItemPrice(item)}</div>
-              </div>
-            </motion.li>
-          ))}
-        </ul>
-      ) : (
-      <div className="rl-stage rl-stage--loop" tabIndex={0} onKeyDown={onKeyDown} aria-label={`${section.name} dishes`} style={{ '--rl-cw': `${cw}px` }}>
-        <ul className="rl-track">
-          {items.map((item, i) => {
-            const p = pos[i];
-            const isActive = p === 0;
-            return (
-              <motion.li
-                key={item.id}
-                className={`rl-card${isActive ? ' rl-card--on' : ''}`}
-                style={{ zIndex: 100 - Math.abs(p) }}
-                initial={false}
-                animate={railPose(p, cw, stageW)}
-                transition={railTransition(reduce, jumped[i])}
-                onClick={() => !isActive && go(i)}
-                aria-current={isActive ? 'true' : undefined}
-              >
-                {item.image ? (
-                  <button
-                    type="button"
-                    className="rl-card__photo"
-                    tabIndex={isActive ? 0 : -1}
-                    onClick={(e) => {
-                      if (!isActive) return;
-                      e.stopPropagation();
-                      onOpenPhotos([menuImageUrl(item.image)], 0);
-                    }}
-                    aria-label={`View photo of ${item.name}`}
-                  >
-                    <img src={menuImageUrl(item.image)} alt="" loading="lazy" decoding="async" />
-                  </button>
-                ) : (
-                  <div className="rl-card__photo rl-card__photo--none" aria-hidden="true">
-                    <span>{item.name.trim().charAt(0).toUpperCase()}</span>
-                  </div>
-                )}
-                <div className="rl-card__body">
-                  <div className="rl-card__name">
-                    <FoodMark type={item.foodType} />
-                    <span>{item.name}</span>
-                  </div>
-                  {item.description && <p className="rl-card__desc">{item.description}</p>}
-                  <div className="rl-card__price">{menuItemPrice(item)}</div>
-                </div>
-                {!isActive && <button type="button" className="rl-card__hit" onClick={() => go(i)} aria-label={`Show ${item.name}`} />}
-              </motion.li>
-            );
-          })}
-        </ul>
-      </div>
+          )}
+        </div>
       )}
-      </div>
     </section>
   );
 }
@@ -469,6 +590,14 @@ function MenuCard({ menu, onOpenPhotos }) {
   const totalDishes = menu.reduce((n, section) => n + section.items.length, 0);
   const vegCount = menu.reduce((n, section) => n + section.items.filter((i) => i.foodType !== 'NON_VEG').length, 0);
   const allVeg = totalDishes > 0 && vegCount === totalDishes;
+  const [diet, setDiet] = useState('ALL');
+  // Sections left empty by the filter are dropped rather than shown as blank shelves.
+  const shown = menu
+    .map((section) => ({
+      ...section,
+      items: diet === 'ALL' ? section.items : section.items.filter((i) => (i.foodType === 'NON_VEG') === (diet === 'NON_VEG')),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <div className="lodge-public__menu">
@@ -480,10 +609,31 @@ function MenuCard({ menu, onOpenPhotos }) {
             {allVeg ? ' · Pure veg' : ''}
           </div>
         </div>
+        {vegCount > 0 && vegCount < totalDishes && (
+          <div className="lodge-public__diet" role="group" aria-label="Filter menu">
+            {[['ALL', 'All'], ['VEG', 'Veg'], ['NON_VEG', 'Non-veg']].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`lodge-public__diet-btn${diet === key ? ' is-active' : ''}`}
+                aria-pressed={diet === key}
+                onClick={() => setDiet(key)}
+              >
+                {key !== 'ALL' && <FoodMark type={key} />}
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {menu.map((section) => (
-        <MenuShelf key={section.id} section={section} onOpenPhotos={onOpenPhotos} />
+      {shown.map((section) => (
+        <MenuShelf
+          key={section.id}
+          // Veg first, then non-veg, like the ordering page; sort is stable so each group keeps its menu order.
+          section={{ ...section, items: [...section.items].sort((a, b) => (a.foodType === 'NON_VEG') - (b.foodType === 'NON_VEG')) }}
+          onOpenPhotos={onOpenPhotos}
+        />
       ))}
     </div>
   );
@@ -948,6 +1098,14 @@ export default function LodgePublicPage() {
   const [error, setError] = useState('');
   const [lightbox, setLightbox] = useState(null);
   const [enquireModal, setEnquireModal] = useState(null);
+  // The phone nav's three-dot menu.
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKey = (e) => e.key === 'Escape' && setMenuOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
   const reduceMotion = useReducedMotion();
 
   // Every button and button-like link on the page gets the same spring: it
@@ -960,7 +1118,7 @@ export default function LodgePublicPage() {
     // Left out: the photo viewer's buttons and the photo thumbnails, which are
     // positioned with their own transforms, and the tab pill whose highlight slides.
     const SEL =
-      'button:not(:disabled):not(.lodge-public__lightbox-nav):not(.lodge-public__lightbox-close):not(.lodge-public__room-cover-btn):not(.lodge-public__dish-photo):not(.gl-tab), a.site-btn, .gl-nav__cta, .gl-nav__link, .gl-dock a, .site-glance__row, .site-contact__map, .gl-room__btn, .gl-venue__btn';
+      'button:not(:disabled):not(.lodge-public__lightbox-nav):not(.lodge-public__lightbox-close):not(.lodge-public__room-cover-btn):not(.lodge-public__dish-photo):not(.gl-tab), a.site-btn, .gl-nav__cta, .gl-nav__link, .site-glance__row, .site-contact__map, .gl-room__btn, .gl-venue__btn';
     const spring = { type: 'spring', stiffness: 380, damping: 24 };
     const target = (e) => (e.target instanceof Element ? e.target.closest(SEL) : null);
     const onOver = (e) => {
@@ -1138,10 +1296,10 @@ export default function LodgePublicPage() {
   const totalRooms = roomTypes.reduce((n, t) => n + (t.roomCount || 0), 0);
   const allVegMenu =
     menu.length > 0 && menu.every((section) => section.items.every((item) => item.foodType !== 'NON_VEG'));
-  // Modes that run on fixed clock times show them ("Check-in 11:00 AM · Check-out 11:00 AM");
-  // a 24-hour-from-arrival property has no fixed time, so it keeps its label.
+  // Only the owner's fixed cycle shows its clock times ("In 11:00 AM · Out 9:00 AM");
+  // every other mode keeps its plain label.
   const checkinType = lodge.hasRooms
-    ? ['NIGHT_BASED', 'CYCLE', 'HYBRID'].includes(lodge.checkinMode) && lodge.checkInTime && lodge.checkOutTime
+    ? lodge.checkinMode === 'CYCLE' && lodge.checkInTime && lodge.checkOutTime
       ? `In ${formatClock(lodge.checkInTime)} · Out ${formatClock(lodge.checkOutTime)}`
       : CHECKIN_MODE_LABEL[lodge.checkinMode]
     : null;
@@ -1190,7 +1348,12 @@ export default function LodgePublicPage() {
     totalRooms > 0 && { icon: 'rooms', value: String(totalRooms), label: totalRooms === 1 ? 'room' : 'rooms' },
     lodge.hasEvents && venues.length > 0 && { icon: 'venues', value: String(venues.length), label: venues.length === 1 ? 'venue' : 'venues' },
     lodge.servesFood && menu.length > 0 && { icon: 'food', value: allVegMenu ? 'Pure veg' : 'Veg & non-veg', label: 'restaurant' },
-    checkinType && { icon: 'clock', value: checkinType, label: 'check-in', wide: true },
+    checkinType && {
+      icon: 'clock',
+      value: checkinType,
+      label: lodge.checkinMode === 'CYCLE' ? 'Fixed check-in / checkout cycle' : 'check-in',
+      wide: true,
+    },
   ].filter(Boolean);
 
   // "Available only" can only mean something once dates have been chosen —
@@ -1283,7 +1446,85 @@ export default function LodgePublicPage() {
           <button type="button" className="gl-nav__cta" onClick={openNavEnquire}>
             Book now
           </button>
+          <button
+            type="button"
+            className={`gl-nav__more${menuOpen ? ' gl-nav__more--open' : ''}`}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            aria-controls="gl-nav-sheet"
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            <span className="gl-nav__dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          </button>
+
+          <AnimatePresence>
+            {menuOpen && (
+              <motion.div
+                id="gl-nav-sheet"
+                className="gl-nav__sheet"
+                initial={reduceMotion ? false : { opacity: 0, y: -10, scale: 0.94 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.96, transition: { duration: 0.14 } }}
+                transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+              >
+                <motion.ul
+                  initial="hidden"
+                  animate="shown"
+                  variants={{ shown: { transition: { staggerChildren: reduceMotion ? 0 : 0.045, delayChildren: 0.05 } } }}
+                >
+                  {heroNavLinks.map((sec) => (
+                    <motion.li
+                      key={sec.id}
+                      variants={{ hidden: { opacity: 0, x: reduceMotion ? 0 : -10 }, shown: { opacity: 1, x: 0 } }}
+                    >
+                      <a
+                        className={`gl-nav__item${activeSection === sec.id ? ' gl-nav__item--active' : ''}`}
+                        href={`#${sec.id}`}
+                        aria-current={activeSection === sec.id ? 'true' : undefined}
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        {sec.label}
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M6 3l5 5-5 5" />
+                        </svg>
+                      </a>
+                    </motion.li>
+                  ))}
+                </motion.ul>
+                <motion.button
+                  type="button"
+                  className="gl-nav__sheet-cta"
+                  initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: reduceMotion ? 0 : 0.05 + heroNavLinks.length * 0.045, duration: 0.25 }}
+                  whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    openNavEnquire();
+                  }}
+                >
+                  Book now
+                </motion.button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
+        <AnimatePresence>
+          {menuOpen && (
+            <motion.div
+              className="gl-nav__scrim"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setMenuOpen(false)}
+            />
+          )}
+        </AnimatePresence>
       </motion.nav>
 
       <header className={`site-hero${showHeroPhoto ? ' site-hero--photo' : ''}`} id="home">
@@ -1674,7 +1915,14 @@ export default function LodgePublicPage() {
               {checkinType && (
                 <div>
                   <dt>Check-in</dt>
-                  <dd>{checkinType}</dd>
+                  <dd>
+                    {checkinType}
+                    {lodge.checkinMode === 'CYCLE' && (
+                      <span style={{ display: 'block', marginTop: 2, fontSize: 12.5, fontWeight: 500, color: 'var(--text-muted)' }}>
+                        Fixed check-in / checkout cycle
+                      </span>
+                    )}
+                  </dd>
                 </div>
               )}
             </dl>
@@ -1728,20 +1976,6 @@ export default function LodgePublicPage() {
           <span>Rates are indicative and confirmed on enquiry.</span>
         </div>
       </footer>
-
-      <nav className="gl-dock" aria-label="Quick actions">
-        {lodge.hasRooms && roomTypes.length > 0 && <a href="#rooms">Rooms</a>}
-        {lodge.hasEvents && venues.length > 0 && <a href="#events">Events</a>}
-        {lodge.phone ? (
-          <a className="gl-dock__go" href={`tel:${lodge.phone}`}>
-            Call
-          </a>
-        ) : (
-          <button type="button" className="gl-dock__go" onClick={openNavEnquire}>
-            Enquire
-          </button>
-        )}
-      </nav>
 
       {enquireModal && (
         <EnquireModal

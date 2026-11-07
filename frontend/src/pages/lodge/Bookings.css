@@ -2903,3 +2903,25 @@
   font-weight: 700;
   color: var(--brand-ink);
 }
+
+/* A visible hover for the toolbar pair: both lift a pixel, and No Drafts picks
+   up a brand tint, since its own hover only deepened a shadow. */
+.bookings-panel__toolbar-actions .bookings-panel__draft-chip,
+.bookings-panel__toolbar-actions .btn-accent {
+  transition: background 150ms ease, color 150ms ease, filter 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.bookings-panel__toolbar-actions .bookings-panel__draft-chip:hover,
+.bookings-panel__toolbar-actions .btn-accent:hover {
+  transform: translateY(-2px);
+}
+
+.bookings-panel__toolbar-actions .bookings-panel__draft-chip:active,
+.bookings-panel__toolbar-actions .btn-accent:active {
+  transform: none;
+}
+
+.bookings-panel__toolbar-actions .bookings-panel__draft-chip--empty:hover {
+  background: #eef2f9;
+  color: #3b5a8c;
+}

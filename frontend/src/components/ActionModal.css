@@ -185,24 +185,6 @@
   box-shadow: 0 8px 18px -6px var(--am-glow);
 }
 
-/* A light sheen crosses the confirm button once on hover. */
-.am__btn--confirm::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -60%;
-  width: 40%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
-  transform: skewX(-18deg);
-  pointer-events: none;
-}
-
-.am__btn--confirm:hover:not(:disabled)::after {
-  left: 130%;
-  transition: left 0.55s ease;
-}
-
 .am__spinner {
   width: 14px;
   height: 14px;

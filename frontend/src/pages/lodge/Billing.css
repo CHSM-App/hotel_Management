@@ -3590,3 +3590,24 @@ th[aria-sort] .billing-sheet__sort-icon {
     border-left: 0;
   }
 }
+
+/* Visible hover on the issue-bill footer buttons: lift, and tint the secondary ones. */
+.issue-bill__foot .btn-secondary,
+.issue-bill__foot .btn-accent {
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.issue-bill__foot .btn-secondary:hover:not(:disabled),
+.issue-bill__foot .btn-accent:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.issue-bill__foot .btn-secondary:hover:not(:disabled) {
+  background: var(--brand-wash);
+  color: var(--brand);
+}
+
+.issue-bill__foot .btn-secondary:active:not(:disabled),
+.issue-bill__foot .btn-accent:active:not(:disabled) {
+  transform: none;
+}

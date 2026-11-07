@@ -3356,3 +3356,21 @@ label.order-card__item { padding: 3px 6px; }
   overflow: clip;
   border-radius: var(--radius-tile);
 }
+
+/* Visible hover for the order-moving buttons: lift and brighten, press back down. */
+.order-btn:not(.order-btn--cancel),
+.history-table__btn--primary {
+  transition: var(--neu-transition, background 150ms ease), transform 150ms ease, filter 150ms ease, box-shadow 150ms ease;
+}
+
+.order-btn:hover:not(:disabled):not(.order-btn--cancel),
+.history-table__btn--primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.18);
+}
+
+.order-btn:active:not(:disabled),
+.history-table__btn--primary:active:not(:disabled) {
+  transform: none;
+  filter: none;
+}

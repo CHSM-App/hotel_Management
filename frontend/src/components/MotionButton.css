@@ -1,31 +1,3 @@
-/* A light sheen that crosses a button once as the pointer arrives. Add the
-   class `btn-sheen` to a MotionButton (or any button) that has a solid fill.
-   The lift and the press squash come from MotionButton itself. */
-
-.btn-sheen {
-  position: relative;
-  overflow: hidden;
-}
-
-.btn-sheen::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -60%;
-  width: 40%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  transform: skewX(-18deg);
-  pointer-events: none;
-}
-
-.btn-sheen:hover:not(:disabled)::after {
-  left: 130%;
-  transition: left 0.55s ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .btn-sheen:hover:not(:disabled)::after {
-    transition: none;
-  }
-}
+/* `btn-sheen` used to sweep a light streak across a button on hover. The streak
+   is gone; the class stays on the buttons that carry it and does nothing. The lift
+   and the press squash come from MotionButton itself. */

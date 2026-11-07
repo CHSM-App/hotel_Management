@@ -1302,7 +1302,7 @@ export default function ExpensesPanel({ onViewReport }) {
                         Receipt
                       </button>
                     )}
-                    <button type="button" className="inv-danger" onClick={() => deleteExpense(expense)}>
+                    <button type="button" className="btn-danger inc-delete-btn" onClick={() => deleteExpense(expense)}>
                       Delete
                     </button>
                   </div>

@@ -2305,29 +2305,7 @@
   cursor: not-allowed;
 }
 
-/* The Add button: lifts and presses (MotionButton), and a light sheen crosses
-   it once when the pointer arrives. */
-.addons-tab .addons-tab__add {
-  position: relative;
-  overflow: hidden;
-}
-
-.addons-tab .addons-tab__add::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -60%;
-  width: 40%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  transform: skewX(-18deg);
-  pointer-events: none;
-}
-
-.addons-tab .addons-tab__add:hover::after {
-  left: 130%;
-  transition: left 0.55s ease;
-}
+/* The Add button lifts and presses (MotionButton); no sheen. */
 
 @media (prefers-reduced-motion: reduce) {
   .addons-tab .addons-tab__row,
@@ -2339,10 +2317,6 @@
 
   .addons-tab .addons-tab__row:hover .addons-tab__price {
     transform: none;
-  }
-
-  .addons-tab .addons-tab__add:hover::after {
-    transition: none;
   }
 }
 
@@ -2453,7 +2427,7 @@
 }
 
 .events .tape-legend__item:hover {
-  translate: 0 -3px;
+  translate: 0 -1px;
   border-color: #c3ccdb;
   box-shadow: 0 2px 4px rgba(22, 33, 46, 0.1), 0 12px 20px -8px rgba(22, 33, 46, 0.32);
 }
@@ -2538,4 +2512,9 @@
   .events__toolbar .btn-accent:active {
     translate: none;
   }
+}
+
+/* Keep the status word whole ("Cancelled", never "Cancelle / d"). */
+.events-badge {
+  white-space: nowrap;
 }

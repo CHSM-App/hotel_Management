@@ -481,6 +481,7 @@
 
 .inv-tag {
   display: inline-block;
+  white-space: nowrap;
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--paper);
@@ -2089,6 +2090,7 @@
 
 .asset-card__foot {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: auto;
 }
@@ -2362,3 +2364,38 @@
     scale: none;
   }
 }
+
+.asset-card__foot .asset-card__btn {
+  min-height: 32px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  gap: 6px;
+}
+
+/* Asset card buttons, coloured by what they do: Report issue in the amber of a
+   warning, View in the brand navy. Each fills solid on hover. */
+.asset-card__foot .asset-card__btn--issue {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--surface));
+  color: var(--accent-ink);
+}
+
+.asset-card__foot .asset-card__btn--issue:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.asset-card__foot .asset-card__btn--view {
+  background: var(--brand-wash);
+  border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--surface));
+  color: var(--brand);
+}
+
+.asset-card__foot .asset-card__btn--view:hover:not(:disabled) {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #ffffff;
+}

@@ -1282,7 +1282,7 @@ export default function IncomePanel({ onViewReport }) {
                         Receipt
                       </button>
                     )}
-                    <button type="button" className="inv-danger" onClick={() => deleteIncomeEntry(entry)}>
+                    <button type="button" className="btn-danger inc-delete-btn" onClick={() => deleteIncomeEntry(entry)}>
                       Delete
                     </button>
                   </div>
@@ -1326,7 +1326,7 @@ export default function IncomePanel({ onViewReport }) {
                     </div>
                   </div>
                   <div className="inv-item__actions">
-                    <button type="button" className="inv-danger" onClick={() => deleteIncomeEntry(entry)}>
+                    <button type="button" className="btn-danger inc-delete-btn" onClick={() => deleteIncomeEntry(entry)}>
                       Delete
                     </button>
                   </div>

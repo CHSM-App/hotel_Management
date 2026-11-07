@@ -9,7 +9,7 @@
 import MotionButton from './MotionButton';
 
 // The buttons are small (28px), so they grow more than a footer button does.
-const STEP_HOVER = { scale: 1.18 };
+const STEP_HOVER = { scale: 1.08 };
 const STEP_TAP = { scale: 0.86 };
 
 export default function QtyStepper({ value, onChange, label, min = 1 }) {

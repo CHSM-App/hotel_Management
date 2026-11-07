@@ -329,10 +329,17 @@
   flex-direction: column;
   background: var(--surface);
   border: none;
+  /* The colour of the card follows its state: a green edge when it is on offer,
+     a grey one when it is switched off. */
+  border-top: 3px solid var(--success);
   border-radius: 12px;
   overflow: hidden;
   box-shadow: var(--shadow-raised);
   transition: var(--neu-transition);
+}
+
+.svc-card--inactive {
+  border-top-color: #b8c1cd;
 }
 
 .svc-card:hover {
@@ -366,6 +373,11 @@
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text-muted);
+  background: linear-gradient(160deg, var(--success-bg), var(--brand-wash));
+}
+
+.svc-card--inactive .svc-card__photo--empty {
+  background: var(--paper);
 }
 
 .svc-card__main {
@@ -445,36 +457,43 @@
 .svc-card__btn {
   flex: 1;
   padding: 7px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--surface));
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--brand-wash);
   font: inherit;
   font-size: 12.5px;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--brand);
   cursor: pointer;
   transition: var(--neu-transition);
 }
 
 .svc-card__btn:hover {
-  border-color: var(--field-border-hover);
-  background: var(--paper);
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #ffffff;
 }
 
 .svc-card__btn--danger {
-  border-color: #e6c3c0;
+  border-color: #efb9b4;
+  background: var(--danger-bg);
   color: var(--danger);
 }
 
 .svc-card__btn--danger:hover {
-  background: var(--danger-bg);
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #ffffff;
 }
 
 .svc-card__btn--primary {
-  border-color: #cfc6f5;
-  color: var(--brand-ink);
+  border-color: color-mix(in srgb, var(--success) 40%, var(--surface));
+  background: var(--success-bg);
+  color: #1e7e34;
 }
 
 .svc-card__btn--primary:hover {
-  background: #f1eefc;
+  border-color: var(--success);
+  background: var(--success);
+  color: #ffffff;
 }

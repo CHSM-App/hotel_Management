@@ -2505,10 +2505,10 @@ export default function AssetsPanel({ onViewReport }) {
                       </dl>
                     </div>
                     <div className="asset-card__foot">
-                      <button type="button" className="btn-secondary" onClick={() => reportIssue(asset)}>
+                      <button type="button" className="btn-secondary asset-card__btn asset-card__btn--issue" onClick={() => reportIssue(asset)}>
                         Report issue
                       </button>
-                      <button type="button" className="btn-secondary" onClick={() => openAssetDetail(asset)}>
+                      <button type="button" className="btn-secondary asset-card__btn asset-card__btn--view" onClick={() => openAssetDetail(asset)}>
                         View
                       </button>
                     </div>

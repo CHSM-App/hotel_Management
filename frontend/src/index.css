@@ -434,3 +434,14 @@ textarea[readonly] {
     scroll-behavior: auto !important;
   }
 }
+
+/* Status pills/tags/badges keep their word whole — never "Cancelle / d". */
+.badge, .inv-tag, .events-badge, .bill-tag, .cust-tag, .cancel-item__tag,
+.chart-row__badge, .order-card__badge, .order-card__item-badge, .history-row__badge,
+.history-table__status, .hk-status, .hk-issue__tag, .hk-order__tag, .hk-rooms__tag,
+.guest-order__status, .guest-register__id-tag, .guest-typeahead__badge,
+.events-today__tag, .gl-room__tag, .lg-card__status, .lg-card__tag, .am__badge,
+.room-card__status, .asset-qr-status, .asset-detail__status, .enquiries-sheet__status,
+.billing-panel__void-tag, .booking-saved__badge, .form-section__badge {
+  white-space: nowrap;
+}

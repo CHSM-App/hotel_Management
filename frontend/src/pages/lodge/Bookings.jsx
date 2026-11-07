@@ -4593,7 +4593,7 @@ export default function Bookings({
                   <MotionButton
                     type="button"
                     className="booking-form__close"
-                    hover={{ rotate: 90, scale: 1.15 }}
+                    hover={{ rotate: 90, scale: 1.08 }}
                     onClick={requestCloseBookingForm}
                     disabled={submitting}
                     aria-label="Close"

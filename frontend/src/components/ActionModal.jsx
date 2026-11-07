@@ -63,7 +63,7 @@ function ModalButton({ variant, reduce, disabled, children, ...rest }) {
     <motion.button
       type="button"
       className={`am__btn am__btn--${variant}`}
-      whileHover={live ? { y: -2 } : undefined}
+      whileHover={live ? { y: -1 } : undefined}
       whileTap={live ? { y: 0, scale: 0.96 } : undefined}
       transition={SPRING}
       disabled={disabled}

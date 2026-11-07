@@ -1689,7 +1689,7 @@ export default function OrderPage({ mode }) {
                                         <motion.button
                                           type="button"
                                           className="order-item__add"
- whileHover={reduceMotion ? undefined : { scale: 1.06 }}
+ whileHover={reduceMotion ? undefined : { scale: 1.03 }}
  whileTap={reduceMotion ? undefined : { scale: 0.94 }}
  transition={{ type: 'spring', stiffness: 520, damping: 28 }}
                                           onClick={() => setQty(item.id, null, 1)}
@@ -1760,7 +1760,7 @@ export default function OrderPage({ mode }) {
                                           <motion.button
                                             type="button"
                                             className="order-item__add"
- whileHover={reduceMotion ? undefined : { scale: 1.06 }}
+ whileHover={reduceMotion ? undefined : { scale: 1.03 }}
  whileTap={reduceMotion ? undefined : { scale: 0.94 }}
  transition={{ type: 'spring', stiffness: 520, damping: 28 }}
                                             onClick={() => setQty(item.id, portion.id, 1)}

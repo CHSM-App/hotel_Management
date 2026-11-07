@@ -2980,26 +2980,9 @@ th[aria-sort] .hk-sort__icon {
   outline-offset: 2px;
 }
 
-/* The amber button glows amber, and a sheen crosses it once on hover. */
+/* The amber button glows amber on hover; no sheen. */
 .hk-action--cta:hover:not(:disabled) {
   box-shadow: 0 8px 16px -8px rgba(138, 91, 0, 0.6);
-}
-
-.hk-action--cta::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -60%;
-  width: 40%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  transform: skewX(-18deg);
-  pointer-events: none;
-}
-
-.hk-action--cta:hover:not(:disabled)::after {
-  left: 130%;
-  transition: left 0.55s ease;
 }
 
 .hk-link {

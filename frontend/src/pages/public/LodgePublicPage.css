@@ -1306,6 +1306,35 @@
   font-weight: 600;
 }
 
+/* Veg / non-veg filter: pills on the right of the head, wrapping under it on a phone. */
+.lodge-public__diet {
+  display: flex;
+  gap: 6px;
+}
+.lodge-public__diet-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lodge-public__diet-btn.is-active {
+  background: #fff;
+  color: var(--brand-ink);
+}
+.lodge-public__diet-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
 .lodge-public__menu-meta {
   font-size: 12.5px;
   color: rgba(255, 255, 255, 0.8);
@@ -1384,9 +1413,46 @@
   box-shadow: var(--site-shadow-pressed);
 }
 
-.lodge-public__shelf-arrow:disabled {
-  opacity: 0.35;
+.pubmenu-wrap {
+  position: relative;
+}
+.pubmenu-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  margin-top: -28px;
+  display: grid;
+  place-items: center;
+  padding: 0 0 3px;
+  border: 1px solid var(--gl-edge, #d6e0ee);
+  border-radius: 999px;
+  background: #fcfdff;
+  color: var(--brand-ink);
+  font-size: 26px;
+  line-height: 1;
+  box-shadow: 0 8px 20px -8px rgba(8, 22, 52, 0.55);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+.pubmenu-arrow--left {
+  left: 8px;
+}
+.pubmenu-arrow--right {
+  right: 8px;
+}
+.pubmenu-arrow:hover:not(:disabled) {
+  background: var(--gl-gold, #c79a2b);
+  border-color: var(--gl-gold, #c79a2b);
+}
+.pubmenu-arrow:disabled {
+  opacity: 0.4;
   cursor: default;
+}
+.pubmenu-arrow:focus-visible {
+  outline: 2px solid var(--gl-gold, #c79a2b);
+  outline-offset: 2px;
 }
 
 .lodge-public__shelf-row {
@@ -2563,10 +2629,6 @@
   background: var(--gl-gold-hi);
 }
 
-/* ── phone dock ── */
-.gl-dock {
-  display: none;
-}
 
 @media (max-width: 1000px) {
   .gl-fields {
@@ -2608,43 +2670,6 @@
   }
   .site .lodge-public__room-cover {
     height: 190px;
-  }
-  .gl-dock {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    z-index: 35;
-    display: flex;
-    gap: 8px;
-    padding: 8px;
-    border-radius: 22px;
-    background: rgba(24, 42, 92, 0.55);
-    backdrop-filter: blur(30px) saturate(1.3);
-    -webkit-backdrop-filter: blur(30px) saturate(1.3);
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 14px 30px -10px rgba(2, 8, 24, 0.6);
-  }
-  .gl-dock a,
-  .gl-dock button {
-    flex: 1;
-    display: grid;
-    place-items: center;
-    min-height: 46px;
-    border: 0;
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.12);
-    color: #ffffff;
-    font: inherit;
-    font-weight: 600;
-    text-decoration: none;
-  }
-  .gl-dock .gl-dock__go {
-    background: var(--gl-gold);
-    color: var(--brand-ink);
-  }
-  .site-footer {
-    padding-bottom: 96px;
   }
 }
 @media (max-width: 420px) {
@@ -3635,35 +3660,827 @@
   transition: border-color 0.6s ease, box-shadow 0.6s ease;
 }
 
-
-/* Phone: the cards become a plain swipeable row (no looping rail). */
-.rl-row {
+/* Phone: scroll-driven fan. Cards overlap and are posed from the scroll position. */
+.fan-row {
   display: flex;
-  gap: 14px;
+  align-items: flex-start;
+  height: 340px;
   margin: 0 -20px;
-  padding: 22px 20px 24px;
+  padding: 36px 0 24px;
   list-style: none;
   overflow-x: auto;
+  overflow-y: hidden;
   scroll-snap-type: x mandatory;
-  scroll-padding-left: 20px;
-  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  --rl-cw: 214px;
-  --rl-ch: 304px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
-.rl-row::-webkit-scrollbar {
+.fan-row::-webkit-scrollbar {
   display: none;
 }
-.rl-row .rl-card {
+.fan-row::before,
+.fan-row::after {
+  content: '';
+  flex: 0 0 var(--fan-sp, 92px);
+}
+.fan-card {
   position: relative;
-  left: auto;
-  top: auto;
-  flex: 0 0 var(--rl-cw);
-  scroll-snap-align: start;
+  flex: 0 0 206px;
+  height: 272px;
+  margin-right: -94px;
+  scroll-snap-align: center;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  overflow: hidden;
+  background: var(--brand);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 20px -14px rgba(8, 22, 52, 0.7);
+  cursor: pointer;
+  transform-origin: 50% 70%;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-tap-highlight-color: transparent;
 }
-.rl-row .rl-card__photo {
-  cursor: zoom-in;
+.fan-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  pointer-events: none;
+  transition: border-color 0.3s ease;
 }
-.rl-row .rl-card__photo--none {
+.fan-card--on::after {
+  border-color: var(--gl-gold, #c79a2b);
+  box-shadow: 0 0 0 1px rgba(199, 154, 43, 0.35), 0 24px 44px -22px rgba(199, 154, 43, 0.55);
+}
+.fan-card__photo {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 100%;
+  height: 46%;
+  padding: 0;
+  border: 0;
+  background: linear-gradient(135deg, #1a3f86, #072748);
+  overflow: hidden;
+}
+.fan-card__photo img {
+  width: 140%;
+  max-width: none;
+  height: 100%;
+  margin-left: -20%;
+  object-fit: cover;
+  display: block;
+  will-change: transform;
+}
+.fan-card__photo::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--gl-gold, #c79a2b);
+}
+.fan-card__photo--none {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #1a3f86, #072748);
+}
+.fan-card__photo--none span {
+  font-family: var(--serif);
+  font-size: 70px;
+  font-weight: 600;
+  line-height: 1;
+  color: rgba(234, 217, 166, 0.22);
+}
+.fan-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+  padding: 14px 16px 16px;
+}
+.fan-card__name {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.fan-card__name .lodge-public__food-mark {
+  margin-top: 2px;
+}
+.fan-card__desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #b6c3e6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fan-card__price {
+  margin-top: auto;
+  align-self: flex-start;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--gl-gold, #c79a2b);
+  color: #081634;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.fan-card__desc,
+.fan-card__price {
+  opacity: var(--fan-text, 1);
+}
+.fan-dots {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  margin-top: -6px;
+}
+.fan-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--gl-edge, #cdd9ea);
+  transition: width 0.35s ease, background-color 0.35s ease;
+}
+.fan-dots i.on {
+  width: 22px;
+  background: var(--gl-gold, #c79a2b);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fan-card::after,
+  .fan-card__desc,
+  .fan-card__price,
+  .fan-dots i {
+    transition: none;
+  }
+}
+
+.fan-card__body {
+  will-change: transform;
+}
+
+/* ── Phone hero: the picture fits the screen ──
+   The hero is tall on a phone (the text and At a glance panel stack), and a
+   cover-fitted photo stretched to that height gets zoomed far past what is
+   visible. Here the picture keeps a screen-sized frame at the top, centred and
+   fully visible, and fades into the navy below it, so the whole picture shows
+   and the stacked content sits on a plain background. */
+@media (max-width: 760px) {
+  .site .site-hero--photo {
+    background: linear-gradient(180deg, var(--brand-ink), var(--brand));
+  }
+  .site .site-hero__img {
+    inset: 0 0 auto 0;
+    /* Natural aspect ratio at the screen's width, so the whole picture shows on
+       any phone; the cap only crops a very tall photo. */
+    height: auto;
+    max-height: 100svh;
+    object-fit: cover;
+    object-position: center;
+    -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+  }
+  .site .site-hero__scrim {
+    inset: 0;
+    background: linear-gradient(180deg, rgba(10, 22, 40, 0.45) 0%, rgba(10, 22, 40, 0.3) 40%, rgba(10, 22, 40, 0.6) 100%);
+  }
+}
+
+
+/* ═══ Enquiry form: the classic hotel card ═══════════════════════════════════
+   One card, a gold hairline on top, a centred serif title with an ornament,
+   icons inside the fields, add-ons as tick chips and gold buttons that lift on
+   hover. Every enquiry kind (room, event, service) shares this form. Appended
+   last so it wins ties with the earlier glass-design field rules. */
+.lodge-public__modal {
+  --m-gold: #c79a2b;
+  --m-gold-hi: #d9ad45;
+  --m-gold-wash: #fbf4df;
+  --m-ink: #1b2740;
+  --m-line: #dde4ee;
+  --m-line-hover: #b9c4d6;
+  --m-paper: #fcfdff;
+  --m-sunken: #f4f7fc;
+  --m-orn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 9'%3E%3Cpath d='M0 4.5h44M76 4.5h44' stroke='%23c79a2b' stroke-width='1'/%3E%3Cpath d='M60 .5l4 4-4 4-4-4z' fill='%23c79a2b'/%3E%3C/svg%3E");
+  --m-chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%2378859a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --m-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.7 2.7L12 5.5' fill='none' stroke='%23072748' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --i-user: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378859a' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c0-4 4-6 8-6s8 2 8 6'/%3E%3C/svg%3E");
+  --i-phone: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378859a' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z'/%3E%3C/svg%3E");
+  --i-calendar: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378859a' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M3 10h18M8 3v4M16 3v4'/%3E%3C/svg%3E");
+  --i-party: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378859a' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20l5-12 7 7z'/%3E%3Cpath d='M14 4v2M19 9h2M17 6l1-1'/%3E%3C/svg%3E");
+  --i-pin: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378859a' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11z'/%3E%3Ccircle cx='12' cy='10' r='2.5'/%3E%3C/svg%3E");
+  --i-users: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378859a' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='8' r='3.5'/%3E%3Cpath d='M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5'/%3E%3Cpath d='M16 5a3.5 3.5 0 0 1 0 7M18 15c2.5.5 4 2 4 5'/%3E%3C/svg%3E");
+  --i-msg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378859a' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5h16v11H9l-5 4z'/%3E%3C/svg%3E");
+  --i-bed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378859a' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 18V7M3 14h18v4M21 14v-2a3 3 0 0 0-3-3h-7v5'/%3E%3C/svg%3E");
+
+  position: relative;
+  overflow: hidden;
+  max-width: 480px;
+  padding: 20px 16px 16px;
+  border-radius: 20px;
+  background: var(--m-paper);
+  box-shadow: 0 28px 64px -24px rgba(2, 8, 24, 0.5);
+}
+.lodge-public__modal::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--m-gold), var(--m-gold-hi), var(--m-gold));
+}
+
+/* head: centred title, ornament under it, close button in the corner */
+.lodge-public__modal-head {
+  justify-content: center;
+  margin-bottom: 12px;
+  text-align: center;
+}
+.lodge-public__modal-head h3 {
+  font-size: 22px;
+  line-height: 1.15;
+  color: var(--m-ink);
+}
+.lodge-public__modal-head h3::after {
+  content: '';
+  display: block;
+  width: 120px;
+  height: 9px;
+  margin: 6px auto 0;
+  background: var(--m-orn) center / 100% 100% no-repeat;
+}
+.lodge-public__modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  color: var(--text-muted);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.lodge-public__modal-close:hover {
+  background: var(--m-sunken);
+  color: var(--m-ink);
+}
+
+/* fields: two columns, visible labels, icon inside */
+.lodge-public__modal-form {
+  gap: 10px;
+}
+.lodge-public__modal-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 8px;
+}
+.lodge-public__modal-row > :only-child {
+  grid-column: 1 / -1;
+}
+.lodge-public__modal .lodge-public__date-field,
+.lodge-public__modal .lodge-public__modal-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.lodge-public__modal .lodge-public__date-field label,
+.lodge-public__modal .lodge-public__modal-field label {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--m-ink);
+}
+.lodge-public__modal .lodge-public__date-field input,
+.lodge-public__modal .lodge-public__date-field select,
+.lodge-public__modal .lodge-public__modal-field textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px 0 40px;
+  border: 1px solid var(--m-line);
+  border-radius: 10px;
+  background-color: var(--m-paper);
+  background-repeat: no-repeat;
+  background-position: 12px center;
+  background-size: 18px;
+  box-shadow: none;
+  color: var(--m-ink);
+  font: inherit;
+  font-size: 14px;
+  transition: border-color 150ms ease;
+}
+.lodge-public__modal .lodge-public__date-field input::placeholder,
+.lodge-public__modal .lodge-public__modal-field textarea::placeholder {
+  color: #8d99ad;
+}
+.lodge-public__modal .lodge-public__date-field input:hover,
+.lodge-public__modal .lodge-public__date-field select:hover,
+.lodge-public__modal .lodge-public__modal-field textarea:hover {
+  border-color: var(--m-line-hover);
+}
+.lodge-public__modal .lodge-public__date-field input:focus-visible,
+.lodge-public__modal .lodge-public__date-field select:focus-visible,
+.lodge-public__modal .lodge-public__modal-field textarea:focus-visible {
+  outline: 2px solid var(--m-gold);
+  outline-offset: 0;
+  border-color: var(--m-gold);
+}
+.lodge-public__modal .lodge-public__date-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 40px;
+  cursor: pointer;
+}
+.lodge-public__modal .lodge-public__modal-field textarea {
+  min-height: 52px;
+  padding-top: 10px;
+  background-position: 12px 12px;
+  resize: vertical;
+}
+.lodge-public__modal #enqName { background-image: var(--i-user); }
+.lodge-public__modal #enqPhone { background-image: var(--i-phone); }
+.lodge-public__modal #enqCheckIn,
+.lodge-public__modal #enqCheckOut,
+.lodge-public__modal #enqEventDate { background-image: var(--i-calendar); }
+.lodge-public__modal #enqGuests,
+.lodge-public__modal #enqEventGuests { background-image: var(--i-users); }
+.lodge-public__modal #enqNotes { background-image: var(--i-msg); }
+.lodge-public__modal #enqRoomType,
+.lodge-public__modal #enqEventType,
+.lodge-public__modal #enqVenue {
+  background-position: 12px center, right 12px center;
+  background-size: 18px, 14px;
+}
+.lodge-public__modal #enqRoomType { background-image: var(--i-bed), var(--m-chev); }
+.lodge-public__modal #enqEventType { background-image: var(--i-party), var(--m-chev); }
+.lodge-public__modal #enqVenue { background-image: var(--i-pin), var(--m-chev); }
+
+/* the id rules above win over any shorthand `background` set earlier */
+.lodge-public__modal #enqName,
+.lodge-public__modal #enqPhone,
+.lodge-public__modal #enqCheckIn,
+.lodge-public__modal #enqCheckOut,
+.lodge-public__modal #enqEventDate,
+.lodge-public__modal #enqGuests,
+.lodge-public__modal #enqEventGuests {
+  background-repeat: no-repeat;
+  background-position: 12px center;
+  background-size: 18px;
+}
+.lodge-public__modal #enqNotes {
+  background-repeat: no-repeat;
+  background-position: 12px 12px;
+  background-size: 18px;
+}
+.lodge-public__modal #enqRoomType,
+.lodge-public__modal #enqEventType,
+.lodge-public__modal #enqVenue {
+  background-repeat: no-repeat;
+}
+
+/* add-ons: tick chips */
+.lodge-public__modal-addons {
+  gap: 8px;
+}
+.lodge-public__modal-addon {
+  position: relative;
+}
+.lodge-public__modal-addon input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.lodge-public__modal-addon span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--m-line);
+  border-radius: 999px;
+  background: var(--m-paper);
+  color: var(--m-ink);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.lodge-public__modal-addon span::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--m-line-hover);
+  border-radius: 4px;
+  background: var(--m-paper);
+}
+.lodge-public__modal-addon:hover span {
+  border-color: var(--m-line-hover);
+  background: var(--m-sunken);
+}
+.lodge-public__modal-addon input:checked + span {
+  background: var(--m-gold-wash);
+  border-color: var(--m-gold);
+}
+.lodge-public__modal-addon input:checked + span::before {
+  border-color: var(--m-gold);
+  background: var(--m-gold) var(--m-tick) center / 100% no-repeat;
+}
+.lodge-public__modal-addon input:focus-visible + span {
+  outline: 2px solid var(--m-gold);
+  outline-offset: 2px;
+}
+
+/* buttons: gold primary, navy outline secondary, both lift on hover */
+.lodge-public__modal-actions {
+  gap: 12px;
+  margin-top: 4px;
+}
+.lodge-public__modal-actions .site-btn {
+  min-height: 42px;
+  padding: 0 24px;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.lodge-public__modal .site-btn--primary {
+  background: var(--m-gold);
+  border-color: var(--m-gold);
+  color: #072748;
+}
+.lodge-public__modal .site-btn--primary:hover:not(:disabled) {
+  background: var(--m-gold-hi);
+  border-color: var(--m-gold-hi);
+
+}
+.lodge-public__modal .site-btn--primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.lodge-public__modal .site-btn--ghost {
+  background: transparent;
+  border-color: var(--m-line-hover);
+  color: #0a3a6b;
+}
+.lodge-public__modal .site-btn--ghost:hover {
+  background: #eef3fa;
+  border-color: #0a3a6b;
+}
+.lodge-public__modal .site-btn:focus-visible {
+  outline: 2px solid var(--m-gold);
+  outline-offset: 2px;
+}
+.lodge-public__modal-actions .site-btn--primary:last-child {
+  flex: 1;
+}
+.lodge-public__modal-choice-btn {
+  background: var(--m-paper);
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.lodge-public__modal-choice-btn:hover {
+  border-color: var(--m-gold);
+  background: var(--m-gold-wash);
+
+}
+.lodge-public__modal-menu-link {
+  transition: color 150ms ease;
+}
+.lodge-public__modal-menu-link:hover {
+  color: var(--m-gold);
+}
+
+@media (max-width: 560px) {
+  .lodge-public__modal {
+    padding: 24px 12px 16px;
+  }
+  .lodge-public__modal-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lodge-public__modal-actions {
+    flex-direction: column-reverse;
+  }
+  .lodge-public__modal-actions .site-btn {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lodge-public__modal-close,
+  .lodge-public__modal-actions .site-btn,
+  .lodge-public__modal-choice-btn {
+    transition: none;
+  }
+  .lodge-public__modal-close:hover,
+  .lodge-public__modal .site-btn:hover,
+  .lodge-public__modal-choice-btn:hover {
+    transform: none;
+  }
+}
+
+.lodge-public__modal-overlay {
+  align-items: center;
+  padding: 12px;
+}
+.lodge-public__modal {
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+@media (max-width: 560px) {
+  .lodge-public__modal-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+  .lodge-public__modal {
+    max-height: none;
+  }
+}
+
+
+/* ═══ Phone nav: three dots open a sheet of the page's sections ══════════════
+   Above 760px the links and Book now sit in the bar as before; on a phone the
+   Book now button gives way to three dots, and the sheet carries every link
+   plus Book now. */
+.gl-nav__more,
+.gl-nav__sheet,
+.gl-nav__scrim {
+  display: none;
+}
+@media (max-width: 760px) {
+  .gl-nav__in {
+    position: relative;
+    z-index: 2;
+  }
+  .gl-nav__cta {
+    display: none;
+  }
+  .gl-nav__more {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(10, 58, 107, 0.08);
+    color: var(--brand-ink);
+    cursor: pointer;
+    transition: background-color 0.25s ease;
+  }
+  .gl-nav__more:hover,
+  .gl-nav__more--open {
+    background: var(--gl-gold);
+  }
+  .gl-nav__dots {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .gl-nav__dots i {
+    width: 20px;
+    height: 2px;
+    border-radius: 2px;
+    background: currentColor;
+    transition: transform 0.3s var(--gl-ease), opacity 0.2s ease;
+  }
+  /* three lines turn into a cross while the menu is open */
+  .gl-nav__more--open .gl-nav__dots i:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+  }
+  .gl-nav__more--open .gl-nav__dots i:nth-child(2) {
+    opacity: 0;
+  }
+  .gl-nav__more--open .gl-nav__dots i:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+  }
+  .gl-nav__scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    background: rgba(7, 18, 36, 0.35);
+    pointer-events: auto;
+  }
+  .gl-nav__sheet {
+    display: block;
+    position: absolute;
+    z-index: 3;
+    top: calc(100% + 10px);
+    right: 0;
+    width: min(300px, calc(100vw - 28px));
+    padding: 8px;
+    border-radius: 24px;
+    background: #fcfdff;
+    border: 1px solid #dde4ee;
+    box-shadow: 0 28px 60px -20px rgba(7, 39, 72, 0.55);
+    transform-origin: top right;
+    overflow: hidden;
+  }
+  .gl-nav__sheet::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--gl-gold), var(--gl-gold-hi), var(--gl-gold));
+  }
+  .gl-nav__sheet ul {
+    list-style: none;
+    margin: 0;
+    padding: 6px 0 0;
+  }
+  .gl-nav__item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 48px;
+    padding: 0 16px;
+    border-radius: 14px;
+    color: var(--brand-ink);
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  .gl-nav__item svg {
+    color: #8d99ad;
+    transition: transform 0.2s ease, color 0.2s ease;
+  }
+  .gl-nav__item:hover,
+  .gl-nav__item--active {
+    background: #f4f7fc;
+  }
+  .gl-nav__item:hover svg {
+    color: var(--gl-gold);
+    transform: translateX(3px);
+  }
+  .gl-nav__item--active::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 14px;
+    bottom: 14px;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--gl-gold);
+  }
+  .gl-nav__sheet-cta {
+    display: block;
+    width: 100%;
+    min-height: 48px;
+    margin-top: 8px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--gl-gold);
+    color: var(--brand-ink);
+    font: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+  .gl-nav__sheet-cta:hover {
+    background: var(--gl-gold-hi);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gl-nav__dots i,
+  .gl-nav__item svg {
+    transition: none;
+  }
+}
+
+
+/* ═══ Menu on a PC: one scrollable line of equal cards, an arrow on each side ═
+   Nothing animates on the cards. The arrows scroll the line smoothly; there are
+   no snap points, so it stays where it lands. */
+.pubmenu-wrap {
+  position: relative;
+}
+.pubmenu-row {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 8px 0 20px;
+  list-style: none;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+.pubmenu-row::-webkit-scrollbar {
+  display: none;
+}
+.pubmenu-card {
+  position: relative;
+  display: flex;
+  flex: 0 0 224px;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--brand);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 24px -16px rgba(8, 22, 52, 0.7);
+}
+.pubmenu-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  pointer-events: none;
+  transition: border-color 0.2s ease;
+}
+.pubmenu-card:hover::after {
+  border-color: var(--gl-gold, #c79a2b);
+}
+.pubmenu-card .rl-card__photo {
+  height: 132px;
+  background: linear-gradient(135deg, #1a3f86, #072748);
+}
+.pubmenu-card .rl-card__photo--none span {
+  font-size: 56px;
+}
+.pubmenu-card .rl-card__body {
+  gap: 6px;
+  padding: 14px 16px 16px;
+}
+.pubmenu-card .rl-card__name {
+  gap: 8px;
+  font-size: 16.5px;
+}
+.pubmenu-card .rl-card__desc {
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+}
+.pubmenu-card .rl-card__desc {
+  margin-bottom: 4px;
+}
+/* auto, not a fixed gap: cards stretch to one height, so the price sits on the
+   same line whether or not the dish has a description. */
+.pubmenu-card .rl-card__price {
+  margin-top: auto;
+  padding: 4px 12px;
+  font-size: 14px;
+}
+.pubmenu-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  margin-top: -28px;
+  display: grid;
+  place-items: center;
+  padding: 0 0 3px;
+  border: 1px solid var(--gl-edge, #d6e0ee);
+  border-radius: 999px;
+  background: #fcfdff;
+  color: var(--brand-ink);
+  font-size: 26px;
+  line-height: 1;
+  box-shadow: 0 8px 20px -8px rgba(8, 22, 52, 0.55);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+.pubmenu-arrow--left {
+  left: 8px;
+}
+.pubmenu-arrow--right {
+  right: 8px;
+}
+.pubmenu-arrow:hover:not(:disabled) {
+  background: var(--gl-gold, #c79a2b);
+  border-color: var(--gl-gold, #c79a2b);
+}
+.pubmenu-arrow:disabled {
+  opacity: 0.4;
   cursor: default;
+}
+.pubmenu-arrow:focus-visible {
+  outline: 2px solid var(--gl-gold, #c79a2b);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pubmenu-arrow,
+  .pubmenu-card::after {
+    transition: none;
+  }
+  .pubmenu-row {
+    scroll-behavior: auto;
+  }
 }
