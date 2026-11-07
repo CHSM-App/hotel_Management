@@ -1929,3 +1929,1478 @@
   flex-basis: 100%;
   opacity: 0.75;
 }
+
+/* ── Menu board look (QR / order link) ─────────────────────────────────────
+   The menu view becomes a dark board with amber accents: category blocks with
+   an amber bar, dishes as rows with a price pill, a pill-shaped All / Veg /
+   Non-veg filter. Colours are scoped to .order-view-in so the cart, login and
+   order-status screens keep the page's light theme. Ordering controls are the
+   same elements as before, only restyled. */
+.order-page:has(.order-view-in) {
+  max-width: 760px;
+}
+@media (min-width: 900px) {
+  .order-page:has(.order-view-in) {
+    max-width: 1180px;
+  }
+}
+
+.order-view-in {
+  --order-gutter: 14px;
+  --board-bg: #14110d;
+  --board-panel: #1e1a15;
+  --board-panel-hi: #2a241b;
+  --board-ink: #f5ede0;
+  --board-muted: #a39a8b;
+  --board-amber: #e9a23b;
+  --board-amber-ink: #1a1204;
+  --board-line: #3a3229;
+  --board-head: 'Oswald', 'Arial Narrow', sans-serif;
+  background: var(--board-bg);
+  color: var(--board-ink);
+  border-radius: 20px;
+  padding: 0 var(--order-gutter) 28px;
+  /* clip, not hidden: hidden would stop the sticky bar sticking */
+  overflow: clip;
+}
+.order-view-in .order-find {
+  padding-top: 14px;
+}
+.order-view-in .order-search input {
+  background: var(--board-panel);
+  border-color: var(--board-line);
+  color: var(--board-ink);
+}
+.order-view-in .order-search input::placeholder {
+  color: var(--board-muted);
+}
+
+.order-view-in .order-sticky {
+  background: var(--board-bg);
+  border-bottom-color: var(--board-line);
+}
+.order-view-in .order-tabs__tab {
+  background: var(--board-panel);
+  border-color: var(--board-line);
+  box-shadow: none;
+  color: var(--board-ink);
+  min-height: 44px;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+.order-view-in .order-tabs__tab[aria-current='true'] {
+  background: var(--board-amber);
+  border-color: var(--board-amber);
+  color: var(--board-amber-ink);
+}
+.order-view-in .order-diet {
+  width: auto;
+  display: flex;
+  border-radius: 99px;
+  background: var(--board-panel);
+  border: 1px solid var(--board-line);
+  box-shadow: none;
+}
+.order-view-in .order-diet__chip {
+  flex: 1;
+  justify-content: center;
+  min-height: 44px;
+  border-radius: 99px;
+  color: var(--board-muted);
+}
+.order-view-in .order-diet__chip:hover {
+  color: var(--board-ink);
+}
+.order-view-in .order-diet__chip[aria-pressed='true'] {
+  background: var(--board-amber);
+  color: var(--board-amber-ink);
+  box-shadow: none;
+}
+@media (min-width: 900px) {
+  .order-view-in .order-diet {
+    max-width: 380px;
+    margin-left: auto;
+  }
+}
+
+.order-view-in .order-section__title {
+  font: 500 26px/1.15 var(--board-head);
+  color: var(--board-ink);
+  border: 0;
+  border-left: 5px solid var(--board-amber);
+  padding: 0 0 0 12px;
+  margin: 0 0 12px;
+}
+.order-view-in .order-group__label {
+  color: var(--board-muted);
+}
+.order-view-in .order-group__rule {
+  background: var(--board-line);
+}
+.order-view-in .order-items {
+  gap: 8px;
+}
+@media (min-width: 900px) {
+  .order-view-in .order-items {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 14px;
+  }
+}
+.order-view-in .order-item {
+  background: var(--board-panel);
+  border: 0;
+  border-radius: 10px;
+  box-shadow: none;
+  padding: 10px 14px;
+}
+@media (hover: hover) {
+  .order-view-in .order-item:hover {
+    transform: none;
+    background: var(--board-panel-hi);
+    box-shadow: none;
+  }
+}
+.order-view-in .order-item--in-cart {
+  box-shadow: inset 0 0 0 1.5px var(--board-amber);
+}
+.order-view-in .order-item__name {
+  color: var(--board-ink);
+  font-weight: 500;
+  font-size: 15px;
+}
+.order-view-in .order-item__desc {
+  color: var(--board-muted);
+}
+.order-view-in .order-item__photo {
+  background: var(--board-panel-hi);
+}
+.order-view-in .order-item__price {
+  background: var(--board-amber);
+  color: var(--board-amber-ink);
+  font-size: 13px;
+  padding: 2px 10px;
+  border-radius: 99px;
+}
+.order-view-in .order-sizes {
+  border-top-color: var(--board-line);
+}
+.order-view-in .order-sizes__label {
+  color: var(--board-ink);
+}
+.order-view-in .order-sizes__price {
+  color: var(--board-amber);
+}
+.order-view-in .order-item__qty button {
+  background: var(--board-bg);
+  border-color: var(--board-amber);
+  color: var(--board-amber);
+  width: 36px;
+  height: 36px;
+}
+.order-view-in .order-item__qty button:active {
+  background: var(--board-amber);
+  color: var(--board-amber-ink);
+}
+.order-view-in .order-item__qty span {
+  color: var(--board-ink);
+}
+.order-view-in .order-item__add {
+  background: var(--board-amber) !important;
+  color: var(--board-amber-ink) !important;
+}
+.order-view-in .order-page__state {
+  color: var(--board-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .order-view-in .order-tabs__tab {
+    transition: none;
+  }
+}
+
+/* ── Header banner + dark / light switch ───────────────────────────────────
+   The banner carries the hotel's logo (large and faint behind the name, plus a
+   small badge above it) and the theme switch sits in its top-right corner.
+   data-board on .order-page picks dark or light for the banner and the menu
+   board; the rest of the page keeps its own theme. */
+.order-page[data-board='dark'] {
+  --hd-bg: #14110d;
+  --hd-ink: #f5ede0;
+  --hd-muted: #a39a8b;
+  --hd-chip: #2a241b;
+  --hd-line: #3a3229;
+  --hd-amber: #e9a23b;
+}
+.order-page[data-board='light'] {
+  --hd-bg: #fbf8f2;
+  --hd-ink: #1c1710;
+  --hd-muted: #6b6355;
+  --hd-chip: #ffffff;
+  --hd-line: #e4dccb;
+  --hd-amber: #c27d12;
+}
+.order-page[data-board='light'] .order-view-in {
+  --board-bg: #fbf8f2;
+  --board-panel: #ffffff;
+  --board-panel-hi: #f1ebe0;
+  --board-ink: #1c1710;
+  --board-muted: #6b6355;
+  --board-line: #e4dccb;
+  box-shadow: inset 0 0 0 1px var(--board-line);
+}
+.order-page[data-board='light'] .order-view-in .order-item {
+  box-shadow: inset 0 0 0 1px var(--board-line);
+}
+.order-page[data-board='light'] .order-view-in .order-item--in-cart {
+  box-shadow: inset 0 0 0 1.5px var(--board-amber);
+}
+.order-page[data-board='light'] .order-view-in .order-sizes__price {
+  color: #8a5a0a;
+}
+.order-page[data-board='light'] .order-view-in .order-item__qty button {
+  color: #8a5a0a;
+}
+
+.order-page__header {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  border-radius: 20px;
+  padding: 22px 64px 18px;
+  margin-bottom: 14px;
+  background: var(--hd-bg);
+  color: var(--hd-ink);
+  box-shadow: inset 0 0 0 1px var(--hd-line);
+  transition: background-color 0.25s, color 0.25s;
+}
+.order-page__header h1 {
+  color: var(--hd-ink);
+  font-size: clamp(24px, 4.2vw, 34px);
+}
+.order-page__logo {
+  display: block;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 8px;
+  object-fit: contain;
+  padding: 5px;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px var(--hd-line);
+}
+.order-page__header .order-page__target {
+  color: var(--hd-muted);
+}
+.order-page__header .order-page__room {
+  background: var(--hd-chip);
+  color: var(--hd-ink);
+  border-color: var(--hd-line);
+}
+.order-page__header .order-page__signout {
+  color: var(--hd-muted);
+}
+.order-page__theme {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--hd-line);
+  background: var(--hd-chip);
+  color: var(--hd-amber);
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.2s;
+}
+.order-page__theme:hover {
+  transform: rotate(14deg);
+}
+.order-page__theme:focus-visible {
+  outline: 2px solid #6fb4f5;
+  outline-offset: 2px;
+}
+@media (max-width: 520px) {
+  .order-page__header {
+    padding: 18px 56px 14px 16px;
+    text-align: left;
+  }
+  .order-page__logo {
+    margin-left: 0;
+    width: 52px;
+    height: 52px;
+  }
+  .order-page__header .order-page__who {
+    justify-content: flex-start;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .order-page__header,
+  .order-page__theme {
+    transition: none;
+  }
+  .order-page__theme:hover {
+    transform: none;
+  }
+}
+
+
+/* ── Dish photo, tap to view full size ──────────────────────────────────── */
+.order-item__photo-btn {
+  flex: none;
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  cursor: zoom-in;
+  line-height: 0;
+}
+.order-item__photo-btn:focus-visible {
+  outline: 2px solid #6fb4f5;
+  outline-offset: 2px;
+}
+.order-item__photo-btn .order-item__photo {
+  transition: transform 0.2s;
+}
+@media (hover: hover) {
+  .order-item__photo-btn:hover .order-item__photo {
+    transform: scale(1.05);
+  }
+}
+.order-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 56px 16px 24px;
+  background: rgba(10, 9, 7, 0.92);
+  animation: order-lightbox-in 0.2s ease;
+}
+.order-lightbox__img {
+  max-width: min(100%, 1100px);
+  max-height: calc(100svh - 130px);
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  cursor: default;
+}
+.order-lightbox__cap {
+  margin: 0;
+  color: #f5ede0;
+  font-weight: 500;
+  text-align: center;
+}
+.order-lightbox__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.order-lightbox__close:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+.order-lightbox__close:focus-visible {
+  outline: 2px solid #6fb4f5;
+  outline-offset: 2px;
+}
+@keyframes order-lightbox-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .order-lightbox {
+    animation: none;
+  }
+  .order-item__photo-btn .order-item__photo {
+    transition: none;
+  }
+}
+
+
+/* Close (X) in the order sheet's top-right corner */
+.order-sheet__head {
+  align-items: center;
+}
+.order-sheet__close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  margin: -4px -6px -4px 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+.order-sheet__close:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--ink);
+}
+.order-sheet__close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.order-sheet__close:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .order-sheet__close {
+    transition: none;
+  }
+}
+
+
+/* ── Button hover effects ───────────────────────────────────────────────────
+   A flat colour change and a 1px lift, no glow, gradient or shine. Only on
+   devices that can hover, so a tap on a phone never leaves a button stuck in
+   its hover state; disabled buttons are left alone. */
+.order-page button {
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease,
+    transform 0.18s ease;
+}
+@media (hover: hover) {
+  .order-page button:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+  .order-page button:not(:disabled):active {
+    transform: translateY(0);
+  }
+
+  /* menu: Add, steppers, tabs, filter */
+  .order-view-in .order-item__add:hover:not(:disabled) {
+    background: #f2b457 !important;
+  }
+  .order-page[data-board='light'] .order-view-in .order-item__add:hover:not(:disabled) {
+    background: #d99a2e !important;
+  }
+  .order-view-in .order-item__qty button:hover:not(:disabled) {
+    background: var(--board-amber);
+    color: var(--board-amber-ink);
+  }
+  .order-view-in .order-tabs__tab:hover:not([aria-current='true']) {
+    background: var(--board-panel-hi);
+    border-color: var(--board-amber);
+  }
+  .order-view-in .order-diet__chip:hover:not([aria-pressed='true']) {
+    background: var(--board-panel-hi);
+  }
+
+  /* header, views switch, cart bar */
+  .order-page__theme:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: var(--hd-amber);
+  }
+  .order-views__tab:hover:not([aria-current='true']) {
+    background: var(--border);
+  }
+  .order-page__bar:hover {
+    background: var(--brand-lift);
+  }
+
+  /* order sheet and login */
+  .order-sheet__close:hover:not(:disabled) {
+    transform: none;
+  }
+  .order-sheet__place:hover:not(:disabled),
+  .guest-login__submit:hover:not(:disabled) {
+    background: var(--brand-lift);
+  }
+  .order-sheet__back:hover:not(:disabled) {
+    background: var(--border);
+  }
+  .order-item__qty button:hover:not(:disabled) {
+    box-shadow: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .order-page button {
+    transition: none;
+  }
+  .order-page button:not(:disabled):hover {
+    transform: none;
+  }
+}
+
+/* Section tabs and All / Veg / Non-veg: a clear flat hover in both themes. */
+@media (hover: hover) {
+  .order-view-in .order-tabs__tab:hover:not([aria-current='true']),
+  .order-view-in .order-diet__chip:hover:not([aria-pressed='true']) {
+    background: color-mix(in srgb, var(--board-amber) 22%, var(--board-panel));
+    color: var(--board-ink);
+  }
+  .order-view-in .order-tabs__tab:hover:not([aria-current='true']) {
+    border-color: var(--board-amber);
+  }
+  .order-view-in .order-tabs__tab[aria-current='true']:hover,
+  .order-view-in .order-diet__chip[aria-pressed='true']:hover {
+    background: #f2b457;
+  }
+  .order-page[data-board='light'] .order-view-in .order-tabs__tab[aria-current='true']:hover,
+  .order-page[data-board='light'] .order-view-in .order-diet__chip[aria-pressed='true']:hover {
+    background: #d99a2e;
+  }
+}
+
+/* The cart bar has no hover or press effect. It is centred with
+   translateX(-50%), which the generic button hover would otherwise replace, so
+   these selectors are written to outrank it. */
+.order-page button.order-page__bar {
+  transition: none;
+}
+.order-page button.order-page__bar:not(:disabled):hover,
+.order-page button.order-page__bar:not(:disabled):active {
+  transform: translateX(-50%);
+  background: var(--brand);
+  box-shadow: var(--shadow-elevated);
+}
+.order-page button.order-page__bar--editing:not(:disabled):hover,
+.order-page button.order-page__bar--editing:not(:disabled):active {
+  background: var(--accent);
+  box-shadow: var(--shadow-elevated), 0 0 0 2px rgba(255, 255, 255, 0.25) inset;
+}
+
+
+/* ═══ Order sheet (osx) ═══════════════════════════════════════════════════════
+   Premium and quiet: white surface, navy for the one action, a thin gold rule at
+   the top edge, hairlines instead of boxes, generous spacing. Header and footer
+   are fixed; only the body scrolls. */
+.osx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(10, 22, 36, 0.55);
+  backdrop-filter: blur(4px);
+}
+.osx-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  max-height: 92svh;
+  background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -20px 50px rgba(10, 22, 36, 0.3);
+  outline: none;
+  overflow: hidden;
+}
+.osx-sheet::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--accent);
+}
+@media (min-width: 720px) {
+  .osx-backdrop {
+    align-items: center;
+  }
+  .osx-sheet {
+    max-height: min(86svh, 760px);
+    border-radius: 24px;
+  }
+}
+
+.osx-top {
+  flex: none;
+  padding: 10px 20px 0;
+  touch-action: none;
+  cursor: grab;
+}
+.osx-grab {
+  display: block;
+  width: 40px;
+  height: 4px;
+  margin: 0 auto 10px;
+  border-radius: 99px;
+  background: var(--neu-dark);
+}
+.osx-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.osx-head__text {
+  flex: 1;
+  min-width: 0;
+}
+.osx-head h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 24px;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.osx-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.osx-close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+.osx-close:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--ink);
+}
+.osx-close:disabled {
+  opacity: 0.5;
+}
+
+.osx-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 20px 18px;
+}
+
+.osx-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.osx-note--warn {
+  background: color-mix(in srgb, var(--accent) 18%, white);
+  color: var(--accent-ink);
+}
+.osx-note--error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.osx-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.osx-line {
+  overflow: hidden;
+}
+.osx-line__in {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main amount'
+    'step remove';
+  align-items: center;
+  gap: 10px 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.osx-line__main {
+  grid-area: main;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.osx-line__name {
+  font-weight: 600;
+  font-size: 15.5px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.osx-line__unit {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.osx-line__amount {
+  grid-area: amount;
+  font-weight: 700;
+  font-size: 15.5px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.osx-line__step {
+  grid-area: step;
+  justify-self: start;
+}
+.osx-line__remove {
+  grid-area: remove;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 99px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+.osx-line__remove:hover:not(:disabled) {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.osx-line__remove:disabled {
+  opacity: 0.5;
+}
+
+.osx-empty {
+  padding: 22px 0 6px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.osx-empty p {
+  margin: 0 0 12px;
+}
+.osx-text-btn {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 99px;
+}
+.osx-text-btn--danger {
+  color: var(--danger);
+}
+.osx-text-btn--danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+}
+
+.osx-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 16px;
+  border: 1px dashed var(--brand-wash-edge);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--brand);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+.osx-more:hover {
+  background: var(--brand-wash);
+  border-color: var(--brand);
+}
+
+.osx-fields {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+.osx-field {
+  display: grid;
+  gap: 6px;
+}
+.osx-field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.osx-field em {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+.osx-field input {
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+  background: var(--field);
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  transition: border-color 0.18s ease;
+}
+.osx-field input:hover {
+  border-color: var(--field-border-hover);
+}
+.osx-field input:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+.osx-field input::placeholder {
+  color: var(--text-muted);
+}
+
+.osx-foot {
+  flex: none;
+  padding: 14px 20px calc(16px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -10px 24px -16px rgba(10, 22, 36, 0.25);
+}
+.osx-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.osx-total span {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.osx-total strong {
+  font-family: var(--serif);
+  font-size: 26px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.osx-cta {
+  width: 100%;
+  min-height: 54px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--brand);
+  color: #ffffff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+.osx-cta:hover:not(:disabled) {
+  background: var(--brand-lift);
+}
+.osx-cta:disabled {
+  background: var(--neu-dark);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.osx-close:focus-visible,
+.osx-line__remove:focus-visible,
+.osx-more:focus-visible,
+.osx-cta:focus-visible,
+.osx-text-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.osx-line__step {
+  background: var(--surface);
+}
+@media (prefers-reduced-motion: reduce) {
+  .osx-close,
+  .osx-line__remove,
+  .osx-more,
+  .osx-cta,
+  .osx-field input {
+    transition: none;
+  }
+}
+
+/* Flat hover inside the sheet: colour only, no lift. */
+@media (hover: hover) {
+  .order-page .osx-sheet button:not(:disabled):hover,
+  .order-page .osx-sheet button:not(:disabled):active {
+    transform: none;
+  }
+}
+
+
+/* ═══ Order sheet: compact pass ═══════════════════════════════════════════════
+   Everything tightened so a normal order fits without scrolling: a one-line
+   header, each dish on a single row (name, stepper, total, remove), name and
+   note side by side, and the total beside the button. The body only scrolls if
+   there are more dishes than the screen can hold. */
+.order-stepper {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 2px;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--surface);
+}
+.order-stepper button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--brand);
+}
+.order-stepper .order-qty-input {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: center;
+  font-size: 14.5px;
+}
+
+.osx-sheet {
+  width: min(500px, 100%);
+}
+.osx-top {
+  padding: 8px 18px 0;
+}
+.osx-grab {
+  margin-bottom: 6px;
+}
+.osx-head {
+  align-items: center;
+  padding-bottom: 10px;
+}
+.osx-head h2 {
+  font-size: 21px;
+}
+.osx-head p {
+  margin-top: 2px;
+  font-size: 12.5px;
+}
+.osx-close {
+  width: 36px;
+  height: 36px;
+}
+.osx-body {
+  padding: 0 18px 12px;
+}
+
+/* one row per dish on anything wider than a small phone */
+.osx-line__in {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-areas: 'main step amount remove';
+  gap: 10px;
+  padding: 12px 0;
+}
+.osx-line__name {
+  font-size: 15px;
+}
+.osx-line__amount {
+  min-width: 56px;
+  text-align: right;
+  font-size: 15px;
+}
+.osx-line__remove {
+  min-height: 32px;
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+.osx-line__remove span {
+  display: none;
+}
+@media (max-width: 460px) {
+  .osx-line__in {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'main amount'
+      'step remove';
+    gap: 8px 12px;
+    padding: 12px 0;
+  }
+  .osx-line__amount {
+    min-width: 0;
+  }
+  .osx-line__remove {
+    width: auto;
+    padding: 0 10px;
+  }
+  .osx-line__remove span {
+    display: inline;
+  }
+}
+
+.osx-more {
+  min-height: 40px;
+  margin-top: 12px;
+  border-radius: 12px;
+  font-size: 13.5px;
+}
+.osx-fields {
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+.osx-field {
+  gap: 4px;
+}
+.osx-field > span {
+  font-size: 12.5px;
+}
+.osx-field em {
+  display: none;
+}
+.osx-field input {
+  height: 40px;
+  font-size: 14.5px;
+  border-radius: 10px;
+}
+@media (max-width: 400px) {
+  .osx-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* total beside the button */
+.osx-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px calc(14px + env(safe-area-inset-bottom));
+}
+.osx-total {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  margin: 0;
+}
+.osx-total span {
+  font-size: 12px;
+  line-height: 1.2;
+}
+.osx-total strong {
+  font-size: 22px;
+  line-height: 1.15;
+}
+.osx-cta {
+  flex: 1;
+  min-height: 48px;
+  border-radius: 14px;
+  font-size: 15.5px;
+}
+
+
+/* ═══ Light theme, designed on its own ═══════════════════════════════════════
+   Cool white and soft blue, navy for emphasis. Dishes are clean white cards on
+   a pale blue-grey board, prices sit in a pale blue chip, section titles carry
+   a light-blue marker, and Add is a light-blue pill. This replaces the dark
+   board's colours when the switch is set to light. */
+.order-page[data-board='light'] {
+  --hd-bg: #ffffff;
+  --hd-ink: #0f2236;
+  --hd-muted: #5b6b80;
+  --hd-chip: #eef4fc;
+  --hd-line: #dfe8f3;
+  --hd-amber: #2f6fb8;
+  background: #f4f7fb;
+}
+.order-page[data-board='light'] .order-page__header {
+  background: linear-gradient(180deg, #ffffff 0%, #f3f8ff 100%);
+  box-shadow: 0 1px 2px rgba(15, 34, 54, 0.05), inset 0 0 0 1px var(--hd-line);
+}
+.order-page[data-board='light'] .order-page[data-board='light'] .order-page__logo {
+  box-shadow: 0 0 0 1px var(--hd-line), 0 4px 10px -4px rgba(15, 34, 54, 0.18);
+}
+
+.order-page[data-board='light'] .order-view-in {
+  --board-bg: #f6f9fd;
+  --board-panel: #ffffff;
+  --board-panel-hi: #f3f8ff;
+  --board-ink: #0f2236;
+  --board-muted: #5b6b80;
+  --board-line: #e1e9f4;
+  --board-amber: #2f6fb8;
+  --board-amber-ink: #ffffff;
+  background: var(--board-bg);
+  box-shadow: 0 1px 2px rgba(15, 34, 54, 0.05), inset 0 0 0 1px var(--board-line);
+}
+.order-page[data-board='light'] .order-view-in .order-search input {
+  background: #ffffff;
+  border-color: #d6e2f1;
+}
+
+/* tabs + filter */
+.order-page[data-board='light'] .order-view-in .order-sticky {
+  background: var(--board-bg);
+  border-bottom-color: var(--board-line);
+}
+.order-page[data-board='light'] .order-view-in .order-tabs__tab {
+  background: #ffffff;
+  border: 1px solid #d6e2f1;
+  color: #23405e;
+}
+.order-page[data-board='light'] .order-view-in .order-tabs__tab[aria-current='true'] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #ffffff;
+}
+.order-page[data-board='light'] .order-view-in .order-diet {
+  background: #ffffff;
+  border-color: #d6e2f1;
+}
+.order-page[data-board='light'] .order-view-in .order-diet__chip {
+  color: #4a5e76;
+}
+.order-page[data-board='light'] .order-view-in .order-diet__chip[aria-pressed='true'] {
+  background: var(--brand);
+  color: #ffffff;
+}
+@media (hover: hover) {
+  .order-page[data-board='light'] .order-view-in .order-tabs__tab:hover:not([aria-current='true']),
+  .order-page[data-board='light'] .order-view-in .order-diet__chip:hover:not([aria-pressed='true']) {
+    background: #e8f1fd;
+    border-color: #9cc3ef;
+    color: #0a3a6b;
+  }
+  .order-page[data-board='light'] .order-view-in .order-tabs__tab[aria-current='true']:hover,
+  .order-page[data-board='light'] .order-view-in .order-diet__chip[aria-pressed='true']:hover {
+    background: var(--brand-lift);
+  }
+}
+
+/* sections and dishes */
+.order-page[data-board='light'] .order-view-in .order-section__title {
+  font: 600 22px/1.2 var(--serif);
+  color: #0f2236;
+  border-left: 4px solid #8fbdf0;
+  border-radius: 2px;
+  padding-left: 12px;
+}
+.order-page[data-board='light'] .order-view-in .order-group__label {
+  color: #6b7c91;
+}
+.order-page[data-board='light'] .order-view-in .order-group__rule {
+  background: #e1e9f4;
+}
+.order-page[data-board='light'] .order-view-in .order-item {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 2px rgba(15, 34, 54, 0.04), inset 0 0 0 1px #e1e9f4;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+}
+@media (hover: hover) {
+  .order-page[data-board='light'] .order-view-in .order-item:hover {
+    background: #fbfdff;
+    box-shadow: 0 6px 16px -10px rgba(15, 58, 107, 0.3), inset 0 0 0 1px #b9d3f2;
+    transform: none;
+  }
+}
+.order-page[data-board='light'] .order-view-in .order-item--in-cart {
+  box-shadow: inset 0 0 0 1.5px #5b97dd;
+  background: #f5faff;
+}
+.order-page[data-board='light'] .order-view-in .order-item__name {
+  color: #0f2236;
+  font-weight: 600;
+}
+.order-page[data-board='light'] .order-view-in .order-item__desc {
+  color: #5b6b80;
+}
+.order-page[data-board='light'] .order-view-in .order-item__price {
+  background: #eaf2fe;
+  color: #0a3a6b;
+  font-size: 13.5px;
+  padding: 3px 11px;
+}
+.order-page[data-board='light'] .order-view-in .order-sizes {
+  border-top-color: #e1e9f4;
+}
+.order-page[data-board='light'] .order-view-in .order-sizes__label {
+  color: #23405e;
+}
+.order-page[data-board='light'] .order-view-in .order-sizes__price {
+  color: #0a3a6b;
+}
+
+/* Add: light blue */
+.order-page[data-board='light'] .order-view-in .order-item__add {
+  background: #3a7bc8 !important;
+  color: #ffffff !important;
+  border: 0 !important;
+  border-radius: 99px !important;
+  height: 34px;
+  padding: 0 18px;
+  font-weight: 700;
+  transition: background-color 0.18s ease !important;
+}
+@media (hover: hover) {
+  .order-page[data-board='light'] .order-view-in .order-item__add:hover:not(:disabled) {
+    background: #2f6cb4 !important;
+  }
+}
+.order-page[data-board='light'] .order-view-in .order-item__add:active {
+  background: #265b9c !important;
+}
+
+/* stepper */
+.order-page[data-board='light'] .order-view-in .order-item__qty.order-stepper {
+  background: #ffffff;
+  border-color: #cfe0f5;
+}
+.order-page[data-board='light'] .order-view-in .order-item__qty.order-stepper button {
+  color: #0a3a6b;
+  background: transparent;
+}
+.order-page[data-board='light'] .order-view-in .order-item__qty.order-stepper .order-qty-input {
+  color: #0f2236;
+}
+@media (hover: hover) {
+  .order-page[data-board='light'] .order-view-in .order-item__qty.order-stepper button:hover:not(:disabled) {
+    background: #e3eefc;
+    color: #0a3a6b;
+  }
+  .order-page[data-board='light'] .order-view-in .order-item__qty.order-stepper .order-qty-input:hover:not(:disabled) {
+    background: #f1f6fd;
+  }
+}
+.order-page[data-board='light'] .order-view-in .order-item__qty.order-stepper button:active:not(:disabled) {
+  background: #cfe3ff;
+}
+
+/* the dish photo and the thumbnail zoom keep the same quiet feel */
+.order-page[data-board='light'] .order-view-in .order-item__photo {
+  background: #e8f0fa;
+}
+.order-page[data-board='light'] .order-view-in .order-page__state {
+  color: #5b6b80;
+}
+
+
+/* ═══ Dark theme: Midnight ═══════════════════════════════════════════════════
+   A near-black navy page, a navy board a step lighter, and cards lighter again
+   with a clear blue edge and a drop shadow, so each dish reads as its own
+   object. Amber stays the accent. Default theme. */
+.order-page[data-board='dark'] {
+  --hd-bg: #0b1424;
+  --hd-ink: #eef3fb;
+  --hd-muted: #9fb0c8;
+  --hd-chip: #16243b;
+  --hd-line: #2c4468;
+  --hd-amber: #e9a23b;
+  background: #060b14;
+}
+.order-page[data-board='dark'] .order-view-in {
+  --board-bg: #0b1424;
+  --board-panel: #16243b;
+  --board-panel-hi: #1d2f4c;
+  --board-ink: #eef3fb;
+  --board-muted: #9fb0c8;
+  --board-line: #24385a;
+  --board-edge: #2c4468;
+  box-shadow: inset 0 0 0 1px var(--board-edge);
+}
+.order-page[data-board='dark'] .order-view-in .order-search input {
+  background: #16243b;
+  border-color: #2c4468;
+}
+.order-page[data-board='dark'] .order-view-in .order-tabs__tab {
+  background: #16243b;
+  border-color: #2c4468;
+}
+.order-page[data-board='dark'] .order-view-in .order-diet {
+  background: #16243b;
+  border-color: #2c4468;
+}
+.order-page[data-board='dark'] .order-view-in .order-item {
+  background: #16243b;
+  box-shadow: 0 10px 22px -12px #000, inset 0 0 0 1px #2c4468;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+}
+@media (hover: hover) {
+  .order-page[data-board='dark'] .order-view-in .order-item:hover {
+    background: #1d2f4c;
+    box-shadow: 0 10px 22px -12px #000, inset 0 0 0 1px var(--board-amber);
+  }
+}
+.order-page[data-board='dark'] .order-view-in .order-item--in-cart {
+  box-shadow: 0 10px 22px -12px #000, inset 0 0 0 1.5px var(--board-amber);
+}
+.order-page[data-board='dark'] .order-view-in .order-item__photo {
+  box-shadow: inset 0 0 0 1px #2c4468;
+}
+.order-page[data-board='dark'] .order-view-in .order-qty-input:hover:not(:disabled) {
+  background: #1d2f4c;
+}
+.order-page[data-board='dark'] .guest-orders__toggle,
+.order-page[data-board='dark'] .order-page__who .order-page__signout {
+  color: #9fb0c8;
+}
+
+/* ── Header: the logo (or the hotel's first letter) beside the name ─────── */
+.order-page__logo--letter {
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1;
+  color: #1a1204;
+  background: #e9a23b;
+  padding: 0;
+}
+.order-page[data-board='light'] .order-page__logo--letter {
+  color: #0a3a6b;
+  background: #cfe3ff;
+}
+.order-page[data-board='dark'] .order-page__logo {
+  box-shadow: 0 0 0 1px #2c4468;
+}
+.order-page[data-board='dark'] .order-page__logo:not(.order-page__logo--letter) {
+  background: #ffffff;
+}
+
+@media (max-width: 520px) {
+  .order-page__header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 14px;
+    align-items: center;
+    text-align: left;
+    padding: 14px 64px 14px 14px;
+  }
+  .order-page__header .order-page__logo {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    width: 56px;
+    height: 56px;
+    margin: 0;
+  }
+  .order-page__header h1,
+  .order-page__header .order-page__target,
+  .order-page__header .order-page__who {
+    grid-column: 2;
+    min-width: 0;
+  }
+  .order-page__header h1 {
+    font-size: 21px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+  .order-page__header .order-page__target,
+  .order-page__header .order-page__who {
+    margin: 3px 0 0;
+    justify-content: flex-start;
+    text-align: left;
+  }
+}
+
+/* ═══ Dark theme: finishing the pieces that were still light ═════════════════
+   Search box, the Menu / Your orders switch, the selected section tab, the veg
+   marks on the filter, and the "Your orders" list. Each gets the Midnight
+   palette so nothing bright is left on the dark page. */
+.order-page[data-board='dark'] .order-view-in .order-search input {
+  background-color: #16243b !important;
+  border-color: #2c4468 !important;
+  color: #eef3fb !important;
+  box-shadow: none !important;
+}
+.order-page[data-board='dark'] .order-view-in .order-search input:focus-visible {
+  border-color: #e9a23b !important;
+  box-shadow: 0 0 0 3px rgba(233, 162, 59, 0.22) !important;
+}
+.order-page[data-board='dark'] .order-view-in .order-search__icon {
+  border-color: #9fb0c8;
+}
+
+/* the selected section tab keeps its amber fill (the base dark rule above had
+   overridden it, leaving dark text on a dark pill) */
+.order-page[data-board='dark'] .order-view-in .order-tabs__tab[aria-current='true'] {
+  background: #e9a23b;
+  border-color: #e9a23b;
+  color: #1a1204;
+}
+.order-page[data-board='dark'] .order-view-in .order-diet__chip .food-mark {
+  background: transparent;
+}
+.order-page[data-board='dark'] .order-view-in .order-diet__chip[aria-pressed='true'] .food-mark {
+  background: transparent;
+}
+
+/* Menu / Your orders switch */
+.order-page[data-board='dark'] .order-views {
+  background: #16243b;
+  box-shadow: inset 0 0 0 1px #2c4468;
+}
+.order-page[data-board='dark'] .order-views__tab {
+  color: #9fb0c8;
+}
+.order-page[data-board='dark'] .order-views__tab[aria-current='true'] {
+  background: #e9a23b;
+  color: #1a1204;
+  box-shadow: none;
+}
+@media (hover: hover) {
+  .order-page[data-board='dark'] .order-views__tab:hover:not([aria-current='true']) {
+    background: #1d2f4c;
+    color: #eef3fb;
+  }
+}
+
+/* "Your orders" and the empty states: the same tokens, re-pointed at Midnight,
+   so every card inside follows without being restyled one by one */
+.order-page[data-board='dark'] .guest-orders,
+.order-page[data-board='dark'] .order-page__state,
+.order-page[data-board='dark'] .guest-orders__none {
+  --surface: #16243b;
+  --paper: #0b1424;
+  --ink: #eef3fb;
+  --text: #c4d0e2;
+  --text-muted: #9fb0c8;
+  --border: #2c4468;
+  --shadow-raised: 0 10px 22px -12px #000;
+  --shadow-inset: inset 0 0 0 1px #2c4468;
+}
+.order-page[data-board='dark'] .order-page__state,
+.order-page[data-board='dark'] .guest-orders__none {
+  box-shadow: inset 0 0 0 1px #2c4468;
+}
+
+
+/* Logo (or the hotel's first letter) centred above the hotel name on the sign-in card */
+.guest-login__logo {
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 14px;
+  padding: 8px;
+  border-radius: 22px;
+}
+.guest-login .order-page__logo--letter {
+  font-size: 44px;
+  padding: 0;
+}

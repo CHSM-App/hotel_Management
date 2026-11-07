@@ -74,6 +74,9 @@ const CHART_COLORS = {
 // to the top of a chart sized for a busy one.
 export function TrendChart({ points, priorPoints, height = 220, valueKey = 'totalRevenue', formatValue = formatPrice }) {
   const reduce = useReducedMotion();
+  // The day under the pointer, or null. Drives a thin guide line, a dot on the line
+  // and a small read-out of that day's date and amount.
+  const [hover, setHover] = useState(null);
   const width = 720;
   const padLeft = 50;
   const padRight = 12;
@@ -112,6 +115,14 @@ export function TrendChart({ points, priorPoints, height = 220, valueKey = 'tota
       role="img"
       aria-label={`Line chart of daily ${valueKey} across the selected period, reaching ${formatValue(lastValue)} on the final day`}
       style={{ width: '100%', height: 'auto', overflow: 'visible' }}
+      onPointerMove={(e) => {
+        if (points.length === 0) return;
+        const box = e.currentTarget.getBoundingClientRect();
+        const px = ((e.clientX - box.left) / box.width) * width;
+        const raw = points.length <= 1 ? 0 : ((px - padLeft) / plotW) * (points.length - 1);
+        setHover(Math.max(0, Math.min(points.length - 1, Math.round(raw))));
+      }}
+      onPointerLeave={() => setHover(null)}
     >
       <g className="axis-line" strokeWidth="1">
         <line x1={padLeft} y1={padTop} x2={padLeft} y2={padTop + plotH} />
@@ -190,6 +201,24 @@ export function TrendChart({ points, priorPoints, height = 220, valueKey = 'tota
           </motion.text>
         </>
       )}
+
+      {hover != null && points[hover] && (() => {
+        const cx = x(hover, points.length);
+        const cy = y(values[hover]);
+        const boxW = 128;
+        const bx = Math.max(padLeft, Math.min(width - padRight - boxW, cx - boxW / 2));
+        const by = Math.max(2, cy - 38);
+        return (
+          <g pointerEvents="none">
+            <line x1={cx} x2={cx} y1={padTop} y2={padTop + plotH} stroke="var(--brand)" strokeOpacity="0.35" strokeWidth="1" />
+            <circle cx={cx} cy={cy} r="5" fill="var(--surface)" stroke="var(--brand)" strokeWidth="2.25" />
+            <rect x={bx} y={by} width={boxW} height="26" rx="7" fill="var(--ink)" />
+            <text x={bx + boxW / 2} y={by + 17} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: '#fff' }}>
+              {fmtAxisDate(points[hover].date)}  {formatValue(values[hover])}
+            </text>
+          </g>
+        );
+      })()}
     </svg>
   );
 }
@@ -197,11 +226,24 @@ export function TrendChart({ points, priorPoints, height = 220, valueKey = 'tota
 // A donut built from an ordered list of {label, value} slices. Percentages
 // are derived from the values themselves rather than trusted from the
 // caller, so the arcs always foot to 360 degrees exactly once.
+// Text in a donut's hole has to fit inside the ring, whatever it says: a long slice
+// name ("Bedsheets & Towels"), a big figure ("₹12,34,567"). `fitSize` shrinks the
+// font until the text fits the width, and `clip` cuts text that is still too long
+// and ends it with an ellipsis. Widths are estimates (an average glyph is about 0.58
+// of the font size), which is close enough for a label in a circle.
+const GLYPH = 0.58;
+const fitSize = (text, base, maxWidth, min = 9) => {
+  const need = String(text).length * GLYPH * base;
+  return need <= maxWidth ? base : Math.max(min, maxWidth / (String(text).length * GLYPH));
+};
+const clip = (text, size, maxWidth) => {
+  const t = String(text);
+  const max = Math.max(3, Math.floor(maxWidth / (GLYPH * size)));
+  return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`;
+};
+
 export function Donut({ slices, size = 160, strokeWidth = 24, centerLabel, centerSub }) {
   const reduce = useReducedMotion();
-  // The slice under the pointer, by label. It grows, the rest fade, and the
-  // centre reads that slice instead of the total.
-  const [active, setActive] = useState(null);
   const total = slices.reduce((sum, s) => sum + s.value, 0);
   const r = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * r;
@@ -236,35 +278,30 @@ export function Donut({ slices, size = 160, strokeWidth = 24, centerLabel, cente
             fill="none"
             stroke={a.color}
             strokeDashoffset={-a.offset}
-            initial={reduce ? false : { strokeDasharray: `0 ${circumference}`, strokeWidth, opacity: 1 }}
-            animate={{
-              strokeDasharray: `${a.dash} ${a.gap}`,
-              strokeWidth: active === a.label ? strokeWidth + 8 : strokeWidth,
-              opacity: active == null || active === a.label ? 1 : 0.35,
-            }}
-            transition={{
-              strokeDasharray: { duration: 1, ease: EASE },
-              strokeWidth: { type: 'spring', stiffness: 300, damping: 22 },
-              opacity: { duration: 0.15 },
-            }}
-            onPointerEnter={() => setActive(a.label)}
-            onPointerLeave={() => setActive(null)}
+            strokeWidth={strokeWidth}
+            initial={reduce ? false : { strokeDasharray: `0 ${circumference}` }}
+            animate={{ strokeDasharray: `${a.dash} ${a.gap}` }}
+            transition={{ strokeDasharray: { duration: 1, ease: EASE } }}
           />
         ))}
       </g>
       {(() => {
-        const hit = active != null ? arcs.find((a) => a.label === active) : null;
-        const mainText = hit ? hit.label : centerLabel;
-        const subText = hit ? `${Math.round((hit.value / total) * 100)}%` : centerSub;
+        // The centre always shows the caller's total and note, shrunk or clipped to fit
+        // the hole, so a long figure never runs into the ring.
+        const room = (size - 2 * strokeWidth - 8) * 0.88;
+        const baseMain = size >= 150 ? 20 : 15;
+        const mainSize = centerLabel ? fitSize(centerLabel, baseMain, room, 11) : baseMain;
+        const subSize = 10.5;
+        const subText = centerSub ? clip(centerSub, subSize, room) : centerSub;
         return (
           <>
-            {mainText && (
-              <text x={size / 2} y={size / 2 - (subText ? 4 : -5)} textAnchor="middle" fontSize={size >= 150 ? 20 : 15} fontWeight="700" fill="var(--ink)">
-                {mainText}
+            {centerLabel && (
+              <text x={size / 2} y={size / 2 - (subText ? 4 : -5)} textAnchor="middle" fontSize={mainSize} fontWeight="700" fill="var(--ink)">
+                {centerLabel}
               </text>
             )}
             {subText && (
-              <text x={size / 2} y={size / 2 + 14} textAnchor="middle" fontSize="10.5" fill="var(--text-muted)">
+              <text x={size / 2} y={size / 2 + 14} textAnchor="middle" fontSize={subSize} fill="var(--text-muted)">
                 {subText}
               </text>
             )}

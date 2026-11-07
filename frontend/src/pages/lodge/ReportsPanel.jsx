@@ -931,7 +931,7 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   );
 
   return (
-    <div className="reports-panel">
+    <div className={`reports-panel reports-panel--${activeTab}`}>
       {TABS.length > 1 && (
       <div className="reports-panel__subtabs">
         {TABS.map((t) => (

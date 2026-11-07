@@ -2068,3 +2068,25 @@
 .bookings-panel__toolbar .tape-search__clear {
   right: 8px;
 }
+
+/* --- Date stepper: soft navy wash ---------------------------
+   The date range pill, on the diary and the booking chart alike, is filled with a pale navy wash, with navy text and arrows,
+   so it reads apart from the white Today pill beside it. Colour only. */
+.tape-nav__stepper {
+  background: #e6edf4;
+}
+
+.tape-nav__label strong,
+.tape-nav__arrow {
+  color: var(--brand);
+}
+
+.tape-nav__label span {
+  color: #3f5f85;
+}
+
+.tape-nav__arrow:hover {
+  color: var(--brand-ink, #072748);
+  background: rgba(10, 58, 107, 0.1);
+  box-shadow: none;
+}

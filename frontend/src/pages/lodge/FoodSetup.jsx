@@ -5,6 +5,7 @@ import InventoryPanel from './InventoryPanel';
 import TablesPanel from './TablesPanel';
 import QrCodesPanel from './QrCodesPanel';
 import FoodSettingsPanel from './FoodSettingsPanel';
+import MenuCardDesigner from './menucard/MenuCardDesigner';
 import './RoomsAndRates.css';
 
 export default function FoodSetup({ lodge, onLodgeChange }) {
@@ -21,6 +22,7 @@ export default function FoodSetup({ lodge, onLodgeChange }) {
     { key: 'inventory', label: 'Inventory' },
     ...(lodge?.foodTableService ? [{ key: 'tables', label: 'Tables' }] : []),
     { key: 'qr', label: 'QR codes' },
+    { key: 'menucard', label: 'Menu card' },
     { key: 'settings', label: 'Settings' },
   ];
 
@@ -47,6 +49,7 @@ export default function FoodSetup({ lodge, onLodgeChange }) {
       {activeTab === 'inventory' && <InventoryPanel />}
       {activeTab === 'tables' && <TablesPanel />}
       {activeTab === 'qr' && <QrCodesPanel lodge={lodge} />}
+      {activeTab === 'menucard' && <MenuCardDesigner lodge={lodge} onGoToMenu={() => setTab('menu')} />}
       {activeTab === 'settings' && <FoodSettingsPanel onSaved={onLodgeChange} />}
     </div>
   );

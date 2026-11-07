@@ -1,5 +1,6 @@
-/* One look for every modal's top-right close button: a filled circle with a
-   hairline border, turning danger-red on hover.
+/* One look for every modal's top-right close button: a red filled circle with a
+   white ×, clear on both the pale and the navy modal headers, and a deeper red on
+   hover.
 
    The app grew eight differently named close buttons, each styled in its own
    panel's CSS (bare glyph, raised pill, flat square...). They are listed here
@@ -27,15 +28,16 @@ button:is(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--paper);
-  border: 1px solid var(--border);
+  background: var(--danger);
+  border: 1px solid var(--danger);
   border-radius: 50%;
-  box-shadow: none;
-  color: var(--ink);
+  box-shadow: 0 2px 6px rgba(22, 33, 46, 0.25);
+  color: #fff;
   font-size: 22px;
+  font-weight: 600;
   line-height: 1;
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  transition: filter 150ms ease, box-shadow 150ms ease;
 }
 
 button:is(
@@ -51,7 +53,8 @@ button:is(
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
-  box-shadow: none;
+  filter: brightness(0.88);
+  box-shadow: 0 4px 10px rgba(22, 33, 46, 0.3);
 }
 
 button:is(

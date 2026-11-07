@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'framer-motion';
 import { useParams } from 'react-router-dom';
 import { apiGet, apiPatch, apiPost, ApiError, API_BASE } from '../../lib/api';
 import { clearGuestSession, getGuestSession, setGuestSession } from '../../lib/guestSession';
@@ -40,6 +41,298 @@ const FOOD_TYPES = [
   { key: 'NON_VEG', label: 'Non-veg' },
 ];
 
+// Plain strokes rather than the - and + characters, so both buttons are the same
+// weight and centre exactly, whatever font the phone falls back to.
+function StepIcon({ kind }) {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d={kind === 'plus' ? 'M8 3v10M3 8h10' : 'M3 8h10'} />
+    </svg>
+  );
+}
+
+// The quantity between the − and + buttons, typeable. Digits only, 1 to 99 (the
+// most a line accepts). The cart updates as you type; clearing the box and
+// leaving it puts the old number back, and typing 0 takes the dish off.
+function QtyInput({ value, onCommit, label, disabled }) {
+  const [draft, setDraft] = useState(null);
+  const shown = draft ?? String(value);
+
+  const finish = () => {
+    if (draft === null) return;
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n) && n !== value) onCommit(Math.min(99, Math.max(0, n)));
+    setDraft(null);
+  };
+
+  return (
+    <input
+      className="order-qty-input"
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      maxLength={2}
+      value={shown}
+      disabled={disabled}
+      aria-label={label}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        const digits = e.target.value.replace(/\D/g, '').slice(0, 2);
+        setDraft(digits);
+        const n = parseInt(digits, 10);
+        if (Number.isFinite(n) && n > 0) onCommit(n);
+      }}
+      onBlur={finish}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+    />
+  );
+}
+
+// The order sheet. A bottom sheet on a phone, a centred panel on a wide screen.
+//
+// Three zones in a column: a header that names where the order is going, a body
+// that scrolls (lines, the way back to the menu, the two optional fields) and a
+// footer that stays put with the total and the one button that matters. The
+// sheet springs up from the edge, can be dragged down to dismiss from its grab
+// handle or header, and its lines slide in and out as quantities change. With
+// reduced motion on, it simply appears.
+function OrderSheet({
+  editing,
+  lines,
+  itemCount,
+  total,
+  destination,
+  placing,
+  placeError,
+  placeErrorRef,
+  canOrder,
+  onClose,
+  onSubmit,
+  onAddMore,
+  setQty,
+  onCancelAll,
+  guestName,
+  setGuestName,
+  note,
+  setNote,
+}) {
+  const reduce = useReducedMotion();
+  const controls = useDragControls();
+  const sheetRef = useRef(null);
+
+  // Escape closes; the page behind stops scrolling while the sheet is up; focus
+  // moves into the sheet so a keyboard or screen-reader user lands inside it.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !placing) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    sheetRef.current?.focus({ preventScroll: true });
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [placing, onClose]);
+
+  const spring = reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 38, mass: 0.9 };
+  const title = editing ? `Edit order #${editing.orderNumber}` : 'Your order';
+  const cta = placing ? 'Sending…' : editing ? 'Save changes' : 'Place order';
+
+  return (
+    <motion.div
+      className="osx-backdrop"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: reduce ? 0 : 0.2 }}
+      onClick={() => !placing && onClose()}
+    >
+      <motion.form
+        ref={sheetRef}
+        tabIndex={-1}
+        className="osx-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="osx-title"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={onSubmit}
+        noValidate
+        initial={{ y: reduce ? 0 : '100%', opacity: reduce ? 0 : 1 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: reduce ? 0 : '100%', opacity: reduce ? 0 : 1 }}
+        transition={spring}
+        drag={reduce ? false : 'y'}
+        dragControls={controls}
+        dragListener={false}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.5 }}
+        onDragEnd={(_, info) => {
+          if (!placing && (info.offset.y > 110 || info.velocity.y > 600)) onClose();
+        }}
+      >
+        <div className="osx-top" onPointerDown={(e) => controls.start(e)}>
+          <span className="osx-grab" aria-hidden="true" />
+          <div className="osx-head">
+            <div className="osx-head__text">
+              <h2 id="osx-title">{title}</h2>
+              <p>
+                {destination}
+                {destination && itemCount > 0 ? ' · ' : ''}
+                {itemCount > 0 ? `${itemCount} item${itemCount === 1 ? '' : 's'}` : ''}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="osx-close"
+              onClick={onClose}
+              onPointerDown={(e) => e.stopPropagation()}
+              disabled={placing}
+              aria-label="Close order"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="osx-body">
+          {editing?.dropped > 0 && (
+            <div className="osx-note osx-note--warn">
+              {editing.dropped === 1
+                ? 'One item from this order is no longer on the menu and has been removed.'
+                : `${editing.dropped} items from this order are no longer on the menu and have been removed.`}
+            </div>
+          )}
+
+          {placeError && (
+            <div ref={placeErrorRef} className="osx-note osx-note--error" role="alert">
+              {placeError}
+            </div>
+          )}
+
+          <ul className="osx-lines">
+            <AnimatePresence initial={false}>
+              {lines.map((line) => (
+                <motion.li
+                  key={line.key}
+                  className="osx-line"
+                  layout={reduce ? false : 'position'}
+                  initial={reduce ? false : { opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                  transition={{ duration: reduce ? 0 : 0.22 }}
+                >
+                  <div className="osx-line__in">
+                    <div className="osx-line__main">
+                      <span className="osx-line__name">{line.name}</span>
+                      <span className="osx-line__unit">{formatPrice(line.price)}{line.quantity > 1 ? ' each' : ''}</span>
+                    </div>
+                    <span className="osx-line__amount">{formatPrice(line.price * line.quantity)}</span>
+
+                    <div className="order-sheet__stepper order-stepper osx-line__step">
+                      <button
+                        type="button"
+                        onClick={() => setQty(line.id, line.portionId, line.quantity - 1)}
+                        disabled={placing}
+                        aria-label={`One less ${line.name}`}
+                      >
+                        <StepIcon kind="minus" />
+                      </button>
+                      <QtyInput
+                        value={line.quantity}
+                        disabled={placing}
+                        label={`Quantity of ${line.name}`}
+                        onCommit={(n) => setQty(line.id, line.portionId, n)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setQty(line.id, line.portionId, line.quantity + 1)}
+                        disabled={placing || line.quantity >= 99}
+                        aria-label={`One more ${line.name}`}
+                      >
+                        <StepIcon kind="plus" />
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="osx-line__remove"
+                      onClick={() => setQty(line.id, line.portionId, 0)}
+                      disabled={placing}
+                      aria-label={`Take ${line.name} off the order`}
+                      title="Remove"
+                    >
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M4 7h16M9 7V4.5h6V7M6.5 7l.8 12.5h9.4L17.5 7M10 11v5M14 11v5" />
+                      </svg>
+                      <span>Remove</span>
+                    </button>
+                  </div>
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </ul>
+
+          {lines.length === 0 && (
+            <div className="osx-empty">
+              {editing ? (
+                <>
+                  <p>
+                    There’s nothing left on this order. An order can’t be empty — put something back
+                    from the menu, or cancel it altogether.
+                  </p>
+                  <button type="button" className="osx-text-btn osx-text-btn--danger" onClick={onCancelAll} disabled={placing}>
+                    Cancel order #{editing.orderNumber}
+                  </button>
+                </>
+              ) : (
+                <p>Nothing here yet. Add something from the menu.</p>
+              )}
+            </div>
+          )}
+
+          {canOrder && (
+            <button type="button" className="osx-more" onClick={onAddMore}>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M8 3v10M3 8h10" />
+              </svg>
+              {editing ? 'Add something else to this order' : 'Add more from the menu'}
+            </button>
+          )}
+
+          <div className="osx-fields">
+            <label className="osx-field" htmlFor="guestName">
+              <span>Your name <em>optional</em></span>
+              <input id="guestName" value={guestName} onChange={(e) => setGuestName(e.target.value)} autoComplete="name" />
+            </label>
+            <label className="osx-field" htmlFor="note">
+              <span>Note for the kitchen <em>optional</em></span>
+              <input id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Less spicy, no onion" />
+            </label>
+          </div>
+        </div>
+
+        <div className="osx-foot">
+          <div className="osx-total">
+            <span>Total</span>
+            <motion.strong key={total} initial={reduce ? false : { y: 6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.18 }}>
+              {formatPrice(total)}
+            </motion.strong>
+          </div>
+          <button type="submit" className="osx-cta" disabled={placing || lines.length === 0}>
+            {cta}
+          </button>
+        </div>
+      </motion.form>
+    </motion.div>
+  );
+}
+
 function FoodTypeMark({ type }) {
   const label = FOOD_TYPES.find((t) => t.key === type)?.label || type;
   return (
@@ -78,6 +371,7 @@ function groupByType(items) {
 function GuestLogin({ lodge, onSubmit, busy, error, errorRef, invalidField }) {
   const [roomNumber, setRoomNumber] = useState('');
   const [pin, setPin] = useState('');
+  const [logoFailed, setLogoFailed] = useState(false);
 
   return (
     <div className="order-page order-page--gate">
@@ -89,6 +383,18 @@ function GuestLogin({ lodge, onSubmit, busy, error, errorRef, invalidField }) {
         }}
         noValidate
       >
+        {lodge.logoUrl && !logoFailed ? (
+          <img
+            className="order-page__logo guest-login__logo"
+            src={`${API_BASE}${lodge.logoUrl}`}
+            alt=""
+            onError={() => setLogoFailed(true)}
+          />
+        ) : (
+          <span className="order-page__logo order-page__logo--letter guest-login__logo" aria-hidden="true">
+            {(lodge.name || '?').trim().charAt(0).toUpperCase()}
+          </span>
+        )}
         <h1 className="guest-login__lodge">{lodge.name}</h1>
         <p className="guest-login__lead">
           Where shall we bring it? Enter your room and the food PIN from your check-in slip.
@@ -208,6 +514,55 @@ function GuestOrderCard({ order, onEdit, onCancel, busy, editing }) {
 // identifies the table and there's nothing to prove. They share the menu and
 // the cart; only the identity — and what can be done after ordering — differ.
 export default function OrderPage({ mode }) {
+  // Dark or light board. Remembered on this phone; falls back to dark when
+  // storage is blocked (private tabs, some in-app browsers).
+  const [boardTheme, setBoardTheme] = useState(() => {
+    try {
+      return localStorage.getItem('atithya.order.theme') === 'light' ? 'light' : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+  const [logoFailed, setLogoFailed] = useState(false);
+  const reduceMotion = useReducedMotion();
+  // The dark theme paints the whole viewport, not just the page column, and
+  // gives it back when the guest leaves or switches to light.
+  useEffect(() => {
+    if (boardTheme !== 'dark') return undefined;
+    const prevHtml = document.documentElement.style.backgroundColor;
+    const prevBody = document.body.style.backgroundColor;
+    document.documentElement.style.backgroundColor = '#060b14';
+    document.body.style.backgroundColor = '#060b14';
+    return () => {
+      document.documentElement.style.backgroundColor = prevHtml;
+      document.body.style.backgroundColor = prevBody;
+    };
+  }, [boardTheme]);
+  // The dish whose photo is open full-size, or null.
+  const [photo, setPhoto] = useState(null);
+  useEffect(() => {
+    if (!photo) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setPhoto(null);
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [photo]);
+  const toggleTheme = () =>
+    setBoardTheme((t) => {
+      const next = t === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem('atithya.order.theme', next);
+      } catch {
+        /* not remembered */
+      }
+      return next;
+    });
   const { slug, token } = useParams();
   const isTable = mode === 'table';
 
@@ -655,12 +1010,14 @@ export default function OrderPage({ mode }) {
 
   const cartKey = (itemId, portionId) => (portionId ? `${itemId}:${portionId}` : String(itemId));
 
+  const closeCart = useCallback(() => setCartOpen(false), []);
+
   const setQty = (itemId, portionId, quantity) => {
     setCart((c) => {
       const next = { ...c };
       const key = cartKey(itemId, portionId);
       if (quantity <= 0) delete next[key];
-      else next[key] = quantity;
+      else next[key] = Math.min(99, quantity);
       return next;
     });
   };
@@ -962,8 +1319,53 @@ export default function OrderPage({ mode }) {
   }
 
   return (
-    <div className="order-page">
+    <div className="order-page" data-board={boardTheme}>
+      {photo && (
+        <div
+          className="order-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Photo of ${photo.name}`}
+          onClick={() => setPhoto(null)}
+        >
+          <button type="button" className="order-lightbox__close" onClick={() => setPhoto(null)} aria-label="Close photo">
+            &times;
+          </button>
+          <img className="order-lightbox__img" src={photo.src} alt={photo.name} onClick={(e) => e.stopPropagation()} />
+          <p className="order-lightbox__cap">{photo.name}</p>
+        </div>
+      )}
       <header className="order-page__header">
+        <button
+          type="button"
+          className="order-page__theme"
+          onClick={toggleTheme}
+          aria-label={boardTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          title={boardTheme === 'dark' ? 'Light theme' : 'Dark theme'}
+        >
+          {boardTheme === 'dark' ? (
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z" />
+            </svg>
+          )}
+        </button>
+        {context.lodge.logoUrl && !logoFailed ? (
+          <img
+            className="order-page__logo"
+            src={`${API_BASE}${context.lodge.logoUrl}`}
+            alt=""
+            onError={() => setLogoFailed(true)}
+          />
+        ) : (
+          <span className="order-page__logo order-page__logo--letter" aria-hidden="true">
+            {(context.lodge.name || '?').trim().charAt(0).toUpperCase()}
+          </span>
+        )}
         <h1>{context.lodge.name}</h1>
 
         {/* A table says which table. A menu-only property says "Menu", because
@@ -1268,35 +1670,32 @@ export default function OrderPage({ mode }) {
                                 <div className="order-item__foot">
                                   <div className="order-item__price">{formatPrice(item.price)}</div>
                                   {canOrder && (
-                                    <div className="order-item__qty">
+                                    <div className={`order-item__qty${cart[item.id] ? ' order-stepper' : ''}`}>
                                       {cart[item.id] ? (
                                         <>
                                           <button
                                             type="button"
                                             onClick={() => setQty(item.id, null, cart[item.id] - 1)}
                                             aria-label={`One less ${item.name}`}
-                                          >
-                                            −
-                                          </button>
-                                          <span className="order-qty-pop" key={cart[item.id]}>
-                                            {cart[item.id]}
-                                          </span>
+                                          ><StepIcon kind="minus" /></button>
+                                          <QtyInput value={cart[item.id]} label={`Quantity of ${item.name}`} onCommit={(n) => setQty(item.id, null, n)} />
                                           <button
                                             type="button"
                                             onClick={() => setQty(item.id, null, cart[item.id] + 1)}
                                             aria-label={`One more ${item.name}`}
-                                          >
-                                            +
-                                          </button>
+                                          ><StepIcon kind="plus" /></button>
                                         </>
                                       ) : (
-                                        <button
+                                        <motion.button
                                           type="button"
                                           className="order-item__add"
+ whileHover={reduceMotion ? undefined : { scale: 1.06 }}
+ whileTap={reduceMotion ? undefined : { scale: 0.94 }}
+ transition={{ type: 'spring', stiffness: 520, damping: 28 }}
                                           onClick={() => setQty(item.id, null, 1)}
                                         >
                                           Add
-                                        </button>
+                                        </motion.button>
                                       )}
                                     </div>
                                   )}
@@ -1305,13 +1704,20 @@ export default function OrderPage({ mode }) {
                             </div>
 
                             {item.image && (
-                              <img
-                                className="order-item__photo"
-                                src={`${API_BASE}/menu-images/${item.image}`}
-                                alt={item.name}
-                                loading="lazy"
-                                decoding="async"
-                              />
+                              <button
+                                type="button"
+                                className="order-item__photo-btn"
+                                onClick={() => setPhoto({ src: `${API_BASE}/menu-images/${item.image}`, name: item.name })}
+                                aria-label={`View photo of ${item.name}`}
+                              >
+                                <img
+                                  className="order-item__photo"
+                                  src={`${API_BASE}/menu-images/${item.image}`}
+                                  alt=""
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                              </button>
                             )}
                           </div>
 
@@ -1335,35 +1741,32 @@ export default function OrderPage({ mode }) {
                                       {formatPrice(portion.price)}
                                     </span>
                                     {canOrder && (
-                                      <div className="order-item__qty">
+                                      <div className={`order-item__qty${qty ? ' order-stepper' : ''}`}>
                                         {qty ? (
                                           <>
                                             <button
                                               type="button"
                                               onClick={() => setQty(item.id, portion.id, qty - 1)}
                                               aria-label={`One less ${item.name}, ${portion.label}`}
-                                            >
-                                              −
-                                            </button>
-                                            <span className="order-qty-pop" key={qty}>
-                                              {qty}
-                                            </span>
+                                            ><StepIcon kind="minus" /></button>
+                                            <QtyInput value={qty} label={`Quantity of ${item.name}, ${portion.label}`} onCommit={(n) => setQty(item.id, portion.id, n)} />
                                             <button
                                               type="button"
                                               onClick={() => setQty(item.id, portion.id, qty + 1)}
                                               aria-label={`One more ${item.name}, ${portion.label}`}
-                                            >
-                                              +
-                                            </button>
+                                            ><StepIcon kind="plus" /></button>
                                           </>
                                         ) : (
-                                          <button
+                                          <motion.button
                                             type="button"
                                             className="order-item__add"
+ whileHover={reduceMotion ? undefined : { scale: 1.06 }}
+ whileTap={reduceMotion ? undefined : { scale: 0.94 }}
+ transition={{ type: 'spring', stiffness: 520, damping: 28 }}
                                             onClick={() => setQty(item.id, portion.id, 1)}
                                           >
                                             Add
-                                          </button>
+                                          </motion.button>
                                         )}
                                       </div>
                                     )}
@@ -1410,208 +1813,35 @@ export default function OrderPage({ mode }) {
         </button>
       )}
 
-      {cartOpen && (
-        <div className="order-sheet-backdrop" onClick={() => !placing && setCartOpen(false)}>
-          <form
-            className="order-sheet"
-            onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {cartOpen && (
+          <OrderSheet
+            key="order-sheet"
+            editing={editing}
+            lines={lines}
+            itemCount={itemCount}
+            total={total}
+            destination={isTable ? context.target?.label : session ? `Room ${session.roomNumber}` : ''}
+            placing={placing}
+            placeError={placeError}
+            placeErrorRef={placeErrorRef}
+            canOrder={canOrder}
+            onClose={closeCart}
             onSubmit={handlePlace}
-            noValidate
-          >
-            {/* The bar every phone user has been taught means "this panel came
-                up from the bottom and goes back down" — it costs four pixels
-                and answers the question the sheet otherwise leaves open. */}
-            <div className="order-sheet__grab" aria-hidden="true" />
-
-            {/* Pinned while the lines scroll under it, along with the actions at
-                the foot. A sheet you can work in is a sheet that gets long —
-                ten lines with steppers on each — and the two things a guest
-                needs constantly are what they're editing and how to finish. */}
-            <div className="order-sheet__head">
-              <h2>{editing ? `Edit order #${editing.orderNumber}` : 'Your order'}</h2>
-              {itemCount > 0 && (
-                <span className="order-sheet__count">
-                  {itemCount} item{itemCount === 1 ? '' : 's'}
-                </span>
-              )}
-            </div>
-
-            {editing?.dropped > 0 && (
-              <div className="order-sheet__warn">
-                {editing.dropped === 1
-                  ? 'One item from this order is no longer on the menu and has been removed.'
-                  : `${editing.dropped} items from this order are no longer on the menu and have been removed.`}
-              </div>
-            )}
-
-            {placeError && (
-              <div ref={placeErrorRef} className="order-sheet__error">
-                {placeError}
-              </div>
-            )}
-
-            {/* The lines are worked on here, not just totted up. They used to be
-                three read-only spans, which meant changing a quantity was a
-                trip back out to the menu to find the dish again — fine when the
-                cart is three things you just chose, useless for an order placed
-                an hour ago that you want one less of. Each line carries its own
-                stepper and its own way off the order, so everything the guest
-                came to this sheet to do can be done without leaving it. */}
-            <ul className="order-sheet__lines">
-              {lines.map((line) => (
-                <li key={line.key}>
-                  <div className="order-sheet__line-head">
-                    <span className="order-sheet__name">{line.name}</span>
-                    {line.quantity > 1 && (
-                      <span className="order-sheet__each">{formatPrice(line.price)} each</span>
-                    )}
-                  </div>
-
-                  <div className="order-sheet__line-edit">
-                    <div className="order-sheet__stepper">
-                      {/* At one, "less" is the same act as taking it off, which
-                          is what the menu steppers do too — so the guest who
-                          taps down through 3, 2, 1 doesn't hit a floor and have
-                          to go looking for a different button. */}
-                      <button
-                        type="button"
-                        onClick={() => setQty(line.id, line.portionId, line.quantity - 1)}
-                        disabled={placing}
-                        aria-label={`One less ${line.name}`}
-                      >
-                        −
-                      </button>
-                      <span className="order-qty-pop" key={line.quantity}>
-                        {line.quantity}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setQty(line.id, line.portionId, line.quantity + 1)}
-                        // 99 a line is what the server accepts; stopping here
-                        // rather than letting the tap through means the limit
-                        // is met with a dead button, not a rejected order.
-                        disabled={placing || line.quantity >= 99}
-                        aria-label={`One more ${line.name}`}
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="order-sheet__remove"
-                      onClick={() => setQty(line.id, line.portionId, 0)}
-                      disabled={placing}
-                      aria-label={`Take ${line.name} off the order`}
-                    >
-                      Remove
-                    </button>
-
-                    <span className="order-sheet__amount">
-                      {formatPrice(line.price * line.quantity)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-
-            {/* Removing the last line is a reasonable thing to do on the way to
-                "I don't want this any more", and the server won't take an empty
-                order — so rather than let the guest find that out by pressing
-                Save, the sheet says so here and offers the thing they were
-                actually reaching for. */}
-            {lines.length === 0 && (
-              <div className="order-sheet__empty">
-                {editing ? (
-                  <>
-                    <p>
-                      There’s nothing left on this order. An order can’t be empty — put something
-                      back from the menu, or cancel it altogether.
-                    </p>
-                    <button
-                      type="button"
-                      className="order-sheet__cancel-all"
-                      onClick={() => {
-                        const { token: orderToken } = editing;
-                        stopEdit();
-                        setCancelToken(orderToken);
-                      }}
-                      disabled={placing}
-                    >
-                      Cancel order #{editing.orderNumber}
-                    </button>
-                  </>
-                ) : (
-                  <p>Nothing here yet. Add something from the menu below.</p>
-                )}
-              </div>
-            )}
-
-            {/* The way to put something else on the order, from the one screen
-                a guest is on when they realise they want to. Full width and
-                above the total, so it reads as part of working on the order
-                rather than as a way out of the sheet — which is what "Back"
-                down in the actions row looks like, and why nobody found the
-                menu from here. */}
-            {canOrder && (
-              <button type="button" className="order-sheet__more" onClick={goToMenu}>
-                + {editing ? 'Add something else to this order' : 'Add more from the menu'}
-              </button>
-            )}
-
-            <div className="order-sheet__total">
-              <span>Total</span>
-              <span>{formatPrice(total)}</span>
-            </div>
-
-            {!isTable && session && (
-              <p className="order-sheet__signed">
-                Ordering to <strong>room {session.roomNumber}</strong>.
-              </p>
-            )}
-
-            <label className="order-sheet__label" htmlFor="guestName">
-              Your name (optional)
-            </label>
-            <input
-              id="guestName"
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-            />
-
-            <label className="order-sheet__label" htmlFor="note">
-              Anything to tell the kitchen?
-            </label>
-            <input
-              id="note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Less spicy, no onion"
-            />
-
-            <div className="order-sheet__actions">
-              <button
-                type="button"
-                className="order-sheet__back"
-                onClick={() => setCartOpen(false)}
-                disabled={placing}
-              >
-                Back
-              </button>
-              {/* Dead while there's nothing to send. The panel above already
-                  says why and what to do about it, so the button being live
-                  would only buy an error message saying the same thing. */}
-              <button
-                type="submit"
-                className="order-sheet__place"
-                disabled={placing || lines.length === 0}
-              >
-                {placing ? 'Sending…' : editing ? 'Save changes' : 'Place order'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+            onAddMore={goToMenu}
+            setQty={setQty}
+            onCancelAll={() => {
+              const { token: orderToken } = editing;
+              stopEdit();
+              setCancelToken(orderToken);
+            }}
+            guestName={guestName}
+            setGuestName={setGuestName}
+            note={note}
+            setNote={setNote}
+          />
+        )}
+      </AnimatePresence>
 
       {/* "Cancel order" used to be one confirm() and one outcome: the whole
           thing gone. But a guest tapping it usually wants less than that —

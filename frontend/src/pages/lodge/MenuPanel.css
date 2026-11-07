@@ -1307,3 +1307,263 @@
 .dish-card:hover {
   border-top-color: transparent;
 }
+
+
+/* ---- Dish cards: refined, and a dish that is out ----
+   The card keeps its Mist colour and outline. Changes: a larger price, a hairline above
+   the foot, controls that start quiet and come to full strength on hover or focus, and
+   sizes in sentence case. A dish that is marked out goes flat, takes a dashed red-tinted
+   edge on a warm-grey fill, and its price is struck through. The photo greys, the
+   "Marked out" stamp sits on it, and "Back in" stays at full strength so it is always
+   easy to hit. */
+.dish-card__price {
+  font-size: 16px;
+}
+
+.dish-card__foot {
+  margin-top: auto;
+  padding-top: 9px;
+  border-top: 1px solid #dde8f3;
+}
+
+.dish-card__actions {
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.dish-card:hover .dish-card__actions,
+.dish-card:focus-within .dish-card__actions {
+  opacity: 1;
+}
+
+.dish-card__portion-label {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.dish-card__photo {
+  transition: opacity 0.25s ease, filter 0.25s ease, scale 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dish-card:hover .dish-card__photo {
+  scale: 1.04;
+}
+
+.dish-card--out .dish-card__actions {
+  opacity: 1;
+}
+
+.dish-card.dish-card--out {
+  background: #f6f1f0;
+  border: 1px dashed #e3a29c;
+  box-shadow: none;
+}
+
+.dish-card.dish-card--out,
+.dish-card.dish-card--out:hover {
+  border-top-color: #e3a29c;
+}
+
+.dish-card.dish-card--out:hover {
+  border-color: var(--danger);
+  box-shadow: none;
+}
+
+.dish-card.dish-card--out:hover .dish-card__photo {
+  scale: 1;
+}
+
+.dish-card--out .dish-card__price {
+  text-decoration: line-through;
+  text-decoration-color: #e3a29c;
+  text-decoration-thickness: 1.5px;
+}
+
+.dish-card--out .dish-card__foot {
+  border-top-color: #eadcda;
+}
+
+/* The stamp: sentence case, over the photo when there is one so it never covers the
+   dish's name. */
+.dish-card__stamp {
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.dish-card--photo .dish-card__stamp {
+  top: 30%;
+  margin-top: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dish-card__actions,
+  .dish-card__photo {
+    transition: none;
+  }
+
+  .dish-card:hover .dish-card__photo {
+    scale: none;
+  }
+}
+
+/* ---- Dish cards: the rest of the refined grid ----
+   Same proportions as the approved demo: a slightly wider card and gap, rounder
+   corners, a name a touch larger, a description that always takes two lines so the
+   foots line up across a row, sizes on one line under the name's width, and a deeper
+   shadow when the pointer arrives. */
+.dish-grid {
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.dish-card {
+  border-radius: 14px;
+}
+
+.dish-card:hover,
+.dish-card:focus-within {
+  box-shadow: 0 2px 6px rgba(22, 33, 46, 0.12), 0 18px 32px -12px rgba(22, 33, 46, 0.34);
+}
+
+.dish-card.dish-card--out:hover,
+.dish-card.dish-card--out:focus-within {
+  box-shadow: none;
+}
+
+.dish-card__main {
+  padding: 12px 14px;
+}
+
+.dish-card__name {
+  font-size: 14.5px;
+  gap: 8px;
+}
+
+.dish-card__name .food-mark {
+  margin-top: 3px;
+}
+
+.dish-card__desc {
+  min-height: 2.8em;
+}
+
+.dish-card__portions {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.dish-card__portion {
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dish-card__portion-label {
+  color: var(--text-muted);
+}
+
+/* ---- Dish cards: compact ----
+   Same layout and the same photo on every card that has one; only the spacing is
+   tightened so a row is four cards and two rows (eight dishes) fit on a laptop screen.
+   The photo gets a slightly wider crop (5:2 instead of 2:1), not a smaller or hidden
+   one. The description still takes two lines at a tighter leading. */
+.dish-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 10px 14px 14px;
+}
+
+.dish-card__photo {
+  aspect-ratio: 5 / 2;
+}
+
+.dish-card__main {
+  padding: 8px 11px 9px;
+  gap: 4px;
+}
+
+.dish-card__name {
+  font-size: 14px;
+  gap: 7px;
+}
+
+.dish-card__name .food-mark {
+  margin-top: 2px;
+}
+
+.dish-card__desc {
+  font-size: 12px;
+  line-height: 1.35;
+  min-height: 2.7em;
+}
+
+.dish-card__foot {
+  padding-top: 6px;
+  gap: 6px;
+}
+
+.dish-card__price {
+  font-size: 15px;
+}
+
+.dish-card__portion {
+  font-size: 12.5px;
+}
+
+.dish-card__toggle {
+  padding: 3px 10px;
+  font-size: 11.5px;
+}
+
+.dish-card__stamp {
+  font-size: 13px;
+  padding: 2px 9px;
+}
+
+/* ---- Dish cards: more photo, less white ----
+   The text block under the photo is tightened (one-line description, less padding) and
+   the photo goes back to a 2:1 crop, so the picture takes the larger share of the card
+   and shows the dish properly. The full description is still on the card's tooltip and
+   in the edit form. */
+.dish-card__photo {
+  aspect-ratio: 2 / 1;
+}
+
+.dish-card__main {
+  padding: 6px 10px 7px;
+  gap: 3px;
+}
+
+.dish-card__name {
+  font-size: 13.5px;
+  line-height: 1.25;
+}
+
+.dish-card__name .food-mark {
+  margin-top: 1px;
+}
+
+.dish-card__desc {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  min-height: 0;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.dish-card__foot {
+  padding-top: 5px;
+}
+
+.dish-card__price {
+  font-size: 14.5px;
+}
+
+.dish-card__toggle {
+  padding: 2px 9px;
+}

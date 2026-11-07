@@ -153,21 +153,28 @@ export default function AnalyticsOverview({ lodge, bookings, occupancy, gst, eve
           <span className="kpi-label">Revenue billed</span>
           <span className="kpi-value"><CountText value={formatPrice(totalRevenue)} /></span>
           {showComparison && <DeltaBadge current={currentTrendTotal} prior={priorTotal} />}
-          <span className="kpi-sub">Rooms + functions + food · billed only</span>
+          <span className="kpi-sub">Rooms, functions and food, billed only</span>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Occupancy</span>
           <span className="kpi-value"><CountText value={`${occupancy.summary.occupancyPercent}%`} /></span>
           <span className="kpi-sub">{occupancy.summary.occupiedRoomNights} of {occupancy.summary.totalRoomNights} room-nights sold</span>
+          <div
+            className="kpi-meter"
+            role="img"
+            aria-label={`${occupancy.summary.occupiedRoomNights} of ${occupancy.summary.totalRoomNights} room-nights sold`}
+          >
+            <i style={{ width: `${Math.min(100, Math.max(0, Number(occupancy.summary.occupancyPercent) || 0))}%` }} />
+          </div>
         </div>
         <div className="kpi-card">
-          <span className="kpi-label">Avg. daily rate</span>
+          <span className="kpi-label">Average daily rate</span>
           <span className="kpi-value"><CountText value={formatPrice(adr)} /></span>
-          <span className="kpi-sub">RevPAR {formatPrice(revpar)}</span>
+          <span className="kpi-sub">RevPAR {formatPrice(Math.round(revpar * 100) / 100)}</span>
         </div>
-        <div className="kpi-card">
+        <div className="kpi-card kpi-card--warn">
           <span className="kpi-label">Not yet billed</span>
-          <span className="kpi-value" style={{ fontSize: 18 }}><CountText value={formatPrice(totalUnbilled)} /></span>
+          <span className="kpi-value"><CountText value={formatPrice(totalUnbilled)} /></span>
           <span className="kpi-sub">Follow up before month close</span>
         </div>
       </div>

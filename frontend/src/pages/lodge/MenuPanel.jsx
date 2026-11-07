@@ -28,6 +28,7 @@ import MenuExcelImport from '../../components/MenuExcelImport';
 import SectionTabs from './SectionTabs';
 import RowMenu from './RowMenu';
 import MotionButton from '../../components/MotionButton';
+import ActionModal from '../../components/ActionModal';
 import Req from '../../components/RequiredMark';
 import './forms.css';
 import './MenuPanel.css';
@@ -378,7 +379,7 @@ function DishCardShell({ item, children }) {
 
   return (
     <motion.li
-      className={`dish-card ${item.isAvailable ? '' : 'dish-card--out'}`}
+      className={`dish-card ${item.isAvailable ? '' : 'dish-card--out'}${item.image ? ' dish-card--photo' : ''}`}
       style={{ x: shakeX, y, rotateX: tiltX, rotateY: tiltY, transformPerspective: 800 }}
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
@@ -395,7 +396,7 @@ function DishCardShell({ item, children }) {
             exit={{ opacity: 0, scale: reduce ? 1 : 0.8, rotate: -8, transition: { duration: 0.2 } }}
             transition={reduce ? { duration: 0.15 } : { type: 'spring', stiffness: 420, damping: 18 }}
           >
-            Sold out
+            Marked out
           </motion.span>
         )}
       </AnimatePresence>
@@ -697,6 +698,25 @@ export default function MenuPanel() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Marking a dish out is asked about first: it comes off the guest's menu at once,
+  // and the button sits a thumb's width from "Back in". Bringing a dish back needs no
+  // question. outItem is kept after the dialog closes so its text does not blank
+  // during the exit animation.
+  const [outItem, setOutItem] = useState(null);
+  const [outOpen, setOutOpen] = useState(false);
+  const [outBusy, setOutBusy] = useState(false);
+  const askMarkOut = (item) => {
+    setOutItem(item);
+    setOutOpen(true);
+  };
+  const confirmMarkOut = async () => {
+    if (!outItem) return;
+    setOutBusy(true);
+    await toggleAvailability(outItem);
+    setOutBusy(false);
+    setOutOpen(false);
   };
 
   const toggleAvailability = async (item) => {
@@ -1211,10 +1231,9 @@ export default function MenuPanel() {
                             <div className="dish-card__name">
                               <FoodTypeMark type={item.foodType} />
                               <span className="dish-card__name-text">{item.name}</span>
-                              {!item.isAvailable && <span className="badge badge--off">Out</span>}
                             </div>
                             {item.description && (
-                              <div className="dish-card__desc">{item.description}</div>
+                              <div className="dish-card__desc" title={item.description}>{item.description}</div>
                             )}
 
                             <div className="dish-card__foot">
@@ -1242,7 +1261,7 @@ export default function MenuPanel() {
                                   className="dish-card__toggle"
                                   hover={NO_LIFT}
                                   tap={PRESS}
-                                  onClick={() => toggleAvailability(item)}
+                                  onClick={() => (item.isAvailable ? askMarkOut(item) : toggleAvailability(item))}
                                 >
                                   {item.isAvailable ? 'Mark out' : 'Back in'}
                                 </MotionButton>
@@ -1783,6 +1802,17 @@ export default function MenuPanel() {
           </div>
         </div>
       )}
+
+      <ActionModal
+        open={outOpen}
+        tone="warning"
+        title={`Mark ${outItem?.name || 'this dish'} out?`}
+        message="Guests will not be able to order it until you bring it back in. You can undo this at any time."
+        confirmLabel="Mark out"
+        busy={outBusy}
+        onConfirm={confirmMarkOut}
+        onCancel={() => setOutOpen(false)}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { toClockTime } = require('../rooms/checkoutPolicy.service');
 
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
@@ -13,7 +14,7 @@ async function getLodgeBySlug(slug) {
     .query(`
       SELECT id, name, slug, phone, whatsapp_number, address, city, state,
              has_rooms, serves_food, food_room_service, food_table_service, has_events,
-             has_other_services, checkin_mode, latitude, longitude, logo_path, hero_image_path
+             has_other_services, checkin_mode, check_in_time, check_out_time, latitude, longitude, logo_path, hero_image_path
       FROM dbo.lodges
       WHERE slug = @slug AND is_active = 1
     `);
@@ -42,6 +43,8 @@ async function getLodgeBySlug(slug) {
     // fixed cycle — and the pin for a directions link. The exact clock times
     // stay off the page; the desk quotes those when a booking is made.
     checkinMode: row.checkin_mode,
+    checkInTime: toClockTime(row.check_in_time),
+    checkOutTime: toClockTime(row.check_out_time),
     latitude: row.latitude == null ? null : Number(row.latitude),
     longitude: row.longitude == null ? null : Number(row.longitude),
     logoUrl: row.logo_path ? `/hotel-logos/${row.logo_path}` : null,
@@ -361,7 +364,7 @@ async function getLodgeOrderingContext(slug) {
   assertServesFood(lodge);
 
   return {
-    lodge: { name: lodge.name, slug: lodge.slug, phone: lodge.phone },
+    lodge: { name: lodge.name, slug: lodge.slug, phone: lodge.phone, logoUrl: lodge.logoUrl },
     target: null,
     // Whether the room-number + PIN form is shown at all. Not a statement about
     // any particular room.
@@ -390,7 +393,7 @@ async function getTableOrderingContext(token) {
     .request()
     .input('lodgeId', sql.BigInt, table.lodge_id)
     .query(`
-      SELECT id, name, slug, phone, serves_food, food_table_service
+      SELECT id, name, slug, phone, serves_food, food_table_service, logo_path
       FROM dbo.lodges WHERE id = @lodgeId
     `);
   const lodge = lodgeResult.recordset[0];
@@ -403,7 +406,12 @@ async function getTableOrderingContext(token) {
   // whose QR is live can always order — there's no per-table state to report,
   // and nothing here should hint at what's happening in the building.
   return {
-    lodge: { name: lodge.name, slug: lodge.slug, phone: lodge.phone },
+    lodge: {
+      name: lodge.name,
+      slug: lodge.slug,
+      phone: lodge.phone,
+      logoUrl: lodge.logo_path ? `/hotel-logos/${lodge.logo_path}` : null,
+    },
     target: { type: 'TABLE', label: table.label },
     menu: await getPublicMenu(table.lodge_id),
   };

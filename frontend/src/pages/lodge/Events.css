@@ -2439,3 +2439,103 @@
   color: #fff;
   box-shadow: 0 8px 16px -8px var(--success);
 }
+
+/* --- Function diary legend: hover effects ----------------------------------
+   Every chip, the plain ones (Vacant, Not ready, In progress) as well as the three
+   that lead to the list, rises on hover and deepens its shadow.
+   The lift uses the separate `translate` property so it never fights a transform. */
+.events .tape-legend__item {
+  transition:
+    translate 0.22s cubic-bezier(0.2, 0.8, 0.3, 1.2),
+    box-shadow 0.22s ease,
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.events .tape-legend__item:hover {
+  translate: 0 -3px;
+  border-color: #c3ccdb;
+  box-shadow: 0 2px 4px rgba(22, 33, 46, 0.1), 0 12px 20px -8px rgba(22, 33, 46, 0.32);
+}
+
+.events .tape-legend__item--link:hover {
+  transform: none;
+}
+
+.events .tape-legend__item--link:active {
+  translate: 0 -1px;
+}
+
+@media (hover: none) {
+  .events .tape-legend__item:hover {
+    translate: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .events .tape-legend__item {
+    transition: none;
+  }
+
+  .events .tape-legend__item:hover,
+  .events .tape-legend__item--link:active {
+    translate: none;
+  }
+}
+
+/* --- Function diary toolbar: hover effects ---------------------------------
+   Today, the drafts chip and New event lift on hover and deepen their shadow,
+   matching the legend chips beneath them. The lift is the separate `translate`
+   property, so it never fights a transform. The date stepper and the search box
+   stay as they were. No shine. */
+.events__toolbar .chart-row__link-btn,
+.events__toolbar .bookings-panel__draft-chip,
+.events__toolbar .btn-accent {
+  transition:
+    translate 0.22s cubic-bezier(0.2, 0.8, 0.3, 1.2),
+    box-shadow 0.22s ease,
+    background-color 0.18s ease,
+    border-color 0.2s ease,
+    color 0.18s ease;
+}
+
+.events__toolbar .chart-row__link-btn:hover,
+.events__toolbar .bookings-panel__draft-chip:hover,
+.events__toolbar .btn-accent:hover {
+  translate: 0 -3px;
+}
+
+.events__toolbar .chart-row__link-btn:hover {
+  box-shadow: 0 2px 4px rgba(22, 33, 46, 0.1), 0 12px 20px -8px rgba(22, 33, 46, 0.32);
+}
+
+.events__toolbar .chart-row__link-btn:active,
+.events__toolbar .bookings-panel__draft-chip:active,
+.events__toolbar .btn-accent:active {
+  translate: 0 -1px;
+}
+
+@media (hover: none) {
+  .events__toolbar .chart-row__link-btn:hover,
+  .events__toolbar .bookings-panel__draft-chip:hover,
+  .events__toolbar .btn-accent:hover {
+    translate: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .events__toolbar .chart-row__link-btn,
+  .events__toolbar .bookings-panel__draft-chip,
+  .events__toolbar .btn-accent {
+    transition: none;
+  }
+
+  .events__toolbar .chart-row__link-btn:hover,
+  .events__toolbar .bookings-panel__draft-chip:hover,
+  .events__toolbar .btn-accent:hover,
+  .events__toolbar .chart-row__link-btn:active,
+  .events__toolbar .bookings-panel__draft-chip:active,
+  .events__toolbar .btn-accent:active {
+    translate: none;
+  }
+}

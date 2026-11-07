@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { animate, motion, useReducedMotion } from 'framer-motion';
 import { useParams } from 'react-router-dom';
 import { apiGet, apiPost, ApiError, API_BASE } from '../../lib/api';
 import { formatPrice } from '../lodge/priceFormat';
@@ -46,6 +47,21 @@ const CHECKIN_MODE_LABEL = {
   HYBRID: 'Early arrival 24-hour, else fixed checkout',
 };
 
+const FACT_ICONS = {
+  price: <path d="M3 18V8m0 6h18v4M21 14v-2a3 3 0 0 0-3-3h-7v5" />,
+  rooms: <path d="M4 20V10l8-6 8 6v10M9 20v-6h6v6" />,
+  venues: <path d="M7 3v8a2 2 0 0 0 2 2v8M11 3v6M7 7h4M17 21V3c-2 1-3 4-3 8h3" />,
+  food: <path d="M4 7h16v13H4zM8 3v4M16 3v4M4 11h16" />,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+};
+
+// "14:00" -> "2:00 PM", the way a guest reads a clock.
+function formatClock(hhmm) {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  if (!Number.isFinite(h)) return hhmm;
+  return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+
 // Where to send a guest who taps "Get directions": the pin when the property
 // has one, the address as a search when it does not, nothing when neither.
 function buildDirectionsLink(lodge) {
@@ -86,20 +102,29 @@ const serviceImageUrl = (filename) => `${API_BASE}/service-images/${filename}`;
 // public.service.js), unlike the filenames above.
 const logoUrl = (lodge) => (lodge.logoUrl ? `${API_BASE}${lodge.logoUrl}` : null);
 
-// "Seats 300", "Up to 300 guests" — the capacity is advisory on the desk side
-// too, so the public page says it the soft way.
-function capacityLabel(venue) {
-  return venue.capacityPax ? `Up to ${venue.capacityPax} guests` : null;
+// Cards rise in as they scroll into view and lift on hover. With reduced
+// motion on they simply sit there. Nothing here changes a card's size, so a
+// photo being added later cannot move the layout.
+function useCardMotion() {
+  const reduce = useReducedMotion();
+  if (reduce) return {};
+  return {
+    initial: { opacity: 0, y: 28 },
+    whileInView: { opacity: 1, y: 0 },
+    viewport: { once: true, margin: '-40px' },
+    transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] },
+    whileHover: { y: -6, transition: { type: 'spring', stiffness: 300, damping: 24 } },
+  };
 }
 
 function VenueCard({ lodge, venue, onOpenPhotos, onEnquireEvent }) {
-  const capacity = capacityLabel(venue);
+  const motionProps = useCardMotion();
   const canEnquire = Boolean(lodge.whatsappNumber) || Boolean(lodge.phone);
 
   return (
-    <div className="lodge-public__room lodge-public__venue">
-      <div className="lodge-public__room-cover">
-        {venue.images.length > 0 ? (
+    <motion.div className="lodge-public__room lodge-public__venue gl-venue" {...motionProps}>
+      {venue.images.length > 0 && (
+        <div className="gl-venue__cover">
           <button
             type="button"
             className="lodge-public__room-cover-btn"
@@ -114,43 +139,32 @@ function VenueCard({ lodge, venue, onOpenPhotos, onEnquireEvent }) {
               decoding="async"
             />
           </button>
-        ) : (
-          <div className="lodge-public__room-placeholder">{venue.name}</div>
-        )}
-        {venue.images.length > 1 && <span className="lodge-public__photo-count">+{venue.images.length - 1}</span>}
-      </div>
-
-      <div className="lodge-public__room-body">
-        <div className="lodge-public__room-top">
-          <div>
-            <div className="lodge-public__room-number">{venue.name}</div>
-            <div className="lodge-public__room-category">Function venue</div>
-          </div>
-          <div className="lodge-public__room-rate">
-            {venue.baseCharge > 0 ? formatPrice(venue.baseCharge) : 'On request'}
-            {venue.baseCharge > 0 && <span className="lodge-public__room-rate-unit"> /function</span>}
-          </div>
+          {venue.images.length > 1 && <span className="lodge-public__photo-count">+{venue.images.length - 1}</span>}
         </div>
+      )}
 
-        {capacity && (
-          <div className="lodge-public__room-chips">
-            <span className="lodge-public__chip">{capacity}</span>
+      <div className="gl-venue__body">
+        <h3 className="gl-venue__name">{venue.name}</h3>
+        <p className="gl-venue__rate">{venue.baseCharge > 0 ? `Hire from ${formatPrice(venue.baseCharge)}` : 'Hire charge on request'}</p>
+
+        {venue.capacityPax ? (
+          <div className="gl-venue__cap">
+            {venue.capacityPax}
+            <small>guests</small>
           </div>
+        ) : (
+          <div className="gl-venue__cap gl-venue__cap--none" aria-hidden="true" />
         )}
 
         {canEnquire ? (
-          <button
-            type="button"
-            className="lodge-public__whatsapp-btn"
-            onClick={() => onEnquireEvent(venue.id)}
-          >
-            Enquire for Venue
+          <button type="button" className="gl-venue__btn" onClick={() => onEnquireEvent(venue.id)}>
+            Check this venue
           </button>
         ) : (
-          <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the property'} to enquire.</p>
+          <p className="gl-venue__call">Call {lodge.phone || 'the property'} to enquire.</p>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -159,8 +173,9 @@ function VenueCard({ lodge, venue, onOpenPhotos, onEnquireEvent }) {
 // the card is the same shape as a venue's but the enquiry is just name,
 // phone and a message rather than the full room/event form.
 function ServiceCard({ service, onOpenPhotos, onEnquire }) {
+  const motionProps = useCardMotion();
   return (
-    <div className="lodge-public__room">
+    <motion.div className="lodge-public__room" {...motionProps}>
       <div className="lodge-public__room-cover">
         {service.image ? (
           <button
@@ -198,7 +213,7 @@ function ServiceCard({ service, onOpenPhotos, onEnquire }) {
           Enquire about this
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -245,41 +260,85 @@ function menuItemPrice(item) {
   return formatPrice(item.price);
 }
 
-// One category as a horizontal shelf of dish tiles, the way a delivery app
-// lays a menu out: the heading names the category, the row scrolls sideways
-// under it, and every category is on screen at once rather than folded away.
-// Arrows appear on a pointer device once the row overflows; on a phone the
-// thumb does the work and the arrows stay hidden.
-function MenuShelf({ section, onOpenPhotos }) {
-  const rowRef = useRef(null);
-  const [canPrev, setCanPrev] = useState(false);
-  const [canNext, setCanNext] = useState(false);
+// One category as a looping rail of dish cards. The card you click takes the
+// first slot, lifted and gold-edged as if hovered; the card before it tucks
+// into a sliver at the left edge and the ones after it wait on the right. It
+// never runs out: after the last dish comes the first again, and before the
+// first comes the last. Every card is one fixed size, so a photo added later
+// never moves anything.
+const RAIL_GAP = 18;
 
-  const updateArrows = () => {
-    const el = rowRef.current;
-    if (!el) return;
-    setCanPrev(el.scrollLeft > 4);
-    setCanNext(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+// The focused card sits in the middle of the row, lifted; the dishes either side
+// of it are lined up at its left and right, a little smaller, and fade out
+// toward the edges.
+function railPose(pos, cw, width) {
+  const centre = (width - cw) / 2;
+  const far = Math.abs(pos);
+  return {
+    x: centre + pos * (cw + RAIL_GAP),
+    y: pos === 0 ? -14 : 0,
+    scale: pos === 0 ? 1.05 : 0.94,
+    opacity: far <= 1 ? 1 : far === 2 ? 0.75 : 0.45,
   };
+}
+
+// A soft, slightly heavy spring so the cards glide and settle without a bounce;
+// the opacity eases on its own timing so a card fades rather than pops. A card
+// wrapping around the ends repositions without moving, and just fades.
+function railTransition(reduce, jumped) {
+  if (reduce) return { duration: 0 };
+  const soft = { type: 'spring', stiffness: 120, damping: 24, mass: 1.1 };
+  const fade = { duration: 0.5, ease: [0.22, 1, 0.36, 1] };
+  return jumped ? { x: { duration: 0 }, y: { duration: 0 }, scale: { duration: 0 }, opacity: fade } : { x: soft, y: soft, scale: soft, opacity: fade };
+}
+
+function MenuShelf({ section, onOpenPhotos }) {
+  const reduce = useReducedMotion();
+  const [focus, setFocus] = useState({ active: 0, prev: 0 });
+  const { active, prev } = focus;
+  const [cw, setCw] = useState(250);
+  const [stageW, setStageW] = useState(900);
+  const stageRef = useRef(null);
+  const rowRef = useRef(null);
+  const items = section.items;
+  const n = items.length;
 
   useEffect(() => {
-    const el = rowRef.current;
-    if (!el) return;
-    // Run once the row has laid out, and again whenever it resizes - a
-    // rotated phone or a resized window changes what overflows.
-    const raf = requestAnimationFrame(updateArrows);
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateArrows) : null;
-    if (observer) observer.observe(el);
-    return () => {
-      cancelAnimationFrame(raf);
-      if (observer) observer.disconnect();
+    const el = stageRef.current;
+    if (!el) return undefined;
+    const fit = () => {
+      // the stage bleeds 20px past the section on each side
+      const w = el.clientWidth + 40;
+      setCw(w < 560 ? 214 : 250);
+      setStageW(w);
     };
-  }, [section.items.length]);
+    fit();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  const scrollRow = (direction) => {
-    const el = rowRef.current;
-    if (!el) return;
-    el.scrollBy({ left: direction * Math.max(el.clientWidth * 0.8, 200), behavior: 'smooth' });
+  // Signed distance from a focused card, wrapped around the list so dishes sit
+  // on both sides of it and the row never runs out.
+  const posAt = (i, a) => {
+    const d = (i - a + n) % n;
+    return d > n / 2 ? d - n : d;
+  };
+  const pos = items.map((_, i) => posAt(i, active));
+  // A card that wraps from one end to the other jumps without crossing the
+  // stage; everything else springs.
+  const jumped = items.map((_, i) => Math.abs(pos[i] - posAt(i, prev)) > 1);
+
+  const go = (i) => setFocus((f) => ({ active: ((i % n) + n) % n, prev: f.active }));
+  const onKeyDown = (e) => {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      go(active + 1);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      go(active - 1);
+    }
   };
 
   return (
@@ -287,56 +346,118 @@ function MenuShelf({ section, onOpenPhotos }) {
       <div className="lodge-public__shelf-head">
         <h3 className="lodge-public__shelf-title">
           {section.name}
-          <span className="lodge-public__menu-section-count">{section.items.length}</span>
+          <span className="lodge-public__menu-section-count">{n}</span>
         </h3>
-        {(canPrev || canNext) && (
+        {n > 1 && (
           <div className="lodge-public__shelf-arrows">
-            <button
-              type="button"
-              className="lodge-public__shelf-arrow"
-              onClick={() => scrollRow(-1)}
-              disabled={!canPrev}
-              aria-label={`Scroll ${section.name} back`}
-            >
+            <button type="button" className="lodge-public__shelf-arrow" onClick={() => go(active - 1)} aria-label={`Previous dish in ${section.name}`}>
               &lsaquo;
             </button>
-            <button
-              type="button"
-              className="lodge-public__shelf-arrow"
-              onClick={() => scrollRow(1)}
-              disabled={!canNext}
-              aria-label={`Scroll ${section.name} forward`}
-            >
+            <button type="button" className="lodge-public__shelf-arrow" onClick={() => go(active + 1)} aria-label={`Next dish in ${section.name}`}>
               &rsaquo;
             </button>
           </div>
         )}
       </div>
 
-      <ul className="lodge-public__shelf-row" ref={rowRef} onScroll={updateArrows}>
-        {section.items.map((item) => (
-          <li className={`lodge-public__dish${item.image ? '' : ' lodge-public__dish--no-photo'}`} key={item.id}>
-            {item.image && (
-              <button
-                type="button"
-                className="lodge-public__dish-photo"
-                onClick={() => onOpenPhotos([menuImageUrl(item.image)], 0)}
-                aria-label={`View photo of ${item.name}`}
-              >
-                <img src={menuImageUrl(item.image)} alt="" loading="lazy" />
-              </button>
-            )}
-            <div className="lodge-public__dish-body">
-              <div className="lodge-public__dish-head">
-                <FoodMark type={item.foodType} />
-                <span className="lodge-public__dish-name">{item.name}</span>
+      <div className="rl-wrap" ref={stageRef}>
+      {stageW < 560 ? (
+        <ul className="rl-row" ref={rowRef} aria-label={`${section.name} dishes`}>
+          {items.map((item, i) => (
+            <motion.li
+              key={item.id}
+              className={`rl-card${i === active ? ' rl-card--on' : ''}`}
+              initial={false}
+              animate={{ y: i === active ? -12 : 0, scale: i === active ? 1.04 : 1 }}
+              transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 150, damping: 20, mass: 0.9 }}
+              whileTap={reduce ? undefined : { scale: 0.97 }}
+              onClick={() => {
+                setFocus((f) => ({ active: i, prev: f.active }));
+                const row = rowRef.current;
+                const card = row?.children[i];
+                if (row && card) row.scrollTo({ left: card.offsetLeft - 20, behavior: reduce ? 'auto' : 'smooth' });
+              }}
+            >
+              {item.image ? (
+                <button
+                  type="button"
+                  className="rl-card__photo"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenPhotos([menuImageUrl(item.image)], 0);
+                  }}
+                  aria-label={`View photo of ${item.name}`}
+                >
+                  <img src={menuImageUrl(item.image)} alt="" loading="lazy" decoding="async" />
+                </button>
+              ) : (
+                <div className="rl-card__photo rl-card__photo--none" aria-hidden="true">
+                  <span>{item.name.trim().charAt(0).toUpperCase()}</span>
+                </div>
+              )}
+              <div className="rl-card__body">
+                <div className="rl-card__name">
+                  <FoodMark type={item.foodType} />
+                  <span>{item.name}</span>
+                </div>
+                {item.description && <p className="rl-card__desc">{item.description}</p>}
+                <div className="rl-card__price">{menuItemPrice(item)}</div>
               </div>
-              {item.description && <p className="lodge-public__dish-desc">{item.description}</p>}
-              <div className="lodge-public__dish-price">{menuItemPrice(item)}</div>
-            </div>
-          </li>
-        ))}
-      </ul>
+            </motion.li>
+          ))}
+        </ul>
+      ) : (
+      <div className="rl-stage rl-stage--loop" tabIndex={0} onKeyDown={onKeyDown} aria-label={`${section.name} dishes`} style={{ '--rl-cw': `${cw}px` }}>
+        <ul className="rl-track">
+          {items.map((item, i) => {
+            const p = pos[i];
+            const isActive = p === 0;
+            return (
+              <motion.li
+                key={item.id}
+                className={`rl-card${isActive ? ' rl-card--on' : ''}`}
+                style={{ zIndex: 100 - Math.abs(p) }}
+                initial={false}
+                animate={railPose(p, cw, stageW)}
+                transition={railTransition(reduce, jumped[i])}
+                onClick={() => !isActive && go(i)}
+                aria-current={isActive ? 'true' : undefined}
+              >
+                {item.image ? (
+                  <button
+                    type="button"
+                    className="rl-card__photo"
+                    tabIndex={isActive ? 0 : -1}
+                    onClick={(e) => {
+                      if (!isActive) return;
+                      e.stopPropagation();
+                      onOpenPhotos([menuImageUrl(item.image)], 0);
+                    }}
+                    aria-label={`View photo of ${item.name}`}
+                  >
+                    <img src={menuImageUrl(item.image)} alt="" loading="lazy" decoding="async" />
+                  </button>
+                ) : (
+                  <div className="rl-card__photo rl-card__photo--none" aria-hidden="true">
+                    <span>{item.name.trim().charAt(0).toUpperCase()}</span>
+                  </div>
+                )}
+                <div className="rl-card__body">
+                  <div className="rl-card__name">
+                    <FoodMark type={item.foodType} />
+                    <span>{item.name}</span>
+                  </div>
+                  {item.description && <p className="rl-card__desc">{item.description}</p>}
+                  <div className="rl-card__price">{menuItemPrice(item)}</div>
+                </div>
+                {!isActive && <button type="button" className="rl-card__hit" onClick={() => go(i)} aria-label={`Show ${item.name}`} />}
+              </motion.li>
+            );
+          })}
+        </ul>
+      </div>
+      )}
+      </div>
     </section>
   );
 }
@@ -368,7 +489,9 @@ function MenuCard({ menu, onOpenPhotos }) {
   );
 }
 
+
 function RoomTypeCard({ lodge, type, onOpenPhotos, onEnquireRoom }) {
+  const motionProps = useCardMotion();
   const availability = availabilityOf(type);
   const isUnavailable = type.availableCount === 0;
   const canEnquire = Boolean(lodge.whatsappNumber) || Boolean(lodge.phone);
@@ -383,15 +506,12 @@ function RoomTypeCard({ lodge, type, onOpenPhotos, onEnquireRoom }) {
     Boolean
   );
 
+  const facts = [...chips, `${type.roomCount} room${type.roomCount === 1 ? '' : 's'}`];
+
   return (
-    <div className={`lodge-public__room${isUnavailable ? ' lodge-public__room--unavailable' : ''}`}>
-      <div className="lodge-public__room-cover">
-        {availability && (
-          <span className={`lodge-public__availability-badge lodge-public__availability-badge--${availability.tone}`}>
-            {availability.label}
-          </span>
-        )}
-        {type.images.length > 0 ? (
+    <motion.div className={`lodge-public__room gl-room${isUnavailable ? ' lodge-public__room--unavailable' : ''}`} {...motionProps}>
+      {type.images.length > 0 && (
+        <div className="gl-room__cover">
           <button
             type="button"
             className="lodge-public__room-cover-btn"
@@ -406,51 +526,44 @@ function RoomTypeCard({ lodge, type, onOpenPhotos, onEnquireRoom }) {
               decoding="async"
             />
           </button>
-        ) : (
-          <div className="lodge-public__room-placeholder">{type.name}</div>
-        )}
-        {type.images.length > 1 && <span className="lodge-public__photo-count">+{type.images.length - 1}</span>}
-      </div>
+          {type.images.length > 1 && <span className="lodge-public__photo-count">+{type.images.length - 1}</span>}
+        </div>
+      )}
 
-      <div className="lodge-public__room-body">
-        <div className="lodge-public__room-top">
-          <div>
-            <div className="lodge-public__room-number">{type.name}</div>
-            <div className="lodge-public__room-category">
-              {type.roomCount} room{type.roomCount === 1 ? '' : 's'} of this type
-            </div>
-          </div>
-          <div className="lodge-public__room-rate">
-            {formatPrice(type.price)}
-            <span className="lodge-public__room-rate-unit"> /night</span>
-          </div>
+      <div className="gl-room__body">
+        <span className="gl-room__tag" aria-hidden="true" />
+        <div className="gl-room__head">
+          <h3 className="gl-room__name">{type.name}</h3>
+          {availability && (
+            <span className={`lodge-public__availability-badge lodge-public__availability-badge--${availability.tone} gl-room__avail`}>
+              {availability.label}
+            </span>
+          )}
         </div>
 
-        {chips.length > 0 && (
-          <div className="lodge-public__room-chips">
-            {chips.map((chip) => (
-              <span className="lodge-public__chip" key={chip}>
-                {chip}
-              </span>
-            ))}
+        <ul className="gl-room__facts">
+          {facts.map((f) => (
+            <li key={f}>{f}</li>
+          ))}
+        </ul>
+
+        {type.description && <p className="gl-room__desc">{type.description}</p>}
+
+        <div className="gl-room__foot">
+          <div className="gl-room__price">
+            <b>{formatPrice(type.price)}</b>
+            <small>per night</small>
           </div>
-        )}
-
-        {type.description && <p className="lodge-public__room-description">{type.description}</p>}
-
-        {canEnquire ? (
-          <button
-            type="button"
-            className="lodge-public__whatsapp-btn"
-            onClick={() => onEnquireRoom(type.id)}
-          >
-            {isUnavailable ? 'Ask about other dates' : 'Enquire for Room'}
-          </button>
-        ) : (
-          <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the lodge'} to enquire.</p>
-        )}
+          {canEnquire ? (
+            <button type="button" className="gl-room__btn" onClick={() => onEnquireRoom(type.id)}>
+              {isUnavailable ? 'Other dates' : 'Book'}
+            </button>
+          ) : (
+            <p className="lodge-public__no-whatsapp">Call {lodge.phone || 'the lodge'} to enquire.</p>
+          )}
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -474,10 +587,10 @@ function EnquireModal({ lodge, roomTypes, roomAddons, venues, eventAddons, menuA
   const [guests, setGuests] = useState('');
   const [roomAddonIds, setRoomAddonIds] = useState([]);
 
-  const [eventDate, setEventDate] = useState('');
-  const [eventType, setEventType] = useState(EVENT_TYPES[0]);
+  const [eventDate, setEventDate] = useState(initial.eventDate || '');
+  const [eventType, setEventType] = useState(initial.eventType || EVENT_TYPES[0]);
   const [venueId, setVenueId] = useState(initial.venueId ? String(initial.venueId) : 'ANY');
-  const [eventGuests, setEventGuests] = useState('');
+  const [eventGuests, setEventGuests] = useState(initial.eventGuests || '');
   const [eventAddonIds, setEventAddonIds] = useState([]);
 
   const [website, setWebsite] = useState(''); // honeypot — real guests never see it
@@ -835,6 +948,51 @@ export default function LodgePublicPage() {
   const [error, setError] = useState('');
   const [lightbox, setLightbox] = useState(null);
   const [enquireModal, setEnquireModal] = useState(null);
+  const reduceMotion = useReducedMotion();
+
+  // Every button and button-like link on the page gets the same spring: it
+  // rises a little under the pointer and squeezes when pressed. One delegated
+  // listener on the document, so buttons that appear later (after the data
+  // loads, in the modal, in cards) are covered too. Mouse only, so a touch
+  // never leaves a button stuck raised; off with reduced motion.
+  useEffect(() => {
+    if (reduceMotion) return undefined;
+    // Left out: the photo viewer's buttons and the photo thumbnails, which are
+    // positioned with their own transforms, and the tab pill whose highlight slides.
+    const SEL =
+      'button:not(:disabled):not(.lodge-public__lightbox-nav):not(.lodge-public__lightbox-close):not(.lodge-public__room-cover-btn):not(.lodge-public__dish-photo):not(.gl-tab), a.site-btn, .gl-nav__cta, .gl-nav__link, .gl-dock a, .site-glance__row, .site-contact__map, .gl-room__btn, .gl-venue__btn';
+    const spring = { type: 'spring', stiffness: 380, damping: 24 };
+    const target = (e) => (e.target instanceof Element ? e.target.closest(SEL) : null);
+    const onOver = (e) => {
+      if (e.pointerType && e.pointerType !== 'mouse') return;
+      const el = target(e);
+      if (el && !el.contains(e.relatedTarget)) animate(el, { y: -3 }, spring);
+    };
+    const onOut = (e) => {
+      const el = target(e);
+      if (el && !el.contains(e.relatedTarget)) animate(el, { y: 0, scale: 1 }, spring);
+    };
+    const onDown = (e) => {
+      const el = target(e);
+      if (el) animate(el, { scale: 0.96 }, { duration: 0.1 });
+    };
+    const onUp = (e) => {
+      const el = target(e);
+      if (el) animate(el, { scale: 1 }, spring);
+    };
+    document.addEventListener('pointerover', onOver);
+    document.addEventListener('pointerout', onOut);
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+    return () => {
+      document.removeEventListener('pointerover', onOver);
+      document.removeEventListener('pointerout', onOut);
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+    };
+  }, [reduceMotion]);
 
   // Defaults to tonight → tomorrow so the page shows real availability the
   // moment it loads, without making a guest pick dates first.
@@ -945,10 +1103,10 @@ export default function LodgePublicPage() {
   // once there are two or more — one section needs no table of contents.
   const sections = [
     lodge.hasRooms && { id: 'rooms', label: 'Rooms' },
-    lodge.hasEvents && venues.length > 0 && { id: 'events', label: 'Venues & functions' },
+    lodge.hasEvents && venues.length > 0 && { id: 'events', label: 'Events' },
     lodge.servesFood && menu.length > 0 && { id: 'menu', label: 'Menu' },
-    lodge.hasOtherServices && otherServices.length > 0 && { id: 'services', label: 'Other services' },
-    reviews.length > 0 && { id: 'reviews', label: 'Guest reviews' },
+    lodge.hasOtherServices && otherServices.length > 0 && { id: 'services', label: 'Services' },
+    reviews.length > 0 && { id: 'reviews', label: 'Reviews' },
   ].filter(Boolean);
   const nothingListed = sections.length === 0 && roomTypes.length === 0;
 
@@ -980,7 +1138,13 @@ export default function LodgePublicPage() {
   const totalRooms = roomTypes.reduce((n, t) => n + (t.roomCount || 0), 0);
   const allVegMenu =
     menu.length > 0 && menu.every((section) => section.items.every((item) => item.foodType !== 'NON_VEG'));
-  const checkinType = lodge.hasRooms ? CHECKIN_MODE_LABEL[lodge.checkinMode] : null;
+  // Modes that run on fixed clock times show them ("Check-in 11:00 AM · Check-out 11:00 AM");
+  // a 24-hour-from-arrival property has no fixed time, so it keeps its label.
+  const checkinType = lodge.hasRooms
+    ? ['NIGHT_BASED', 'CYCLE', 'HYBRID'].includes(lodge.checkinMode) && lodge.checkInTime && lodge.checkOutTime
+      ? `In ${formatClock(lodge.checkInTime)} · Out ${formatClock(lodge.checkOutTime)}`
+      : CHECKIN_MODE_LABEL[lodge.checkinMode]
+    : null;
 
   const totalDishes = menu.reduce((n, section) => n + section.items.length, 0);
   const largestVenue = venues.reduce((max, v) => Math.max(max, v.capacityPax || 0), 0);
@@ -1022,11 +1186,11 @@ export default function LodgePublicPage() {
   ].filter(Boolean);
 
   const facts = [
-    cheapestRate != null && { value: formatPrice(cheapestRate), label: 'per night, from' },
-    totalRooms > 0 && { value: String(totalRooms), label: totalRooms === 1 ? 'room' : 'rooms' },
-    lodge.hasEvents && venues.length > 0 && { value: String(venues.length), label: venues.length === 1 ? 'venue' : 'venues' },
-    lodge.servesFood && menu.length > 0 && { value: allVegMenu ? 'Pure veg' : 'Veg & non-veg', label: 'restaurant' },
-    checkinType && { value: checkinType, label: 'check-in' },
+    cheapestRate != null && { icon: 'price', value: formatPrice(cheapestRate), label: 'per night, from' },
+    totalRooms > 0 && { icon: 'rooms', value: String(totalRooms), label: totalRooms === 1 ? 'room' : 'rooms' },
+    lodge.hasEvents && venues.length > 0 && { icon: 'venues', value: String(venues.length), label: venues.length === 1 ? 'venue' : 'venues' },
+    lodge.servesFood && menu.length > 0 && { icon: 'food', value: allVegMenu ? 'Pure veg' : 'Veg & non-veg', label: 'restaurant' },
+    checkinType && { icon: 'clock', value: checkinType, label: 'check-in', wide: true },
   ].filter(Boolean);
 
   // "Available only" can only mean something once dates have been chosen —
@@ -1052,6 +1216,8 @@ export default function LodgePublicPage() {
     setGuestFilter(0);
     setAvailableOnly(false);
   };
+  const heroNavLinks = navLinks.filter((l) => l.id !== 'home');
+
   const generalWhatsappLink = buildWhatsAppLink(lodge.whatsappNumber, generalMessage);
   const menuAvailable = lodge.servesFood && menu.length > 0;
 
@@ -1084,16 +1250,28 @@ export default function LodgePublicPage() {
 
   return (
     <div className="lodge-public site" id="top">
-      <nav className="site-nav" aria-label="Site">
-        <div className="site-container site-nav__inner">
-          <a className="site-nav__brand" href="#top">
-            {logoUrl(lodge) && <img className="site-nav__logo" src={logoUrl(lodge)} alt="" />}
-            {lodge.name}
+      <motion.nav
+        className="gl-nav"
+        aria-label="Site"
+        initial={reduceMotion ? false : { opacity: 0, y: -24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div className="gl-nav__in">
+          <a className="gl-nav__brand" href="#top">
+            {logoUrl(lodge) ? (
+              <img className="gl-nav__logo" src={logoUrl(lodge)} alt="" />
+            ) : (
+              <span className="gl-nav__logo gl-nav__logo--letter" aria-hidden="true">
+                {(lodge.name || '?').trim().charAt(0).toUpperCase()}
+              </span>
+            )}
+            <span className="gl-nav__name">{lodge.name}</span>
           </a>
-          <div className="site-nav__links">
-            {navLinks.map((sec) => (
+          <div className="gl-nav__links">
+            {heroNavLinks.map((sec) => (
               <a
-                className={`site-nav__link${activeSection === sec.id ? ' site-nav__link--active' : ''}`}
+                className={`gl-nav__link${activeSection === sec.id ? ' gl-nav__link--active' : ''}`}
                 href={`#${sec.id}`}
                 key={sec.id}
                 aria-current={activeSection === sec.id ? 'true' : undefined}
@@ -1102,11 +1280,11 @@ export default function LodgePublicPage() {
               </a>
             ))}
           </div>
-          <button type="button" className="site-btn site-btn--accent site-nav__cta" onClick={openNavEnquire}>
-            Enquire
+          <button type="button" className="gl-nav__cta" onClick={openNavEnquire}>
+            Book now
           </button>
         </div>
-      </nav>
+      </motion.nav>
 
       <header className={`site-hero${showHeroPhoto ? ' site-hero--photo' : ''}`} id="home">
         {heroImages.length > 0 && !heroBroken && (
@@ -1151,9 +1329,16 @@ export default function LodgePublicPage() {
           {facts.length > 0 && (
             <ul className="lodge-public__facts">
               {facts.map((fact) => (
-                <li key={fact.label}>
-                  <strong>{fact.value}</strong>
-                  <span>{fact.label}</span>
+                <li key={fact.label} className={fact.wide ? 'lodge-public__fact--wide' : undefined}>
+                  <span className="lodge-public__fact-icon" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      {FACT_ICONS[fact.icon]}
+                    </svg>
+                  </span>
+                  <span className="lodge-public__fact-text">
+                    <strong>{fact.value}</strong>
+                    <span>{fact.label}</span>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -1213,14 +1398,18 @@ export default function LodgePublicPage() {
           {/* A titled section rather than a bare grid of cards: it is the
               difference between a page that lists things and a page that is
               showing you its rooms. */}
-          <div className="lodge-public__section-head">
-            <span className="lodge-public__eyebrow">Stay</span>
+          <div className="lodge-public__section-head lodge-public__section-head--row">
+            <div>
             <h2>Our rooms</h2>
             <p>
               {validDateRange
                 ? `Rates and availability for ${formatDateLong(checkInDate)} – ${formatDateLong(checkOutDate)}.`
                 : 'Choose your dates above to see what’s free.'}
             </p>
+            </div>
+            <button type="button" className="gl-head-btn" onClick={() => openRoomEnquire(undefined)}>
+              Book a room
+            </button>
           </div>
 
           {/* Dates and filters in one panel: they are all the same act — a
@@ -1366,7 +1555,7 @@ export default function LodgePublicPage() {
                 : 'No rooms match what you’ve chosen. Try widening the filters or changing your dates.'}
             </p>
           ) : (
-            <div className="lodge-public__room-grid">
+            <div className="lodge-public__room-grid gl-grid gl-grid--rooms">
               {visibleTypes.map((type) => (
                 <RoomTypeCard
                   key={type.id}
@@ -1385,12 +1574,16 @@ export default function LodgePublicPage() {
       {lodge.hasEvents && venues.length > 0 && (
         <section className="lodge-public__events site-section site-section--tinted" id="events">
           <div className="site-container">
-          <div className="lodge-public__section-head">
-            <span className="lodge-public__eyebrow">Celebrate</span>
-            <h2>Venues & functions</h2>
+          <div className="lodge-public__section-head lodge-public__section-head--row">
+            <div>
+            <h2>Venues &amp; functions</h2>
             <p>Halls and lawns for weddings, receptions, birthdays and corporate events. Message us for a quote.</p>
+            </div>
+            <button type="button" className="gl-head-btn" onClick={() => openEventEnquire(undefined)}>
+              Plan an event
+            </button>
           </div>
-          <div className="lodge-public__room-grid">
+          <div className="lodge-public__room-grid gl-grid gl-grid--venues">
             {venues.map((venue) => (
               <VenueCard key={venue.id} lodge={lodge} venue={venue} onOpenPhotos={openLightbox} onEnquireEvent={openEventEnquire} />
             ))}
@@ -1404,7 +1597,6 @@ export default function LodgePublicPage() {
         <section className="lodge-public__food site-section" id="menu">
           <div className="site-container">
           <div className="lodge-public__section-head">
-            <span className="lodge-public__eyebrow">Dine</span>
             <h2>Our menu</h2>
             <p>
               {lodge.foodRoomService
@@ -1421,7 +1613,6 @@ export default function LodgePublicPage() {
         <section className="lodge-public__services site-section site-section--tinted" id="services">
           <div className="site-container">
           <div className="lodge-public__section-head">
-            <span className="lodge-public__eyebrow">More to enjoy</span>
             <h2>Other services</h2>
             <p>Extras billed per use — message us to check availability.</p>
           </div>
@@ -1438,7 +1629,6 @@ export default function LodgePublicPage() {
         <section className="lodge-public__reviews site-section" id="reviews">
           <div className="site-container">
             <div className="lodge-public__section-head">
-              <span className="lodge-public__eyebrow">Guest reviews</span>
               <h2>What our guests say</h2>
             </div>
             <div className="lodge-public__review-grid">
@@ -1460,7 +1650,6 @@ export default function LodgePublicPage() {
       <section className="site-contact site-section site-section--tinted" id="contact">
         <div className={`site-container site-contact__grid${directionsLink ? ' site-contact__grid--map' : ''}`}>
           <div className="site-contact__copy">
-            <span className="lodge-public__eyebrow">Find us</span>
             <h2>Contact &amp; location</h2>
             {fullAddress && <p className="site-contact__address">{fullAddress}</p>}
             <dl className="site-contact__list">
@@ -1539,6 +1728,20 @@ export default function LodgePublicPage() {
           <span>Rates are indicative and confirmed on enquiry.</span>
         </div>
       </footer>
+
+      <nav className="gl-dock" aria-label="Quick actions">
+        {lodge.hasRooms && roomTypes.length > 0 && <a href="#rooms">Rooms</a>}
+        {lodge.hasEvents && venues.length > 0 && <a href="#events">Events</a>}
+        {lodge.phone ? (
+          <a className="gl-dock__go" href={`tel:${lodge.phone}`}>
+            Call
+          </a>
+        ) : (
+          <button type="button" className="gl-dock__go" onClick={openNavEnquire}>
+            Enquire
+          </button>
+        )}
+      </nav>
 
       {enquireModal && (
         <EnquireModal
