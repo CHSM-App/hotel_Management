@@ -2190,6 +2190,14 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
     sectionRefs.current.get(String(id))?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   };
   const menuScrollRef = useRef(null);
+  // The dish whose photo was tapped, shown enlarged; Esc or a click closes it.
+  const [photoView, setPhotoView] = useState(null);
+  useEffect(() => {
+    if (!photoView) return undefined;
+    const onKey = (e) => e.key === 'Escape' && setPhotoView(null);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [photoView]);
   const sectionTrackRef = useRef(null);
   // Slides the pill row so this section's pill sits in the first slot.
   const bringPillFirst = (id) => {
@@ -2781,11 +2789,12 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
                       <div className="counter-line__main">
                         {item.image ? (
                           <img
-                            className="counter-line__photo"
+                            className="counter-line__photo counter-line__photo--zoom"
                             src={`${API_BASE}/menu-images/${item.image}`}
-                            alt=""
+                            alt={`${item.name} - tap to enlarge`}
                             loading="lazy"
                             decoding="async"
+                            onClick={() => setPhotoView({ src: `${API_BASE}/menu-images/${item.image}`, name: item.name })}
                           />
                         ) : (
                           <span className="counter-line__photo counter-line__photo--placeholder" aria-hidden="true">
@@ -2912,6 +2921,18 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
           </div>
         </div>
       </form>
+
+      {photoView && (
+        <div className="dish-zoom" role="dialog" aria-label={photoView.name} onClick={() => setPhotoView(null)}>
+          <figure className="dish-zoom__card" onClick={(e) => e.stopPropagation()}>
+            <img src={photoView.src} alt={photoView.name} />
+            <figcaption>{photoView.name}</figcaption>
+            <button type="button" className="dish-zoom__close" aria-label="Close photo" onClick={() => setPhotoView(null)}>
+              ×
+            </button>
+          </figure>
+        </div>
+      )}
     </div>
   );
 }

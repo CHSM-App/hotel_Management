@@ -228,18 +228,37 @@ async function assertCategoryBelongsToLodge(pool, lodgeId, categoryId) {
   }
 }
 
+// A dish name is unique across the whole menu, not just its section: the same
+// dish listed under two sections is two things to keep in step and shows up twice
+// to guests. Compared trimmed and case-insensitively. With `exceptItemId` the dish
+// being edited is left out, and an unchanged name passes.
+async function assertDishNameFree(pool, lodgeId, name, exceptItemId = null) {
+  const wanted = String(name ?? '').trim();
+  const req = pool.request().input('lodgeId', sql.BigInt, lodgeId).input('name', sql.NVarChar, wanted);
+  if (exceptItemId != null) {
+    req.input('itemId', sql.BigInt, exceptItemId);
+    const own = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('itemId', sql.BigInt, exceptItemId)
+      .query('SELECT name FROM dbo.menu_items WHERE id = @itemId AND lodge_id = @lodgeId');
+    if (own.recordset[0] && String(own.recordset[0].name).trim().toLowerCase() === wanted.toLowerCase()) return;
+  }
+  const clash = await req.query(
+    `SELECT TOP 1 i.id, c.name AS section
+       FROM dbo.menu_items i JOIN dbo.menu_categories c ON c.id = i.category_id
+      WHERE i.lodge_id = @lodgeId AND LOWER(LTRIM(RTRIM(i.name))) = LOWER(@name)${exceptItemId != null ? ' AND i.id <> @itemId' : ''}`
+  );
+  if (clash.recordset.length > 0) {
+    throw new ApiError(`“${wanted}” is already on the menu, under ${clash.recordset[0].section}.`, 409);
+  }
+}
+
 async function createItem(lodgeId, input) {
   const pool = await getPool();
   await assertCategoryBelongsToLodge(pool, lodgeId, input.categoryId);
 
-  const existing = await pool
-    .request()
-    .input('categoryId', sql.BigInt, input.categoryId)
-    .input('name', sql.NVarChar, input.name)
-    .query('SELECT id FROM dbo.menu_items WHERE category_id = @categoryId AND name = @name');
-  if (existing.recordset.length > 0) {
-    throw new ApiError('That section already has an item with this name.', 409);
-  }
+  await assertDishNameFree(pool, lodgeId, input.name);
 
   const result = await pool
     .request()
@@ -265,15 +284,9 @@ async function updateItem(lodgeId, itemId, input) {
   const pool = await getPool();
   await assertCategoryBelongsToLodge(pool, lodgeId, input.categoryId);
 
-  const conflict = await pool
-    .request()
-    .input('categoryId', sql.BigInt, input.categoryId)
-    .input('name', sql.NVarChar, input.name)
-    .input('itemId', sql.BigInt, itemId)
-    .query('SELECT id FROM dbo.menu_items WHERE category_id = @categoryId AND name = @name AND id <> @itemId');
-  if (conflict.recordset.length > 0) {
-    throw new ApiError('That section already has an item with this name.', 409);
-  }
+  // Only checked when the name actually changes, so a dish that already shares
+  // its name with another (added before this rule) can still have its price edited.
+  await assertDishNameFree(pool, lodgeId, input.name, itemId);
 
   // The photo has three fates on a save, and the form has to be able to say
   // which: a new file replaces it, "remove" clears it, and sending neither

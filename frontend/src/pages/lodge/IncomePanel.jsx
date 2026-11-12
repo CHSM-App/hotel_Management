@@ -1922,7 +1922,7 @@ export default function IncomePanel({ onViewReport }) {
                 <div className="modal-form__foot-actions">
                   {viewMode ? (
                     <>
-                      <MotionButton type="button" className="btn-secondary" hover={FX_HOVER} tap={FX_TAP} onClick={() => setShowIncomeForm(false)}>
+                      <MotionButton type="button" className="btn-secondary btn-close-red" hover={FX_HOVER} tap={FX_TAP} onClick={() => setShowIncomeForm(false)}>
                         Close
                       </MotionButton>
                       <MotionButton type="button" className="btn-accent btn-sheen" hover={FX_HOVER} tap={FX_TAP} onClick={() => setViewMode(false)}>
@@ -2285,7 +2285,7 @@ export default function IncomePanel({ onViewReport }) {
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
                   <h3>Receipt</h3>
-                  <button type="button" className="btn-secondary" onClick={closeDocumentPreview}>
+                  <button type="button" className="btn-secondary btn-close-red" onClick={closeDocumentPreview}>
                     Close
                   </button>
                 </div>

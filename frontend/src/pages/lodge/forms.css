@@ -1309,3 +1309,19 @@
   font-size: 13px;
   border-radius: 8px;
 }
+
+/* A checkbox label inside a .field: stay a row, box and text on one line.
+   (.field label is display:block, which stacked the text under the box.) */
+.field label.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.field label.checkbox-inline input {
+  flex: none;
+  margin: 0;
+}

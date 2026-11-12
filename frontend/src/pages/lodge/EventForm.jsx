@@ -334,6 +334,15 @@ export default function EventForm({
   const startAt = useMemo(() => localToIso(form.startDate, form.startTime), [form.startDate, form.startTime]);
   const endAt = useMemo(() => localToIso(form.endDate, form.endTime), [form.endDate, form.endTime]);
 
+  // Billable days, worked out here as well as on the server (same rule as
+  // eventPricing.numberOfDays: any part of a further 24h counts as a day), so the
+  // per-day rates show their total as soon as the dates are picked, not only once
+  // a quote has come back (which waits for the guest count).
+  const eventDays = useMemo(() => {
+    const ms = startAt && endAt ? new Date(endAt).getTime() - new Date(startAt).getTime() : 0;
+    return Number.isFinite(ms) && ms > 0 ? Math.max(1, Math.ceil(ms / (24 * 60 * 60 * 1000))) : 1;
+  }, [startAt, endAt]);
+
   const venue = venues.find((v) => String(v.id) === form.venueId);
 
   // Choosing a slot is choosing hours; the end date follows the start unless
@@ -841,8 +850,8 @@ export default function EventForm({
               name="venueCharge"
               error={errFor('venueCharge')}
               hint={
-                pricing && pricing.numberOfDays > 1
-                  ? `${formatPrice(Number(form.venueCharge) || 0)} × ${pricing.numberOfDays} days = ${formatPrice(pricing.venueCharge)}`
+                eventDays > 1
+                  ? `${formatPrice(Number(form.venueCharge) || 0)} × ${eventDays} days = ${formatPrice((Number(form.venueCharge) || 0) * eventDays)}`
                   : undefined
               }
             >
@@ -983,12 +992,21 @@ export default function EventForm({
                           onChange={(e) => setLine(l.key, { agreedAmount: e.target.value, autoAmount: false })}
                         />
                       </label>
+                      {eventDays > 1 && (
+                        <span className="ev-addon__rate">
+                          × {eventDays} days ={' '}
+                          {formatPrice(
+                            round2((l.agreedAmount !== '' ? Number(l.agreedAmount) || 0 : (Number(l.unitAmount) || 0) * (Number(l.quantity) || 1)) * eventDays)
+                          )}
+                        </span>
+                      )}
                     </div>
                   ) : (
                     l.unitAmount != null && (
                       <span className="ev-addon__rate">
                         {formatPrice(l.unitAmount)}
                         {l.isPerUnit ? ' per unit/day' : '/day'}
+                        {eventDays > 1 && ` × ${eventDays} days`}
                       </span>
                     )
                   )}

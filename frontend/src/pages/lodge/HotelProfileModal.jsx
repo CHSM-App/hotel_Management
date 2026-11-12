@@ -398,7 +398,7 @@ export default function HotelProfileModal({ lodge, onSaved, onClose }) {
             <div className="modal-form__foot">
               <div />
               <div className="modal-form__foot-actions">
-                <button type="button" className="btn-secondary" onClick={onClose}>
+                <button type="button" className="btn-secondary btn-close-red" onClick={onClose}>
                   Close
                 </button>
                 {isOwner && (

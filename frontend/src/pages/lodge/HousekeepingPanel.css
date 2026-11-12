@@ -3019,3 +3019,85 @@ th[aria-sort] .hk-sort__icon {
     transition: none;
   }
 }
+
+/* Today card: compact. */
+.hk-linen__side > .hk-panel {
+  padding: 8px 10px;
+}
+
+.hk-linen__side .hk-panel__head {
+  margin-bottom: 6px;
+}
+
+.hk-linen__side .hk-today {
+  gap: 4px;
+}
+
+.hk-linen__side .hk-today > div {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.hk-linen__side .hk-today strong {
+  order: 2;
+  font-size: 15px;
+}
+
+.hk-linen__side .hk-today span {
+  font-size: 11px;
+}
+
+/* Wide screens: the step cards and Today share the top row, and the linen stock
+   table runs the full width underneath, so no empty space is left under Today. */
+@media (min-width: 1101px) {
+  .hk-linen__main {
+    display: contents;
+  }
+
+  .hk-linen .hk-steps {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: stretch;
+  }
+
+  /* Same height as the step cards beside it; the tiles share the extra room. */
+  .hk-linen .hk-linen__side {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: stretch;
+  }
+
+  .hk-linen__side > .hk-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .hk-linen__side > .hk-panel .hk-today {
+    flex: 1;
+    grid-auto-rows: 1fr;
+  }
+
+  .hk-linen .hk-workspace {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* Activity / linen sheets: compact rows sized to what they hold. */
+.hk-board .hk-sheet {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.hk-board .hk-sheet tbody td {
+  height: auto;
+  padding: 4px 10px;
+}
+
+.hk-board .hk-sheet th {
+  padding: 7px 10px;
+}

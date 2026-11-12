@@ -1956,7 +1956,7 @@ export default function GuestRegister({ onOpenDraft, onBillStay }) {
                   Print bill
                 </button>
               )}
-              <button type="button" className="btn-secondary" onClick={closeDetail}>
+              <button type="button" className="btn-secondary btn-close-red" onClick={closeDetail}>
                 Close
               </button>
             </footer>

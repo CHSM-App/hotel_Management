@@ -4,6 +4,9 @@ import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
 import { triggerDownload } from './bookingReportFile';
 import PageLoader from '../../components/PageLoader';
+import ActionModal from '../../components/ActionModal';
+import { EditIcon } from '../../components/ActionIcons';
+import './Events.css'; // .venue-act buttons, shared with the Events venue cards
 import Req from '../../components/RequiredMark';
 import './forms.css';
 import './chartSections.css';
@@ -403,12 +406,27 @@ export default function ServicesPanel({ lodge }) {
     setForm((f) => (f.imageFile ? { ...f, imageFile: null } : { ...f, removeImage: true, imageFile: null }));
   };
 
+  // Asks first (ActionModal, same as Events); statusShown keeps the wording
+  // while the dialog animates out.
+  const [statusService, setStatusService] = useState(null);
+  const [statusShown, setStatusShown] = useState(null);
   const toggleActive = (s) => {
-    const verb = s.isActive ? 'Deactivate' : 'Activate';
-    if (!window.confirm(`${verb} “${s.name}”?`)) return;
-    apiPatch(`/lodge-services/${s.id}`, { isActive: !s.isActive }, { token })
-      .then(loadServices)
-      .catch((err) => fail(err, 'Could not update the service.'));
+    setStatusShown(s);
+    setStatusService(s);
+  };
+  const confirmToggle = async () => {
+    const s = statusService;
+    if (!s) return;
+    setBusy(true);
+    try {
+      await apiPatch(`/lodge-services/${s.id}`, { isActive: !s.isActive }, { token });
+      await loadServices();
+    } catch (err) {
+      fail(err, 'Could not update the service.');
+    } finally {
+      setStatusService(null);
+      setBusy(false);
+    }
   };
 
   // One form, two destinations: a fresh use starts here (POST), an existing
@@ -664,7 +682,14 @@ export default function ServicesPanel({ lodge }) {
                     <div className="svc-card__actions">
                       <button
                         type="button"
-                        className="svc-card__btn"
+                        className={`venue-act venue-act--${s.isActive ? 'off' : 'on'}`}
+                        onClick={() => toggleActive(s)}
+                      >
+                        {s.isActive ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button
+                        type="button"
+                        className="venue-act venue-act--edit"
                         onClick={() => {
                           setFormError('');
                           setForm({
@@ -679,14 +704,8 @@ export default function ServicesPanel({ lodge }) {
                           });
                         }}
                       >
+                        <EditIcon />
                         Edit
-                      </button>
-                      <button
-                        type="button"
-                        className={`svc-card__btn${s.isActive ? ' svc-card__btn--danger' : ' svc-card__btn--primary'}`}
-                        onClick={() => toggleActive(s)}
-                      >
-                        {s.isActive ? 'Deactivate' : 'Activate'}
                       </button>
                     </div>
                   </div>
@@ -1330,6 +1349,23 @@ export default function ServicesPanel({ lodge }) {
             )}
           </div>
         </div>
+      )}
+
+      {statusShown && (
+        <ActionModal
+          open={!!statusService}
+          tone={statusShown.isActive ? 'warning' : 'success'}
+          title={`${statusShown.isActive ? 'Deactivate' : 'Activate'} ${statusShown.name}?`}
+          message={
+            statusShown.isActive
+              ? 'It can no longer be used for new bookings, but its history stays intact.'
+              : 'It will be available to use again.'
+          }
+          confirmLabel={statusShown.isActive ? 'Deactivate' : 'Activate'}
+          busy={busy}
+          onConfirm={confirmToggle}
+          onCancel={() => setStatusService(null)}
+        />
       )}
     </div>
   );

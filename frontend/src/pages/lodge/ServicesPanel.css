@@ -446,6 +446,7 @@
 .svc-card__actions {
   display: flex;
   gap: 8px;
+  justify-content: flex-end;
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--border);

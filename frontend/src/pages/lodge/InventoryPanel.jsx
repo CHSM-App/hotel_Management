@@ -498,7 +498,7 @@ export default function InventoryPanel() {
                   day, so it stays in the open. The other four were seventy-odd
                   rows' worth of buttons drowning the quantities. */}
               <div className="inv-item__actions">
-                <button type="button" className="btn-secondary" onClick={() => openAdjust(material)}>
+                <button type="button" className="btn-secondary recipe-btn" onClick={() => openAdjust(material)}>
                   Stock
                 </button>
                 <RowMenu label={`More actions for ${material.name}`}>
@@ -799,7 +799,7 @@ export default function InventoryPanel() {
                     <span className="modal-form__summary-unit"> {UNIT_LABEL[adjusting.unit]}</span>
                   </span>
                 </div>
-                <div className="modal-form__foot-actions">
+                <div className="modal-form__foot-actions stock-foot">
                   <button
                     type="button"
                     className="btn-secondary"

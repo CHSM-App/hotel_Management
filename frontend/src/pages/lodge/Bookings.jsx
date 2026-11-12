@@ -4532,7 +4532,7 @@ export default function Bookings({
             </div>
 
             <div className="bookings-panel__actions">
-              <button type="button" className="btn-secondary" onClick={() => setShowDrafts(false)}>
+              <button type="button" className="btn-secondary btn-close-red" onClick={() => setShowDrafts(false)}>
                 Close
               </button>
             </div>
@@ -5309,7 +5309,7 @@ export default function Bookings({
                   )}
                 </div>
                 <div className="booking-form__foot-actions">
-                  <MotionButton type="button" className="btn-secondary" onClick={requestCloseBookingForm} disabled={submitting}>
+                  <MotionButton type="button" className="btn-secondary btn-close-red" onClick={requestCloseBookingForm} disabled={submitting}>
                     Close
                   </MotionButton>
                   {/* New bookings only. An edit already has somewhere to keep
@@ -5509,7 +5509,7 @@ export default function Bookings({
                         <div className="modal-form__head">
                           <div className="modal-form__head-row">
                             <h3>ID proof</h3>
-                            <button type="button" className="btn-secondary" onClick={closeIdProofPreview}>
+                            <button type="button" className="btn-secondary btn-close-red" onClick={closeIdProofPreview}>
                               Close
                             </button>
                           </div>
@@ -6144,7 +6144,7 @@ export default function Bookings({
                       </button>
                     )}
 
-                    <button type="button" className="btn-secondary" onClick={closeDetail}>
+                    <button type="button" className="btn-secondary btn-close-red" onClick={closeDetail}>
                       Close
                     </button>
                   </div>

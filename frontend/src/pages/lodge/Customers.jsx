@@ -828,7 +828,7 @@ export default function Customers() {
                 <div className="modal-form__foot-actions">
                   {viewMode ? (
                     <>
-                      <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
+                      <button type="button" className="btn-secondary btn-close-red" onClick={() => setShowForm(false)}>
                         Close
                       </button>
                       <button type="button" className="btn-accent" onClick={() => setViewMode(false)}>

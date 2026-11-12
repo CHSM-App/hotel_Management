@@ -2925,3 +2925,67 @@
   background: #eef2f9;
   color: #3b5a8c;
 }
+
+/* Cancel booking in a stay's footer: same as the "Cancel event" button
+   (.confirm-dialog__danger) - raised white pill, red text, fills red on hover. */
+:is(.bookings-panel__actions--footer, .stay-view__actions) .bookings-panel__danger-link {
+  min-height: 42px;
+  padding: 11px 18px;
+  border: none;
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
+}
+
+:is(.bookings-panel__actions--footer, .stay-view__actions) .bookings-panel__danger-link:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 5px 5px 12px rgba(122, 31, 31, 0.32), -5px -5px 12px var(--neu-light);
+}
+
+:is(.bookings-panel__actions--footer, .stay-view__actions) .bookings-panel__danger-link:active:not(:disabled) {
+  box-shadow: inset 3px 3px 7px rgba(60, 12, 12, 0.45), inset -2px -2px 6px rgba(255, 255, 255, 0.14);
+}
+
+/* Footer buttons stay on one line: no wrapping, and each one a little tighter so
+   Cancel booking / Advance receipt / Edit booking / Check in / Close all fit. */
+.bookings-panel__actions--footer {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.bookings-panel__actions--footer > button {
+  min-height: 40px;
+  padding: 8px 15px;
+  font-size: 14px;
+  flex: 0 1 auto;
+}
+
+/* Footer hover: every button lifts; colour matches its role (as in the function
+   detail footer): neutral -> navy, Check in -> deeper amber, Cancel -> red. */
+.bookings-panel__actions--footer > button {
+  transition: transform 0.15s, box-shadow 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.bookings-panel__actions--footer > button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.bookings-panel__actions--footer > button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.bookings-panel__actions--footer > .btn-secondary:hover:not(:disabled) {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--brand) 40%, transparent);
+}
+
+.bookings-panel__actions--footer > .btn-accent:hover:not(:disabled) {
+  background: #ffb300;
+  box-shadow: 0 5px 12px rgba(230, 150, 0, 0.45);
+}

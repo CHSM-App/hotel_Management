@@ -735,15 +735,25 @@ export default function MenuPanel() {
   // Marking a section out is the one bulk write here, and it's asked about
   // first — it takes a whole course off the guest's menu, and it's reached by
   // one tap on a phone in a busy kitchen.
-  const setSectionAvailability = async (section, isAvailable) => {
-    if (!isAvailable) {
-      const on = section.items.filter((i) => i.isAvailable).length;
-      if (on === 0) return;
-      if (!window.confirm(`Mark all ${on} dish${on === 1 ? '' : 'es'} in “${section.name}” out of stock?`)) {
-        return;
-      }
-    }
+  // Same popup as a single dish: sectionOut is kept after the dialog closes so its
+  // text does not blank during the exit animation.
+  const [sectionOut, setSectionOut] = useState(null);
+  const [sectionOutOpen, setSectionOutOpen] = useState(false);
+  const [sectionOutBusy, setSectionOutBusy] = useState(false);
+  const askMarkSectionOut = (section) => {
+    if (section.items.every((i) => !i.isAvailable)) return;
+    setSectionOut(section);
+    setSectionOutOpen(true);
+  };
+  const confirmMarkSectionOut = async () => {
+    if (!sectionOut) return;
+    setSectionOutBusy(true);
+    await setSectionAvailability(sectionOut, false);
+    setSectionOutBusy(false);
+    setSectionOutOpen(false);
+  };
 
+  const setSectionAvailability = async (section, isAvailable) => {
     try {
       await apiPatch(
         `/menu/categories/${section.id}/availability`,
@@ -769,23 +779,34 @@ export default function MenuPanel() {
     }
   };
 
-  const deleteItem = async (item) => {
-    if (!window.confirm(`Remove “${item.name}” from the menu?`)) return;
-    try {
-      await apiDelete(`/menu/items/${item.id}`, { token: session?.token });
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not delete the item.');
-    }
+  // Deleting a dish or a whole section is asked about with the same popup as
+  // marking a dish out (ActionModal). `pendingDelete` is kept after the dialog
+  // closes so its text does not blank during the exit animation.
+  const [pendingDelete, setPendingDelete] = useState(null); // { kind: 'item' | 'section', target }
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const deleteItem = (item) => {
+    setPendingDelete({ kind: 'item', target: item });
+    setDeleteOpen(true);
   };
-
-  const deleteSection = async (section) => {
-    if (!window.confirm(`Delete the “${section.name}” section?`)) return;
+  const deleteSection = (section) => {
+    setPendingDelete({ kind: 'section', target: section });
+    setDeleteOpen(true);
+  };
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    const { kind, target } = pendingDelete;
+    setDeleteBusy(true);
     try {
-      await apiDelete(`/menu/categories/${section.id}`, { token: session?.token });
+      await apiDelete(kind === 'item' ? `/menu/items/${target.id}` : `/menu/categories/${target.id}`, {
+        token: session?.token,
+      });
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not delete the section.');
+      setError(err instanceof ApiError ? err.message : `Could not delete the ${kind === 'item' ? 'item' : 'section'}.`);
+    } finally {
+      setDeleteBusy(false);
+      setDeleteOpen(false);
     }
   };
 
@@ -1019,7 +1040,7 @@ export default function MenuPanel() {
                 className="menu-act menu-act--danger"
                 hover={NO_LIFT}
                 tap={PRESS}
-                onClick={() => setSectionAvailability(section, false)}
+                onClick={() => askMarkSectionOut(section)}
               >
                 Mark all out
               </MotionButton>
@@ -1812,6 +1833,40 @@ export default function MenuPanel() {
         busy={outBusy}
         onConfirm={confirmMarkOut}
         onCancel={() => setOutOpen(false)}
+      />
+
+      <ActionModal
+        open={sectionOutOpen}
+        tone="warning"
+        title={`Mark all of ${sectionOut?.name || 'this section'} out?`}
+        message={`${sectionOut?.items.filter((i) => i.isAvailable).length ?? 0} dish${
+          sectionOut?.items.filter((i) => i.isAvailable).length === 1 ? '' : 'es'
+        } will come off the guest menu at once. You can bring them all back at any time.`}
+        confirmLabel="Mark all out"
+        busy={sectionOutBusy}
+        onConfirm={confirmMarkSectionOut}
+        onCancel={() => setSectionOutOpen(false)}
+      />
+
+      <ActionModal
+        open={deleteOpen}
+        tone="danger"
+        title={
+          pendingDelete?.kind === 'section'
+            ? `Delete the ${pendingDelete.target.name} section?`
+            : `Delete ${pendingDelete?.target.name || 'this dish'}?`
+        }
+        message={
+          pendingDelete?.kind === 'section'
+            ? `The section and all ${pendingDelete.target.items?.length ?? 0} dish${
+                pendingDelete.target.items?.length === 1 ? '' : 'es'
+              } in it will be removed from the menu. This cannot be undone.`
+            : 'It will be removed from the menu for good. This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        busy={deleteBusy}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteOpen(false)}
       />
     </div>
   );

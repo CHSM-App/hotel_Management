@@ -99,7 +99,7 @@ export default function StayViewModal({ bookingId, onClose, onAction }) {
                 <div className="modal-form__head">
                   <div className="modal-form__head-row">
                     <h3>ID proof</h3>
-                    <button type="button" className="btn-secondary" onClick={closeIdProof}>
+                    <button type="button" className="btn-secondary btn-close-red" onClick={closeIdProof}>
                       Close
                     </button>
                   </div>
@@ -144,7 +144,7 @@ function StayActions({ booking, onAction, onClose }) {
         <span className="bookings-panel__hint">This stay has been billed — extras are locked.</span>
       )}
       <span className="stay-view__actions-spacer" />
-      <button type="button" className="btn-secondary" onClick={onClose}>
+      <button type="button" className="btn-secondary btn-close-red" onClick={onClose}>
         Close
       </button>
       {booking.status !== 'CANCELLED' && booking.status !== 'CHECKED_OUT' && (

@@ -2518,3 +2518,37 @@
 .events-badge {
   white-space: nowrap;
 }
+
+/* Function detail footer: every button lifts on hover and takes a colour that
+   matches its role (neutral -> navy, accent -> deeper amber, cancel -> red). */
+.events-modal__actions :is(.btn-secondary, .btn-accent, .confirm-dialog__danger) {
+  transition: transform 0.15s, box-shadow 0.15s, background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.events-modal__actions :is(.btn-secondary, .btn-accent, .confirm-dialog__danger):hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.events-modal__actions :is(.btn-secondary, .btn-accent, .confirm-dialog__danger):active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.events-modal__actions .btn-secondary:hover:not(:disabled) {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--brand) 40%, transparent);
+}
+
+.events-modal__actions .btn-accent:hover:not(:disabled) {
+  background: #ffb300;
+  box-shadow: 0 5px 12px rgba(230, 150, 0, 0.45);
+}
+
+.events-modal__actions .confirm-dialog__danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--danger) 40%, transparent);
+}

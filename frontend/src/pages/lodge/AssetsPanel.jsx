@@ -3150,7 +3150,7 @@ export default function AssetsPanel({ onViewReport }) {
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
                   <h3>Purchase bill</h3>
-                  <button type="button" className="btn-secondary" onClick={closeBillPreview}>
+                  <button type="button" className="btn-secondary btn-close-red" onClick={closeBillPreview}>
                     Close
                   </button>
                 </div>

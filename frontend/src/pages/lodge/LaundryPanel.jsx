@@ -8,7 +8,6 @@ import PageLoader from '../../components/PageLoader';
 import Req from '../../components/RequiredMark';
 import { Modal, Stepper, StatusIcon } from './HousekeepingParts';
 import { CountText } from './AnalyticsCharts';
-import { ago } from './housekeepingFormat';
 import './forms.css';
 import './chartSections.css';
 import './MenuPanel.css';
@@ -765,7 +764,6 @@ function LinenTab({ token }) {
       group.byItem.set(l.name, (group.byItem.get(l.name) ?? 0) + l.quantity);
     }
   }
-  const itemsOf = (group) => [...group.byItem].map(([name, quantity]) => `${quantity} ${name}`).join(', ');
 
   // "4 Bedsheet, 2 Towel" — what a step's number is made of.
   // The three biggest and a count of the rest: with fifteen linen items a full
@@ -814,57 +812,6 @@ function LinenTab({ token }) {
     },
     { key: 'clean', tone: 'ready', title: 'Clean', total: totals.clean, empty: 'No clean linen left.' },
   ];
-
-  // One block per cleaner: their total and one button, then their rooms, for the
-  // day someone hands over only part of what they changed. Shown in the side column.
-  const waiting =
-    staffGroups.length > 0 ? (
-      <section className="hk-panel" aria-label="Linen waiting with housekeeping">
-              <div className="hk-panel__head">
-                <h4>Waiting with housekeeping</h4>
-                <span className="hk-panel__sub">Receive from each person when they hand their linen to you.</span>
-              </div>
-              <div className="hk-staff-list">
-                {staffGroups.map((g) => (
-                  <div className="hk-staff" key={g.key}>
-                    <div className="hk-staff__head">
-                      <span className="hk-staff__avatar" aria-hidden="true">
-                        {g.name.charAt(0).toUpperCase()}
-                      </span>
-                      <span className="hk-handover__body">
-                        <span className="hk-staff__name">{g.name}</span>
-                        <span className="hk-sub">
-                          {g.handovers.length} {g.handovers.length === 1 ? 'place' : 'places'} · {g.pieces} {g.pieces === 1 ? 'piece' : 'pieces'} · {itemsOf(g)}
-                        </span>
-                      </span>
-                      <button type="button" className="hk-action" disabled={busy} onClick={() => receiveHandover(g.movementIds)}>
-                        Receive {g.pieces} {g.pieces === 1 ? 'piece' : 'pieces'}
-                      </button>
-                    </div>
-                    <ul className="hk-handover__list hk-staff__rooms">
-                      {g.handovers.map((h) => (
-                        <li className="hk-handover__row" key={h.key}>
-                          {/* A room by its number; a venue by its name, which needs the wider tile. */}
-                          <span className={`hk-handover__room${h.venueName && !h.roomNumber ? ' hk-handover__room--venue' : ''}`}>
-                            {h.roomNumber ?? h.venueName ?? '—'}
-                          </span>
-                          <span className="hk-handover__body">
-                            <span className="hk-handover__items">{h.lines.map((l) => `${l.quantity} ${l.name}`).join(', ')}</span>
-                            <span className="hk-sub">Changed {ago(h.changedAt, now)} ago</span>
-                          </span>
-                          {g.handovers.length > 1 && (
-                            <button type="button" className="hk-link" disabled={busy} onClick={() => receiveHandover(h.movementIds)}>
-                              Receive this one only
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </section>
-    ) : null;
 
   return (
     <div className="chart-section hk-board">
@@ -1082,9 +1029,7 @@ function LinenTab({ token }) {
             )}
           </section>
           </div>
-          <LinenSide movements={data.movements} now={now}>
-            {waiting}
-          </LinenSide>
+          <LinenSide movements={data.movements} now={now} />
         </div>
       )}
 

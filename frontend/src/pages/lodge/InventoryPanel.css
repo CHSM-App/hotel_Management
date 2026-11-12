@@ -2398,4 +2398,81 @@
   background: var(--brand);
   border-color: var(--brand);
   color: #ffffff;
-}
+}
+/* Add / Edit recipe: navy like the site's primary actions, lifts on hover. */
+.recipe-btn {
+  background: var(--brand);
+  border: 1px solid var(--brand);
+  color: #fff;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.recipe-btn:hover:not(:disabled) {
+  background: var(--brand-ink, var(--brand));
+  border-color: var(--brand-ink, var(--brand));
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--brand) 45%, transparent);
+}
+
+.recipe-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.recipe-btn {
+  min-height: 30px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+/* Record-stock dialog only: compact footer buttons with a clear colour + lift hover. */
+.stock-foot .btn-accent,
+.stock-foot .btn-secondary {
+  min-height: 34px;
+  padding: 6px 16px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+
+.stock-foot .btn-secondary:hover:not(:disabled) {
+  background-color: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  translate: 0 -2px;
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--brand) 40%, transparent);
+}
+
+.stock-foot .btn-accent:hover:not(:disabled) {
+  background-color: #ffb300;
+  translate: 0 -2px;
+  box-shadow: 0 5px 12px rgba(230, 150, 0, 0.45);
+}
+
+/* A lone red "Remove" on a payment / receipt card reads as a label, not a
+   control: give it a button body that fills red on hover. */
+.inv-item__actions > button.inv-danger {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--surface));
+  border-radius: 8px;
+  background: var(--danger-bg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.inv-item__actions > button.inv-danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.inv-item__actions > button.inv-danger:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}

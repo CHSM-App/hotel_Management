@@ -467,7 +467,7 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
         <div className="glass-panel events-modal">
           <div className="form-banner form-banner--error">{loadError}</div>
           <div className="events-modal__actions">
-            <button type="button" className="btn-secondary" onClick={onClose}>
+            <button type="button" className="btn-secondary btn-close-red" onClick={onClose}>
               Close
             </button>
           </div>
@@ -807,12 +807,6 @@ export default function EventDetail({ eventId, lodge, venues = [], addons = [], 
                 Cancel event
               </button>
             )}
-            {/* Always here: the way out of the modal, kept apart from the
-                button that cancels the function so the two are never mistaken
-                for each other. */}
-            <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>
-              Close
-            </button>
           </div>
         </div>
       </div>

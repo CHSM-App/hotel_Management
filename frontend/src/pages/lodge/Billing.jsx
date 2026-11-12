@@ -14,6 +14,7 @@ import PaymentLines from './PaymentLines';
 import PageLoader from '../../components/PageLoader';
 import {
   needsPaymentReference,
+  paymentFieldId,
   paymentLinesError,
   sumLines,
   toPaymentLines,
@@ -1003,7 +1004,17 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     setIssueError(message);
     setIssueField(field);
     if (field) {
-      const el = document.getElementById(field);
+      // The payment rows mint their own ids (see paymentFieldId); "collectedAmount"
+      // and "paymentLines" are the names this form uses for them, so translate
+      // before looking the node up - otherwise nothing is found and nothing scrolls.
+      const rowId = (kind) => paymentFieldId('bill', kind, 0);
+      const realId =
+        field === 'collectedAmount'
+          ? rowId('Amount')
+          : field === 'paymentLines'
+            ? rowId('Method')
+            : field;
+      const el = document.getElementById(realId) || document.getElementById(rowId('Amount'));
       if (el) {
         el.focus({ preventScroll: true });
         el.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -2661,7 +2672,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     <div className="modal-form__head">
                       <div className="modal-form__head-row">
                         <h3>ID proof</h3>
-                        <button type="button" className="btn-secondary" onClick={closeIdProofView}>
+                        <button type="button" className="btn-secondary btn-close-red" onClick={closeIdProofView}>
                           Close
                         </button>
                       </div>
@@ -2673,7 +2684,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             )}
             {!viewStayError && viewStay.booking && (
               <div className="billing-panel__actions stay-view__actions">
-                <button type="button" className="btn-secondary" onClick={closeStayView}>
+                <button type="button" className="btn-secondary btn-close-red" onClick={closeStayView}>
                   Close
                 </button>
                 <button
@@ -2703,7 +2714,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         <div className="glass-backdrop billing-panel__backdrop" onClick={() => onClose?.()}>
           <div className="glass-panel billing-panel__modal" onClick={(e) => e.stopPropagation()}>
             <div className="form-banner form-banner--error">{viewError}</div>
-            <button type="button" className="btn-secondary" onClick={() => onClose?.()}>
+            <button type="button" className="btn-secondary btn-close-red" onClick={() => onClose?.()}>
               Close
             </button>
           </div>
@@ -3541,7 +3552,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
             {detailInvoice.status !== 'ISSUED' && (
               <div className="bill-actions">
                 <div className="bill-actions__buttons">
-                  <button type="button" className="btn-secondary" onClick={closeDetail}>
+                  <button type="button" className="btn-secondary btn-close-red" onClick={closeDetail}>
                     Close
                   </button>
                 </div>
@@ -3922,6 +3933,15 @@ export function BillsReport({ lodge }) {
       // Bills that tie stay newest first, whichever way the column runs.
       return order * sort.dir || String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''));
     });
+  // Bills per type under the current dates and search, so each chip's number is
+  // what clicking it would show.
+  const typeCounts = { ALL: 0, room: 0, restaurant: 0, event: 0 };
+  for (const inv of invoices ?? []) {
+    if (!inRange(inv) || !billMatchesSearch(inv, needle)) continue;
+    typeCounts.ALL += 1;
+    const stream = streamOf(inv);
+    if (stream in typeCounts) typeCounts[stream] += 1;
+  }
   const live = rows.filter((i) => i.status !== 'VOID');
   const total = live.reduce((n, i) => n + Number(i.totalAmount || 0), 0);
 
@@ -3963,6 +3983,7 @@ export function BillsReport({ lodge }) {
           {REPORT_TYPES.map(([key, label]) => (
             <button key={key} type="button" className={`history-chip${type === key ? ' history-chip--on' : ''}`} aria-pressed={type === key} onClick={() => setType(key)}>
               {label}
+              {invoices && <span className="history-chip__count">{typeCounts[key]}</span>}
             </button>
           ))}
         </div>

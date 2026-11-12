@@ -480,7 +480,7 @@ export default function RecipesPanel() {
                   </div>
 
                   <div className="inv-item__actions">
-                    <button type="button" className="btn-secondary" onClick={() => openEditor(dish)}>
+                    <button type="button" className="btn-secondary recipe-btn" onClick={() => openEditor(dish)}>
                       {dish.lineCount === 0 ? 'Add recipe' : 'Edit recipe'}
                     </button>
                   </div>

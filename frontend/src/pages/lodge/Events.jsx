@@ -548,7 +548,7 @@ function Diary({ venues, onOpen, onNew, onShowList, refreshKey }) {
               ))}
             </div>
             <div className="bookings-panel__actions">
-              <button type="button" className="btn-secondary" onClick={() => setShowDrafts(false)}>
+              <button type="button" className="btn-secondary btn-close-red" onClick={() => setShowDrafts(false)}>
                 Close
               </button>
             </div>

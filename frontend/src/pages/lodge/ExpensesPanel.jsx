@@ -2011,7 +2011,7 @@ export default function ExpensesPanel({ onViewReport }) {
                 <div className="modal-form__foot-actions">
                   {viewMode ? (
                     <>
-                      <button type="button" className="btn-secondary" onClick={() => setShowExpenseForm(false)}>
+                      <button type="button" className="btn-secondary btn-close-red" onClick={() => setShowExpenseForm(false)}>
                         Close
                       </button>
                       <button type="button" className="btn-accent" onClick={() => setViewMode(false)}>
@@ -2371,7 +2371,7 @@ export default function ExpensesPanel({ onViewReport }) {
               <div className="modal-form__head">
                 <div className="modal-form__head-row">
                   <h3>Bill</h3>
-                  <button type="button" className="btn-secondary" onClick={closeBillPreview}>
+                  <button type="button" className="btn-secondary btn-close-red" onClick={closeBillPreview}>
                     Close
                   </button>
                 </div>
