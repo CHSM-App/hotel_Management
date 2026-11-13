@@ -63,6 +63,36 @@
   margin-left: 0;
 }
 
+/* Navy outline at rest, fills navy on hover. Close (--danger) turns red instead. */
+.enquiries-sheet .history-table__btn:not(.history-table__btn--primary):not(.history-table__btn--danger),
+.enquiries-sheet__detail-actions .history-table__btn:not(.history-table__btn--primary):not(.history-table__btn--danger) {
+  background: var(--surface);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.enquiries-sheet .history-table__btn:not(.history-table__btn--primary):not(.history-table__btn--danger):hover:not(:disabled),
+.enquiries-sheet__detail-actions .history-table__btn:not(.history-table__btn--primary):not(.history-table__btn--danger):hover:not(:disabled) {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+/* WhatsApp turns WhatsApp green on hover (a shade darker than #25D366 so the
+   white label stays readable). Written with the extra class to outrank the navy rule. */
+.enquiries-sheet .history-table__btn.history-table__btn--whatsapp:not(.history-table__btn--primary):not(.history-table__btn--danger),
+.enquiries-sheet__detail-actions .history-table__btn.history-table__btn--whatsapp:not(.history-table__btn--primary):not(.history-table__btn--danger) {
+  border-color: #1fa855;
+  color: #1fa855;
+}
+
+.enquiries-sheet .history-table__btn.history-table__btn--whatsapp:not(.history-table__btn--primary):not(.history-table__btn--danger):hover:not(:disabled),
+.enquiries-sheet__detail-actions .history-table__btn.history-table__btn--whatsapp:not(.history-table__btn--primary):not(.history-table__btn--danger):hover:not(:disabled) {
+  background: #1fa855;
+  border-color: #1fa855;
+  color: #fff;
+}
+
 /* The row opens the detail modal on click — same affordance a pointer gives
    any other clickable row in this app, and a visible ring for whoever tabs
    to it instead. The actions cell stops its own clicks from bubbling here

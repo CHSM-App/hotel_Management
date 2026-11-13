@@ -599,6 +599,12 @@
   box-shadow: var(--shadow-elevated);
 }
 
+/* last rows: open upward so the menu isn't clipped by the table's bottom edge */
+.staff-menu__list--up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
 .staff-menu__list button {
   display: block;
   width: 100%;
@@ -626,6 +632,10 @@
 
 .staff-menu__list .staff-menu__danger {
   color: var(--danger);
+}
+
+.staff-menu__list .staff-menu__enable {
+  color: #2563eb;
 }
 
 .staff-menu__list .staff-menu__danger:hover {

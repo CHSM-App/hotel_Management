@@ -3229,6 +3229,17 @@ export default function AssetsPanel({ onViewReport }) {
                   )}
                 </div>
 
+                {!isLinenCategory(assetForm.categoryName, categories) && /bed\s?sheet|towel|linen/i.test(assetForm.categoryName) && (
+                  <div className="field field--span2">
+                    <span className="field__hint">
+                      For linen with a quantity, pick the category “{LINEN_CATEGORY}” exactly.{' '}
+                      <button type="button" className="link-btn" onClick={() => setAssetForm((f) => ({ ...f, categoryName: LINEN_CATEGORY }))}>
+                        Use it
+                      </button>
+                    </span>
+                  </div>
+                )}
+
                 {/* Linen is a stock, not one unit. This count is what Laundry
                     works from: it shows there as the number owned. */}
                 {isLinenCategory(assetForm.categoryName, categories) && (

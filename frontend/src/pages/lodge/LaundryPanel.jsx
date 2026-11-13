@@ -556,7 +556,7 @@ function LinenSide({ movements, now, children }) {
 
   return (
     <aside className="hk-linen__side" aria-label="Today and who is waiting">
-      <section className="hk-panel">
+      <section className="hk-panel hk-panel--today">
         <div className="hk-panel__head">
           <h4>Today</h4>
           <span className="hk-panel__sub">{new Date(now).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -784,11 +784,11 @@ function LinenTab({ token }) {
       empty: 'Nothing waiting to be received.',
       // With one person waiting the card can do it; with several, the list
       // below is where each is received, so the card only says who has what.
-      detail: staffGroups.length > 1 ? staffGroups.map((g) => `${g.name}: ${g.pieces}`).join(' · ') : null,
-      action: staffGroups.length === 1 ? `Receive from ${staffGroups[0].name}` : staffGroups.length > 1 ? null : 'Receive',
-      note: staffGroups.length > 1 ? 'Receive from each person below.' : null,
+      detail: null,
+      action: staffGroups.length === 1 ? `Receive from ${staffGroups[0].name}` : staffGroups.length > 1 ? 'Receive all' : 'Receive',
+      note: null,
       disabled: staffGroups.length === 0,
-      run: () => receiveHandover(staffGroups[0].movementIds),
+      run: () => receiveHandover(staffGroups.flatMap((g) => g.movementIds)),
     },
     {
       key: 'dirty',

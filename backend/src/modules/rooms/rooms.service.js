@@ -372,6 +372,28 @@ async function deleteRoom(lodgeId, roomId) {
     );
   }
 
+  // Other records that name this room are history too (food orders, bills,
+  // service usage, assets, laundry/linen). Say so plainly instead of letting
+  // the foreign key fail into a generic error.
+  const usedResult = await pool
+    .request()
+    .input('roomId', sql.BigInt, roomId)
+    .query(`
+      SELECT TOP 1 1 AS used FROM dbo.food_orders WHERE room_id = @roomId
+      UNION ALL SELECT TOP 1 1 FROM dbo.invoices WHERE room_id = @roomId
+      UNION ALL SELECT TOP 1 1 FROM dbo.service_usages WHERE room_id = @roomId
+      UNION ALL SELECT TOP 1 1 FROM dbo.assets WHERE room_id = @roomId
+      UNION ALL SELECT TOP 1 1 FROM dbo.booking_drafts WHERE room_id = @roomId
+      UNION ALL SELECT TOP 1 1 FROM dbo.linen_movements WHERE room_id = @roomId
+      UNION ALL SELECT TOP 1 1 FROM dbo.laundry_orders WHERE room_id = @roomId
+    `);
+  if (usedResult.recordset.length > 0) {
+    throw new ApiError(
+      'This room has orders, bills, assets or other records on file and can’t be permanently deleted — deactivate it instead.',
+      409
+    );
+  }
+
   const imagesResult = await pool
     .request()
     .input('roomId', sql.BigInt, roomId)
@@ -381,6 +403,14 @@ async function deleteRoom(lodgeId, roomId) {
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
   try {
+    // Housekeeping keeps a status row (and its log) for every room, booked or
+    // not; with no bookings there is nothing in them worth keeping.
+    await new sql.Request(transaction)
+      .input('roomId', sql.BigInt, roomId)
+      .query('DELETE FROM dbo.housekeeping_log WHERE room_id = @roomId');
+    await new sql.Request(transaction)
+      .input('roomId', sql.BigInt, roomId)
+      .query('DELETE FROM dbo.housekeeping_rooms WHERE room_id = @roomId');
     await new sql.Request(transaction)
       .input('roomId', sql.BigInt, roomId)
       .query('DELETE FROM dbo.room_features WHERE room_id = @roomId');

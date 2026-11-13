@@ -609,7 +609,7 @@ export default function StaffAndRoles() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleStaff.map((u) => (
+                    {visibleStaff.map((u, i) => (
                       <tr key={u.id} className={`${u.isActive ? '' : 'staff-table__row--off '}${menuId === u.id ? 'staff-table__row--open' : ''}`}>
                         <td>
                           <div className="staff-table__who">
@@ -657,7 +657,7 @@ export default function StaffAndRoles() {
                               {menuId === u.id && (
                                 <>
                                   <button type="button" className="staff-menu__backdrop" aria-label="Close menu" tabIndex={-1} onClick={() => setMenuId(null)} />
-                                  <span className="staff-menu__list" role="menu" onKeyDown={(e) => e.key === 'Escape' && setMenuId(null)}>
+                                  <span className={`staff-menu__list${visibleStaff.length > 3 && i >= visibleStaff.length - 2 ? ' staff-menu__list--up' : ''}`} role="menu" onKeyDown={(e) => e.key === 'Escape' && setMenuId(null)}>
                                     <button type="button" role="menuitem" onClick={() => startPasswordReset(u)}>
                                       Reset password
                                     </button>
@@ -670,7 +670,7 @@ export default function StaffAndRoles() {
                                         <button
                                           type="button"
                                           role="menuitem"
-                                          className={u.isActive ? 'staff-menu__danger' : undefined}
+                                          className={u.isActive ? 'staff-menu__danger' : 'staff-menu__enable'}
                                           onClick={() => {
                                             setMenuId(null);
                                             toggleStaffActive(u);

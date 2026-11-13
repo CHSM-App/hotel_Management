@@ -98,7 +98,7 @@ function EnquiryActions({ e, busy, onConfirmBooking, onConfirmEventBooking, setS
   const open = e.status === 'NEW' || e.status === 'CONTACTED';
   return (
     <>
-      <a className="history-table__btn" href={`https://wa.me/${toWhatsAppDigits(e.phone)}`} target="_blank" rel="noopener noreferrer">
+      <a className="history-table__btn history-table__btn--whatsapp" href={`https://wa.me/${toWhatsAppDigits(e.phone)}`} target="_blank" rel="noopener noreferrer">
         WhatsApp
       </a>
       {open && (
@@ -151,7 +151,7 @@ function EnquiryActions({ e, busy, onConfirmBooking, onConfirmEventBooking, setS
               Confirmed
             </button>
           )}
-          <button type="button" className="history-table__btn" disabled={busy} onClick={() => setStatus(e.id, 'CLOSED')}>
+          <button type="button" className="history-table__btn history-table__btn--danger" disabled={busy} onClick={() => setStatus(e.id, 'CLOSED')}>
             Close
           </button>
         </>
@@ -159,7 +159,7 @@ function EnquiryActions({ e, busy, onConfirmBooking, onConfirmEventBooking, setS
       {/* A confirmed enquiry is settled by its booking, so it can be closed but
           not reopened; a cancelled booking closes it on its own. */}
       {e.status === 'CONVERTED' && (
-        <button type="button" className="history-table__btn" disabled={busy} onClick={() => setStatus(e.id, 'CLOSED')}>
+        <button type="button" className="history-table__btn history-table__btn--danger" disabled={busy} onClick={() => setStatus(e.id, 'CLOSED')}>
           Close
         </button>
       )}

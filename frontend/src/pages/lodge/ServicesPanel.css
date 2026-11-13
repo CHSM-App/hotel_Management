@@ -329,21 +329,23 @@
   flex-direction: column;
   background: var(--surface);
   border: none;
-  /* The colour of the card follows its state: a green edge when it is on offer,
-     a grey one when it is switched off. */
-  border-top: 3px solid var(--success);
   border-radius: 12px;
   overflow: hidden;
   box-shadow: var(--shadow-raised);
-  transition: var(--neu-transition);
-}
-
-.svc-card--inactive {
-  border-top-color: #b8c1cd;
+  transition: var(--neu-transition), transform 180ms ease, box-shadow 180ms ease;
 }
 
 .svc-card:hover {
-  box-shadow: var(--shadow-raised-hover);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+
+.svc-card__photo {
+  transition: transform 300ms ease;
+}
+
+.svc-card:hover .svc-card__photo {
+  transform: scale(1.04);
 }
 
 /* Dimmed rather than struck out — but only the photo and the facts above the
