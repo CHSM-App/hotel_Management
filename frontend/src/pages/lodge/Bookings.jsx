@@ -571,6 +571,9 @@ const initialBookingForm = {
   // being able to say "paid in full" in one click and have it stay true as
   // the total moves.
   collectFull: false,
+  // The advance defaults to the stay total until the desk edits the rows
+  // themselves; after that it is theirs and the quote no longer overwrites it.
+  advanceAuto: true,
   vehicles: [],
 };
 
@@ -1432,9 +1435,10 @@ export default function Bookings({
   // re-derived after every keystroke in the rows above, so the sum stays the
   // stay total no matter how the split is carved up.
   const onBookingAdvanceLines = (next) =>
-    setBookingForm((f) =>
-      withAdvanceLines(f, f.collectFull && quote ? fullPaymentLines(next, quote.totalPrice) : next)
-    );
+    setBookingForm((f) => ({
+      ...withAdvanceLines(f, f.collectFull && quote ? fullPaymentLines(next, quote.totalPrice) : next),
+      advanceAuto: false,
+    }));
 
   // The discount inputs are hidden, so nothing types into discountAmount or
   // discountPercent any more and their write-through setters are gone. The
@@ -1864,7 +1868,11 @@ export default function Bookings({
         // are rebuilt the moment the total moves, here rather than in an effect
         // watching the quote, for the same reason the discount is below.
         setBookingForm((f) =>
-          f.collectFull ? withAdvanceLines(f, fullPaymentLines(f.advanceLines, data.totalPrice)) : f
+          f.collectFull
+            ? withAdvanceLines(f, fullPaymentLines(f.advanceLines, data.totalPrice))
+            : f.advanceAuto && data.totalPrice > 0
+              ? withAdvanceLines(f, [{ ...f.advanceLines[0], amount: String(data.totalPrice) }])
+              : f
         );
         // Adding an extra moves the stay total without clearing the discount,
         // so whichever box is derived has to be redrawn against the new total —
@@ -2907,6 +2915,7 @@ export default function Bookings({
       // An edit SETS the advance rather than adding to it, and receipts only
       // the difference; "collect the whole stay" is a booking-time choice.
       collectFull: false,
+      advanceAuto: false,
     };
     setEditTarget(bookingDetail);
     setDraftId(null);
