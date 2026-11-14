@@ -9,7 +9,6 @@ const pricingService = require('../pricing/pricing.service');
 const notifications = require('../notifications/bookingConfirmation');
 const cancellationNotice = require('../notifications/cancellationNotice');
 const checkinWelcome = require('../notifications/checkinWelcome');
-const checkoutThanks = require('../notifications/checkoutThanks');
 const billingService = require('../billing/billing.service');
 const { splitAcross } = require('../reports/reports.service');
 const advanceReceiptsService = require('../billing/advanceReceipts.service');
@@ -2767,10 +2766,7 @@ async function checkOut(lodgeId, bookingId, { lateCharge = 0, roomId = null } = 
     await transaction.rollback();
     throw err;
   }
-  const booking = await getBooking(lodgeId, bookingId);
-  // Not awaited, same as the check-in welcome: best-effort, never rejects.
-  void checkoutThanks.notifyCheckedOut(lodgeId, booking);
-  return booking;
+  return getBooking(lodgeId, bookingId);
 }
 
 /// A booking stays editable for its whole life, not just at creation — a
