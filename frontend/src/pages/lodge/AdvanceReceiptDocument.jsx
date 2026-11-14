@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import { amountInWords } from './numberToWords';
 import { formatHeadCount } from './stayFormat';
+import { roomSections } from './multiRoom';
 import { API_BASE } from '../../lib/api';
 import './BillDocument.css';
 
@@ -258,7 +259,27 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
   const stayTotal = Number(receipt.stayTotal) || 0;
   const roundOff = Number(receipt.roundOff) || 0;
 
-  const advanceWhole = Math.floor(Math.round(receipt.amountReceived * 100) / 100);
+  // The price the stay total is made of: room rent, then each extra (AC, extra
+  // bed…), as the final bill itemises them. Web only — the lines come from the
+  // receipt payload and other clients simply don't read them. A multi-room stay
+  // labels each line with its room.
+  const charges = receipt.roomCharges ?? [];
+  const sections = roomSections(charges) ?? (charges.length ? [{ room: null, base: charges[0], extras: charges.slice(1) }] : []);
+  const chargeRows = sections
+    .flatMap((s) => [s.base, ...s.extras].map((l, j) => ({ ...l, base: j === 0, room: s.room })))
+    .map((l) => ({
+    amount: l.amount,
+    label: `${l.room ? `Room ${l.room} · ` : ''}${
+      l.base ? `Room rent ₹${round2(l.amount / Math.max(1, l.nights))} × ${l.nights} ${l.nights === 1 ? 'day' : 'days'}` : l.label
+    }`,
+  }));
+  // Discounts, late charges and the like that aren't a priced line above.
+  const otherAdjust = round2(stayTotal - roundOff - chargeRows.reduce((sum, r) => sum + r.amount, 0));
+  if (chargeRows.length > 0 && Math.abs(otherAdjust) > 0.005) {
+    chargeRows.push({ label: 'Discount / adjustment', amount: otherAdjust });
+  }
+
+  const advanceWhole =Math.floor(Math.round(receipt.amountReceived * 100) / 100);
   const advancePaise = Math.round(receipt.amountReceived * 100) % 100;
 
 
@@ -410,6 +431,9 @@ const AdvanceReceiptDocument = forwardRef(function AdvanceReceiptDocument({ rece
             <col className="memo__col-ps" />
           </colgroup>
           <tbody>
+            {chargeRows.map((row) => (
+              <Money key={row.label} label={row.label} value={row.amount} />
+            ))}
             {roundOff !== 0 && <Money label={T.subTotal} value={round2(stayTotal - roundOff)} />}
             {roundOff !== 0 && <Money label={T.roundOff} value={roundOff} />}
             <Money label={T.stayTotal} value={stayTotal} rule />

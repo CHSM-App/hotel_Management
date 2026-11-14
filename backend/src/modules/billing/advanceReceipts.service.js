@@ -9,6 +9,7 @@ const {
   nightlyAmounts,
   insertPaymentLines,
   readPaymentLines,
+  roomChargeLines,
 } = require('./billing.service');
 const { paymentLinesOf } = require('../bookings/bookings.schema');
 const eventsService = require('../events/events.service');
@@ -187,6 +188,9 @@ function mapReceipt(row) {
     // Frozen at issue: extending the booking afterwards must not restate a
     // document the guest is already holding.
     stayTotal,
+    // Base rate and each extra (AC, extra bed…) the stay total is made of, the
+    // same lines the final bill itemises. Empty for a function.
+    roomCharges: roomChargeLines(row),
     // The rounding that took the stay to the whole rupee the bill will ask
     // for. Printed as its own line so the receipt and the invoice agree on
     // the page, rather than differing by paise with nothing to explain it.
@@ -276,7 +280,7 @@ const RECEIPT_SELECT = `
           FOR JSON PATH) AS payment_lines,
          COALESCE(b.guest_name, eb.organiser_name) AS guest_name,
          COALESCE(b.guest_phone, eb.organiser_phone) AS guest_phone,
-         b.booking_number, b.num_guests, b.num_children AS child_count, b.check_in_date, b.check_out_date,
+         b.booking_number, b.num_guests, b.num_children AS child_count, b.check_in_date, b.check_out_date, b.nightly_breakdown,
          COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
                        FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
                        WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, r.is_dormitory, c.name AS category_name,

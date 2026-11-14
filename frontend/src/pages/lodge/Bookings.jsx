@@ -571,6 +571,8 @@ const initialBookingForm = {
   // being able to say "paid in full" in one click and have it stay true as
   // the total moves.
   collectFull: false,
+  // The advance box follows the stay total (editable) until the desk types in it.
+  advanceAuto: true,
   vehicles: [],
 };
 
@@ -1432,9 +1434,10 @@ export default function Bookings({
   // re-derived after every keystroke in the rows above, so the sum stays the
   // stay total no matter how the split is carved up.
   const onBookingAdvanceLines = (next) =>
-    setBookingForm((f) =>
-      withAdvanceLines(f, f.collectFull && quote ? fullPaymentLines(next, quote.totalPrice) : next)
-    );
+    setBookingForm((f) => ({
+      ...withAdvanceLines(f, f.collectFull && quote ? fullPaymentLines(next, quote.totalPrice) : next),
+      advanceAuto: false,
+    }));
 
   // The discount inputs are hidden, so nothing types into discountAmount or
   // discountPercent any more and their write-through setters are gone. The
@@ -1863,9 +1866,12 @@ export default function Bookings({
         // A full payment follows the total it was promised against: the rows
         // are rebuilt the moment the total moves, here rather than in an effect
         // watching the quote, for the same reason the discount is below.
-        setBookingForm((f) =>
-          f.collectFull ? withAdvanceLines(f, fullPaymentLines(f.advanceLines, data.totalPrice)) : f
-        );
+        setBookingForm((f) => {
+          if (f.collectFull) return withAdvanceLines(f, fullPaymentLines(f.advanceLines, data.totalPrice));
+          if (f.advanceAuto && f.advanceLines.length === 1 && data.totalPrice > 0)
+            return withAdvanceLines(f, [{ ...f.advanceLines[0], amount: String(data.totalPrice) }]);
+          return f;
+        });
         // Adding an extra moves the stay total without clearing the discount,
         // so whichever box is derived has to be redrawn against the new total —
         // otherwise "10%" stays pinned to the rupee figure of the old one, or a
@@ -2907,6 +2913,7 @@ export default function Bookings({
       // An edit SETS the advance rather than adding to it, and receipts only
       // the difference; "collect the whole stay" is a booking-time choice.
       collectFull: false,
+      advanceAuto: false,
     };
     setEditTarget(bookingDetail);
     setDraftId(null);
