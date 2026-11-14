@@ -1279,6 +1279,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       // queue and making them find it again is a step with one answer.
       setJustIssued(data.invoice);
       setDetailInvoiceId(data.invoice.id);
+      autoShareId.current = data.invoice.id;
       setBillTarget(null);
       refreshAll();
     } catch (err) {
@@ -1303,6 +1304,8 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // reads from those — so without this the document would blink in a moment
   // later, or not at all on the screen that has no lists to refresh.
   const [justIssued, setJustIssued] = useState(null);
+  // Id of a bill just issued here that still owes its automatic WhatsApp send.
+  const autoShareId = useRef(null);
 
   // The bill asked for by id, fetched on its own: on a modal-only screen the
   // lists above are not what the detail reads from in time, and the copy
@@ -1525,6 +1528,17 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       );
       toast.show(`Bill sent on WhatsApp to ${result.phone}.`, 'success');
     });
+
+  // Issuing sends the bill on WhatsApp without a button press, once the
+  // document has rendered (the PDF is captured from it). Fires once per issue;
+  // a failure shows as the usual error toast and the Share menu stays as retry.
+  useEffect(() => {
+    if (autoShareId.current == null || detailInvoice?.id !== autoShareId.current) return;
+    if (!billNode || !billHeight) return;
+    autoShareId.current = null;
+    handleShare('whatsapp');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailInvoice?.id, billNode, billHeight]);
 
   const handleVoid = async (e) => {
     e.preventDefault();
