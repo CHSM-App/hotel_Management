@@ -102,6 +102,13 @@ const RECEIPT_TEMPLATE_ID = process.env.WHATSAPP_RECEIPT_TEMPLATE_ID || '';
 //   {{1}} name  {{2}} hotel_name  {{3}} room_no
 //   {{4}} checkout  {{5}} phone
 const CHECKIN_TEMPLATE_ID = process.env.WHATSAPP_CHECKIN_TEMPLATE_ID || '';
+// The approved "thank you for staying" template, sent the moment the last room
+// of a booking is checked out. Its own approval, same reasoning as the rest.
+//
+// Its five variables, in order, are built by checkoutThanks.js:
+//   {{1}} name  {{2}} hotel_name  {{3}} actual_checkout_datetime
+//   {{4}} final_bill_total  {{5}} hotel_contact
+const CHECKOUT_TEMPLATE_ID = process.env.WHATSAPP_CHECKOUT_TEMPLATE_ID || '';
 // The approved "your stay is coming up" reminder template. Sent once per
 // booking by the daily sweep (stayReminders.service.js) — three days before
 // a stay booked with enough lead time to say that truthfully, or the day
@@ -295,6 +302,11 @@ function isCheckinTemplateConfigured() {
   return isConfigured() && !isPlaceholder(CHECKIN_TEMPLATE_ID);
 }
 
+// The same question for the checkout thank-you template.
+function isCheckoutTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(CHECKOUT_TEMPLATE_ID);
+}
+
 // The same question for the stay-reminder template. Asked by the daily sweep
 // before it even queries for bookings due a reminder, so an unconfigured
 // install doesn't pay for a query whose answer it can't send anyway.
@@ -403,6 +415,7 @@ module.exports = {
   isEventCancellationTemplateConfigured,
   isReceiptTemplateConfigured,
   isCheckinTemplateConfigured,
+  isCheckoutTemplateConfigured,
   isReminderTemplateConfigured,
   isEventReminderTemplateConfigured,
   isEventRescheduleTemplateConfigured,
@@ -416,6 +429,7 @@ module.exports = {
   EVENT_CANCELLATION_TEMPLATE_ID,
   RECEIPT_TEMPLATE_ID,
   CHECKIN_TEMPLATE_ID,
+  CHECKOUT_TEMPLATE_ID,
   REMINDER_TEMPLATE_ID,
   EVENT_REMINDER_TEMPLATE_ID,
   EVENT_RESCHEDULE_TEMPLATE_ID,
