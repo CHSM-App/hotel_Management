@@ -58,7 +58,7 @@ test('a stay already under way refuses a different check-in date', () => {
   const src = source();
   assert.match(
     src,
-    /if \(match && checkInDate !== toIsoDate\(match\.check_in_date\) && match\.status !== 'BOOKED'\)/,
+    /if \(match && checkInDate !== toIsoDate\(match\.check_in_date\) && match\.status !== 'BOOKED' && !revising\)/,
     'updateBooking no longer guards the check-in date by status. Without it a ' +
       'checked-in stay could be re-dated out from under the folio and the register, ' +
       'and a checked-out one re-dated after its bill was drawn up.'

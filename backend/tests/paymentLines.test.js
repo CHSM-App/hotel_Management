@@ -386,8 +386,8 @@ test('both booking handlers parse the lines off the multipart body', () => {
   );
   assert.equal(
     (src.match(/body\.advanceLines = parseJsonArrayField\(body\.advanceLines\);/g) || []).length,
-    2,
-    'create and check-in must each parse advanceLines — a missing one drops the split without an error'
+    3,
+    'create, check-in and past-booking must each parse advanceLines — a missing one drops the split without an error'
   );
 });
 

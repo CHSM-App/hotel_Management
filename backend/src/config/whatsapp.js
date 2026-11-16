@@ -102,6 +102,11 @@ const RECEIPT_TEMPLATE_ID = process.env.WHATSAPP_RECEIPT_TEMPLATE_ID || '';
 //   {{1}} name  {{2}} hotel_name  {{3}} room_no
 //   {{4}} checkout  {{5}} phone
 const CHECKIN_TEMPLATE_ID = process.env.WHATSAPP_CHECKIN_TEMPLATE_ID || '';
+// The single combined message for a walk-in (booked and checked in at once),
+// replacing the confirmation + welcome pair. Nine variables, built by
+// checkinWelcome.buildWalkinSample: name, hotel_name, room_no, checkin,
+// checkout, advance, balance, receipt_line, contact.
+const WALKIN_TEMPLATE_ID = process.env.WHATSAPP_WALKIN_TEMPLATE_ID || '';
 // The approved "your stay is coming up" reminder template. Sent once per
 // booking by the daily sweep (stayReminders.service.js) — three days before
 // a stay booked with enough lead time to say that truthfully, or the day
@@ -295,6 +300,10 @@ function isCheckinTemplateConfigured() {
   return isConfigured() && !isPlaceholder(CHECKIN_TEMPLATE_ID);
 }
 
+function isWalkinTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(WALKIN_TEMPLATE_ID);
+}
+
 // The same question for the stay-reminder template. Asked by the daily sweep
 // before it even queries for bookings due a reminder, so an unconfigured
 // install doesn't pay for a query whose answer it can't send anyway.
@@ -403,6 +412,7 @@ module.exports = {
   isEventCancellationTemplateConfigured,
   isReceiptTemplateConfigured,
   isCheckinTemplateConfigured,
+  isWalkinTemplateConfigured,
   isReminderTemplateConfigured,
   isEventReminderTemplateConfigured,
   isEventRescheduleTemplateConfigured,
@@ -416,6 +426,7 @@ module.exports = {
   EVENT_CANCELLATION_TEMPLATE_ID,
   RECEIPT_TEMPLATE_ID,
   CHECKIN_TEMPLATE_ID,
+  WALKIN_TEMPLATE_ID,
   REMINDER_TEMPLATE_ID,
   EVENT_REMINDER_TEMPLATE_ID,
   EVENT_RESCHEDULE_TEMPLATE_ID,

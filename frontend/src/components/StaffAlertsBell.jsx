@@ -49,6 +49,16 @@ const CATEGORY_META = {
       </>
     ),
   },
+  foodBill: {
+    label: 'Food to bill',
+    color: '#059669',
+    icon: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 10h18" />
+      </>
+    ),
+  },
   workOrder: {
     label: 'Maintenance',
     color: '#7c3aed',
@@ -75,7 +85,7 @@ const CATEGORY_META = {
     icon: <path d="M18 20V10M12 20V4M6 20v-6" />,
   },
 };
-const CATEGORY_ORDER = ['enquiry', 'checkin', 'checkout', 'order', 'workOrder', 'coverage', 'housekeeping', 'reports'];
+const CATEGORY_ORDER = ['enquiry', 'checkin', 'checkout', 'order', 'foodBill', 'workOrder', 'coverage', 'housekeeping', 'reports'];
 
 function CategoryIcon({ category, size = 15 }) {
   return (

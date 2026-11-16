@@ -6,6 +6,7 @@ const { ApiError } = require('../../middleware/errorHandler');
 const rolesService = require('../roles/roles.service');
 const whatsapp = require('../../config/whatsapp');
 const { logger } = require('../../config/logger');
+const { SETTINGS_COLS, SETTINGS_JOIN, settingsFromRow, saveSettings, getSettings } = require('../../config/lodgeSettings');
 const { issueOtp, verifyAndConsumeOtp } = require('./otp.service');
 const { UPLOAD_DIR: LOGO_DIR } = require('../../middleware/logoUpload');
 const { UPLOAD_DIR: HERO_IMAGE_DIR } = require('../../middleware/heroImageUpload');
@@ -27,9 +28,12 @@ async function getMe(userId) {
         l.is_gst_registered, l.gstin, l.is_specified_premises,
         l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
         l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry,
-        l.logo_path, l.show_logo_on_receipt, l.hero_image_path
+        l.can_edit_billed_stays, l.can_add_past_bookings,
+        l.logo_path, l.show_logo_on_receipt, l.hero_image_path,
+        ${SETTINGS_COLS}
       FROM dbo.users u
       JOIN dbo.lodges l ON l.id = u.lodge_id
+      ${SETTINGS_JOIN}
       WHERE u.id = @userId
     `);
 
@@ -84,9 +88,13 @@ async function getMe(userId) {
       hasOtherServices: !!row.has_other_services,
       hasHousekeeping: !!row.has_housekeeping,
       hasLaundry: !!row.has_laundry,
+      canEditBilledStays: !!row.can_edit_billed_stays,
+      canAddPastBookings: !!row.can_add_past_bookings,
       logoUrl: row.logo_path ? `/hotel-logos/${row.logo_path}` : null,
       showLogoOnReceipt: !!row.show_logo_on_receipt,
       heroImageUrl: row.hero_image_path ? `/lodge-hero-images/${row.hero_image_path}` : null,
+      // Per-property switches kept in dbo.lodge_settings (WhatsApp auto/manual).
+      settings: settingsFromRow(row),
     },
   };
 }
@@ -307,8 +315,21 @@ async function removeMyLodgeHeroImage(lodgeId) {
   await deleteHeroImageFile(current.hero_image_path);
 }
 
+// The owner's own copy of the switches in dbo.lodge_settings. The lodge always
+// comes from the caller's login, never from the request.
+async function getMySettings(lodgeId) {
+  return getSettings(lodgeId);
+}
+
+async function updateMySettings(lodgeId, patch) {
+  await saveSettings(await getPool(), lodgeId, patch);
+  return getSettings(lodgeId);
+}
+
 module.exports = {
   getMe,
+  getMySettings,
+  updateMySettings,
   changePassword,
   sendPasswordChangeOtp,
   updateMyLodge,

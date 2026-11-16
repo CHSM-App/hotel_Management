@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../../config/connection');
 const { logger } = require('../../config/logger');
 const whatsapp = require('../../config/whatsapp');
+const { SETTINGS_COLS, SETTINGS_JOIN, settingOn } = require('../../config/lodgeSettings');
 
 // The WhatsApp notice a guest gets when their booking is cancelled.
 //
@@ -89,7 +90,8 @@ function refundModeAmount(booking) {
   return 'No refund due';
 }
 
-// The seven template values, in template order. Pure, so it can be checked
+// The nine template values, in template order (..., refund_mode_amount,
+// booking_id, contact). Pure, so it can be checked
 // without a database; booking is getBooking()'s mapped shape (camelCase) —
 // see notifyBookingCancelled — lodge the raw dbo.lodges row.
 //
@@ -106,6 +108,8 @@ function buildCancellationSample(booking, lodge) {
     clean(formatDate(booking.checkOutDate)),
     reasonLine(booking.cancelReason),
     clean(refundModeAmount(booking)),
+    clean(booking.bookingNumber),
+    clean(lodge.phone || lodge.whatsapp_number),
   ];
 }
 
@@ -114,17 +118,19 @@ async function loadLodge(lodgeId) {
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .query('SELECT name FROM dbo.lodges WHERE id = @lodgeId');
+    .query(`SELECT l.name, l.phone, l.whatsapp_number, ${SETTINGS_COLS} FROM dbo.lodges l ${SETTINGS_JOIN} WHERE l.id = @lodgeId`);
   return result.recordset[0] ?? null;
 }
 
 // Fires the cancellation notice and reports how it went, never throwing —
 // the cancellation stands regardless of whether WhatsApp is reachable.
-async function notifyBookingCancelled(lodgeId, booking) {
+async function notifyBookingCancelled(lodgeId, booking, { manual = false } = {}) {
   if (!whatsapp.isCancellationTemplateConfigured()) return { status: 'skipped', reason: 'not configured' };
   try {
     const lodge = await loadLodge(lodgeId);
     if (!lodge) return { status: 'skipped', reason: 'lodge not found' };
+    // The property sends cancellation notices by hand (Setup > WhatsApp Messages).
+    if (!manual && !settingOn(lodge, 'wa_auto_cancel')) return { status: 'skipped', reason: 'manual' };
     if (!booking.guestPhone) return { status: 'skipped', reason: 'no guest phone' };
 
     const sample = buildCancellationSample(booking, lodge);

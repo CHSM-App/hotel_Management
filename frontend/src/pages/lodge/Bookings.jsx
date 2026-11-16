@@ -560,6 +560,12 @@ const initialBookingForm = {
   basePriceOverride: '',
   advanceAmount: '',
   advanceLines: [emptyPaymentLine()],
+  // Past booking only (see pastMode): when the guest really came and went, and
+  // how the rest of the bill, after the advance, was paid.
+  pastInTime: '14:00',
+  pastOutTime: '11:00',
+  pastFinalLines: [emptyPaymentLine()],
+  pastBillingSide: 'GST',
   advancePaymentMethod: '',
   // The UPI/card transaction number. Blank on cash, which leaves no trail to
   // record — see needsPaymentReference.
@@ -669,6 +675,29 @@ export default function Bookings({
   const session = getSession();
   const token = session?.token;
   const toast = useToast();
+  // Switched on per property by internal staff; off keeps billed stays locked.
+  const [canEditBilledStays, setCanEditBilledStays] = useState(false);
+  const [canAddPastBookings, setCanAddPastBookings] = useState(false);
+  const [isGst, setIsGst] = useState(false);
+  // Which guest WhatsApp messages the property sends by hand (Setup > WhatsApp
+  // Messages). A message set to manual gets a Send button below.
+  const [waSettings, setWaSettings] = useState({});
+  const [waSending, setWaSending] = useState(false);
+  // The days a past booking may end on (after the last invoice), for the side chosen.
+  const [pastWindow, setPastWindow] = useState(null);
+  useEffect(() => {
+    apiGet('/me', { token })
+      .then((r) => {
+        setCanEditBilledStays(Boolean(r.lodge?.canEditBilledStays));
+        setCanAddPastBookings(Boolean(r.lodge?.canAddPastBookings));
+        setIsGst(Boolean(r.lodge?.isGstRegistered));
+        setWaSettings(r.lodge?.settings || {});
+      })
+      .catch(() => {
+        setCanEditBilledStays(false);
+        setCanAddPastBookings(false);
+      });
+  }, [token]);
 
   // The line between what can still be sold and what only be looked at. Read
   // once here so the chart, the tiles and the form all draw it in the same
@@ -1386,6 +1415,11 @@ export default function Bookings({
   // server after saving.
   const [formMode, setFormMode] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
+  // Set only while correcting a checked-out, billed stay: the dates that stay may
+  // move to (bounded by the neighbouring invoices) and what the invoice change
+  // needs from the desk — a reason, tender for any extra, a refund confirmation.
+  const [editWindow, setEditWindow] = useState(null);
+  const [revision, setRevision] = useState({ reason: '', method: 'CASH', reference: '', refundOk: false });
   const showBookingForm = formMode !== null;
   const editing = formMode === 'EDIT';
 
@@ -1651,6 +1685,7 @@ export default function Bookings({
     // tape chart — leaving the desk where it was standing. Re-opening by id
     // refetches, so an abandoned edit can't leave stale figures on screen.
     if (editTarget) setSelectedBookingId(editTarget.id);
+    setEditWindow(null);
     setClosePrompt(null);
     setFormMode(null);
     setEditTarget(null);
@@ -1762,18 +1797,40 @@ export default function Bookings({
   const validRange =
     bookingForm.checkInDate && bookingForm.checkOutDate && bookingForm.checkOutDate > bookingForm.checkInDate;
   const isFutureCheckIn = bookingForm.checkInDate > today;
+  // Dates already gone: the form records a stay that happened, checked out and
+  // billed on save, instead of holding a room. Only where super admin allows it.
+  const pastRequested =
+    !editing && canAddPastBookings && Boolean(validRange) && bookingWindow(bookingForm).checkOutDate <= today;
+  const pastSide = isGst ? bookingForm.pastBillingSide : 'NON_GST';
+  useEffect(() => {
+    if (!pastRequested) return undefined;
+    let live = true;
+    apiGet(`/bookings/past-window?billingSide=${pastSide}`, { token })
+      .then((r) => live && setPastWindow({ ...r.window, side: pastSide }))
+      .catch(() => live && setPastWindow(null));
+    return () => {
+      live = false;
+    };
+  }, [pastRequested, pastSide, token]);
+  const gap = pastWindow?.side === pastSide ? pastWindow : null;
+  // Dates already covered by an invoice are closed: a stay can't be slotted in among them.
+  const pastClosed = pastRequested && Boolean(gap?.minDate) && bookingWindow(bookingForm).checkOutDate < gap.minDate;
+  const pastMode = pastRequested && !pastClosed;
+  const pastDue = quote ? Math.max(0, Math.round((quote.totalPrice - sumLines(bookingForm.advanceLines)) * 100) / 100) : null;
   // Once a guest has checked out there is no stay left to move or extend, so
   // the room and the dates are fixed — matching the backend's own guard.
   // The first room's own status where the booking has several — one room having
   // left must not lock the rooms still in.
   const primaryRoomStatus = bookingForm.primaryStatus ?? editTarget?.status;
-  const canEditStay = !editing || primaryRoomStatus === 'BOOKED' || primaryRoomStatus === 'CHECKED_IN';
+  // A billed, checked-out stay can still slide its dates inside the invoice window.
+  const revising = editing && Boolean(editWindow);
+  const canEditStay = !editing || revising || primaryRoomStatus === 'BOOKED' || primaryRoomStatus === 'CHECKED_IN';
   // Narrower than the rest of the stay: a reservation that hasn't been checked
   // in yet can still be moved to different dates, which is an ordinary desk
   // correction. Once the guest is in the room the arrival day is a recorded
   // fact — the backend refuses to change it, and this keeps the box from
   // offering something the save would reject.
-  const canEditCheckIn = !editing || primaryRoomStatus === 'BOOKED';
+  const canEditCheckIn = !editing || revising || primaryRoomStatus === 'BOOKED';
   // Which rooms are free. Two endpoints for the same question: an edit has to
   // ask the one that excludes the booking's own occupancy, or the room the
   // guest is already in would look taken and drop off its own picker.
@@ -2401,7 +2458,7 @@ export default function Bookings({
     // which satisfies its own check.
     const primaryGuest = bookingForm.adults[0];
     const walkInNeedsId =
-      !editing && bookingForm.bookingType === 'WALK_IN' && !primaryGuest.fromBookingId;
+      !editing && !pastMode && bookingForm.bookingType === 'WALK_IN' && !primaryGuest.fromBookingId;
     //
     // Said in a few words each, because these sit under one field of a
     // five-across row: a sentence explaining *why* the walk-in wants an ID
@@ -2500,6 +2557,58 @@ export default function Bookings({
     }
     const vehicles = cleanVehicles(bookingForm.vehicles);
 
+    // Each room's real arrival and departure: the first room's boxes sit under the
+    // dates, every further room's on its own card.
+    const pastRoomTimes = [
+      {
+        roomId: Number(bookingForm.roomId),
+        checkedInAt: `${bookingForm.checkInDate}T${bookingForm.pastInTime}`,
+        checkedOutAt: `${bookingForm.checkOutDate}T${bookingForm.pastOutTime}`,
+        fieldId: 'pastOutTime',
+      },
+      ...pickedExtraRooms(bookingForm).map((r) => {
+        const d = roomDates(bookingForm, r);
+        return {
+          roomId: Number(r.roomId),
+          checkedInAt: `${d.checkInDate}T${r.pastInTime}`,
+          checkedOutAt: `${d.checkOutDate}T${r.pastOutTime}`,
+          fieldId: `extraOutTime-${r.key}`,
+        };
+      }),
+    ];
+    const finalRows = bookingForm.pastFinalLines.filter((l) => l.method || Number(l.amount) > 0);
+    if (!editing && canAddPastBookings && !pastRequested) {
+      const span = bookingWindow(bookingForm);
+      if (span.checkInDate < today && span.checkOutDate > today) {
+        failOn(
+          'checkOutDate',
+          'A stay that began in the past must also have ended. Set the check-out to today or earlier to record it as a past booking, or start it today.'
+        );
+        return;
+      }
+    }
+    if (pastClosed) {
+      failOn('checkOutDate', `Those days are already invoiced. A past booking must end on or after ${gap.minDate}.`);
+      return;
+    }
+    if (pastMode) {
+      for (const t of pastRoomTimes) {
+        if (new Date(t.checkedOutAt) > new Date()) {
+          failOn(t.fieldId, 'A past booking can’t end in the future.');
+          return;
+        }
+      }
+      const problem =
+        paymentLinesError(finalRows) ||
+        (pastDue != null &&
+          Math.abs(sumLines(finalRows) - pastDue) > 0.005 &&
+          `The final payment must be ${formatPrice(pastDue)} (stay total less the advance); ${formatPrice(sumLines(finalRows))} entered.`);
+      if (problem) {
+        failOn(paymentFieldId('pastFinal', 'Amount'), problem);
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       // Everyone after the primary guest travels in the `guests` array, adults
@@ -2589,6 +2698,13 @@ export default function Bookings({
           if (canEditCheckIn) formData.append('checkInDate', bookingForm.checkInDate);
         }
 
+        if (revising) {
+          if (revision.reason.trim()) formData.append('revisionReason', revision.reason.trim());
+          formData.append('revisionPaymentMethod', revision.method);
+          if (revision.reference.trim()) formData.append('revisionPaymentReference', revision.reference.trim());
+          formData.append('refundAcknowledged', revision.refundOk ? 'true' : 'false');
+        }
+
         const { booking } = await apiPatchForm(`/bookings/${editTarget.id}`, formData, { token });
         // Straight back to the stay that was being corrected, showing what the
         // save actually produced rather than what was typed — the server
@@ -2637,9 +2753,23 @@ export default function Bookings({
           formData.append('enquiryId', String(bookingForm.enquiryId));
         }
 
-        const created = await apiPostForm('/bookings', formData, { token });
-        if (bookingForm.bookingType === 'WALK_IN') {
-          await apiPatch(`/bookings/${created.id}/check-in`, {}, { token });
+        // A walk-in is checked in right below, which sends its own welcome —
+        // skip the booking confirmation so the guest gets one message, not two.
+        if (bookingForm.bookingType === 'WALK_IN') formData.append('sendWhatsApp', 'false');
+        if (pastMode) {
+          // Same-format strings, so plain sorting finds the earliest and latest.
+          formData.append('checkedInAt', pastRoomTimes.map((t) => t.checkedInAt).sort()[0]);
+          formData.append('checkedOutAt', pastRoomTimes.map((t) => t.checkedOutAt).sort().reverse()[0]);
+          formData.append(
+            'roomTimes',
+            JSON.stringify(pastRoomTimes.map(({ roomId, checkedInAt, checkedOutAt }) => ({ roomId, checkedInAt, checkedOutAt })))
+          );
+          formData.append('paymentLines', JSON.stringify(toPaymentLines(finalRows)));
+          if (isGst) formData.append('billingSide', pastSide);
+        }
+        const created = await apiPostForm(pastMode ? '/bookings/past' : '/bookings', formData, { token });
+        if (!pastMode && bookingForm.bookingType === 'WALK_IN') {
+          await apiPatch(`/bookings/${created.id}/check-in`, { walkIn: true }, { token });
         }
         // The draft was a stand-in for this booking; it exists now, so the
         // stand-in goes — otherwise the chart would carry both, and the desk
@@ -2649,8 +2779,12 @@ export default function Bookings({
           loadDrafts();
         }
 
-        setJustBooked({
+        if (pastMode) {
+          toast.show(`Past booking saved. Invoice ${created.invoice?.invoiceNumber ?? ''} issued.`, 'success');
+        }
+        if (!pastMode) setJustBooked({
           id: created.id,
+          walkIn: !pastMode && bookingForm.bookingType === 'WALK_IN',
           guestName: bookingForm.adults[0]?.name?.trim() || 'Guest',
           roomNumber:
             [selectedRoom?.roomNumber, ...pickedExtraRooms(bookingForm).map((r) => r.meta?.roomNumber)]
@@ -2735,6 +2869,9 @@ export default function Bookings({
   // tick as the press, and a state value would still be the empty list there —
   // so only the first room went and the rest were dropped.
   const checkOutQueueRef = useRef([]);
+  // Late charges agreed so far in a check-out-all, summed into the one bill.
+  const lateAccumRef = useRef(0);
+  const checkOutAllRef = useRef(false);
   // The settlement step a cancellation goes through: null until "Cancel
   // booking" is pressed, then the answers being typed — how much of the
   // advance goes back, and why the stay fell through. What is not refunded is
@@ -2782,7 +2919,9 @@ export default function Bookings({
   // only extras can still be corrected.
 
   const canEditBooking = Boolean(
-    bookingDetail && bookingDetail.status !== 'CANCELLED' && !bookingDetail.hasIssuedInvoice
+    bookingDetail &&
+      bookingDetail.status !== 'CANCELLED' &&
+      (!bookingDetail.hasIssuedInvoice || (bookingDetail.status === 'CHECKED_OUT' && canEditBilledStays))
   );
 
   // A pre-reservation holds the room for a future date — check-in only
@@ -2920,6 +3059,13 @@ export default function Bookings({
     setDraftNote('');
     setExtrasReminder('');
     setShowCheckInForm(false);
+    setEditWindow(null);
+    setRevision({ reason: '', method: 'CASH', reference: '', refundOk: false });
+    if (bookingDetail.status === 'CHECKED_OUT' && bookingDetail.hasIssuedInvoice) {
+      apiGet(`/bookings/${bookingDetail.id}/edit-window`, { token })
+        .then((r) => setEditWindow(r.window ?? null))
+        .catch(() => setEditWindow(null));
+    }
     beginForm('EDIT', seeded);
     // The detail modal steps aside rather than stacking behind. Both modals
     // share a z-index and the detail one renders later in the tree, so it
@@ -3107,6 +3253,21 @@ export default function Bookings({
     }
   };
 
+  // The desk sending a guest message by hand. kind: booking | welcome | cancellation.
+  const sendWhatsApp = async (bookingId, kind) => {
+    setWaSending(true);
+    try {
+      const { whatsapp: wa } = await apiPost(`/bookings/${bookingId}/send-whatsapp`, { kind }, { token });
+      if (wa?.status === 'sent') toast.show('WhatsApp message sent to the guest.', 'success');
+      else if (wa?.status === 'failed') toast.show(`WhatsApp message failed: ${wa.error || 'unknown error'}.`, 'error');
+      else toast.show(`WhatsApp message not sent${wa?.reason ? ` (${wa.reason})` : ''}.`, 'error');
+    } catch (err) {
+      toast.show(err instanceof ApiError ? err.message : 'Could not send the WhatsApp message.', 'error');
+    } finally {
+      setWaSending(false);
+    }
+  };
+
   const handleCheckIn = async (e) => {
     e.preventDefault();
     setActionError('');
@@ -3237,63 +3398,68 @@ export default function Bookings({
   // night's rate, so one late charge for the lot would be wrong for most of them.
   const openCheckOutAll = () => {
     const ids = (bookingDetail?.rooms ?? []).filter((r) => r.status === 'CHECKED_IN').map((r) => r.roomId);
+    lateAccumRef.current = 0;
     if (ids.length <= 1) {
+      checkOutAllRef.current = false;
       openCheckOut(null);
       return;
     }
+    checkOutAllRef.current = true;
     checkOutQueueRef.current = ids.slice(1);
     openCheckOut(ids[0]);
   };
 
+  // One room on its own. Its late charge is asked for, then it is billed and
+  // checked out as a single step (see commitCheckOut).
+  const openCheckOutRoom = (roomId) => {
+    lateAccumRef.current = 0;
+    checkOutAllRef.current = false;
+    checkOutQueueRef.current = [];
+    openCheckOut(roomId);
+  };
+
+  // Nothing is checked out here any more. This only gathers the late charge(s)
+  // reception agreed and opens the bill: the guest leaves — in the same server
+  // transaction — only when that bill is paid in full (billing 'settle').
+  // Closing the bill without paying leaves them checked in.
   const commitCheckOut = async (lateCharge, roomId = checkOutRoomId) => {
     setActionError('');
-    setActionSubmitting(true);
-    try {
-      const billed = selectedBookingId;
-      const { booking: after } = await apiPatch(
-        roomId
-          ? `/bookings/${selectedBookingId}/rooms/${roomId}/check-out`
-          : `/bookings/${selectedBookingId}/check-out`,
-        { lateCharge },
-        { token }
-      );
+    lateAccumRef.current += Number(lateCharge) || 0;
 
-      // One room left and others are still in: the stay carries on, so the panel
-      // stays open showing the rooms as they now stand, and no bill is due yet.
-      if (after && after.status !== 'CHECKED_OUT') {
-        setLateCheckout(null);
-        setCheckOutRoomId(null);
-        setBookingDetail(after);
-        loadTapeChart();
-        // On to the next room of a check-out-all.
-        if (checkOutQueueRef.current.length > 0) {
-          const [next, ...rest] = checkOutQueueRef.current;
-          checkOutQueueRef.current = rest;
-          await openCheckOut(next);
-        }
-        return;
-      }
-      checkOutQueueRef.current = [];
-
-      // Everything this screen was showing goes, and the bill takes its place.
-      //
-      // Keeping the stay panel open behind the bill was the mistake: two modals
-      // stacked, the one underneath describing a stay that had already ended.
-      // The desk is not going back to it — the stay is over and the next act is
-      // taking the money — so it closes rather than waiting behind.
-      //
-      // Both cleared in the same handler, so React commits them together and
-      // the bill appears in the frame the panel leaves: one dialog giving way
-      // to the next rather than a second one landing on top.
+    // Check-out-all asks about each room's late charge in turn, then bills once.
+    if (checkOutQueueRef.current.length > 0) {
+      const [next, ...rest] = checkOutQueueRef.current;
+      checkOutQueueRef.current = rest;
       setLateCheckout(null);
-      setSelectedBookingId(null);
-      loadTapeChart();
-      onBillStay?.(billed);
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Could not check out this guest.');
-    } finally {
-      setActionSubmitting(false);
+      await openCheckOut(next);
+      return;
     }
+    if (!onBillStay) {
+      setActionError('Billing is not available on this screen, so this guest cannot be checked out here.');
+      return;
+    }
+
+    const billed = selectedBookingId;
+    const wholeStay = checkOutAllRef.current || roomId == null;
+    const settle = {
+      lateCharge: Math.round(lateAccumRef.current * 100) / 100,
+      roomId: wholeStay ? null : roomId,
+      // Runs once the bill is paid and the guest is checked out. A room that left
+      // while others stay takes you back to the stay; a finished stay is over.
+      onDone: (result) => {
+        loadTapeChart();
+        if (result?.mode === 'ROOM') setSelectedBookingId(billed);
+      },
+    };
+    lateAccumRef.current = 0;
+    checkOutAllRef.current = false;
+
+    // Everything this screen was showing goes, and the bill takes its place —
+    // two modals stacked, the lower one describing a stay in progress, was the
+    // mistake the old version of this comment recorded.
+    setLateCheckout(null);
+    setSelectedBookingId(null);
+    onBillStay(billed, settle);
   };
 
   // Step one of cancelling: not the cancellation itself, but the settlement
@@ -4564,7 +4730,7 @@ export default function Bookings({
                   {/* Walk-in against pre-reservation is a question about a
                       stay that hasn't happened yet. On an edit it has, so the
                       toggle would be asking about the past. */}
-                  {!editing && (
+                  {!editing && !pastMode && (
                     // tabIndex so a walk-in/pre-reservation mismatch has
                     // something to move the cursor to — the choice is a pair of
                     // buttons, and neither one alone is what's wrong.
@@ -4615,12 +4781,16 @@ export default function Bookings({
                 {fieldErr('bookingTypeToggle')}
                 <p className="bookings-panel__hint">
                   {editing
-                    ? canEditStay
+                    ? revising
+                      ? `${editTarget.guestName}’s stay is checked out and billed. Its dates can be corrected within the window below; the invoice is updated to match.`
+                      : canEditStay
                       ? canEditCheckIn
                         ? `${editTarget.guestName}’s booking, as it stands. Editable until the bill is issued — re-date it, move rooms, correct the party or fix a detail.`
                         : `${editTarget.guestName}’s stay, as it stands. Editable until the bill is issued — extend it, move rooms, correct the party or fix a detail.`
                       : `${editTarget.guestName}’s stay has already checked out, so the room and dates are fixed. Everything else can still be corrected before billing.`
-                    : isFutureCheckIn
+                    : pastMode
+                      ? 'A stay that already happened: saved as checked out, with the invoice issued now.'
+                      : isFutureCheckIn
                       ? 'Walk-in isn’t available for a future check-in date — this holds the room for a guest arriving later.'
                       : bookingForm.bookingType === 'WALK_IN'
                         ? 'Guest is here now — creates the booking and checks them in immediately.'
@@ -4684,7 +4854,8 @@ export default function Bookings({
                       // yet — moving a booked stay to different dates is an
                       // ordinary correction. Fixed once the guest has arrived:
                       // by then the day they did is a recorded fact.
-                      min={today}
+                      min={revising || canAddPastBookings ? undefined : today}
+                      max={revising ? addDays(bookingForm.checkOutDate, -1) : undefined}
                       disabled={!canEditCheckIn}
                       aria-invalid={invalid('checkInDate')}
                       onChange={(e) => {
@@ -4728,7 +4899,12 @@ export default function Bookings({
                       value={bookingForm.checkOutDate}
                       // A stay is at least one night, whichever way it was
                       // started — the check-in date is the floor for both.
-                      min={bookingForm.checkInDate ? addDays(bookingForm.checkInDate, 1) : undefined}
+                      min={
+                        [bookingForm.checkInDate ? addDays(bookingForm.checkInDate, 1) : '', revising ? editWindow.minDate ?? '' : '']
+                          .sort()
+                          .pop() || undefined
+                      }
+                      max={revising ? editWindow.maxDate ?? undefined : undefined}
                       disabled={!canEditStay}
                       aria-invalid={invalid('checkOutDate')}
                       onChange={(e) => setBookingForm((f) => ({ ...f, checkOutDate: e.target.value }))}
@@ -4744,6 +4920,122 @@ export default function Bookings({
                         ? 'Moving either date re-prices the stay and re-checks the room for those nights.'
                         : 'The guest has checked in, so check-in is fixed — changing when a stay started is a cancel and rebook, not an edit.'}
                   </p>
+                )}
+
+                {pastClosed && (
+                  <div className="form-banner form-banner--error" role="alert">
+                    Those days are already invoiced (invoice #{gap.lastNumber}, stay ended {gap.lastStayEnd}). A past
+                    booking must end on or after {gap.minDate}.
+                  </div>
+                )}
+                {pastMode && (
+                  <div className="form-banner" role="group" aria-label="Past booking">
+                    <strong>Past booking: saved as checked out and billed now.</strong>
+                    <p className="bookings-panel__hint">
+                      The invoice takes the next invoice number and is dated the check-out day. Enter when the guest really arrived
+                      and left, and the final payment below.
+                    </p>
+                    {gap && (
+                      <p className="bookings-panel__hint">
+                        {gap.minDate
+                          ? `Past bookings can end from ${gap.minDate} to today (last invoice #${gap.lastNumber}).`
+                          : 'No invoice has been issued yet, so any past date is open.'}
+                      </p>
+                    )}
+                    {isGst && (
+                      <div className="field">
+                        <label htmlFor="pastBillingSide">Bill type</label>
+                        <select
+                          id="pastBillingSide"
+                          value={bookingForm.pastBillingSide}
+                          onChange={(e) => setBookingForm((f) => ({ ...f, pastBillingSide: e.target.value }))}
+                        >
+                          <option value="GST">GST invoice</option>
+                          <option value="NON_GST">Non-GST receipt</option>
+                        </select>
+                      </div>
+                    )}
+                    <div className="field-row">
+                      <div className="field">
+                        <label htmlFor="pastInTime">Checked in at</label>
+                        <input
+                          id="pastInTime"
+                          type="time"
+                          value={bookingForm.pastInTime}
+                          onChange={(e) => setBookingForm((f) => ({ ...f, pastInTime: e.target.value }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="pastOutTime">Checked out at</label>
+                        <input
+                          id="pastOutTime"
+                          type="time"
+                          value={bookingForm.pastOutTime}
+                          onChange={(e) => setBookingForm((f) => ({ ...f, pastOutTime: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {revising && (
+                  <div className="form-banner" role="group" aria-label="Invoice change">
+                    <strong>Invoice #{editWindow.invoiceNumber} will be updated in place.</strong>
+                    {/* What really happened, so the desk corrects the booked dates against it. */}
+                    {(() => {
+                      const rooms = editTarget?.rooms?.length ? editTarget.rooms : [editTarget];
+                      const lines = rooms
+                        .filter((r) => r?.actualCheckOutAt)
+                        .map((r) => `${rooms.length > 1 ? `Room ${r.roomNumber}: ` : ''}${formatSavedAt(r.actualCheckOutAt)}`);
+                      return lines.length > 0 ? (
+                        <p className="bookings-panel__hint">Actual check-out: {lines.join(' · ')}</p>
+                      ) : null;
+                    })()}
+                    <p className="bookings-panel__hint">
+                      {editWindow.minDate || editWindow.maxDate
+                        ? `Check-out can be between ${editWindow.minDate ?? 'any earlier day'} and ${editWindow.maxDate ?? 'any later day'}, because the invoices either side of it (${[editWindow.prevNumber, editWindow.nextNumber].filter(Boolean).map((n) => '#' + n).join(' and ')}) fix those days.`
+                        : 'No other invoices sit next to this one, so the dates are open.'}
+                    </p>
+                    <div className="field">
+                      <label htmlFor="revisionReason">Reason for the change<Req /></label>
+                      <input
+                        id="revisionReason"
+                        type="text"
+                        maxLength={200}
+                        value={revision.reason}
+                        onChange={(e) => setRevision((r) => ({ ...r, reason: e.target.value }))}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="revisionMethod">If the new bill is higher, the extra is paid by</label>
+                      <select
+                        id="revisionMethod"
+                        value={revision.method}
+                        onChange={(e) => setRevision((r) => ({ ...r, method: e.target.value }))}
+                      >
+                        <option value="CASH">Cash</option>
+                        <option value="UPI">UPI</option>
+                        <option value="CARD">Card</option>
+                      </select>
+                      {revision.method !== 'CASH' && (
+                        <input
+                          type="text"
+                          placeholder="Transaction number"
+                          maxLength={64}
+                          value={revision.reference}
+                          onChange={(e) => setRevision((r) => ({ ...r, reference: e.target.value }))}
+                        />
+                      )}
+                    </div>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={revision.refundOk}
+                        onChange={(e) => setRevision((r) => ({ ...r, refundOk: e.target.checked }))}
+                      />{' '}
+                      If the new bill is lower, the difference is refunded to the guest
+                    </label>
+                  </div>
                 )}
 
                 {!validRange && <p className="bookings-panel__hint">Choose a valid date range first.</p>}
@@ -4781,7 +5073,7 @@ export default function Bookings({
                             discountSource: '',
                           }));
                         }}
-                        disabled={!availableRooms || !canEditStay}
+                        disabled={!availableRooms || !canEditStay || revising}
                         aria-invalid={invalid('roomId')}
                       >
                         <option value="">
@@ -5025,6 +5317,7 @@ export default function Bookings({
                         token={token}
                         dates={roomDates(bookingForm, room)}
                         sameDates={bookingForm.sameDates}
+                        pastMode={pastMode}
                         editingBookingId={editing ? editTarget.id : null}
                         takenRoomIds={
                           new Set([
@@ -5039,7 +5332,7 @@ export default function Bookings({
                     ))}
                     {/* With shared dates rooms are added by ticking them in the
                         list above; with separate dates each is added here. */}
-                    {canEditStay && (
+                    {canEditStay && !revising && (
                       <div className="booking-form__rooms-bar">
                         <button type="button" className="bookings-panel__add-btn" onClick={addExtraRoom}>
                           + Add another room
@@ -5281,6 +5574,28 @@ export default function Bookings({
               </details>
               </div>
 
+              {pastMode && (
+                <details className="form-section form-section--collapsible" open>
+                  <summary>
+                    Final payment
+                    {pastDue != null && <span className="form-section__badge">{formatPrice(pastDue)} due</span>}
+                  </summary>
+                  <PaymentLines
+                    lines={bookingForm.pastFinalLines}
+                    onChange={(lines) => setBookingForm((f) => ({ ...f, pastFinalLines: lines }))}
+                    idPrefix="pastFinal"
+                    required
+                    error={
+                      <>
+                        {fieldErr(paymentFieldId('pastFinal', 'Amount'))}
+                        {fieldErr(paymentFieldId('pastFinal', 'Method'))}
+                        {fieldErr(paymentFieldId('pastFinal', 'Reference'))}
+                      </>
+                    }
+                  />
+                </details>
+              )}
+
               {/* The discount section used to sit here, last on the form. It is
                   hidden for now — the state, the quote plumbing and the submit
                   path all still handle a discount, so an existing discounted
@@ -5321,7 +5636,7 @@ export default function Bookings({
                   </MotionButton>
                   {/* New bookings only. An edit already has somewhere to keep
                       its answers — the booking it is editing. */}
-                  {!editing && (
+                  {!editing && !pastMode && (
                     <MotionButton type="button" className="btn-secondary" onClick={saveDraft} disabled={submitting}>
                       {draftId ? 'Update draft' : 'Save draft'}
                     </MotionButton>
@@ -5333,7 +5648,9 @@ export default function Bookings({
                         : 'Save changes'
                       : submitting
                         ? 'Booking…'
-                        : bookingForm.bookingType === 'WALK_IN'
+                        : pastMode
+                          ? 'Save and issue invoice'
+                          : bookingForm.bookingType === 'WALK_IN'
                           ? 'Add and check in'
                           : 'Create reservation'}
                   </MotionButton>
@@ -5474,7 +5791,7 @@ export default function Bookings({
                             type="button"
                             className="btn-secondary"
                             disabled={actionSubmitting}
-                            onClick={() => openCheckOut(room.roomId)}
+                            onClick={() => openCheckOutRoom(room.roomId)}
                           >
                             Check out
                           </button>
@@ -6068,6 +6385,40 @@ export default function Bookings({
                       </button>
                     )}
 
+                    {/* Guest WhatsApp messages the property sends by hand. Only
+                        shown for a message switched to manual; the automatic
+                        ones need no button. */}
+                    {bookingDetail.status !== 'CANCELLED' && waSettings.waAutoBooking === false && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => sendWhatsApp(bookingDetail.id, 'booking')}
+                        disabled={actionSubmitting || waSending}
+                      >
+                        Send booking WhatsApp
+                      </button>
+                    )}
+                    {bookingDetail.status === 'CHECKED_IN' && waSettings.waAutoWalkin === false && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => sendWhatsApp(bookingDetail.id, 'welcome')}
+                        disabled={actionSubmitting || waSending}
+                      >
+                        Send welcome WhatsApp
+                      </button>
+                    )}
+                    {bookingDetail.status === 'CANCELLED' && waSettings.waAutoCancel === false && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => sendWhatsApp(bookingDetail.id, 'cancellation')}
+                        disabled={actionSubmitting || waSending}
+                      >
+                        Send cancellation WhatsApp
+                      </button>
+                    )}
+
                     {/* An advance can be taken while a stay is reserved or in
                         house. Not once it is billed or cancelled: the invoice
                         already accounts for every advance, and a cancelled
@@ -6082,6 +6433,14 @@ export default function Bookings({
                         Advance receipt
                         {advanceReceipts.length > 0 && ` (${advanceReceipts.length})`}
                       </button>
+                    )}
+
+                    {bookingDetail.invoiceRevision && (
+                      <span className="bookings-panel__hint">
+                        Invoice updated.
+                        {bookingDetail.invoiceRevision.extra > 0 && ` ₹${bookingDetail.invoiceRevision.extra} more was collected.`}
+                        {bookingDetail.invoiceRevision.refund > 0 && ` ₹${bookingDetail.invoiceRevision.refund} is to be refunded to the guest.`}
+                      </span>
                     )}
 
                     {bookingDetail.status === 'CHECKED_OUT' && !canEditBooking && (
@@ -6245,6 +6604,16 @@ export default function Bookings({
                   Print advance receipt
                 </button>
               )}
+              {(justBooked.walkIn ? waSettings.waAutoWalkin : waSettings.waAutoBooking) === false && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => sendWhatsApp(justBooked.id, justBooked.walkIn ? 'welcome' : 'booking')}
+                  disabled={waSending}
+                >
+                  Send WhatsApp
+                </button>
+              )}
               <button type="button" className="btn-secondary" onClick={() => setJustBooked(null)}>
                 Done
               </button>
@@ -6263,6 +6632,8 @@ export default function Bookings({
           onCancel={() => {
             setLateCheckout(null);
             checkOutQueueRef.current = [];
+            lateAccumRef.current = 0;
+            checkOutAllRef.current = false;
           }}
           onConfirm={commitCheckOut}
         />
@@ -7116,7 +7487,7 @@ function RoomServicesSection({ usages }) {
 function RoomFoodSection({ orders, canAdd = false, adding = false, error = '', onAdd }) {
   const total = orders.reduce((sum, o) => sum + o.subtotal, 0);
   const onBill = orders.filter((o) => o.onRoomBill && !o.billed).reduce((sum, o) => sum + o.subtotal, 0);
-  const addable = orders.filter((o) => !o.onRoomBill && !o.billed && o.status === 'DELIVERED');
+  const addable = orders.filter((o) => !o.onRoomBill && !o.billed && ['READY', 'DELIVERED'].includes(o.status));
   return (
     <section className="room-food">
       <div className="room-food__title">

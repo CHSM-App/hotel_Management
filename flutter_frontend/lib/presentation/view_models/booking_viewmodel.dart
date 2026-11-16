@@ -1814,7 +1814,12 @@ class BookingViewModel extends StateNotifier<BookingState> {
       // was taken as one that failed, which is the worse of the two lies.
       if (state.isWalkIn) {
         try {
-          final checkedIn = await usecase.checkIn(booking.id, FormData());
+          final checkedIn = await usecase.checkIn(
+            booking.id,
+            // Tells the server this is a walk-in, so the guest gets one
+            // combined WhatsApp message rather than confirmation + welcome.
+            FormData.fromMap({'walkIn': 'true'}),
+          );
           state = state.copyWith(submitting: false);
           return checkedIn;
         } catch (_) {

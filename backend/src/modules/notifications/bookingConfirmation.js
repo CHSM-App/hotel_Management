@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../../config/connection');
 const { logger } = require('../../config/logger');
 const whatsapp = require('../../config/whatsapp');
+const { SETTINGS_COLS, SETTINGS_JOIN, settingOn } = require('../../config/lodgeSettings');
 const { toClockTime } = require('../rooms/checkoutPolicy.service');
 const advanceReceiptsService = require('../billing/advanceReceipts.service');
 const receiptShareService = require('../billing/receiptShare.service');
@@ -161,6 +162,13 @@ function stayTimes(booking, lodge) {
   };
 }
 
+// The template is capped at ten variables, so the booking id rides inside
+// {{3}} after the room: "Room No: 101 | Booking ID: AB12CD". No template
+// change (or re-approval) needed.
+function roomSlot(rooms, booking) {
+  return booking.booking_number ? `${rooms} | Booking ID: ${booking.booking_number}` : rooms;
+}
+
 function lodgeContact(lodge) {
   return lodge.phone || lodge.whatsapp_number || '-';
 }
@@ -185,7 +193,7 @@ function buildStaySample(booking, lodge, receiptLink) {
   const values = [
     booking.guest_name,
     lodge.name,
-    booking.room_numbers,
+    roomSlot(booking.room_numbers, booking),
     times.checkIn,
     times.checkOut,
     money(advance),
@@ -218,7 +226,7 @@ function buildPerRoomSample(room, booking, lodge, roomCount, receiptLink) {
   const values = [
     booking.guest_name,
     lodge.name,
-    room.room_number,
+    roomSlot(room.room_number, booking),
     times.checkIn,
     times.checkOut,
     money(roomAdvance),
@@ -240,10 +248,10 @@ async function loadLodge(lodgeId) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT name, phone, whatsapp_number, address, city, state, latitude, longitude,
-             checkin_mode, check_in_time, check_out_time
-      FROM dbo.lodges
-      WHERE id = @lodgeId
+      SELECT l.name, l.phone, l.whatsapp_number, l.address, l.city, l.state, l.latitude, l.longitude,
+             l.checkin_mode, l.check_in_time, l.check_out_time, ${SETTINGS_COLS}
+      FROM dbo.lodges l ${SETTINGS_JOIN}
+      WHERE l.id = @lodgeId
     `);
   return result.recordset[0] ?? null;
 }
@@ -255,7 +263,7 @@ async function loadBooking(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT b.id, b.guest_name, b.guest_phone, b.check_in_date, b.check_out_date,
+      SELECT b.id, b.booking_number, b.guest_name, b.guest_phone, b.check_in_date, b.check_out_date,
              b.advance_amount, b.total_price,
              -- Every room the booking holds, same STRING_AGG shape
              -- bookings.service.js's own listBookings/mapBooking uses for
@@ -379,7 +387,10 @@ function skipped(reason) {
 // for rooms on different dates. Returns { status: 'sent', rooms: [...] } for
 // the split case rather than the single { status, campaignId } shape, so a
 // caller can tell at a glance which happened.
-async function notifyStayBooked(lodgeId, bookingId) {
+//
+// `manual` is a staff member pressing Send: it ignores the property's
+// auto/manual switch, which only governs the send that follows a booking.
+async function notifyStayBooked(lodgeId, bookingId, { manual = false } = {}) {
   if (!whatsapp.isBookingTemplateConfigured()) return skipped('not configured');
   try {
     const [booking, lodge, rooms] = await Promise.all([
@@ -388,6 +399,7 @@ async function notifyStayBooked(lodgeId, bookingId) {
       loadBookingRooms(lodgeId, bookingId),
     ]);
     if (!booking || !lodge) return skipped('booking or lodge not found');
+    if (!manual && !settingOn(lodge, 'wa_auto_booking')) return skipped('manual');
     if (rooms.length === 0) return skipped('no active rooms on this booking');
 
     const receiptLink = await resolveReceiptLink(lodgeId, bookingId, booking.guest_phone);
@@ -428,4 +440,5 @@ module.exports = {
   directionsFor,
   clean,
   receiptLine,
+  resolveReceiptLink,
 };

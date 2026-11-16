@@ -254,6 +254,15 @@ export const FEATURES = [
     group: 'Setup',
   },
   {
+    key: 'whatsappSettings',
+    title: 'WhatsApp Messages',
+    description: 'Choose which WhatsApp messages send automatically and which you send by hand.',
+    // Owner-only on the server too (PATCH /me/settings).
+    permission: 'staff.manage',
+    icon: 'messageCircle',
+    group: 'Setup',
+  },
+  {
     key: 'assets',
     title: 'Asset Inventory',
     description: 'Register equipment, track warranty/AMC, and log repairs.',

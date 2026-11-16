@@ -1,7 +1,9 @@
 const { getPool, sql } = require('../../config/connection');
 const { logger } = require('../../config/logger');
 const whatsapp = require('../../config/whatsapp');
+const { SETTINGS_COLS, SETTINGS_JOIN, settingOn } = require('../../config/lodgeSettings');
 const lateCheckout = require('../bookings/lateCheckout');
+const { receiptLine, resolveReceiptLink } =require('./bookingConfirmation');
 const { toClockTime } = require('../rooms/checkoutPolicy.service');
 
 // The WhatsApp welcome a guest gets once they're checked in.
@@ -101,12 +103,44 @@ function buildCheckinSample(booking, lodge, deadlines = null) {
   ];
 }
 
+// Plain digits, no currency mark: the template text carries the ₹ itself.
+function money(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+// The ten values of the combined walk-in template, in template order:
+// name, hotel_name, room_no, checkin, checkout, advance, balance,
+// receipt_line, contact, booking_id. receiptLink is resolved separately (it needs the
+// database); slot 8 is passed through receiptLine so a booking with no
+// advance reads as nothing rather than a dash.
+function buildWalkinSample(booking, lodge, deadlines = null, receiptLink = null) {
+  const advance = Number(booking.advanceAmount || 0);
+  const total = Number(booking.totalPrice || 0);
+  const checkedInAt = booking.actualCheckInAt ? new Date(booking.actualCheckInAt) : new Date();
+  return [
+    clean(booking.guestName),
+    clean(lodge.name),
+    clean(booking.roomNumbers),
+    clean(formatMoment(checkedInAt)),
+    clean(checkoutText(booking, deadlines)),
+    money(advance),
+    money(total - advance),
+    receiptLine(receiptLink),
+    clean(lodgeContact(lodge)),
+    clean(booking.bookingNumber),
+  ];
+}
+
 async function loadLodge(lodgeId) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .query('SELECT name, phone, whatsapp_number AS whatsappNumber FROM dbo.lodges WHERE id = @lodgeId');
+    .query(`
+      SELECT l.name, l.phone, l.whatsapp_number AS whatsappNumber, ${SETTINGS_COLS}
+      FROM dbo.lodges l ${SETTINGS_JOIN}
+      WHERE l.id = @lodgeId
+    `);
   return result.recordset[0] ?? null;
 }
 
@@ -142,22 +176,35 @@ async function loadDeadlines(lodgeId, bookingId) {
 
 // Fires the welcome and reports how it went, never throwing — the check-in
 // stands regardless of whether WhatsApp is reachable.
-async function notifyCheckedIn(lodgeId, booking) {
-  if (!whatsapp.isCheckinTemplateConfigured()) return { status: 'skipped', reason: 'not configured' };
+async function notifyCheckedIn(lodgeId, booking, { walkIn = false, manual = false } = {}) {
+  // A walk-in gets the one combined message when its template is set up;
+  // otherwise it falls through to the plain welcome below.
+  const combined = walkIn && whatsapp.isWalkinTemplateConfigured();
+  if (!combined && !whatsapp.isCheckinTemplateConfigured()) {
+    return { status: 'skipped', reason: 'not configured' };
+  }
   try {
     const lodge = await loadLodge(lodgeId);
     if (!lodge) return { status: 'skipped', reason: 'lodge not found' };
+    // The property handles walk-in welcomes by hand (Setup > WhatsApp Messages).
+    if (walkIn && !manual && !settingOn(lodge, 'wa_auto_walkin')) return { status: 'skipped', reason: 'manual' };
     if (!booking.guestPhone) return { status: 'skipped', reason: 'no guest phone' };
 
     // A lookup that fails must not cost the guest the welcome; the booked date
     // is a fair thing to say when the exact moment can't be worked out.
     const deadlines = await loadDeadlines(lodgeId, booking.id).catch(() => null);
-    const sample = buildCheckinSample(booking, lodge, deadlines);
+    let sample;
+    if (combined) {
+      const receiptLink = await resolveReceiptLink(lodgeId, booking.id, booking.guestPhone);
+      sample = buildWalkinSample(booking, lodge, deadlines, receiptLink);
+    } else {
+      sample = buildCheckinSample(booking, lodge, deadlines);
+    }
     const { campaignId } = await whatsapp.sendTemplateMessage(
       booking.guestPhone,
-      whatsapp.CHECKIN_TEMPLATE_ID,
+      combined ? whatsapp.WALKIN_TEMPLATE_ID : whatsapp.CHECKIN_TEMPLATE_ID,
       sample.join(','),
-      'checkin_welcome'
+      combined ? 'walkin_welcome' : 'checkin_welcome'
     );
     logger.info({ bookingId: booking.id, lodgeId, campaignId }, 'Check-in welcome sent on WhatsApp');
     return { status: 'sent', campaignId };
@@ -170,6 +217,7 @@ async function notifyCheckedIn(lodgeId, booking) {
 module.exports = {
   notifyCheckedIn,
   buildCheckinSample,
+  buildWalkinSample,
   formatMoment,
   clean,
 };

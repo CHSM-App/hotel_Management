@@ -656,9 +656,13 @@ CREATE TABLE dbo.payment_lines (
     -- A line belongs to a bill or to an advance receipt, never both and never
     -- neither. Written as a sum rather than an OR pair so "exactly one" is
     -- stated once instead of as two clauses that can drift apart.
+    -- Third parent (migration 158): a room paid for at its own checkout while
+    -- the rest of the booking stays. Re-parented onto the final invoice.
+    room_settlement_id  BIGINT NULL,
     CONSTRAINT ck_payment_lines_parent CHECK (
         (CASE WHEN invoice_id IS NULL THEN 0 ELSE 1 END)
-      + (CASE WHEN advance_receipt_id IS NULL THEN 0 ELSE 1 END) = 1)
+      + (CASE WHEN advance_receipt_id IS NULL THEN 0 ELSE 1 END)
+      + (CASE WHEN room_settlement_id IS NULL THEN 0 ELSE 1 END) = 1)
 );
 
 -- Both reads are "the lines of this one document", one index per parent.
@@ -2308,6 +2312,28 @@ CREATE TABLE dbo.booking_rooms (
     CONSTRAINT ck_booking_rooms_dates CHECK (check_out_date > check_in_date)
 );
 
+-- Payment taken when one room leaves while others stay (migration 158).
+IF OBJECT_ID('dbo.room_settlements', 'U') IS NULL
+CREATE TABLE dbo.room_settlements (
+    id               BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id         BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    booking_id       BIGINT NOT NULL REFERENCES dbo.bookings(id),
+    booking_room_id  BIGINT NOT NULL REFERENCES dbo.booking_rooms(id),
+    room_total       DECIMAL(10,2) NOT NULL,
+    advance_applied  DECIMAL(10,2) NOT NULL DEFAULT 0,
+    collected        DECIMAL(10,2) NOT NULL DEFAULT 0,
+    late_charge      DECIMAL(10,2) NOT NULL DEFAULT 0,
+    invoice_id       BIGINT NULL REFERENCES dbo.invoices(id),
+    created_by       BIGINT NULL REFERENCES dbo.users(id),
+    created_at       DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_room_settlements_room UNIQUE (booking_room_id)
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_payment_lines_room_settlement')
+ALTER TABLE dbo.payment_lines ADD CONSTRAINT fk_payment_lines_room_settlement
+    FOREIGN KEY (room_settlement_id) REFERENCES dbo.room_settlements(id);
+
+
 -- This room's share of the booking's concession (migration 105); total_price
 -- above is already net of it.
 IF COL_LENGTH('dbo.booking_rooms', 'discount_amount') IS NULL
@@ -3393,3 +3419,46 @@ IF COL_LENGTH('dbo.event_bookings', 'event_number') IS NULL
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_event_bookings_event_number' AND object_id = OBJECT_ID('dbo.event_bookings'))
     EXEC('CREATE UNIQUE INDEX uq_event_bookings_event_number ON dbo.event_bookings(event_number) WHERE event_number IS NOT NULL');
+
+-- Corrections made in place to an issued invoice (159). Mirrors the migration.
+IF OBJECT_ID('dbo.invoice_revisions', 'U') IS NULL
+CREATE TABLE dbo.invoice_revisions (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    invoice_id     BIGINT NOT NULL REFERENCES dbo.invoices(id),
+    reason         NVARCHAR(200) NOT NULL,
+    before_json    NVARCHAR(MAX) NOT NULL,
+    after_json     NVARCHAR(MAX) NOT NULL,
+    extra_collected DECIMAL(10,2) NOT NULL DEFAULT 0,
+    refund_due     DECIMAL(10,2) NOT NULL DEFAULT 0,
+    revised_by     BIGINT NULL REFERENCES dbo.users(id),
+    revised_at     DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_invoice_revisions_invoice' AND object_id = OBJECT_ID('dbo.invoice_revisions'))
+CREATE INDEX ix_invoice_revisions_invoice ON dbo.invoice_revisions(invoice_id);
+
+-- Per-property switch for correcting checked-out, billed stays (160). Mirrors the migration.
+IF COL_LENGTH('dbo.lodges', 'can_edit_billed_stays') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD can_edit_billed_stays BIT NOT NULL CONSTRAINT df_lodges_can_edit_billed_stays DEFAULT 0');
+
+-- Per-property switch for recording missed past stays (161). Mirrors the migration.
+IF COL_LENGTH('dbo.lodges', 'can_add_past_bookings') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD can_add_past_bookings BIT NOT NULL CONSTRAINT df_lodges_can_add_past_bookings DEFAULT 0');
+
+-- Per-property settings for new switches (162). Mirrors the migration.
+IF OBJECT_ID('dbo.lodge_settings', 'U') IS NULL
+    EXEC('CREATE TABLE dbo.lodge_settings (
+        lodge_id         BIGINT NOT NULL CONSTRAINT pk_lodge_settings PRIMARY KEY
+                         CONSTRAINT fk_lodge_settings_lodge REFERENCES dbo.lodges(id),
+        wa_auto_bill     BIT NOT NULL CONSTRAINT df_lodge_settings_wa_auto_bill DEFAULT 1,
+        wa_auto_receipt  BIT NOT NULL CONSTRAINT df_lodge_settings_wa_auto_receipt DEFAULT 0,
+        wa_auto_booking  BIT NOT NULL CONSTRAINT df_lodge_settings_wa_auto_booking DEFAULT 1,
+        wa_auto_walkin   BIT NOT NULL CONSTRAINT df_lodge_settings_wa_auto_walkin DEFAULT 1,
+        wa_auto_cancel   BIT NOT NULL CONSTRAINT df_lodge_settings_wa_auto_cancel DEFAULT 1,
+        updated_at       DATETIMEOFFSET NOT NULL CONSTRAINT df_lodge_settings_updated_at DEFAULT SYSDATETIMEOFFSET()
+    )');
+
+EXEC('INSERT INTO dbo.lodge_settings (lodge_id)
+      SELECT l.id FROM dbo.lodges l
+      WHERE NOT EXISTS (SELECT 1 FROM dbo.lodge_settings s WHERE s.lodge_id = l.id)');

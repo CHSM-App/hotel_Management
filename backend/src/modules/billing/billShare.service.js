@@ -128,7 +128,7 @@ function buildBillSample(invoice, link) {
   return [
     clean(invoice.guest_name || 'Guest'),
     clean(invoice.lodge_name),
-    clean(invoice.invoice_number),
+    clean(invoice.booking_number || invoice.invoice_number),
     clean(amountForTemplate(invoice.total_amount)),
     clean(dates.checkIn),
     clean(dates.checkOut),
@@ -177,7 +177,7 @@ async function loadInvoice(lodgeId, invoiceId) {
              COALESCE(b.guest_name, eb.organiser_name, i.customer_name) AS guest_name,
              COALESCE(b.guest_phone, eb.organiser_phone, i.customer_phone) AS guest_phone,
              l.name AS lodge_name,
-             b.check_in_date, b.check_out_date,
+             b.check_in_date, b.check_out_date, b.booking_number,
              eb.start_at AS event_start_at, eb.end_at AS event_end_at,
              v.name AS venue_name
       FROM dbo.invoices i

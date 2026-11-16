@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs/promises');
 const path = require('path');
 const { getPool, sql } = require('../../config/connection');
+const { getSettings } = require('../../config/lodgeSettings');
 const { ApiError } = require('../../middleware/errorHandler');
 const { parseBeds } = require('../rooms/rooms.service');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
@@ -18,6 +19,7 @@ const draftsService = require('./drafts.service');
 const customersService = require('../customers/customers.service');
 const { allocateBookingNumber } = require('./bookingNumbers');
 const lateCheckout = require('./lateCheckout');
+const { istDateOf } = require('./bookings.schema');
 const { apportionDiscount, mergeRoomNights, rollUpStatus } = require('./bookingRooms');
 
 function round2(n) {
@@ -541,7 +543,7 @@ async function autoIssueAdvanceReceipt(lodgeId, userId, bookingId, input) {
   const amount = Number(input.advanceAmount);
   if (!Number.isFinite(amount) || amount <= 0 || !input.advancePaymentMethod) return;
   try {
-    await advanceReceiptsService.issueAdvanceReceipt(
+    const receipt = await advanceReceiptsService.issueAdvanceReceipt(
       lodgeId,
       userId,
       bookingId,
@@ -557,6 +559,11 @@ async function autoIssueAdvanceReceipt(lodgeId, userId, bookingId, input) {
       // The booking row already holds this advance — see the note on the flag.
       { alreadyOnBooking: true }
     );
+    // Off by default (Setup > WhatsApp Messages): the booking confirmation
+    // already carries a receipt link, so most properties don't want two texts.
+    if (receipt?.id && (await getSettings(lodgeId)).waAutoReceipt) {
+      void require('../billing/receiptShare.service').sendReceiptAuto(lodgeId, receipt.id);
+    }
   } catch (err) {
     logger.error({ err, bookingId, lodgeId }, 'Could not auto-issue the advance receipt');
   }
@@ -2064,7 +2071,7 @@ async function createBooking(lodgeId, userId, input) {
 
     await transaction.commit();
 
-    await autoIssueAdvanceReceipt(lodgeId, userId, bookingId, input);
+    if (!input.skipAdvanceReceipt) await autoIssueAdvanceReceipt(lodgeId, userId, bookingId, input);
 
     // Not awaited: the guest's confirmation is best-effort and the desk should
     // not wait on the provider. The notifier never rejects — it logs.
@@ -2440,7 +2447,7 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
   // Not awaited: same reasoning as notifyStayBooked — the welcome is
   // best-effort, and the desk checking a guest in shouldn't wait on a
   // WhatsApp provider. The notifier never rejects — it logs.
-  void checkinWelcome.notifyCheckedIn(lodgeId, booking);
+  void checkinWelcome.notifyCheckedIn(lodgeId, booking, { walkIn: input.walkIn === true });
 
   return booking;
 }
@@ -2704,7 +2711,9 @@ async function listCheckinAlerts(lodgeId, { windowMinutes = 60, at = new Date() 
 //
 // The booking becomes CHECKED_OUT — and billable — only when its last room
 // leaves; syncBookingFromRooms derives that.
-async function checkOut(lodgeId, bookingId, { lateCharge = 0, roomId = null } = {}) {
+// checkedOutAt, when the departure is recorded after the fact, is one Date for
+// every room leaving or an object of Dates by room id.
+async function prepareCheckOut(lodgeId, bookingId, roomId = null, checkedOutAt = null) {
   const pool = await getPool();
 
   const inHouseResult = await pool
@@ -2727,46 +2736,48 @@ async function checkOut(lodgeId, bookingId, { lateCharge = 0, roomId = null } = 
   // Read before write so the minutes are recorded against the same moment the
   // charge was agreed for, rather than a later one — and before the transaction
   // opens, so these reads on the pool can't wait on rows it has locked.
-  const at = new Date();
+  const ats = inHouseResult.recordset.map((room) =>
+    checkedOutAt instanceof Date ? checkedOutAt : checkedOutAt?.[room.room_id] ?? null
+  );
   const lateByRoom = [];
-  for (const room of inHouseResult.recordset) {
-    lateByRoom.push(await getLateCheckout(lodgeId, bookingId, at, room.room_id));
+  for (const [i, room] of inHouseResult.recordset.entries()) {
+    lateByRoom.push(await getLateCheckout(lodgeId, bookingId, ats[i] ?? new Date(), room.room_id));
   }
+  // `ats` are only set when the departure is being recorded after the fact.
+  return { rooms: inHouseResult.recordset, lateByRoom, ats };
+}
 
-  const transaction = new sql.Transaction(pool);
-  await transaction.begin();
-  try {
-    let first = true;
-    for (const [index, room] of inHouseResult.recordset.entries()) {
-      const late = lateByRoom[index];
-      const result = await new sql.Request(transaction)
-        .input('id', sql.BigInt, room.id)
-        .input('lateCharge', sql.Decimal(10, 2), first ? round2(Number(lateCharge) || 0) : 0)
-        .input('lateMinutes', sql.Int, late.minutesLate)
-        .query(`
-          UPDATE dbo.booking_rooms
-          SET status = 'CHECKED_OUT', actual_check_out_at = SYSDATETIMEOFFSET(),
-              late_checkout_charge = @lateCharge,
-              late_checkout_minutes = @lateMinutes,
-              -- Clearing the PIN is what closes in-room ordering. The QR on the
-              -- wall stays valid for the *room*; it just stops accepting orders
-              -- until the next guest checks in and gets their own PIN.
-              food_pin = NULL
-          OUTPUT inserted.id
-          WHERE id = @id AND status = 'CHECKED_IN'
-        `);
-      if (result.recordset.length === 0) {
-        throw new ApiError('Booking not found or not checked in.', 409);
-      }
-      first = false;
+// The write half of a checkout, run inside the caller's transaction. A guest
+// leaves only together with the billing step that follows (billing.service
+// issueInvoice / settleRoomCheckout), so there is no standalone checkOut any
+// more: the bill and the departure commit or roll back as one.
+async function applyCheckOut(transaction, bookingId, { rooms, lateByRoom, ats = [] }, lateCharge = 0) {
+  let first = true;
+  for (const [index, room] of rooms.entries()) {
+    const late = lateByRoom[index];
+    const result = await new sql.Request(transaction)
+      .input('id', sql.BigInt, room.id)
+      .input('lateCharge', sql.Decimal(10, 2), first ? round2(Number(lateCharge) || 0) : 0)
+      .input('lateMinutes', sql.Int, late.minutesLate)
+      .input('at', sql.DateTimeOffset, ats[index] ?? null)
+      .query(`
+        UPDATE dbo.booking_rooms
+        SET status = 'CHECKED_OUT', actual_check_out_at = COALESCE(@at, SYSDATETIMEOFFSET()),
+            late_checkout_charge = @lateCharge,
+            late_checkout_minutes = @lateMinutes,
+            -- Clearing the PIN is what closes in-room ordering. The QR on the
+            -- wall stays valid for the *room*; it just stops accepting orders
+            -- until the next guest checks in and gets their own PIN.
+            food_pin = NULL
+        OUTPUT inserted.id
+        WHERE id = @id AND status = 'CHECKED_IN'
+      `);
+    if (result.recordset.length === 0) {
+      throw new ApiError('Booking not found or not checked in.', 409);
     }
-    await syncBookingFromRooms(transaction, bookingId);
-    await transaction.commit();
-  } catch (err) {
-    await transaction.rollback();
-    throw err;
+    first = false;
   }
-  return getBooking(lodgeId, bookingId);
+  await syncBookingFromRooms(transaction, bookingId);
 }
 
 /// A booking stays editable for its whole life, not just at creation — a
@@ -2795,7 +2806,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT status, num_guests, num_children, guest_name, guest_phone, discount_amount, advance_amount
+      SELECT status, num_guests, num_children, guest_name, guest_phone, discount_amount, advance_amount, total_price
       FROM dbo.bookings WHERE id = @bookingId AND lodge_id = @lodgeId
     `);
   const bookingRow = bookingResult.recordset[0];
@@ -2810,8 +2821,24 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     .request()
     .input('bookingId', sql.BigInt, bookingId)
     .query("SELECT TOP 1 id FROM dbo.invoices WHERE booking_id = @bookingId AND status = 'ISSUED'");
+  // A stay that is checked out and billed can still have its dates corrected: the
+  // invoice is then updated in place, inside the same transaction (see
+  // reviseInvoice). Anything else with a bill stays locked until it is voided.
+  let revising = null;
   if (invoiceResult.recordset.length > 0) {
-    throw new ApiError('This booking already has an issued bill. Void it before editing.', 409);
+    if (bookingRow.status !== 'CHECKED_OUT') {
+      throw new ApiError('This booking already has an issued bill. Void it before editing.', 409);
+    }
+    if (!(await billedEditAllowed(pool, lodgeId))) {
+      throw new ApiError('Editing a checked-out booking isn’t enabled for this property. Ask support to switch it on.', 403);
+    }
+    revising = await billingService.getInvoiceEditWindow(lodgeId, bookingId);
+    if (!revising) {
+      throw new ApiError('This booking already has an issued bill. Void it before editing.', 409);
+    }
+    if (input.advanceAmount != null && round2(input.advanceAmount) !== round2(Number(bookingRow.advance_amount) || 0)) {
+      throw new ApiError('The advance can’t be changed on a billed stay.', 409);
+    }
   }
 
   // What the booking holds today: its rooms, the beds in each and each room's extras.
@@ -2930,7 +2957,24 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       checkOutDate !== toIsoDate(match.check_out_date) ||
       bedsChanged;
 
-    if (match && moved && match.status === 'CHECKED_OUT') {
+    if (revising) {
+      // A billed stay can only move its check-out inside the invoice window (the
+      // invoice is dated on the check-out day); check-in just has to find the room
+      // free, which the overlap checks below decide. No new rooms, no swapped room
+      // or beds, nothing in the future.
+      if (!match) throw new ApiError('Rooms can’t be added to a billed stay.', 409);
+      const bad = billingService.windowViolation(
+        revising,
+        [checkOutDate],
+        [toIsoDate(match.check_out_date)]
+      );
+      if (bad) throw new ApiError(bad, 409);
+      // By the IST calendar: a checkout is never later than today.
+      if (moved && checkOutDate > todayIsoIST()) {
+        throw new ApiError('A checked-out stay can’t end in the future.', 409);
+      }
+    }
+    if (match && moved && match.status === 'CHECKED_OUT' && !(revising && sameRoom && !bedsChanged)) {
       throw new ApiError(
         `Room ${match.room_number} is already checked out — only extras can still be edited.`,
         409
@@ -2940,7 +2984,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     // now part of the record — the folio, the register and any receipt already
     // raised all read from it. Sending the same date back is not a change, so a
     // form that posts every field it shows keeps working on a checked-in stay.
-    if (match && checkInDate !== toIsoDate(match.check_in_date) && match.status !== 'BOOKED') {
+    if (match && checkInDate !== toIsoDate(match.check_in_date) && match.status !== 'BOOKED' && !revising) {
       throw new ApiError(
         'The guest has already checked in — the check-in date can’t be changed. Cancel and rebook instead.',
         409
@@ -3082,6 +3126,13 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
   const priced = await priceBooking(lodgeId, resolved, requestedDiscount);
   const { totalPrice, discountAmount, grossTotal } = priced;
 
+  // Whether the invoice has to be restated: dates moved or the price changed.
+  const restates =
+    revising && (resolved.some((r) => r.moved) || round2(totalPrice) !== round2(Number(bookingRow.total_price)));
+  if (restates && !String(input.revisionReason ?? '').trim()) {
+    throw new ApiError('Enter a reason for changing this invoice.', 400);
+  }
+
   if (round2(requestedDiscount) > discountAmount) {
     throw new ApiError(`The concession can’t be more than the stay total of ₹${grossTotal}.`, 400);
   }
@@ -3093,6 +3144,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     assertAdvanceWithinTotal(input.advanceAmount, totalPrice);
   }
 
+  let revised = null;
   const transaction = new sql.Transaction(pool);
   // Default isolation, not SERIALIZABLE. The lock hints on the overlap check
   // below give that one statement the range lock it needs; raising the level
@@ -3116,6 +3168,19 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
       );
       if (conflict) {
         throw new ApiError(takenMessage(room), 409);
+      }
+      // hasOverlap only sees stays still in the room; a checked-out neighbour
+      // on the same nights is just as real once this one is being re-dated.
+      if (revising) {
+        const clash = await new sql.Request(transaction)
+          .input('roomId', sql.BigInt, room.roomId)
+          .input('inDate', sql.Date, room.checkInDate)
+          .input('outDate', sql.Date, room.checkOutDate)
+          .input('bookingId', sql.BigInt, bookingId)
+          .query(`SELECT TOP 1 br.id FROM dbo.booking_rooms br WITH (UPDLOCK, HOLDLOCK)
+                  WHERE br.room_id = @roomId AND br.booking_id <> @bookingId AND br.status <> 'CANCELLED'
+                    AND br.check_in_date < @outDate AND br.check_out_date > @inDate`);
+        if (clash.recordset.length > 0) throw new ApiError(takenMessage(room), 409);
       }
     }
 
@@ -3144,11 +3209,19 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
         .input('totalPrice', sql.Decimal(10, 2), room.totalPrice)
         .input('discountAmount', sql.Decimal(10, 2), room.discountAmount)
         .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(room.nights))
+        .input('shift', sql.Bit, revising ? 1 : 0)
         .query(`
           UPDATE dbo.booking_rooms
           SET room_id = @roomId, check_in_date = @checkInDate, check_out_date = @checkOutDate,
               base_price_override = @basePriceOverride, total_price = @totalPrice,
-              discount_amount = @discountAmount, nightly_breakdown = @nightlyBreakdown
+              discount_amount = @discountAmount, nightly_breakdown = @nightlyBreakdown,
+              -- A re-dated checked-out stay carries its real arrival/departure along by
+              -- the same number of days, so nights-used still matches nights-booked.
+              -- (Every right-hand side reads the row as it was before this UPDATE.)
+              actual_check_in_at = CASE WHEN @shift = 1 AND actual_check_in_at IS NOT NULL
+                  THEN DATEADD(day, DATEDIFF(day, check_in_date, @checkInDate), actual_check_in_at) ELSE actual_check_in_at END,
+              actual_check_out_at = CASE WHEN @shift = 1 AND actual_check_out_at IS NOT NULL
+                  THEN DATEADD(day, DATEDIFF(day, check_out_date, @checkOutDate), actual_check_out_at) ELSE actual_check_out_at END
           WHERE id = @id
         `);
       await writeRoomCharges(transaction, room.bookingRoomId, room.switchableCharges);
@@ -3202,6 +3275,16 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
 
     await syncBookingFromRooms(transaction, bookingId);
 
+    if (restates) {
+      revised = await billingService.reviseInvoice(transaction, lodgeId, userId, bookingId, {
+        reason: input.revisionReason,
+        paymentLines: input.revisionPaymentLines ?? [],
+        paymentMethod: input.revisionPaymentMethod ?? null,
+        paymentReference: input.revisionPaymentReference ?? null,
+        refundAcknowledged: input.refundAcknowledged === true,
+      });
+    }
+
     if (input.guests) {
       await replaceBookingGuests(transaction, bookingId, input.guests, existingGuests);
     }
@@ -3236,7 +3319,9 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     }
   }
 
-  return getBooking(lodgeId, bookingId);
+  const result = await getBooking(lodgeId, bookingId);
+  // What the correction did to the money, so the screen can say so.
+  return revised ? { ...result, invoiceRevision: { extra: revised.extra, refund: revised.refund } } : result;
 }
 
 // Cancelling settles the money as well as the room, and the settlement takes
@@ -3358,12 +3443,186 @@ async function cancelBooking(
 // "Booking saved" card rather than automatically on save. Awaited, unlike the
 // old fire-and-forget send, so the desk is told whether it went. Never throws
 // for a provider problem — notifyStayBooked reports those as a status.
-async function sendBookingWhatsApp(lodgeId, bookingId) {
-  await getBooking(lodgeId, bookingId);
-  return notifications.notifyStayBooked(lodgeId, bookingId);
+//
+// `kind` picks which message the desk is sending by hand — the ones a property
+// can switch to manual in Setup > WhatsApp Messages: the booking confirmation,
+// the check-in welcome (the walk-in template when it is set up), or the
+// cancellation notice. Each ignores the auto/manual switch, which only governs
+// the send that happens on its own.
+async function sendBookingWhatsApp(lodgeId, bookingId, kind = 'booking') {
+  const booking = await getBooking(lodgeId, bookingId);
+  if (kind === 'welcome') {
+    if (booking.status !== 'CHECKED_IN') throw new ApiError('The welcome message goes to a guest who is checked in.', 400);
+    return checkinWelcome.notifyCheckedIn(lodgeId, booking, { walkIn: true, manual: true });
+  }
+  if (kind === 'cancellation') {
+    if (booking.status !== 'CANCELLED') throw new ApiError('Only a cancelled booking has a cancellation notice.', 400);
+    return cancellationNotice.notifyBookingCancelled(lodgeId, booking, { manual: true });
+  }
+  if (booking.status === 'CANCELLED') throw new ApiError('This booking is cancelled.', 400);
+  return notifications.notifyStayBooked(lodgeId, bookingId, { manual: true });
+}
+
+// A stay that already happened, recorded after the fact: booked for its real
+// dates, marked as checked in at the real arrival time, then checked out and
+// billed through the ordinary billing path at the real departure time. The
+// invoice is issued now, so it takes the current series' next number, but it is dated
+// the day the stay ended (settle.invoiceAt). The advance is whatever was paid up front,
+// the payment lines settle the rest, and billing insists they add up.
+//
+// ponytail: the booking is written first and the bill second, in separate
+// transactions. If billing refuses (the lines do not add up, say) the new booking
+// is cancelled again so no half-recorded stay is left occupying the room.
+async function createPastBooking(lodgeId, userId, input) {
+  const pool = await getPool();
+  if (!(await lodgeFlagOn(pool, lodgeId, 'can_add_past_bookings'))) {
+    throw new ApiError('Adding past bookings isn’t enabled for this property. Ask support to switch it on.', 403);
+  }
+  const { checkedInAt, checkedOutAt, roomTimes = [], paymentLines = [], billingSide, discountReason, ...rest } = input;
+  const timesOf = new Map(roomTimes.map((t) => [Number(t.roomId), t]));
+  const rooms = normalizeRoomInputs(rest);
+
+  // Only the days after the last invoice are open: nothing may be slotted in
+  // among stays that are already billed. Checked before anything is written.
+  const win = await billingService.getPastBookingWindow(lodgeId, await resolveBillingSide(pool, lodgeId, billingSide), pool);
+  const closed = billingService.pastWindowViolation(win, [...rooms.map((r) => r.checkOutDate), istDateOf(checkedOutAt)]);
+  if (closed) throw new ApiError(closed, 409);
+
+  // The ordinary overlap check only sees stays still in the room; a past stay
+  // also has to fit between ones that have already left.
+  for (const room of rooms) {
+    // A room's real times belong on its own booked days.
+    const t = timesOf.get(room.roomId);
+    if (t && (istDateOf(t.checkedInAt) !== room.checkInDate || istDateOf(t.checkedOutAt) !== room.checkOutDate)) {
+      throw new ApiError('Each room’s check-in and check-out times must fall on its own dates.', 400);
+    }
+    const clash = await pool
+      .request()
+      .input('roomId', sql.BigInt, room.roomId)
+      .input('inDate', sql.Date, room.checkInDate)
+      .input('outDate', sql.Date, room.checkOutDate)
+      .query(`SELECT TOP 1 br.id FROM dbo.booking_rooms br
+              WHERE br.room_id = @roomId AND br.status = 'CHECKED_OUT'
+                AND br.check_in_date < @outDate AND br.check_out_date > @inDate`);
+    if (clash.recordset.length > 0) {
+      throw new ApiError('That room already has a stay for part of those nights.', 409);
+    }
+  }
+
+  const { id, bookingNumber } = await createBooking(lodgeId, userId, {
+    ...rest,
+    sendWhatsApp: false,
+    // Raised below, once the stay has billed — a receipt for a stay that then
+    // fails to bill would be left pointing at a cancelled booking.
+    skipAdvanceReceipt: true,
+  });
+
+  let invoice;
+  try {
+    const arrived = new sql.Transaction(pool);
+    await arrived.begin();
+    try {
+      for (const room of rooms) {
+        await new sql.Request(arrived)
+          .input('bookingId', sql.BigInt, id)
+          .input('roomId', sql.BigInt, room.roomId)
+          .input('at', sql.DateTimeOffset, timesOf.get(room.roomId)?.checkedInAt ?? checkedInAt)
+          .query(`UPDATE dbo.booking_rooms SET status = 'CHECKED_IN', actual_check_in_at = @at
+                  WHERE booking_id = @bookingId AND room_id = @roomId AND status = 'BOOKED'`);
+      }
+      await syncBookingFromRooms(arrived, id);
+      await arrived.commit();
+    } catch (err) {
+      await arrived.rollback();
+      throw err;
+    }
+
+    const collected = round2(paymentLines.reduce((sum, l) => sum + Number(l.amount), 0));
+    invoice = await billingService.issueInvoice(
+      lodgeId,
+      userId,
+      id,
+      {
+        includeLateCheckout: false,
+        discountAmount: rest.discountAmount ?? 0,
+        discountReason,
+        billingSide,
+        paymentLines,
+        collectedAmount: collected,
+      },
+      {
+        settle: {
+          lateCharge: 0,
+          // The invoice is dated the day the stay ended (its last room's departure).
+          invoiceAt: new Date(Math.max(...rooms.map((r) => (timesOf.get(r.roomId)?.checkedOutAt ?? checkedOutAt).getTime()))),
+          checkedOutAt: Object.fromEntries(rooms.map((r) => [r.roomId, timesOf.get(r.roomId)?.checkedOutAt ?? checkedOutAt])),
+        },
+      }
+    );
+  } catch (err) {
+    await pool
+      .request()
+      .input('bookingId', sql.BigInt, id)
+      .query(`UPDATE dbo.booking_rooms SET status = 'CANCELLED', food_pin = NULL WHERE booking_id = @bookingId;
+              UPDATE dbo.bookings SET status = 'CANCELLED' WHERE id = @bookingId;`);
+    throw err;
+  }
+
+  await autoIssueAdvanceReceipt(lodgeId, userId, id, rest);
+  return { id, bookingNumber, invoice };
+}
+
+// The per-property switches internal staff turn on. The column is chosen from a
+// fixed list, never from request input.
+async function lodgeFlagOn(pool, lodgeId, column) {
+  if (!['can_edit_billed_stays', 'can_add_past_bookings'].includes(column)) throw new Error('unknown flag');
+  const r = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query(`SELECT ${column} AS on_flag FROM dbo.lodges WHERE id = @lodgeId`);
+  return !!r.recordset[0]?.on_flag;
+}
+
+// The per-property switch internal staff turn on (lodges.can_edit_billed_stays).
+async function billedEditAllowed(pool, lodgeId) {
+  const r = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT can_edit_billed_stays FROM dbo.lodges WHERE id = @lodgeId');
+  return !!r.recordset[0]?.can_edit_billed_stays;
+}
+
+// The series a bill will be cut in: a non-GST property only has the one.
+async function resolveBillingSide(pool, lodgeId, requested) {
+  const r = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .query('SELECT is_gst_registered FROM dbo.lodges WHERE id = @lodgeId');
+  return r.recordset[0]?.is_gst_registered ? requested || 'GST' : 'NON_GST';
+}
+
+// The days a past booking may end on, for the booking form.
+async function getPastWindow(lodgeId, billingSide) {
+  const pool = await getPool();
+  if (!(await lodgeFlagOn(pool, lodgeId, 'can_add_past_bookings'))) {
+    throw new ApiError('Adding past bookings isn’t enabled for this property.', 403);
+  }
+  return billingService.getPastBookingWindow(lodgeId, await resolveBillingSide(pool, lodgeId, billingSide), pool);
+}
+
+// The dates a billed stay may be moved to, for the edit form — null when the
+// booking has no issued invoice.
+async function getEditWindow(lodgeId, bookingId) {
+  if (!(await billedEditAllowed(await getPool(), lodgeId))) {
+    throw new ApiError('Editing a checked-out booking isn’t enabled for this property.', 403);
+  }
+  return billingService.getInvoiceEditWindow(lodgeId, bookingId);
 }
 
 module.exports = {
+  getPastWindow,
+  createPastBooking,
+  getEditWindow,
   sendBookingWhatsApp,
   idProofExists,
   priceStay,
@@ -3383,7 +3642,8 @@ module.exports = {
   getLateCheckout,
   listCheckoutAlerts,
   listCheckinAlerts,
-  checkOut,
+  prepareCheckOut,
+  applyCheckOut,
   updateBooking,
   cancelBooking,
 };

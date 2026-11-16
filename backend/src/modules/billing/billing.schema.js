@@ -60,6 +60,11 @@ const issueInvoiceSchema = z
     // pair is still valid and is read as a one-line split, so the desk's screen
     // can be updated in a later deploy than this.
     paymentLines: paymentLinesField(),
+    // Checkout-and-pay only (settle endpoints): the late charge reception agreed
+    // for the room(s) leaving, and the balance the screen was showing — sent
+    // back so a bill that changed meanwhile is refused instead of settled short.
+    lateCharge: z.coerce.number().nonnegative().max(100000).optional().default(0),
+    expectedDue: z.coerce.number().optional(),
   })
   // A method, or lines, or nothing collected at all. The middle case is the one
   // this had to grow: without it every lines-only settlement is refused for a

@@ -10,9 +10,12 @@ const {
   priceQuoteHandler,
   getTapeChartHandler,
   getBookingHandler,
+  getEditWindowHandler,
+  getPastWindowHandler,
   getIdProofHandler,
   getGuestIdProofHandler,
   createBookingHandler,
+  createPastBookingHandler,
   checkInHandler,
   updateBookingHandler,
   getLateCheckoutHandler,
@@ -53,12 +56,15 @@ router.get('/tape-chart', authenticate, staff, getTapeChartHandler);
 // Ahead of /:id for the same reason as /drafts above.
 router.get('/checkout-alerts', authenticate, staff, listCheckoutAlertsHandler);
 router.get('/checkin-alerts', authenticate, staff, listCheckinAlertsHandler);
+router.get('/past-window', authenticate, staff, getPastWindowHandler);
+router.get('/:id/edit-window', authenticate, staff, getEditWindowHandler);
 router.get('/:id', authenticate, staff, getBookingHandler);
 router.get('/:id/available-rooms', authenticate, staff, listAvailableRoomsForBookingHandler);
 router.get('/:id/late-checkout', authenticate, staff, getLateCheckoutHandler);
 router.get('/:id/rooms/:roomId/late-checkout', authenticate, staff, getLateCheckoutHandler);
 router.get('/:id/id-proof', authenticate, canSeeRegister, getIdProofHandler);
 router.get('/:id/guests/:guestId/id-proof', authenticate, canSeeRegister, getGuestIdProofHandler);
+router.post('/past', authenticate, staff, idProofUpload, createPastBookingHandler);
 router.post('/', authenticate, staff, idProofUpload, createBookingHandler);
 router.patch('/:id', authenticate, staff, idProofUpload, updateBookingHandler);
 router.patch('/:id/check-in', authenticate, staff, idProofUpload, checkInHandler);

@@ -1,0 +1,298 @@
+/* WhatsApp auto/manual settings. Compact, one line per message, capped width so
+   the rows don't stretch across a wide screen. Auto/Manual is a two-option
+   selector: it names both outcomes, and the active one is told by weight and
+   fill, not colour alone. */
+
+.wa-settings {
+  max-width: 720px;
+  padding: 1rem 1.1rem 1.1rem;
+}
+
+.wa-settings__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.wa-settings__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.wa-settings__hint {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text, #48566a);
+}
+
+.wa-settings__hint strong {
+  color: var(--ink, #16212e);
+}
+
+.wa-settings__count {
+  flex-shrink: 0;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--brand-wash, #e6edf4);
+  color: var(--brand, #0a3a6b);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wa-settings__error {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: #fdecea;
+  color: #b3261e;
+  font-size: 0.84rem;
+}
+
+.wa-settings__group + .wa-settings__group {
+  margin-top: 0.9rem;
+}
+
+.wa-settings__group-title {
+  margin: 0 0 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text, #48566a);
+}
+
+.wa-settings__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.wa-settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 52px;
+  padding: 0.5rem 0.8rem;
+  background: var(--surface, #fff);
+}
+
+.wa-settings__row + .wa-settings__row {
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+
+.wa-settings__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wa-settings__name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink, #16212e);
+}
+
+.wa-settings__note {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--text, #48566a);
+}
+
+/* Preview + selector, kept together on the right of a row. */
+.wa-settings__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.wa-settings__preview {
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--brand, #0a3a6b);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.wa-settings__preview:hover {
+  background: var(--brand-wash, #e6edf4);
+}
+
+.wa-settings__preview:focus-visible {
+  outline: 2px solid var(--brand, #0a3a6b);
+  outline-offset: 1px;
+}
+
+/* Preview dialog: the message as a WhatsApp chat bubble. */
+.wa-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(22, 33, 46, 0.45);
+}
+
+.wa-preview__dialog {
+  width: min(100%, 420px);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--surface, #fff);
+  box-shadow: 0 24px 56px -16px rgba(22, 33, 46, 0.4);
+  overflow: hidden;
+}
+
+.wa-preview__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.wa-preview__head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.wa-preview__close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text, #48566a);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wa-preview__close:hover {
+  background: var(--neu-sunken, #eef1f7);
+}
+
+.wa-preview__chat {
+  padding: 1rem;
+  overflow-y: auto;
+  background: #e9e3d8;
+}
+
+.wa-preview__bubble {
+  max-width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0 10px 10px 10px;
+  background: #fff;
+  box-shadow: 0 1px 1px rgba(22, 33, 46, 0.15);
+  color: #16212e;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.wa-preview__foot {
+  margin: 0;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text, #48566a);
+}
+
+/* Auto | Manual */
+.wa-mode {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--neu-sunken, #eef1f7);
+  box-shadow: inset 0 0 0 1px var(--border, #e5e7eb);
+}
+
+.wa-mode__opt {
+  min-width: 62px;
+  height: 28px;
+  padding: 0 0.7rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text, #48566a);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.wa-mode__opt:hover:not(:disabled):not(.wa-mode__opt--active) {
+  color: var(--ink, #16212e);
+}
+
+.wa-mode__opt--active {
+  background: var(--brand, #0a3a6b);
+  color: #fff;
+  font-weight: 600;
+  cursor: default;
+}
+
+.wa-mode__opt:focus-visible {
+  outline: 2px solid var(--brand, #0a3a6b);
+  outline-offset: 1px;
+}
+
+.wa-mode__opt:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wa-mode__opt {
+    transition: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .wa-settings__head {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .wa-settings__row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding: 0.65rem 0.8rem;
+  }
+  /* Phones: full-width selector with a thumb-sized height. */
+  .wa-settings__actions {
+    justify-content: space-between;
+  }
+  .wa-mode {
+    display: flex;
+    flex: 1;
+  }
+  .wa-mode__opt {
+    flex: 1;
+    height: 40px;
+  }
+}

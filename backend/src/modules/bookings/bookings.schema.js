@@ -358,6 +358,69 @@ const createBookingSchema = z
     { message: PAYMENT_LINES_MISMATCH, path: ['advanceLines'] }
   );
 
+// A stay recorded after the fact. The ordinary booking fields come through
+// createBookingSchema (the controller derives the stay dates from the two
+// timestamps); this is what is specific to a stay that already happened.
+// Timestamps without an offset are read as IST — the lodge's own clock, and what
+// a datetime-local box produces.
+function parseIstDateTime(value) {
+  const text = String(value ?? '').trim();
+  const withOffset = /(Z|[+-]\d\d:?\d\d)$/i.test(text) ? text : `${text.length === 16 ? `${text}:00` : text}+05:30`;
+  return new Date(withOffset);
+}
+function istDateOf(date) {
+  return new Date(date.getTime() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+const istDateTimeField = (message) =>
+  z
+    .string({ error: message })
+    .trim()
+    .transform((v, ctx) => {
+      const d = parseIstDateTime(v);
+      if (Number.isNaN(d.getTime())) {
+        ctx.addIssue({ code: 'custom', message });
+        return z.NEVER;
+      }
+      return d;
+    });
+const pastBookingExtrasSchema = z
+  .object({
+    checkedInAt: istDateTimeField('Enter the date and time the guest checked in.'),
+    checkedOutAt: istDateTimeField('Enter the date and time the guest checked out.'),
+    // A booking of several rooms: when each room's guest really came and went.
+    // checkedInAt / checkedOutAt above are then the earliest arrival and latest
+    // departure; a room with no entry here takes those.
+    roomTimes: z
+      .array(
+        z.object({
+          roomId: z.coerce.number().int().positive(),
+          checkedInAt: istDateTimeField('Enter the date and time each room checked in.'),
+          checkedOutAt: istDateTimeField('Enter the date and time each room checked out.'),
+        })
+      )
+      .default([]),
+    // How the rest of the bill (after the advance) was paid: one line per method.
+    paymentLines: paymentLinesField(),
+    billingSide: z.enum(['GST', 'NON_GST']).optional(),
+    discountReason: z.string().trim().max(100).optional(),
+  })
+  .refine((d) => d.checkedOutAt > d.checkedInAt, {
+    message: 'Check-out must be after check-in.',
+    path: ['checkedOutAt'],
+  })
+  .refine((d) => d.checkedOutAt.getTime() <= Date.now(), {
+    message: 'A past booking can’t end in the future.',
+    path: ['checkedOutAt'],
+  })
+  .refine((d) => d.roomTimes.every((t) => t.checkedOutAt > t.checkedInAt), {
+    message: 'Each room’s check-out must be after its check-in.',
+    path: ['roomTimes'],
+  })
+  .refine((d) => d.roomTimes.every((t) => t.checkedOutAt.getTime() <= Date.now()), {
+    message: 'A past booking can’t end in the future.',
+    path: ['roomTimes'],
+  });
+
 // Check-in is also where staff fill in guest/vehicle details that weren't
 // available at booking time (a pre-booked stay might arrive with a vehicle
 // the guest didn't know about in advance) — same shape as createBookingSchema,
@@ -374,6 +437,12 @@ const checkInSchema = z
     // above stays required and stays the first tender, so the booking row and
     // the register keep a single method to show; these say what really arrived.
     advanceLines: paymentLinesField(),
+    // True when this check-in is the second half of a walk-in: the guest then
+    // gets one combined WhatsApp message instead of confirmation + welcome.
+    walkIn: z
+      .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
+      .optional()
+      .default(false),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
     idProofNumber: idProofNumberField(),
     guests: z.array(bookingGuestSchema).optional().default([]),
@@ -468,6 +537,15 @@ const updateBookingSchema = z
     ),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
     idProofNumber: idProofNumberField(),
+    // Only read when the stay is already checked out and billed: the invoice is
+    // then corrected in place, which needs a reason, any extra money taken for
+    // it, and an acknowledged refund when the bill gets smaller.
+    revisionReason: z.string().trim().max(200, 'Keep the reason under 200 characters.').optional(),
+    revisionPaymentLines: paymentLinesField(),
+    // The one-tender shorthand: the whole extra amount, by this method.
+    revisionPaymentMethod: z.enum(PAYMENT_METHODS).optional(),
+    revisionPaymentReference: z.string().trim().max(64, 'That transaction number looks too long — check it.').optional(),
+    refundAcknowledged: z.preprocess((v) => v === true || v === 'true', z.boolean()).optional(),
   })
   .refine((data) => (data.advanceAmount == null) === (data.advancePaymentMethod == null), {
     message: 'Choose a payment method for the advance amount.',
@@ -571,6 +649,8 @@ module.exports = {
   VEHICLE_TYPES,
   roomsField,
   createBookingSchema,
+  pastBookingExtrasSchema,
+  istDateOf,
   checkInSchema,
   updateBookingSchema,
   checkOutSchema,

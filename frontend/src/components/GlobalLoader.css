@@ -6,24 +6,17 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(246, 245, 251, 0.62);
+  background: rgba(243, 244, 246, 0.7);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
-  color: #3b2a86;
-  animation: global-loader-in 180ms ease both;
-  transition: opacity 250ms ease;
-}
-
-.global-loader--out {
-  opacity: 0;
-  pointer-events: none;
+  color: #0a3a6b;
 }
 
 .global-loader__box {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   max-width: 100%;
   text-align: center;
 }
@@ -36,70 +29,83 @@
   place-items: center;
 }
 
-.global-loader__icon {
-  width: 36px;
-  height: 36px;
+.global-loader__halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 205, 60, 0.45), rgba(255, 205, 60, 0) 70%);
 }
 
-.global-loader__spin {
+.global-loader__ring {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  animation: global-loader-spin 1.1s linear infinite;
 }
 
-.global-loader__spin circle {
+.global-loader__ring circle {
   fill: none;
   stroke-width: 3;
   stroke-linecap: round;
 }
 
-.global-loader__spin .track {
-  stroke: rgba(59, 42, 134, 0.14);
+.global-loader__ring .track {
+  stroke: rgba(10, 58, 107, 0.12);
 }
 
-.global-loader__spin .arc {
-  stroke: #e0a92b;
-  stroke-dasharray: 60 240;
+.global-loader__ring .arc {
+  stroke: #ffc107;
+  stroke-dasharray: 70 170;
+}
+
+.global-loader__center {
+  display: grid;
+  place-items: center;
+}
+
+.global-loader__icon {
+  width: 36px;
+  height: 36px;
+}
+
+/* The property's own logo sits inside the ring when there is one. */
+.global-loader__logo {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  object-fit: contain;
+  background: #fff;
+  padding: 5px;
+  box-shadow: 0 4px 14px -4px rgba(10, 58, 107, 0.35);
 }
 
 .global-loader__text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
   font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #55516b;
+  color: #48566a;
   overflow-wrap: anywhere;
 }
 
-@keyframes global-loader-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.global-loader__dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
 }
 
-@keyframes global-loader-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+.global-loader__dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ffc107;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .global-loader__spin {
-    animation-duration: 3s;
-  }
-  .global-loader {
-    animation: none;
-    transition: none;
-  }
-}
-
-/* Scoped to the page area: it fills .dash-main only, and the spinner rides along
-   (sticky) so it stays in view on a long page. */
+/* Scoped to the page area: fills .dash-main only; the mark rides along (sticky)
+   so it stays in view on a long page. */
 .global-loader--scoped {
   position: absolute;
   inset: 0;
@@ -114,15 +120,4 @@
   top: calc(50vh - 80px);
   margin: 0 auto;
   padding-block: 40px;
-}
-
-/* The property's own logo sits inside the ring when there is one. */
-.global-loader__logo {
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
-  object-fit: contain;
-  background: #fff;
-  padding: 5px;
-  box-shadow: 0 4px 14px -4px rgba(59, 42, 134, 0.35);
 }

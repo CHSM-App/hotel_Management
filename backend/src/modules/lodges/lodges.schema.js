@@ -181,8 +181,14 @@ const updateLodgeSchema = z.object({
   hasOtherServices: z.boolean().optional(),
   hasHousekeeping: z.boolean().optional(),
   hasLaundry: z.boolean().optional(),
+  // Lets the property correct the dates of checked-out, billed stays.
+  canEditBilledStays: z.boolean().optional(),
+  // Lets the property record a missed stay after the fact, checked out and billed.
+  canAddPastBookings: z.boolean().optional(),
   isActive: z.boolean().optional(),
   showLogoOnReceipt: z.boolean().optional(),
+  // Switches kept in dbo.lodge_settings (WhatsApp auto/manual).
+  settings: require('../me/me.schema').settingsSchema.optional(),
   // The OWNER-role login's own name/phone/email — its password stays theirs
   // to change, but a desk onboarding a property often has the rest wrong on
   // file until the owner actually signs in, and internal staff need a way to

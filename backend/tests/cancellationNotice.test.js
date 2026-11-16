@@ -26,7 +26,7 @@ const whatsapp = require('../src/config/whatsapp');
 
 const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 
-const lodge = { name: 'Sea View Lodge' };
+const lodge = { name: 'Sea View Lodge', phone: '9123456780' };
 
 // getBooking()'s mapped shape (camelCase) — what cancelBooking in
 // bookings.service.js actually passes to notifyBookingCancelled, NOT the raw
@@ -39,6 +39,7 @@ const booking = {
   guestName: 'Rahul Patil',
   guestPhone: '9876543210',
   roomNumbers: '204',
+  bookingNumber: 'AB12CD',
   checkInDate: '2026-09-12',
   checkOutDate: '2026-09-14',
   cancelReason: 'Change of plans',
@@ -52,7 +53,7 @@ const booking = {
 // The seven variables, in template order
 // ---------------------------------------------------------------------------
 
-test('a cancellation fills the seven template variables in order', () => {
+test('a cancellation fills the nine template variables in order', () => {
   const sample = buildCancellationSample(booking, lodge);
   assert.deepStrictEqual(sample, [
     'Rahul Patil',
@@ -62,6 +63,8 @@ test('a cancellation fills the seven template variables in order', () => {
     '14 Sep 2026',
     '*Reason:* Change of plans',
     'Refund: Rs 1500.00 via UPI',
+    'AB12CD',
+    '9123456780',
   ]);
 });
 

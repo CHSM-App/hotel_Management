@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { apiPatch, ApiError } from '../../lib/api';
+import { WA_MESSAGES } from '../lodge/WhatsAppSettingsPanel';
 import { getSession } from '../../lib/auth';
 import LocationPicker from '../../components/LocationPicker';
 import { validateCoordinates } from '../../lib/coordinates';
@@ -71,6 +72,16 @@ function formFromLodge(lodge, owner) {
     hasOtherServices: !!lodge.has_other_services,
     hasHousekeeping: !!lodge.has_housekeeping,
     hasLaundry: !!lodge.has_laundry,
+    canEditBilledStays: !!lodge.can_edit_billed_stays,
+    canAddPastBookings: !!lodge.can_add_past_bookings,
+    // dbo.lodge_settings switches; the defaults match a lodge with no row.
+    settings: {
+      waAutoBooking: lodge.settings?.waAutoBooking ?? true,
+      waAutoWalkin: lodge.settings?.waAutoWalkin ?? true,
+      waAutoCancel: lodge.settings?.waAutoCancel ?? true,
+      waAutoBill: lodge.settings?.waAutoBill ?? true,
+      waAutoReceipt: lodge.settings?.waAutoReceipt ?? false,
+    },
     isActive: !!lodge.is_active,
     showLogoOnReceipt: !!lodge.show_logo_on_receipt,
     ownerName: owner?.name ?? '',
@@ -124,6 +135,11 @@ export default function LodgeEditModal({ lodge, owner, stats, onSaved, onClose }
   const update = (key) => (e) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setForm((f) => ({ ...f, [key]: value }));
+  };
+
+  const updateSetting = (key) => (e) => {
+    const checked = e.target.checked;
+    setForm((f) => ({ ...f, settings: { ...f.settings, [key]: checked } }));
   };
 
   // Turning rooms off on a property with bookings would strand them behind a
@@ -504,6 +520,30 @@ export default function LodgeEditModal({ lodge, owner, stats, onSaved, onClose }
             checked={form.isActive}
             onChange={update('isActive')}
           />
+          <Check
+            id="edit-billed-edit"
+            label="Allow editing checked-out bookings"
+            note="Lets this property correct the dates of a stay after it is billed. The invoice keeps its number and is updated to match, with a reason recorded."
+            checked={form.canEditBilledStays}
+            onChange={update('canEditBilledStays')}
+          />
+          <Check
+            id="edit-past-bookings"
+            label="Allow adding past bookings"
+            note="Lets this property record a stay it missed, with the real check-in and check-out times and payments. The invoice takes the next invoice number and is dated the check-out day."
+            checked={form.canAddPastBookings}
+            onChange={update('canAddPastBookings')}
+          />
+          {WA_MESSAGES.map(({ key, title, note }) => (
+            <Check
+              key={key}
+              id={`edit-${key}`}
+              label={`WhatsApp auto-send: ${title}`}
+              note={note}
+              checked={form.settings[key]}
+              onChange={updateSetting(key)}
+            />
+          ))}
           {lodge.logo_path && (
             <Check
               id="edit-show-logo"

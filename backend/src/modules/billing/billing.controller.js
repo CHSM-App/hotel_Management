@@ -60,8 +60,48 @@ async function previewBillHandler(req, res, next) {
       // service solves for the discount that lands there and ignores any
       // discount sent alongside it.
       targetTotal: parseDiscount(req.query.targetTotal),
+      // Present while the guest is still checked in and the bill is being
+      // prepared as their checkout: priced as if they left now.
+      settle: settleScope(req),
     });
     res.json(preview);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// `?settle=1&lateCharge=..&roomId=..` — see billing.service scopeBooking.
+function settleScope(req) {
+  if (req.query.settle !== '1') return null;
+  const lateCharge = Number(req.query.lateCharge);
+  return {
+    settle: true,
+    lateCharge: Number.isFinite(lateCharge) && lateCharge > 0 ? lateCharge : 0,
+    roomId: req.query.roomId ? Number(req.query.roomId) : null,
+  };
+}
+
+// Bill and check out in one step: the booking leaves CHECKED_IN only if this
+// whole request succeeds. With a roomId and other rooms staying, only that room
+// pays and leaves (no invoice yet); otherwise the final invoice is written.
+async function settleCheckoutHandler(req, res, next) {
+  try {
+    const parsed = issueInvoiceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(parsed.error.issues[0].message, 400);
+    }
+    const bookingId = Number(req.params.bookingId);
+    const roomId = req.params.roomId ? Number(req.params.roomId) : null;
+    const result =
+      roomId != null
+        ? await billingService.settleRoomCheckout(req.user.lodgeId, req.user.sub, bookingId, roomId, parsed.data)
+        : {
+            mode: 'FINAL',
+            invoice: await billingService.issueInvoice(req.user.lodgeId, req.user.sub, bookingId, parsed.data, {
+              settle: { lateCharge: parsed.data.lateCharge },
+            }),
+          };
+    res.status(201).json(result);
   } catch (err) {
     next(err);
   }
@@ -484,6 +524,7 @@ async function listReceiptSharesHandler(req, res, next) {
 }
 
 module.exports = {
+  settleCheckoutHandler,
   shareInvoiceWhatsAppHandler,
   listInvoiceSharesHandler,
   shareReceiptWhatsAppHandler,

@@ -21,6 +21,9 @@ export function blankExtraRoom(dates) {
     basePriceOverride: '',
     checkInDate: dates.checkInDate,
     checkOutDate: dates.checkOutDate,
+    // Past booking only: when this room's guest really came and went.
+    pastInTime: '14:00',
+    pastOutTime: '11:00',
     // BOOKED / CHECKED_IN / CHECKED_OUT for a room already on the booking.
     status: null,
     // Filled in by the card once it knows the room: { roomNumber, maxOccupancy,

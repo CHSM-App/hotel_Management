@@ -4,6 +4,8 @@ const {
   DATE_RE,
   roomsField,
   createBookingSchema,
+  pastBookingExtrasSchema,
+  istDateOf,
   checkInSchema,
   updateBookingSchema,
   checkOutSchema,
@@ -207,6 +209,24 @@ async function searchGuestsHandler(req, res, next) {
   }
 }
 
+async function getPastWindowHandler(req, res, next) {
+  try {
+    const side = req.query.billingSide === 'NON_GST' ? 'NON_GST' : 'GST';
+    res.json({ window: await bookingsService.getPastWindow(req.user.lodgeId, side) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getEditWindowHandler(req, res, next) {
+  try {
+    const window = await bookingsService.getEditWindow(req.user.lodgeId, Number(req.params.id));
+    res.json({ window });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getBookingHandler(req, res, next) {
   try {
     const booking = await bookingsService.getBooking(req.user.lodgeId, Number(req.params.id));
@@ -245,6 +265,50 @@ function attachGuestFiles(guests, files) {
     idProofDocument: guestFileByIndex.get(index) || null,
     isChild: Boolean(guest.isChild),
   }));
+}
+
+// A stay that already happened: same fields as a new booking, plus when the guest
+// really arrived and left and how the bill was paid. The stay dates come from the
+// two timestamps, so the form only asks for each once.
+async function createPastBookingHandler(req, res, next) {
+  const files = req.files || [];
+  const cleanupUploads = () => {
+    for (const file of files) fs.unlink(file.path, () => {});
+  };
+  try {
+    const body = { ...req.body };
+    body.switchableCharges = parseJsonArrayField(body.switchableCharges ?? body.switchableChargeIds);
+    body.vehicles = parseJsonArrayField(body.vehicles);
+    body.guests = parseJsonArrayField(body.guests);
+    body.advanceLines = parseJsonArrayField(body.advanceLines);
+    body.paymentLines = parseJsonArrayField(body.paymentLines);
+    body.roomTimes = parseJsonArrayField(body.roomTimes);
+    if (typeof body.bedIds === 'string') body.bedIds = parseJsonArrayField(body.bedIds);
+    if (typeof body.rooms === 'string') body.rooms = parseJsonArrayField(body.rooms);
+
+    const extras = pastBookingExtrasSchema.safeParse(body);
+    if (!extras.success) throw new ApiError(extras.error.issues[0].message, 400);
+    const { checkedInAt, checkedOutAt } = extras.data;
+
+    const parsed = createBookingSchema.safeParse({
+      ...body,
+      checkInDate: istDateOf(checkedInAt),
+      checkOutDate: istDateOf(checkedOutAt),
+    });
+    if (!parsed.success) throw new ApiError(parsed.error.issues[0].message, 400);
+
+    const primaryFile = files.find((file) => file.fieldname === 'idProofDocument');
+    const result = await bookingsService.createPastBooking(req.user.lodgeId, req.user.sub, {
+      ...parsed.data,
+      ...extras.data,
+      idProofDocument: primaryFile ? primaryFile.filename : null,
+      guests: attachGuestFiles(parsed.data.guests, files),
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    cleanupUploads();
+    next(err);
+  }
 }
 
 async function createBookingHandler(req, res, next) {
@@ -427,6 +491,7 @@ async function updateBookingHandler(req, res, next) {
     }
     if (body.guests !== undefined) body.guests = parseJsonArrayField(body.guests);
     if (body.vehicles !== undefined) body.vehicles = parseJsonArrayField(body.vehicles);
+    if (body.revisionPaymentLines !== undefined) body.revisionPaymentLines = parseJsonArrayField(body.revisionPaymentLines);
     // Same JSON-array shape as create — a lone bedId (plain field) is still
     // the single-bed shape and reaches the schema untouched.
     if (typeof body.bedIds === 'string') body.bedIds = parseJsonArrayField(body.bedIds);
@@ -493,12 +558,10 @@ async function getLateCheckoutHandler(req, res, next) {
 
 async function checkOutHandler(req, res, next) {
   try {
-    const parsed = checkOutSchema.safeParse({ ...(req.body ?? {}), ...(req.params.roomId ? { roomId: req.params.roomId } : {}) });
-    if (!parsed.success) {
-      throw new ApiError(parsed.error.issues[0].message, 400);
-    }
-    const booking = await bookingsService.checkOut(req.user.lodgeId, Number(req.params.id), parsed.data);
-    res.json({ booking });
+    // A guest no longer leaves on their own: checkout happens together with the
+    // bill and its payment (POST /billing/bookings/:id/settle-checkout), so a
+    // stay can never read "checked out" with nothing collected.
+    throw new ApiError('Check-out now happens with the bill — open the bill from the booking and collect the balance.', 409);
   } catch (err) {
     next(err);
   }
@@ -519,7 +582,11 @@ async function cancelBookingHandler(req, res, next) {
 
 async function sendBookingWhatsAppHandler(req, res, next) {
   try {
-    const whatsapp = await bookingsService.sendBookingWhatsApp(req.user.lodgeId, Number(req.params.id));
+    const whatsapp = await bookingsService.sendBookingWhatsApp(
+      req.user.lodgeId,
+      Number(req.params.id),
+      ['booking', 'welcome', 'cancellation'].includes(req.body?.kind) ? req.body.kind : 'booking'
+    );
     res.json({ whatsapp });
   } catch (err) {
     next(err);
@@ -588,6 +655,9 @@ async function deleteDraftHandler(req, res, next) {
 }
 
 module.exports = {
+  getPastWindowHandler,
+  createPastBookingHandler,
+  getEditWindowHandler,
   listDraftsHandler,
   getDraftHandler,
   createDraftHandler,

@@ -76,4 +76,16 @@ const updateMyLodgeSchema = z.object({
     { message: 'Enter both latitude and longitude, or leave both empty.', path: ['latitude'] }
   );
 
-module.exports = { changePasswordSchema, sendPasswordOtpSchema, updateMyLodgeSchema };
+// The per-property switches in dbo.lodge_settings (WhatsApp auto/manual).
+// Only the keys in SETTING_FIELDS are accepted; anything else is rejected.
+const settingsSchema = z
+  .object({
+    waAutoBill: z.boolean().optional(),
+    waAutoReceipt: z.boolean().optional(),
+    waAutoBooking: z.boolean().optional(),
+    waAutoWalkin: z.boolean().optional(),
+    waAutoCancel: z.boolean().optional(),
+  })
+  .strict();
+
+module.exports = { changePasswordSchema, sendPasswordOtpSchema, updateMyLodgeSchema, settingsSchema };

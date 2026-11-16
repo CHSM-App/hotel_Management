@@ -20,6 +20,7 @@ const {
   addTabToRoomBillHandler,
   previewBillHandler,
   issueInvoiceHandler,
+  settleCheckoutHandler,
   listInvoicesHandler,
   getInvoiceHandler,
   voidInvoiceHandler,
@@ -51,6 +52,9 @@ router.get('/queue', authenticate, staff, listBillableBookingsHandler);
 router.get('/event-queue', authenticate, requireCapability('hasEvents'), staff, listBillableEventsHandler);
 router.get('/bookings/:bookingId/preview', authenticate, staff, previewBillHandler);
 router.post('/bookings/:bookingId/invoice', authenticate, staff, issueInvoiceHandler);
+// Check out and pay in one step — the preview takes ?settle=1 for the same.
+router.post('/bookings/:bookingId/settle-checkout', authenticate, staff, settleCheckoutHandler);
+router.post('/bookings/:bookingId/rooms/:roomId/settle-checkout', authenticate, staff, settleCheckoutHandler);
 
 // Functions. The same two documents a stay gets — the final bill and the
 // advance receipt — against an event booking. Behind billing.manage like the

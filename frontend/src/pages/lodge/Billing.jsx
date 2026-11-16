@@ -500,7 +500,7 @@ function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
 // viewInvoiceId opens an already-issued bill's document straight away — a
 // settled function's "View bill" — rather than asking for a new preview the
 // server would rightly refuse.
-export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, billNowTab = null, viewInvoiceId = null, modalOnly = false, stream = 'room', hideTabs = false, forceTab = null, readOnly = false, onClose }) {
+export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, billNowTab = null, viewInvoiceId = null, modalOnly = false, stream = 'room', hideTabs = false, forceTab = null, readOnly = false, settle = null, onClose }) {
   const session = getSession();
   const token = session?.token;
 
@@ -792,6 +792,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Food the kitchen finishes while this tab is open should appear on its own.
+  useEffect(() => {
+    if (tab !== 'tables') return undefined;
+    const timer = setInterval(loadFoodTabs, 20000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const refreshAll = () => {
     loadQueue();
@@ -913,7 +920,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // the whole of it. Closing the bill leaves them on the queue as usual.
   const [billTarget, setBillTarget] = useState(
     billNowBookingId != null
-      ? { kind: 'STAY', bookingId: billNowBookingId }
+      // `settle` = the guest is still checked in: this bill is also their
+      // checkout, written only when it is paid in full (see settleCheckout).
+      ? { kind: 'STAY', bookingId: billNowBookingId, ...(settle ? { settle } : {}) }
       : billNowEventId != null
         ? { kind: 'EVENT', eventBookingId: billNowEventId }
         : billNowTab
@@ -1079,6 +1088,12 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const previewPath = billTarget
     ? billTarget.kind === 'STAY'
       ? `/billing/bookings/${billTarget.bookingId}/preview?includeLateCheckout=${includeLateCheckout}${
+          billTarget.settle
+            ? `&settle=1&lateCharge=${billTarget.settle.lateCharge || 0}${
+                billTarget.settle.roomId ? `&roomId=${billTarget.settle.roomId}` : ''
+              }`
+            : ''
+        }${
           cycleDiscount > 0
             ? `&discountAmount=${cycleDiscount}&discountReason=${encodeURIComponent(discountReason.trim())}`
             : ''
@@ -1109,6 +1124,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const activeAmounts = preview ? (billingSide === 'GST' ? preview.gst : preview.nonGst) : null;
   // A table bill has no advance — nobody pays a deposit to sit down.
   const advancePaid = preview?.advancePaid ?? 0;
+  // Settling a checked-in guest: 'ROOM' = one room of several leaving on its
+  // own (no invoice yet, no discount), 'FINAL' = the whole stay's bill.
+  const settleMode = billTarget?.settle ? preview?.settleMode ?? null : null;
+  const roomMode = settleMode === 'ROOM';
   const balanceDue = activeAmounts ? round2(activeAmounts.totalAmount - advancePaid) : 0;
   // A stay paid in full up front. The bill still has to be issued — it is the
   // tax document — but there is no money changing hands at the desk, so
@@ -1235,9 +1254,14 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       return;
     }
 
+    const settleReq = billTarget.kind === 'STAY' ? billTarget.settle : null;
     const path =
       billTarget.kind === 'STAY'
-        ? `/billing/bookings/${billTarget.bookingId}/invoice`
+        ? settleReq
+          ? settleReq.roomId
+            ? `/billing/bookings/${billTarget.bookingId}/rooms/${settleReq.roomId}/settle-checkout`
+            : `/billing/bookings/${billTarget.bookingId}/settle-checkout`
+          : `/billing/bookings/${billTarget.bookingId}/invoice`
         : billTarget.kind === 'EVENT'
           ? `/billing/events/${billTarget.eventBookingId}/invoice`
           : billTarget.kind === 'SERVICE'
@@ -1260,6 +1284,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           ...(cycleDiscount > 0 && discountReason.trim() ? { discountReason: discountReason.trim() } : {}),
           // Sent only for a stay — a table has no checkout to be late for.
           ...(billTarget.kind === 'STAY' ? { includeLateCheckout } : {}),
+          // What the screen showed, so the server can refuse a bill that moved
+          // (an order added) rather than settle it for the wrong amount.
+          ...(settleReq ? { lateCharge: settleReq.lateCharge || 0, expectedDue: Math.max(0, balanceDue) } : {}),
           ...(billTarget.kind === 'FOOD' && billAnyway ? { billAnyway: true } : {}),
           ...(billTarget.kind === 'SERVICE' ? { usageIds: billTarget.usageIds } : {}),
           collectedAmount: collected,
@@ -1274,12 +1301,23 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         },
         { token }
       );
+      // One room left, the rest stay: it is paid and gone, and there is no
+      // document yet — the booking's bill comes when the last room leaves.
+      if (data.mode === 'ROOM') {
+        setBillTarget(null);
+        settleReq?.onDone?.(data);
+        refreshAll();
+        onClose?.();
+        return;
+      }
+      settleReq?.onDone?.(data);
       // Straight to the document. The bill exists, the guest is at the desk,
       // and the next thing anyone does with it is print it — closing back to a
       // queue and making them find it again is a step with one answer.
       setJustIssued(data.invoice);
       setDetailInvoiceId(data.invoice.id);
-      autoShareId.current = data.invoice.id;
+      // Off when the property chose to send bills by hand (Setup > WhatsApp Messages).
+      if (lodge?.settings?.waAutoBill !== false) autoShareId.current = data.invoice.id;
       setBillTarget(null);
       refreshAll();
     } catch (err) {
@@ -2758,8 +2796,14 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                 </svg>
               </span>
               <div className="issue-bill__titles">
-                <h3>Issue Bill</h3>
-                <p>Review charges and collect payment</p>
+                <h3>{billTarget?.settle ? (roomMode ? 'Settle room & check out' : 'Bill & check out') : 'Issue Bill'}</h3>
+                <p>
+                  {billTarget?.settle
+                    ? roomMode
+                      ? `Room ${preview?.roomNumber ?? ''} leaves once its balance is paid`
+                      : 'The guest checks out once the bill is paid in full'
+                    : 'Review charges and collect payment'}
+                </p>
               </div>
               <button type="button" className="bill-close" onClick={closeBilling} disabled={submitting} aria-label="Close">
                 ×
@@ -3277,8 +3321,18 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                       </div>
                       {advancePaid > 0 && (
                         <div className="sim-result__line">
-                          <span>Advance already paid</span>
-                          <span>-{formatPrice(advancePaid)}</span>
+                          <span>
+                            {roomMode ? 'Advance applied to this room' : 'Advance already paid'}
+                          </span>
+                          <span>
+                            -{formatPrice(roomMode ? Math.min(advancePaid, activeAmounts.totalAmount) : preview.advanceOnly ?? advancePaid)}
+                          </span>
+                        </div>
+                      )}
+                      {!roomMode && preview.roomPaymentsPaid > 0 && (
+                        <div className="sim-result__line">
+                          <span>Paid at earlier room checkouts</span>
+                          <span>-{formatPrice(preview.roomPaymentsPaid)}</span>
                         </div>
                       )}
                       <div className="sim-result__total">
@@ -3294,7 +3348,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     is settled through what the guest hands over. The reason
                     prints on the bill beside the amount, so a discount
                     reads as a rule ("Leaving early") and not a favour. */}
-                {isCycleStay && (
+                {isCycleStay && !roomMode && (
                   <div className="form-section billing-panel__discount">
                     <div className="form-section__title">Discount <span className="issue-bill__optional">(optional)</span></div>
                     <div className="field-row">
@@ -3535,7 +3589,15 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     type="submit"
                     disabled={submitting || preview.alreadyInvoiced || Boolean(collectedProblem) || (preview.liveOrderCount > 0 && !billAnyway)}
                   >
-                    {submitting ? 'Issuing…' : 'Issue bill'}
+                    {submitting
+                      ? billTarget?.settle
+                        ? 'Checking out…'
+                        : 'Issuing…'
+                      : billTarget?.settle
+                        ? roomMode
+                          ? 'Collect & check out room'
+                          : 'Collect & check out'
+                        : 'Issue bill'}
                   </button>
                 </div>
               </form>

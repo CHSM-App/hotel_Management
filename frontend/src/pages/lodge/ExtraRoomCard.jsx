@@ -22,6 +22,7 @@ export default function ExtraRoomCard({
   token,
   dates,
   sameDates,
+  pastMode = false,
   editingBookingId,
   takenRoomIds,
   // The message the last failed save left against one of this card's controls
@@ -188,6 +189,32 @@ export default function ExtraRoomCard({
             />
             {errorFor?.(`extraOut-${room.key}`) && (
               <p className="field__error">{errorFor(`extraOut-${room.key}`)}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {pastMode && (
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor={`extraInTime-${room.key}`}>Checked in at</label>
+            <input
+              id={`extraInTime-${room.key}`}
+              type="time"
+              value={room.pastInTime ?? '14:00'}
+              onChange={(e) => onChange({ pastInTime: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`extraOutTime-${room.key}`}>Checked out at</label>
+            <input
+              id={`extraOutTime-${room.key}`}
+              type="time"
+              value={room.pastOutTime ?? '11:00'}
+              onChange={(e) => onChange({ pastOutTime: e.target.value })}
+            />
+            {errorFor?.(`extraOutTime-${room.key}`) && (
+              <p className="field__error">{errorFor(`extraOutTime-${room.key}`)}</p>
             )}
           </div>
         </div>

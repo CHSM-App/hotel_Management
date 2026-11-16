@@ -15,6 +15,7 @@ import { useCheckinAlerts } from './useCheckinAlerts';
 import { useWorkOrderAlerts } from './useWorkOrderAlerts';
 import { useCoverageAlerts } from './useCoverageAlerts';
 import { usePendingOrderAlerts } from './usePendingOrderAlerts';
+import { useFoodReadyAlerts } from './useFoodReadyAlerts';
 import { useReportsReminder } from './useReportsReminder';
 import StaffAlertsBell from '../../components/StaffAlertsBell';
 import Bookings from './Bookings';
@@ -28,6 +29,7 @@ import { REPORT_SECTIONS, reportSectionOf } from '../../lib/reportSections';
 import StaffAndRoles from './StaffAndRoles';
 import FoodSetup from './FoodSetup';
 import BillNumberingPanel from './BillNumberingPanel';
+import WhatsAppSettingsPanel from './WhatsAppSettingsPanel';
 import FoodSection from './FoodSection';
 import Events from './Events';
 import AssetsPanel from './AssetsPanel';
@@ -76,6 +78,9 @@ const ICON_PATHS = {
       <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z" />
       <path d="M6 1v3M10 1v3M14 1v3" />
     </>
+  ),
+  messageCircle: (
+    <path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.6A8.4 8.4 0 1 1 21 11.5z" />
   ),
   userCheck: (
     <>
@@ -342,6 +347,13 @@ export default function OwnerDashboard() {
   // open that bill straight away. Cleared on any sidebar move, so coming back to
   // billing later lands on the plain queue rather than reopening an old bill.
   const [billNowBookingId, setBillNowBookingId] = useState(null);
+  // Set with it when that bill is also the guest's checkout (they are still
+  // checked in): { lateCharge, roomId, onDone }. Null for a stay already out.
+  const [billNowSettle, setBillNowSettle] = useState(null);
+  const billStay = (bookingId, settle) => {
+    setBillNowBookingId(bookingId ?? null);
+    setBillNowSettle(settle ?? null);
+  };
   // The same hand-over for a function: "Settle & bill" on an event opens its
   // bill over the events section rather than sending the desk to billing.
   const [billNowEventId, setBillNowEventId] = useState(null);
@@ -395,6 +407,22 @@ export default function OwnerDashboard() {
 
   // The bell's "View" on an enquiry alert: straight to the Enquiries section,
   // written in one go with the section for the same reason as above.
+  const openFoodToBill = () => {
+    setBillNowBookingId(null);
+    setBillNowEventId(null);
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        updated.set('section', 'billing');
+        updated.set('tab', 'tables');
+        updated.delete('view');
+        updated.delete('status');
+        return updated;
+      },
+      { replace: true }
+    );
+  };
+
   const openEnquiries = () => {
     setBillNowBookingId(null);
     setBillNowEventId(null);
@@ -630,6 +658,8 @@ export default function OwnerDashboard() {
   const workOrderAlerts = useWorkOrderAlerts(session?.token, canManageAssets);
   const coverageAlerts = useCoverageAlerts(session?.token, canManageAssets);
   const pendingOrderAlerts = usePendingOrderAlerts(session?.token, canManageOrders);
+  const canBill = permissions.includes('billing.manage');
+  const foodReadyAlerts = useFoodReadyAlerts(session?.token, canBill && Boolean(me?.lodge?.servesFood));
   const { alerts: enquiryAlerts, refresh: refreshEnquiryAlerts } = useEnquiryAlerts(session?.token, canManageEnquiries);
   const reportsReminder = useReportsReminder(canViewReports);
 
@@ -645,13 +675,14 @@ export default function OwnerDashboard() {
     ...checkinAlerts,
     ...checkoutAlerts,
     ...pendingOrderAlerts,
+    ...foodReadyAlerts.map((a) => ({ ...a, action: { label: 'Bill', onSelect: openFoodToBill } })),
     ...workOrderAlerts,
     ...coverageAlerts,
     ...housekeepingAlerts,
     ...reportsReminder,
   ];
   const canSeeStaffAlerts =
-    canManageBookings || canManageAssets || canManageOrders || canViewReports || canSeeHousekeeping || canManageEnquiries;
+    canManageBookings || canManageAssets || canManageOrders || canBill || canViewReports || canSeeHousekeeping || canManageEnquiries;
 
   return (
     <div className="dash-shell">
@@ -960,7 +991,7 @@ export default function OwnerDashboard() {
                   // threw reception out of the screen they were working in at
                   // the exact moment a guest was standing at the desk — and
                   // left them to find their way back afterwards.
-                  onBillStay={(bookingId) => setBillNowBookingId(bookingId ?? null)}
+                  onBillStay={billStay}
                   onShowRegister={showRegisterWithStatus}
                   prefillEnquiry={pendingBookingEnquiry}
                   onPrefillConsumed={() => setPendingBookingEnquiry(null)}
@@ -969,7 +1000,7 @@ export default function OwnerDashboard() {
               )}
 
               {activeFeature && activeFeature.key === 'billing' && (
-                <Billing lodge={me.lodge} billNowBookingId={billNowBookingId} />
+                <Billing lodge={me.lodge} billNowBookingId={billNowBookingId} settle={billNowSettle} />
               )}
 
               {activeFeature && activeFeature.key === 'eventBilling' && (
@@ -1049,6 +1080,7 @@ export default function OwnerDashboard() {
                 <Billing
                   lodge={me.lodge}
                   billNowBookingId={billNowBookingId}
+                  settle={billNowSettle}
                   modalOnly
                   onClose={() => setBillNowBookingId(null)}
                 />
@@ -1059,7 +1091,7 @@ export default function OwnerDashboard() {
                   stays that were billed, but the bills themselves are another
                   screen's job, and that is the screen the tile is asking for. */}
               {activeFeature && activeFeature.key === 'guests' && (
-                <GuestRegister onOpenDraft={openDraftInChart} onBillStay={(bookingId) => setBillNowBookingId(bookingId ?? null)} onOpenSection={showSection} />
+                <GuestRegister onOpenDraft={openDraftInChart} onBillStay={billStay} onOpenSection={showSection} />
               )}
 
               {activeFeature && activeFeature.key === 'customers' && <Customers />}
@@ -1084,6 +1116,13 @@ export default function OwnerDashboard() {
               {activeFeature && activeFeature.key === 'staff' && <StaffAndRoles />}
 
               {activeFeature && activeFeature.key === 'billNumbering' && <BillNumberingPanel />}
+
+              {activeFeature && activeFeature.key === 'whatsappSettings' && (
+                <WhatsAppSettingsPanel
+                  lodge={me?.lodge}
+                  onChange={(settings) => setMe((m) => ({ ...m, lodge: { ...m.lodge, settings } }))}
+                />
+              )}
 
               {activeFeature && activeFeature.key === 'food' && (
                 <FoodSection
@@ -1114,7 +1153,7 @@ export default function OwnerDashboard() {
 
               {activeFeature &&
                 !activeFeature.key.startsWith('report-') &&
-                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'enquiries', 'staff', 'billNumbering', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
+                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'enquiries', 'staff', 'billNumbering', 'whatsappSettings', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

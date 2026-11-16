@@ -241,6 +241,30 @@ async function createAutoReceiptLink({ lodgeId, receiptId, phone }) {
   }
 }
 
+// Sends template 748 for a freshly issued advance receipt with no desk click,
+// for properties that switched "advance receipt" to automatic. Best-effort like
+// createAutoReceiptLink: never throws, the booking stands either way.
+async function sendReceiptAuto(lodgeId, receiptId) {
+  try {
+    if (!whatsapp.isReceiptTemplateConfigured()) return { status: 'skipped', reason: 'not configured' };
+    const receipt = await loadReceipt(lodgeId, receiptId);
+    const target = whatsapp.normalisePhone(receipt.guest_phone);
+    if (!target) return { status: 'skipped', reason: 'no guest phone' };
+    const link = await createAutoReceiptLink({ lodgeId, receiptId, phone: target });
+    if (!link) return { status: 'skipped', reason: 'no receipt link' };
+    const { campaignId } = await whatsapp.sendTemplateMessage(
+      target,
+      whatsapp.RECEIPT_TEMPLATE_ID,
+      buildReceiptSample(receipt, link),
+      RECEIPT_CAMPAIGN
+    );
+    return { status: 'sent', campaignId };
+  } catch (err) {
+    logger.warn({ err, lodgeId, receiptId }, 'Advance receipt could not be sent automatically on WhatsApp');
+    return { status: 'failed', error: err.message };
+  }
+}
+
 // The guest's end of the link. No authentication — the token is the whole of
 // the credential, same as a shared bill.
 async function readSharedReceipt(token) {
@@ -351,6 +375,7 @@ function whatsAppAvailable() {
 module.exports = {
   shareReceiptOnWhatsApp,
   createAutoReceiptLink,
+  sendReceiptAuto,
   readSharedReceipt,
   listShares,
   whatsAppAvailable,

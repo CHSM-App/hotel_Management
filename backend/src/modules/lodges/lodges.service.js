@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const { logger } = require('../../config/logger');
+const { SETTINGS_COLS, SETTINGS_JOIN, settingsFromRow, saveSettings } = require('../../config/lodgeSettings');
 const { suggestBookingCode } = require('./bookingCode');
 const { UPLOAD_DIR: LOGO_DIR } = require('../../middleware/logoUpload');
 const { UPLOAD_DIR: HERO_IMAGE_DIR } = require('../../middleware/heroImageUpload');
@@ -130,6 +131,7 @@ async function listLodges() {
       l.is_specified_premises, l.is_active, l.created_at,
       l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
       l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry,
+      l.can_edit_billed_stays, l.can_add_past_bookings,
       l.logo_path, l.show_logo_on_receipt,
       u.name AS owner_name, u.phone AS owner_phone, u.email AS owner_email
     FROM dbo.lodges l
@@ -162,6 +164,7 @@ async function getLodgeDetail(id) {
       checkin_mode, is_gst_registered, gstin, is_specified_premises,
       has_rooms, serves_food, food_room_service, food_table_service, has_events,
       has_assets, has_expenses, has_other_services, has_housekeeping, has_laundry,
+      can_edit_billed_stays, can_add_past_bookings,
       check_out_time, check_in_time, early_arrival_from, late_grace_minutes, late_half_day_percent,
       late_full_day_after_minutes, late_full_day_percent,
       logo_path, show_logo_on_receipt, hero_image_path,
@@ -203,16 +206,18 @@ async function getLodgeDetail(id) {
     FROM dbo.invoice_series
     WHERE lodge_id = @id
     ORDER BY series_type;
+
+    SELECT ${SETTINGS_COLS} FROM dbo.lodges l ${SETTINGS_JOIN} WHERE l.id = @id;
   `);
 
-  const [lodgeRows, staff, statsRows, invoiceSeries] = result.recordsets;
+  const [lodgeRows, staff, statsRows, invoiceSeries, settingsRows] = result.recordsets;
 
   if (lodgeRows.length === 0) {
     throw new ApiError('Lodge not found.', 404);
   }
 
   return {
-    lodge: lodgeRows[0],
+    lodge: { ...lodgeRows[0], settings: settingsFromRow(settingsRows?.[0]) },
     staff,
     stats: statsRows[0],
     invoiceSeries,
@@ -295,6 +300,8 @@ async function updateLodge(id, input) {
     has_other_services: flag('hasOtherServices', 'has_other_services'),
     has_housekeeping: flag('hasHousekeeping', 'has_housekeeping'),
     has_laundry: flag('hasLaundry', 'has_laundry'),
+    can_edit_billed_stays: flag('canEditBilledStays', 'can_edit_billed_stays'),
+    can_add_past_bookings: flag('canAddPastBookings', 'can_add_past_bookings'),
     is_active: flag('isActive', 'is_active'),
     show_logo_on_receipt: flag('showLogoOnReceipt', 'show_logo_on_receipt'),
   };
@@ -380,6 +387,8 @@ async function updateLodge(id, input) {
     .input('hasOtherServices', sql.Bit, next.has_other_services)
     .input('hasHousekeeping', sql.Bit, next.has_housekeeping)
     .input('hasLaundry', sql.Bit, next.has_laundry)
+    .input('canEditBilledStays', sql.Bit, next.can_edit_billed_stays)
+    .input('canAddPastBookings', sql.Bit, next.can_add_past_bookings)
     .input('isActive', sql.Bit, next.is_active)
     .input('showLogoOnReceipt', sql.Bit, next.show_logo_on_receipt)
     .query(`
@@ -392,10 +401,13 @@ async function updateLodge(id, input) {
           has_rooms = @hasRooms, serves_food = @servesFood, food_room_service = @foodRoomService,
           food_table_service = @foodTableService, has_events = @hasEvents,
           has_assets = @hasAssets, has_expenses = @hasExpenses, has_other_services = @hasOtherServices,
-          has_housekeeping = @hasHousekeeping, has_laundry = @hasLaundry, is_active = @isActive,
+          has_housekeeping = @hasHousekeeping, has_laundry = @hasLaundry, can_edit_billed_stays = @canEditBilledStays, can_add_past_bookings = @canAddPastBookings, is_active = @isActive,
           show_logo_on_receipt = @showLogoOnReceipt
       WHERE id = @id
     `);
+
+  // New-style switches live in dbo.lodge_settings, not on dbo.lodges.
+  if (input.settings) await saveSettings(pool, id, input.settings);
 
   // The owner's own login row, not a column on dbo.lodges — only touched when
   // the caller actually sent one of these two fields, so an edit that never

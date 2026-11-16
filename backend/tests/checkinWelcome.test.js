@@ -96,7 +96,7 @@ test('reads the camelCase fields getBooking() actually returns, not the raw snak
 
 test('a check-in fires the welcome, fire-and-forget rather than awaited', () => {
   const bookings = read('src/modules/bookings/bookings.service.js');
-  assert.match(bookings, /void checkinWelcome\.notifyCheckedIn\(lodgeId, booking\)/);
+  assert.match(bookings, /void checkinWelcome\.notifyCheckedIn\(lodgeId, booking, \{ walkIn: input\.walkIn === true \}\)/);
 });
 
 test('.env.example documents the template switch', () => {

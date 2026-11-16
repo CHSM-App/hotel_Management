@@ -322,8 +322,8 @@ function solveDiscountForTarget(target, grossSubtotal, payable) {
   return { discount, achieved: payable(discount) };
 }
 
-async function loadBookingForBilling(lodgeId, bookingId) {
-  const pool = await getPool();
+async function loadBookingForBilling(lodgeId, bookingId, db = null) {
+  const pool = db ?? (await getPool());
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -687,28 +687,155 @@ async function buildStayBill(pool, booking, foodOrders, opts) {
   return priceStayBill(booking, foodOrders, { ...opts, ...context });
 }
 
+// Checkout and payment are one step: a guest leaves only when what they owe is
+// collected. So a stay is billed *before* the checkout is written, as if it
+// happened now (`scope.settle`), and the checkout is committed in the same
+// transaction as the payment. This decides what is being billed:
+//
+//   FINAL  everything still in house leaves; one invoice for the whole stay.
+//   ROOM   one room of several leaves; it pays for itself now (room_settlements)
+//          and the booking's single invoice follows when the last room leaves.
+//
+// No scope = the old way: a booking already CHECKED_OUT, billed from the queue.
+//
+// Returns the booking row to price (a copy, never written back) and the money
+// already held against it. `advancePaid` is the figure the screen subtracts:
+// advance + room payments for a final bill, the advance still unspent for a room.
+async function scopeBooking(db, lodgeId, booking, scope = null) {
+  const settled = (
+    await db
+      .request()
+      .input('bookingId', sql.BigInt, booking.id)
+      .query(`
+        SELECT COALESCE(SUM(collected), 0) AS room_paid, COALESCE(SUM(advance_applied), 0) AS advance_used
+        FROM dbo.room_settlements WHERE booking_id = @bookingId AND invoice_id IS NULL
+      `)
+  ).recordset[0];
+  const roomPaid = round2(Number(settled.room_paid));
+  const advanceOnly = booking.advance_amount != null ? Number(booking.advance_amount) : 0;
+
+  if (!scope?.settle) {
+    if (booking.status !== 'CHECKED_OUT') {
+      throw new ApiError('This booking must be checked out before it can be billed.', 409);
+    }
+    return {
+      view: { ...booking, advance_amount: round2(advanceOnly + roomPaid) },
+      mode: 'FINAL',
+      roomId: null,
+      advanceOnly,
+      roomPaid,
+      advancePaid: round2(advanceOnly + roomPaid),
+    };
+  }
+
+  if (booking.status !== 'CHECKED_IN') {
+    throw new ApiError('This booking is not checked in.', 409);
+  }
+  const rooms = (
+    await db
+      .request()
+      .input('bookingId', sql.BigInt, booking.id)
+      .query(`
+        SELECT br.id, br.room_id, r.room_number, br.status, br.check_in_date, br.check_out_date,
+               br.actual_check_in_at, br.nightly_breakdown, br.total_price
+        FROM dbo.booking_rooms br JOIN dbo.rooms r ON r.id = br.room_id
+        WHERE br.booking_id = @bookingId AND br.status <> 'CANCELLED'
+        ORDER BY br.id
+      `)
+  ).recordset;
+  const inHouse = rooms.filter((r) => r.status === 'CHECKED_IN');
+  if (inHouse.length === 0) throw new ApiError('Booking not found or not checked in.', 409);
+
+  const lateCharge = round2(Number(scope.lateCharge) || 0);
+  const at = new Date();
+  const roomId = scope.roomId != null ? Number(scope.roomId) : null;
+  const target = roomId != null ? inHouse.find((r) => Number(r.room_id) === roomId) : null;
+  if (roomId != null && !target) throw new ApiError('That room is not checked in.', 409);
+
+  const leaving = target ? [target] : inHouse;
+  const staying = rooms.filter((r) => r.status !== 'CHECKED_OUT' && !leaving.includes(r));
+  if (!target && staying.length > 0) {
+    throw new ApiError('Some rooms on this booking have not checked in yet.', 409);
+  }
+
+  if (staying.length === 0) {
+    return {
+      view: {
+        ...booking,
+        status: 'CHECKED_OUT',
+        actual_check_out_at: at,
+        // Rooms already out carry theirs on the booking row; the room(s) leaving now add this one.
+        late_checkout_charge: round2((Number(booking.late_checkout_charge) || 0) + lateCharge),
+        advance_amount: round2(advanceOnly + roomPaid),
+      },
+      mode: 'FINAL',
+      roomId: null,
+      advanceOnly,
+      roomPaid,
+      advancePaid: round2(advanceOnly + roomPaid),
+    };
+  }
+
+  // The room's own nights and late charge here; its own room service and
+  // services are loaded by the caller. The advance still unspent is its credit.
+  const credit = Math.max(0, round2(advanceOnly - Number(settled.advance_used)));
+  return {
+    view: {
+      ...booking,
+      status: 'CHECKED_OUT',
+      room_number: target.room_number,
+      check_in_date: target.check_in_date,
+      check_out_date: target.check_out_date,
+      nightly_breakdown: target.nightly_breakdown,
+      total_price: target.total_price,
+      late_checkout_charge: lateCharge,
+      late_checkout_minutes: null,
+      actual_check_in_at: target.actual_check_in_at,
+      actual_check_out_at: at,
+      advance_amount: credit,
+    },
+    mode: 'ROOM',
+    roomId: target.room_id,
+    bookingRoomId: target.id,
+    advanceOnly,
+    roomPaid: 0,
+    advancePaid: credit,
+  };
+}
+
+// Required at call time: bookings.service requires this module, so a top-level
+// require here would be a cycle.
+function lazyBookings() {
+  return require('../bookings/bookings.service');
+}
+
 async function previewBill(
   lodgeId,
   bookingId,
-  { includeLateCheckout = true, discountAmount = 0, targetTotal = 0, discountReason = null } = {}
+  { includeLateCheckout = true, discountAmount = 0, targetTotal = 0, discountReason = null, settle = null } = {}
 ) {
   const pool = await getPool();
-  const booking = await loadBookingForBilling(lodgeId, bookingId);
-
-  if (booking.status !== 'CHECKED_OUT') {
-    throw new ApiError('This booking must be checked out before it can be billed.', 409);
+  const scoped = await scopeBooking(pool, lodgeId, await loadBookingForBilling(lodgeId, bookingId), settle);
+  const booking = scoped.view;
+  // A room leaving on its own is billed as it stands; any discount is for the
+  // final bill, where it is taken off the whole stay.
+  if (scoped.mode === 'ROOM') {
+    discountAmount = 0;
+    targetTotal = 0;
   }
 
-  const active = await findActiveInvoice(pool.request(), bookingId);
+  const active = settle ? null : await findActiveInvoice(pool.request(), bookingId);
 
   // Room service and any table food the desk moved onto this stay
   // (addTabToRoomBill) ride on the room bill.
-  const foodOrders = await loadStayFoodOrders(pool.request(), lodgeId, bookingId);
+  const foodOrders = await loadStayFoodOrders(pool.request(), lodgeId, bookingId, scoped.roomId);
   const foodItems = await loadFoodItemsForOrders(pool.request(), foodOrders.map((o) => o.id));
   // Services the desk moved onto this stay; they are their own items already.
-  const services = await loadStayServiceUsages(pool.request(), lodgeId, bookingId);
+  const services = (await loadStayServiceUsages(pool.request(), lodgeId, bookingId)).filter(
+    (u) => scoped.roomId == null || Number(u.roomId) === Number(scoped.roomId)
+  );
 
-  const advancePaid = booking.advance_amount != null ? Number(booking.advance_amount) : 0;
+  const advancePaid = scoped.advancePaid;
 
   // A target is the desk saying what the guest hands over; the discount that
   // produces it has to be searched for. Both DB reads the pricing needs are
@@ -769,7 +896,12 @@ async function previewBill(
     lateCheckoutMinutes: booking.late_checkout_minutes ?? null,
     // Set only when a CYCLE guest left before the nights they booked ran out.
     earlyCheckout: earlyCheckoutOf(booking, grossNights),
-    advancePaid: booking.advance_amount != null ? Number(booking.advance_amount) : 0,
+    advancePaid,
+    // advancePaid above is everything already held against this bill; these two
+    // say what it is made of, and which kind of checkout this bill belongs to.
+    advanceOnly: scoped.advanceOnly,
+    roomPaymentsPaid: scoped.roomPaid,
+    settleMode: settle ? scoped.mode : null,
     advanceReceiptNumbers: booking.advance_receipt_numbers || null,
     isGstRegistered: !!booking.is_gst_registered,
     gstin: booking.gstin,
@@ -818,15 +950,17 @@ const FOOD_ITEM_COLUMNS = `
 
 // Delivered, unbilled food the desk added to a stay's room bill (room service or
 // table food alike). Shaped like loadUnbilledTabOrders' rows.
-async function loadStayFoodOrders(request, lodgeId, bookingId) {
+async function loadStayFoodOrders(request, lodgeId, bookingId, roomId = null) {
   const result = await request
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
+    .input('roomId', sql.BigInt, roomId)
     .query(`
       SELECT id, order_number, subtotal, placed_at
       FROM dbo.food_orders
       WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND on_room_bill = 1
-        AND status = 'DELIVERED' AND invoice_id IS NULL
+        AND (@roomId IS NULL OR room_id = @roomId)
+        AND status IN ('READY', 'DELIVERED') AND invoice_id IS NULL
       ORDER BY placed_at ASC
     `);
   return result.recordset.map((row) => ({
@@ -1030,15 +1164,23 @@ async function stampServiceUsages(transaction, invoiceId, usages) {
   `);
 }
 
-async function issueInvoice(lodgeId, userId, bookingId, input) {
+async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null } = {}) {
   const pool = await getPool();
-  const booking = await loadBookingForBilling(lodgeId, bookingId);
+  let booking = await loadBookingForBilling(lodgeId, bookingId);
 
-  if (booking.status !== 'CHECKED_OUT') {
+  // With `settle` the guest is still checked in: the checkout is written inside
+  // the transaction below, together with the bill and the payment, so there is
+  // no state where the guest has left and nothing was collected.
+  let prepared = null;
+  if (settle) {
+    const scoped = await scopeBooking(pool, lodgeId, booking, { ...settle, settle: true });
+    if (scoped.mode !== 'FINAL') {
+      throw new ApiError('Other rooms are still in house — settle this room on its own.', 409);
+    }
+    prepared = await lazyBookings().prepareCheckOut(lodgeId, bookingId, settle.roomId ?? null, settle.checkedOutAt ?? null);
+  } else if (booking.status !== 'CHECKED_OUT') {
     throw new ApiError('This booking must be checked out before it can be billed.', 409);
   }
-
-  const billingSide = booking.is_gst_registered ? input.billingSide || 'GST' : 'NON_GST';
 
   // Whether the overstay charge lands on this document at all is the billing
   // desk's call, taken in the preview and posted back with the rest of the
@@ -1047,7 +1189,6 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
   // lodge that edited its late-fee percentages would silently restate bills
   // issued last month.
   const includeLateCheckout = input.includeLateCheckout !== false;
-  const advancePaid = booking.advance_amount != null ? Number(booking.advance_amount) : 0;
 
   // Resolved once, before anything is written: a body may describe its payment
   // as lines or as the older single method, and everything below wants the one
@@ -1057,6 +1198,19 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
   try {
+    // Reads that must see the checkout just written (and not wait on its locks)
+    // go through the transaction.
+    let db = pool;
+    if (settle) {
+      await lazyBookings().applyCheckOut(transaction, bookingId, prepared, settle.lateCharge);
+      db = { request: () => new sql.Request(transaction) };
+      booking = await loadBookingForBilling(lodgeId, bookingId, db);
+    }
+    const billingSide = booking.is_gst_registered ? input.billingSide || 'GST' : 'NON_GST';
+    const held = await scopeBooking(db, lodgeId, booking, null);
+    const advancePaid = held.advanceOnly;
+    const roomPaid = held.roomPaid;
+
     const existing = await findActiveInvoice(new sql.Request(transaction), bookingId);
     if (existing) {
       throw new ApiError('This booking already has an issued bill. Void it before reissuing.', 409);
@@ -1069,13 +1223,54 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
 
     // Priced by the same code the preview ran, so the document written here is
     // the one the desk agreed to on screen.
-    const bill = await buildStayBill(pool, booking, foodOrders, {
+    const bill = await buildStayBill(db, booking, foodOrders, {
       services,
       includeLateCheckout,
       discountAmount: input.discountAmount ?? 0,
     });
     const side = billingSide === 'GST' ? bill.gst : bill.nonGst;
     const { documentType, ...breakdown } = side;
+
+    // The server's own word on "paid in full" — the screen checks the same sum,
+    // but a bill that closes a stay cannot rest on a client-side check. Money
+    // already held (advance, room payments) comes off; the rest must be exactly
+    // what was collected. Over-collecting is as wrong as under-collecting: the
+    // takings would no longer match the document.
+    const owed = round2(breakdown.totalAmount - advancePaid - roomPaid);
+    const due = Math.max(0, owed);
+    const collected = round2(input.collectedAmount ?? 0);
+    if (input.expectedDue != null && round2(input.expectedDue) !== due) {
+      throw new ApiError(
+        'This bill changed while you were settling it (an order or charge was added). Review the updated balance and try again.',
+        409
+      );
+    }
+    if (collected !== due) {
+      throw new ApiError(
+        collected < due
+          ? `The full balance of ₹${due} must be collected — ₹${round2(due - collected)} is still unpaid.`
+          : `The balance due is ₹${due}; ₹${round2(collected - due)} more than that was entered.`,
+        409
+      );
+    }
+    if (roomPaid > 0 && owed < 0) {
+      throw new ApiError(
+        `The bill is ₹${-owed} lower than what was already collected at room checkout. Reduce the discount.`,
+        409
+      );
+    }
+
+    // Money taken when earlier rooms left: its lines move onto this invoice below.
+    const roomLines =
+      roomPaid > 0
+        ? (
+            await new sql.Request(transaction).input('bookingId', sql.BigInt, bookingId).query(`
+              SELECT pl.method, pl.reference
+              FROM dbo.payment_lines pl JOIN dbo.room_settlements rs ON rs.id = pl.room_settlement_id
+              WHERE rs.booking_id = @bookingId AND rs.invoice_id IS NULL ORDER BY pl.id
+            `)
+          ).recordset
+        : [];
 
     const seriesType = billingSide;
     const seriesResult = await new sql.Request(transaction)
@@ -1114,12 +1309,12 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
       .input('roundOff', sql.Decimal(10, 2), breakdown.roundOff)
       .input('totalAmount', sql.Decimal(10, 2), breakdown.totalAmount)
       .input('advancePaid', sql.Decimal(10, 2), advancePaid)
-      .input('balanceCollected', sql.Decimal(10, 2), input.collectedAmount ?? 0)
+      .input('balanceCollected', sql.Decimal(10, 2), round2(collected + roomPaid))
       // A summary of the lines, not a rival to them: the first tender. Kept so
       // every existing reader — the register, the printed bill, the legacy
       // report path — keeps working untouched.
-      .input('balancePaymentMethod', sql.NVarChar, paymentLines[0]?.method ?? null)
-      .input('balanceReference', sql.NVarChar, paymentLines[0]?.reference ?? null)
+      .input('balancePaymentMethod', sql.NVarChar, (paymentLines[0] ?? roomLines[0])?.method ?? null)
+      .input('balanceReference', sql.NVarChar, (paymentLines[0] ?? roomLines[0])?.reference ?? null)
       .input('foodSubtotal', sql.Decimal(10, 2), breakdown.foodSubtotal)
       .input('foodCgstAmount', sql.Decimal(10, 2), breakdown.foodCgstAmount)
       .input('foodSgstAmount', sql.Decimal(10, 2), breakdown.foodSgstAmount)
@@ -1132,26 +1327,44 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
       // Only kept when there is a discount for it to explain.
       .input('discountReason', sql.NVarChar(100), breakdown.discountAmount > 0 ? input.discountReason ?? null : null)
       .input('createdBy', sql.BigInt, userId ?? null)
+      // A stay entered after the fact is dated the day it ended (settle.invoiceAt);
+      // everything else is dated now, as the column's default would.
+      .input('createdAt', sql.DateTimeOffset, settle?.invoiceAt ?? null)
       .query(`
         INSERT INTO dbo.invoices
           (lodge_id, booking_id, document_type, billing_side, invoice_number, room_subtotal,
            cgst_amount, sgst_amount, food_subtotal, food_cgst_amount, food_sgst_amount,
            service_subtotal, service_cgst_amount, service_sgst_amount,
            late_checkout_charge, discount_amount, discount_percent, discount_reason, round_off, total_amount,
-           advance_paid, balance_collected, balance_payment_method, balance_reference, created_by)
+           advance_paid, balance_collected, balance_payment_method, balance_reference, created_by, created_at)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @bookingId, @documentType, @billingSide, @invoiceNumber, @roomSubtotal,
            @cgstAmount, @sgstAmount, @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
            @serviceSubtotal, @serviceCgstAmount, @serviceSgstAmount,
            @lateCheckoutCharge, @discountAmount, @discountPercent, @discountReason, @roundOff, @totalAmount,
-           @advancePaid, @balanceCollected, @balancePaymentMethod, @balanceReference, @createdBy)
+           @advancePaid, @balanceCollected, @balancePaymentMethod, @balanceReference, @createdBy,
+           COALESCE(SWITCHOFFSET(@createdAt, '+05:30'), SYSDATETIMEOFFSET()))
       `);
 
     const invoiceId = inserted.recordset[0].id;
     await stampServiceUsages(transaction, invoiceId, services);
 
     await insertPaymentLines(transaction, lodgeId, { invoiceId }, paymentLines);
+
+    if (roomPaid > 0) {
+      // The room payments are now part of this document, tender by tender.
+      await new sql.Request(transaction)
+        .input('invoiceId', sql.BigInt, invoiceId)
+        .input('bookingId', sql.BigInt, bookingId)
+        .query(`
+          UPDATE dbo.payment_lines SET invoice_id = @invoiceId, room_settlement_id = NULL
+          WHERE room_settlement_id IN (
+            SELECT id FROM dbo.room_settlements WHERE booking_id = @bookingId AND invoice_id IS NULL);
+          UPDATE dbo.room_settlements SET invoice_id = @invoiceId
+          WHERE booking_id = @bookingId AND invoice_id IS NULL;
+        `);
+    }
 
     // Stamping the orders is what stops them being billed twice — a later
     // "close table" or reissue skips anything already carrying an invoice_id.
@@ -1166,6 +1379,102 @@ async function issueInvoice(lodgeId, userId, bookingId, input) {
 
     await transaction.commit();
     return getInvoice(lodgeId, invoiceId);
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+}
+
+// One room of a multi-room booking leaves while others stay: it pays for itself
+// now, and checks out in the same transaction. No invoice yet — the booking's
+// single invoice is written when its last room leaves, and deducts this payment.
+// If this turns out to be the last room, that bill is written instead.
+async function settleRoomCheckout(lodgeId, userId, bookingId, roomId, input) {
+  const lateCharge = round2(Number(input.lateCharge) || 0);
+  const pool = await getPool();
+  const first = await scopeBooking(pool, lodgeId, await loadBookingForBilling(lodgeId, bookingId), {
+    settle: true,
+    roomId,
+    lateCharge,
+  });
+  if (first.mode !== 'ROOM') {
+    const invoice = await issueInvoice(lodgeId, userId, bookingId, input, { settle: { roomId, lateCharge } });
+    return { mode: 'FINAL', invoice };
+  }
+
+  const prepared = await lazyBookings().prepareCheckOut(lodgeId, bookingId, roomId);
+  const paymentLines = paymentLinesOf(input, input.collectedAmount ?? 0);
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const db = { request: () => new sql.Request(transaction) };
+    // Priced before the checkout is written, from a copy of the booking made to
+    // look as if the room had left now (see scopeBooking).
+    const scoped = await scopeBooking(db, lodgeId, await loadBookingForBilling(lodgeId, bookingId, db), {
+      settle: true,
+      roomId,
+      lateCharge,
+    });
+    if (scoped.mode !== 'ROOM') {
+      throw new ApiError('The other rooms checked out meanwhile — reopen the bill.', 409);
+    }
+    const booking = scoped.view;
+    const foodOrders = await loadStayFoodOrders(new sql.Request(transaction), lodgeId, bookingId, scoped.roomId);
+    const services = (await loadStayServiceUsages(new sql.Request(transaction), lodgeId, bookingId)).filter(
+      (u) => Number(u.roomId) === Number(scoped.roomId)
+    );
+    const bill = await buildStayBill(db, booking, foodOrders, { services, includeLateCheckout: true, discountAmount: 0 });
+    const side = booking.is_gst_registered && input.billingSide !== 'NON_GST' ? bill.gst : bill.nonGst;
+    const roomTotal = side.totalAmount;
+    const advanceApplied = round2(Math.min(scoped.advancePaid, roomTotal));
+    const due = round2(roomTotal - advanceApplied);
+    const collected = round2(input.collectedAmount ?? 0);
+    if (input.expectedDue != null && round2(input.expectedDue) !== due) {
+      throw new ApiError(
+        'This room’s bill changed while you were settling it (an order or charge was added). Review the updated balance and try again.',
+        409
+      );
+    }
+    if (collected !== due) {
+      throw new ApiError(
+        collected < due
+          ? `The full balance of ₹${due} must be collected — ₹${round2(due - collected)} is still unpaid.`
+          : `The balance due is ₹${due}; ₹${round2(collected - due)} more than that was entered.`,
+        409
+      );
+    }
+
+    const inserted = await new sql.Request(transaction)
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('bookingId', sql.BigInt, bookingId)
+      .input('bookingRoomId', sql.BigInt, scoped.bookingRoomId)
+      .input('roomTotal', sql.Decimal(10, 2), roomTotal)
+      .input('advanceApplied', sql.Decimal(10, 2), advanceApplied)
+      .input('collected', sql.Decimal(10, 2), collected)
+      .input('lateCharge', sql.Decimal(10, 2), lateCharge)
+      .input('createdBy', sql.BigInt, userId ?? null)
+      .query(`
+        INSERT INTO dbo.room_settlements
+          (lodge_id, booking_id, booking_room_id, room_total, advance_applied, collected, late_charge, created_by)
+        OUTPUT inserted.id
+        VALUES (@lodgeId, @bookingId, @bookingRoomId, @roomTotal, @advanceApplied, @collected, @lateCharge, @createdBy)
+      `);
+    const settlementId = inserted.recordset[0].id;
+    await insertPaymentLines(transaction, lodgeId, { roomSettlementId: settlementId }, paymentLines);
+    await lazyBookings().applyCheckOut(transaction, bookingId, prepared, lateCharge);
+
+    await transaction.commit();
+    return {
+      mode: 'ROOM',
+      settlement: {
+        id: settlementId,
+        roomNumber: booking.room_number,
+        roomTotal,
+        advanceApplied,
+        collected,
+      },
+    };
   } catch (err) {
     await transaction.rollback();
     throw err;
@@ -1188,13 +1497,14 @@ async function insertPaymentLines(transaction, lodgeId, parent, lines) {
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('invoiceId', sql.BigInt, parent.invoiceId ?? null)
       .input('receiptId', sql.BigInt, parent.advanceReceiptId ?? null)
+      .input('settlementId', sql.BigInt, parent.roomSettlementId ?? null)
       .input('method', sql.NVarChar, line.method)
       .input('amount', sql.Decimal(10, 2), line.amount)
       .input('reference', sql.NVarChar, line.reference ?? null)
       .query(`
         INSERT INTO dbo.payment_lines
-          (lodge_id, invoice_id, advance_receipt_id, method, amount, reference)
-        VALUES (@lodgeId, @invoiceId, @receiptId, @method, @amount, @reference)
+          (lodge_id, invoice_id, advance_receipt_id, room_settlement_id, method, amount, reference)
+        VALUES (@lodgeId, @invoiceId, @receiptId, @settlementId, @method, @amount, @reference)
       `);
   }
 }
@@ -1798,7 +2108,7 @@ async function countLiveOrdersOnTab(request, lodgeId, tab) {
   const scope = tabScope(request, tab);
   const result = await request.query(`
     SELECT COUNT(*) AS n FROM dbo.food_orders o
-    WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') AND o.invoice_id IS NULL ${scope}
+    WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING') AND o.invoice_id IS NULL ${scope}
   `);
   return result.recordset[0].n;
 }
@@ -1838,8 +2148,7 @@ async function listOpenFoodTabs(lodgeId) {
         FROM dbo.bookings b
         WHERE o.source = 'ROOM' AND b.id = o.booking_id
       ) rb
-      WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
-        AND o.ready_to_bill_at IS NOT NULL
+      WHERE o.lodge_id = @lodgeId AND o.status IN ('READY', 'DELIVERED') AND o.invoice_id IS NULL
         AND ${NOT_ON_STAY_BILL}
         -- booking_id is grouped for room orders so two stays in the same room —
         -- one already billed with an unpaid order, one just checked in and
@@ -1999,8 +2308,7 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
     FROM dbo.food_orders o
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
-    WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
-      AND o.ready_to_bill_at IS NOT NULL
+    WHERE o.lodge_id = @lodgeId AND o.status IN ('READY', 'DELIVERED') AND o.invoice_id IS NULL
       AND ${NOT_ON_STAY_BILL}
       ${scope}
     ORDER BY o.placed_at ASC
@@ -2354,8 +2662,8 @@ async function addTabToRoomBill(lodgeId, tab, bookingId) {
     UPDATE o SET o.booking_id = @stayId, o.on_room_bill = 1,
                  o.ready_to_bill_at = COALESCE(o.ready_to_bill_at, SYSDATETIMEOFFSET())
     FROM dbo.food_orders o
-    WHERE o.lodge_id = @lodgeId AND o.status = 'DELIVERED' AND o.invoice_id IS NULL
-      AND (o.ready_to_bill_at IS NOT NULL OR ${roomStay ? '1 = 1' : '1 = 0'}) AND o.on_room_bill = 0 ${scope}
+    WHERE o.lodge_id = @lodgeId AND o.status IN ('READY', 'DELIVERED') AND o.invoice_id IS NULL
+      AND o.on_room_bill = 0 ${scope}
   `);
   if (result.rowsAffected[0] === 0) {
     throw new ApiError('Nothing to add — no delivered orders are waiting on this tab.', 409);
@@ -2555,7 +2863,252 @@ async function addServicesToRoomBill(lodgeId, usageIds, bookingId) {
   return { added: result.rowsAffected[0] };
 }
 
+// ── Editing a checked-out stay's invoice in place ───────────────────────────
+// An invoice carries no period of its own, so "its period" is the stay on its
+// booking. What bounds a correction is invoice order: the stay may only sit on
+// days strictly after the previous invoice's date and strictly before the next
+// one's (invoices 34/35/36 issued 12/13/15 Nov → booking 35 may use 13 and 14).
+// Neighbours are the other ISSUED stay invoices of the same lodge and series,
+// ordered by id (== number order: numbers are allocated as rows are inserted).
+// VOID rows and food-only bills (no booking) are not neighbours.
+function plusDays(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// The day a stay ended, as an IST date, for an invoice aliased p: the latest
+// departure of its rooms, else the day the invoice was cut. A past entry is billed
+// today but its stay ended earlier, so the invoice date alone would misplace it.
+const STAY_END_SQL = `COALESCE(
+  (SELECT CAST(SWITCHOFFSET(MAX(r.actual_check_out_at), '+05:30') AS DATE)
+     FROM dbo.booking_rooms r WHERE r.booking_id = p.booking_id),
+  CAST(SWITCHOFFSET(p.created_at, '+05:30') AS DATE))`;
+
+async function getInvoiceEditWindow(lodgeId, bookingId, db = null) {
+  const pool = db ?? (await getPool());
+  const row = (
+    await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('bookingId', sql.BigInt, bookingId)
+      .query(`
+        SELECT cur.id, cur.invoice_number,
+               prv.invoice_number AS prev_number, prv.stay_end AS prev_date,
+               nxt.invoice_number AS next_number, nxt.stay_end AS next_date
+        FROM dbo.invoices cur
+        OUTER APPLY (SELECT TOP 1 p.invoice_number, ${STAY_END_SQL} AS stay_end FROM dbo.invoices p
+                     WHERE p.lodge_id = cur.lodge_id AND p.billing_side = cur.billing_side
+                       AND p.status = 'ISSUED' AND p.booking_id IS NOT NULL AND p.id < cur.id
+                     ORDER BY p.id DESC) prv
+        OUTER APPLY (SELECT TOP 1 p.invoice_number, ${STAY_END_SQL} AS stay_end FROM dbo.invoices p
+                     WHERE p.lodge_id = cur.lodge_id AND p.billing_side = cur.billing_side
+                       AND p.status = 'ISSUED' AND p.booking_id IS NOT NULL AND p.id > cur.id
+                     ORDER BY p.id ASC) nxt
+        WHERE cur.lodge_id = @lodgeId AND cur.booking_id = @bookingId AND cur.status = 'ISSUED'
+      `)
+  ).recordset[0];
+  if (!row) return null;
+  return {
+    invoiceId: Number(row.id),
+    invoiceNumber: row.invoice_number,
+    prevNumber: row.prev_number ?? null,
+    nextNumber: row.next_number ?? null,
+    // null = open on that side.
+    minDate: row.prev_date ? plusDays(isoDate(row.prev_date), 1) : null,
+    maxDate: row.next_date ? plusDays(isoDate(row.next_date), -1) : null,
+  };
+}
+
+// Where a forgotten stay may go: after the last issued stay invoice of the series
+// it will be billed in, up to today. minDate null = no invoice yet, so no limit.
+async function getPastBookingWindow(lodgeId, billingSide, db = null) {
+  const pool = db ?? (await getPool());
+  const row = (
+    await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('side', sql.NVarChar, billingSide)
+      .query(`
+        SELECT TOP 1 p.invoice_number, ${STAY_END_SQL} AS stay_end
+        FROM dbo.invoices p
+        WHERE p.lodge_id = @lodgeId AND p.billing_side = @side
+          AND p.status = 'ISSUED' AND p.booking_id IS NOT NULL
+        ORDER BY p.id DESC
+      `)
+  ).recordset[0];
+  const lastStayEnd = row ? isoDate(row.stay_end) : null;
+  return {
+    billingSide,
+    lastNumber: row?.invoice_number ?? null,
+    lastStayEnd,
+    minDate: lastStayEnd ? plusDays(lastStayEnd, 1) : null,
+  };
+}
+
+// Pure: the message when a past stay ends inside already-invoiced days, else null.
+function pastWindowViolation(win, dates) {
+  if (!win.minDate || dates.every((d) => d >= win.minDate)) return null;
+  return `Invoice #${win.lastNumber} was the last one issued (stay ended ${win.lastStayEnd}). A past booking must end on or after ${win.minDate}.`;
+}
+
+// Pure: the message for a date outside the window, or null when it is fine.
+// `current` dates are always accepted — an already-odd stay must stay editable.
+function windowViolation(win, dates, current = []) {
+  for (const d of dates) {
+    if (current.includes(d)) continue;
+    if ((win.minDate && d < win.minDate) || (win.maxDate && d > win.maxDate)) {
+      const range = [win.minDate ?? 'any earlier day', win.maxDate ?? 'any later day'].join(' to ');
+      const between = [win.prevNumber && `#${win.prevNumber}`, win.nextNumber && `#${win.nextNumber}`]
+        .filter(Boolean)
+        .join(' and ');
+      return `Invoice #${win.invoiceNumber} can only cover ${range}${between ? ` — it sits next to invoice ${between}` : ''}.`;
+    }
+  }
+  return null;
+}
+
+// Re-prices the booking's ISSUED invoice after its stay was changed, inside the
+// caller's open transaction (the booking rows are already updated). The number,
+// date and side never change. Money never moves silently: more to pay needs
+// payment lines for exactly the difference, less needs the refund to be
+// acknowledged, and the lines on the invoice are trimmed to match.
+async function reviseInvoice(
+  transaction,
+  lodgeId,
+  userId,
+  bookingId,
+  { reason, paymentLines = [], paymentMethod = null, paymentReference = null, refundAcknowledged = false }
+) {
+  const why = String(reason ?? '').trim();
+  if (!why) throw new ApiError('Enter a reason for changing this invoice.', 400);
+  if (why.length > 200) throw new ApiError('The reason is too long — keep it under 200 characters.', 400);
+
+  const tx = () => new sql.Request(transaction);
+  const db = { request: tx };
+  const old = (
+    await tx()
+      .input('bookingId', sql.BigInt, bookingId)
+      .query("SELECT * FROM dbo.invoices WITH (UPDLOCK, HOLDLOCK) WHERE booking_id = @bookingId AND status = 'ISSUED'")
+  ).recordset[0];
+  if (!old) throw new ApiError('This booking has no issued invoice to update.', 409);
+
+  const booking = await loadBookingForBilling(lodgeId, bookingId, db);
+  const foodOrders = (
+    await tx()
+      .input('invoiceId', sql.BigInt, old.id)
+      .query('SELECT id, order_number, subtotal, placed_at FROM dbo.food_orders WHERE invoice_id = @invoiceId')
+  ).recordset.map((r) => ({ id: r.id, orderNumber: r.order_number, subtotal: Number(r.subtotal), placedAt: r.placed_at }));
+  const services = (
+    await tx()
+      .input('invoiceId', sql.BigInt, old.id)
+      .query(`SELECT ${SERVICE_COLUMNS} FROM dbo.service_usages WHERE invoice_id = @invoiceId`)
+  ).recordset.map(mapServiceUsage);
+
+  const bill = await buildStayBill(db, booking, foodOrders, {
+    services,
+    includeLateCheckout: Number(old.late_checkout_charge) > 0,
+    discountAmount: Number(old.discount_amount) || 0,
+  });
+  const { documentType, ...b } = old.billing_side === 'GST' && bill.gst ? bill.gst : bill.nonGst;
+
+  const paid = round2(Number(old.balance_collected));
+  const newDue = Math.max(0, round2(b.totalAmount - Number(old.advance_paid)));
+  const extra = Math.max(0, round2(newDue - paid));
+  const refund = Math.max(0, round2(paid - newDue));
+  // One method given and no split: it covers whatever the extra turns out to be,
+  // which the screen cannot know before the bill is re-priced.
+  const given0 = paymentLines.length === 0 && paymentMethod && extra > 0
+    ? [{ method: paymentMethod, amount: extra, reference: paymentReference }]
+    : paymentLines;
+  const lines = given0.map((l) => ({ method: l.method, amount: Number(l.amount), reference: l.reference ?? null }));
+  const given = round2(lines.reduce((s, l) => s + l.amount, 0));
+  if (given !== extra) {
+    throw new ApiError(
+      extra > 0
+        ? `The new bill is ₹${extra} more than was collected. Record exactly ₹${extra} as payment${given ? ` (₹${given} entered)` : ''}.`
+        : `No extra payment is due on this change${given ? ` — remove the ₹${given} entered` : ''}.`,
+      409
+    );
+  }
+  if (refund > 0 && !refundAcknowledged) {
+    throw new ApiError(`The new bill is ₹${refund} less than was collected. Confirm that ₹${refund} is refunded to the guest.`, 409);
+  }
+
+  if (extra > 0) await insertPaymentLines(transaction, lodgeId, { invoiceId: old.id }, lines);
+  // Trim the newest tenders first so the lines still add up to what was kept.
+  let toTrim = refund;
+  if (toTrim > 0) {
+    const existing = (
+      await tx().input('invoiceId', sql.BigInt, old.id).query('SELECT id, amount FROM dbo.payment_lines WHERE invoice_id = @invoiceId ORDER BY id DESC')
+    ).recordset;
+    for (const line of existing) {
+      if (toTrim <= 0) break;
+      const cut = Math.min(toTrim, Number(line.amount));
+      const left = round2(Number(line.amount) - cut);
+      await tx()
+        .input('id', sql.BigInt, line.id)
+        .input('left', sql.Decimal(10, 2), left)
+        .query(left > 0 ? 'UPDATE dbo.payment_lines SET amount = @left WHERE id = @id' : 'DELETE FROM dbo.payment_lines WHERE id = @id');
+      toTrim = round2(toTrim - cut);
+    }
+  }
+
+  const kept = round2(paid + extra - refund);
+  await tx()
+    .input('id', sql.BigInt, old.id)
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('documentType', sql.NVarChar, documentType)
+    .input('roomSubtotal', sql.Decimal(10, 2), b.subtotal)
+    .input('cgstAmount', sql.Decimal(10, 2), b.cgstAmount)
+    .input('sgstAmount', sql.Decimal(10, 2), b.sgstAmount)
+    .input('roundOff', sql.Decimal(10, 2), b.roundOff)
+    .input('totalAmount', sql.Decimal(10, 2), b.totalAmount)
+    .input('balanceCollected', sql.Decimal(10, 2), kept)
+    .input('foodSubtotal', sql.Decimal(10, 2), b.foodSubtotal)
+    .input('foodCgst', sql.Decimal(10, 2), b.foodCgstAmount)
+    .input('foodSgst', sql.Decimal(10, 2), b.foodSgstAmount)
+    .input('serviceSubtotal', sql.Decimal(10, 2), b.serviceSubtotal)
+    .input('serviceCgst', sql.Decimal(10, 2), b.serviceCgstAmount)
+    .input('serviceSgst', sql.Decimal(10, 2), b.serviceSgstAmount)
+    .input('lateCharge', sql.Decimal(10, 2), bill.grossLate)
+    .input('discountAmount', sql.Decimal(10, 2), b.discountAmount)
+    .input('discountPercent', sql.Decimal(5, 2), b.discountPercent)
+    .query(`
+      UPDATE dbo.invoices SET document_type = @documentType, room_subtotal = @roomSubtotal,
+        cgst_amount = @cgstAmount, sgst_amount = @sgstAmount, round_off = @roundOff, total_amount = @totalAmount,
+        balance_collected = @balanceCollected,
+        food_subtotal = @foodSubtotal, food_cgst_amount = @foodCgst, food_sgst_amount = @foodSgst,
+        service_subtotal = @serviceSubtotal, service_cgst_amount = @serviceCgst, service_sgst_amount = @serviceSgst,
+        late_checkout_charge = @lateCharge, discount_amount = @discountAmount, discount_percent = @discountPercent
+      WHERE id = @id AND lodge_id = @lodgeId
+    `);
+
+  const snap = (documentTypeNow, roomSubtotal, totalAmount, balanceCollected) =>
+    JSON.stringify({ documentType: documentTypeNow, roomSubtotal: Number(roomSubtotal), totalAmount: Number(totalAmount), balanceCollected: Number(balanceCollected) });
+  await tx()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('invoiceId', sql.BigInt, old.id)
+    .input('reason', sql.NVarChar(200), why)
+    .input('before', sql.NVarChar(sql.MAX), snap(old.document_type, old.room_subtotal, old.total_amount, old.balance_collected))
+    .input('after', sql.NVarChar(sql.MAX), snap(documentType, b.subtotal, b.totalAmount, kept))
+    .input('extra', sql.Decimal(10, 2), extra)
+    .input('refund', sql.Decimal(10, 2), refund)
+    .input('by', sql.BigInt, userId ?? null)
+    .query(`INSERT INTO dbo.invoice_revisions (lodge_id, invoice_id, reason, before_json, after_json, extra_collected, refund_due, revised_by)
+            VALUES (@lodgeId, @invoiceId, @reason, @before, @after, @extra, @refund, @by)`);
+
+  return { invoiceId: Number(old.id), extra, refund };
+}
+
 module.exports = {
+  getInvoiceEditWindow,
+  getPastBookingWindow,
+  pastWindowViolation,
+  windowViolation,
+  reviseInvoice,
+  settleRoomCheckout,
+  scopeBooking,
   previewServiceBill,
   issueServiceInvoice,
   addServicesToRoomBill,

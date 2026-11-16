@@ -5,6 +5,8 @@ const { logoUpload } = require('../../middleware/logoUpload');
 const { heroImageUpload } = require('../../middleware/heroImageUpload');
 const {
   getMeHandler,
+  getMySettingsHandler,
+  updateMySettingsHandler,
   sendPasswordOtpHandler,
   changePasswordHandler,
   updateMyLodgeHandler,
@@ -45,5 +47,10 @@ router.delete('/lodge/logo', authenticate, requireRole('OWNER'), removeMyLodgeLo
 // room/venue photo rather than a monogram).
 router.put('/lodge/hero-image', authenticate, requireRole('OWNER'), heroImageUpload, updateMyLodgeHeroImageHandler);
 router.delete('/lodge/hero-image', authenticate, requireRole('OWNER'), removeMyLodgeHeroImageHandler);
+
+// Per-property switches (WhatsApp auto/manual), edited from Setup. Owner-only,
+// like the profile edit above; the lodge comes from the login, not the body.
+router.get('/settings', authenticate, requireRole('OWNER'), getMySettingsHandler);
+router.patch('/settings', authenticate, requireRole('OWNER'), updateMySettingsHandler);
 
 module.exports = router;
