@@ -1228,7 +1228,7 @@ class ReportDataTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: _width,
             child: StickyHeaderTable(
               header: _row(
@@ -1288,7 +1288,7 @@ class ReportDataTable extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           for (var i = 0; i < columns.length; i++)
-            SizedBox(
+            TableCol(
               width: columns[i].width,
               child: Padding(
                 padding: EdgeInsets.symmetric(

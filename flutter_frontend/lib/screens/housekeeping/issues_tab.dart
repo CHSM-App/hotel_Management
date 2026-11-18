@@ -258,7 +258,7 @@ class _IssuesTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -268,8 +268,8 @@ class _IssuesTable extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      const SizedBox(width: 240, child: HkTableHeaderCell('Problem / item')),
-                      for (final c in columns) SizedBox(width: c.width, child: HkTableHeaderCell(c.label)),
+                      const TableCol(width: 240, child: HkTableHeaderCell('Problem / item')),
+                      for (final c in columns) TableCol(width: c.width, child: HkTableHeaderCell(c.label)),
                       const SizedBox(width: _actionsWidth, child: HkTableHeaderCell('Action')),
                     ],
                   ),
@@ -299,7 +299,7 @@ class _IssueTableRow extends StatelessWidget {
     final tone = issue.closedAt != null ? AppTheme.checkedIn : (issue.kind == 'ISSUE' ? AppTheme.muted : AppTheme.edit);
     final when = issue.closedAt != null ? dayLabel(issue.closedAt!) : '${ago(issue.reportedAt, DateTime.now())} ago';
 
-    Widget cell(double width, Widget child) => SizedBox(width: width, child: Padding(padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10), child: child));
+    Widget cell(double width, Widget child) => TableCol(width: width, child: Padding(padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10), child: child));
     Widget text(String? s) => Text(s == null || s.isEmpty ? '—' : s, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: s == null || s.isEmpty ? AppTheme.muted : AppTheme.text, fontSize: 12.5));
 
     return Container(

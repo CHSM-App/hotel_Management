@@ -22,16 +22,25 @@ class BillingUsecase {
     bool includeLateCheckout = true,
     num discountAmount = 0,
     String? discountReason,
+    BillSettle? settle,
   }) => repository.preview(
     bookingId,
     includeLateCheckout: includeLateCheckout,
     discountAmount: discountAmount,
     discountReason: discountReason,
+    settle: settle,
   );
 
   /// Cut the bill.
   Future<Invoice> issue(int bookingId, Map<String, dynamic> body) =>
       repository.issue(bookingId, body);
+
+  /// Check the guest out and cut the bill, together.
+  Future<SettleResult> settle(
+    int bookingId,
+    Map<String, dynamic> body, {
+    int? roomId,
+  }) => repository.settle(bookingId, body, roomId: roomId);
 
   /// Tables, rooms, and takeaways holding delivered food nobody has paid for.
   Future<List<FoodTab>> foodTabs() => repository.foodTabs();

@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { authenticate, requirePermission, requireCapability } = require('../../middleware/authenticate');
 const { billShareUpload } = require('../../middleware/billShareUpload');
+const { idempotent } = require('../../middleware/idempotency');
 const { receiptShareUpload } = require('../../middleware/receiptShareUpload');
 const {
   listBillableBookingsHandler,
@@ -53,8 +54,8 @@ router.get('/event-queue', authenticate, requireCapability('hasEvents'), staff, 
 router.get('/bookings/:bookingId/preview', authenticate, staff, previewBillHandler);
 router.post('/bookings/:bookingId/invoice', authenticate, staff, issueInvoiceHandler);
 // Check out and pay in one step — the preview takes ?settle=1 for the same.
-router.post('/bookings/:bookingId/settle-checkout', authenticate, staff, settleCheckoutHandler);
-router.post('/bookings/:bookingId/rooms/:roomId/settle-checkout', authenticate, staff, settleCheckoutHandler);
+router.post('/bookings/:bookingId/settle-checkout', authenticate, staff, idempotent, settleCheckoutHandler);
+router.post('/bookings/:bookingId/rooms/:roomId/settle-checkout', authenticate, staff, idempotent, settleCheckoutHandler);
 
 // Functions. The same two documents a stay gets — the final bill and the
 // advance receipt — against an event booking. Behind billing.manage like the
@@ -87,7 +88,7 @@ router.post('/services/add-to-room', authenticate, servicesEnabled, staff, addSe
 // was paid), not from a stay that already exists: a GET with the figures in the
 // query string would put money in the access logs for no gain.
 router.post('/bookings/:bookingId/advance-receipt/preview', authenticate, staff, previewAdvanceReceiptHandler);
-router.post('/bookings/:bookingId/advance-receipt', authenticate, staff, issueAdvanceReceiptHandler);
+router.post('/bookings/:bookingId/advance-receipt', authenticate, staff, idempotent, issueAdvanceReceiptHandler);
 router.get('/bookings/:bookingId/advance-receipts', authenticate, staff, listAdvanceReceiptsHandler);
 // Ahead of /:id, or a bare list would be parsed as a receipt id.
 router.get('/advance-receipts', authenticate, staff, listAllAdvanceReceiptsHandler);

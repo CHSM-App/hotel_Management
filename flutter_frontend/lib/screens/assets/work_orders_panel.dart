@@ -10,6 +10,7 @@ import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 import 'asset_icons.dart';
 import 'asset_stat_grid.dart';
+import '../../widgets/adaptive_grid.dart';
 
 // Full option set for the payment-status dropdown — same reasoning as its
 // twin in expense_form_screen.dart / asset_form_sheet.dart.
@@ -184,14 +185,10 @@ class _WorkOrdersPanelState extends ConsumerState<WorkOrdersPanel> {
                       : 'No work order matches this search.',
                 )
               else
-                for (final w in shown)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                    child: _WorkOrderCard(
+                AdaptiveGrid(children: [for (final w in shown) _WorkOrderCard(
                       workOrder: w,
                       onTap: () => showWorkOrderDialog(context, workOrder: w),
-                    ),
-                  ),
+                    )]),
             ],
           ),
         ),
@@ -598,7 +595,7 @@ class _WorkOrderFormScreenState extends ConsumerState<_WorkOrderFormScreen> {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
             child: ListView(
           padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
           children: [

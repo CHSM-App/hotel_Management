@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constant.dart';
 import '../../domain/models/lodge_service.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../presentation/view_models/lodge_services_viewmodel.dart' show LodgeServicesState;
+import '../../widgets/desk_table.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../housekeeping/housekeeping_parts.dart';
@@ -40,6 +43,8 @@ class _ServicesCataloguePanelState extends ConsumerState<ServicesCataloguePanel>
 
     final needle = _search.text.trim().toLowerCase();
     final shown = needle.isEmpty ? state.services : state.services.where((s) => s.name.toLowerCase().contains(needle)).toList();
+
+    if (AppTheme.isDesktop(context)) return _desktop(state, shown);
 
     return Stack(
       children: [
@@ -88,6 +93,98 @@ class _ServicesCataloguePanelState extends ConsumerState<ServicesCataloguePanel>
             child: const Icon(Icons.add_rounded),
           ),
         ),
+      ],
+    );
+  }
+
+  /// Desktop: search and Add service on one toolbar row over a price table.
+  Widget _desktop(LodgeServicesState state, List<LodgeService> shown) {
+    final notifier = ref.read(lodgeServicesViewModelProvider.notifier);
+    final gutter = AppTheme.gutter(context);
+    return TablePageBody(
+      table: shown.isNotEmpty,
+      padding: EdgeInsets.fromLTRB(gutter, AppTheme.s12, gutter, AppTheme.s16),
+      children: [
+        if (state.error != null) ...[
+          _ErrorBanner(state.error!),
+          const SizedBox(height: AppTheme.s12),
+        ],
+        Row(
+          children: [
+            SizedBox(
+              width: 460,
+              child: _SearchField(controller: _search, hint: 'Search services…', onChanged: (_) => setState(() {})),
+            ),
+            const Spacer(),
+            NeuButton(
+              primary: true,
+              onPressed: () => showServiceFormScreen(context),
+              child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.add_rounded, size: 18, color: Colors.white), SizedBox(width: 6), Text('Add service')]),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s12),
+        if (shown.isEmpty)
+          NeuNotice(
+            icon: Icons.spa_outlined,
+            message: state.services.isEmpty
+                ? 'No services yet. Add what the lodge offers — private pool, gaming, spa — with a price per use.'
+                : 'Nothing matches this search.',
+          )
+        else
+          DeskTable(
+            columns: const [
+              DeskColumn('Service', 260),
+              DeskColumn('Price', 110, align: TextAlign.right),
+              DeskColumn('Per', 110),
+              DeskColumn('GST', 90, align: TextAlign.right),
+              DeskColumn('Status', 110),
+            ],
+            actionsWidth: 220,
+            rows: [
+              for (final s in shown)
+                DeskRow(
+                  onTap: () => showServiceFormScreen(context, service: s),
+                  cells: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (s.image != null) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                            child: Image.network(
+                              '$baseUrl/service-images/${s.image}',
+                              width: 28,
+                              height: 28,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const SizedBox(width: 28, height: 28),
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.s8),
+                        ],
+                        Flexible(child: DeskText(s.name, bold: true)),
+                      ],
+                    ),
+                    DeskText(formatPrice(s.price), bold: true),
+                    DeskText(s.unitLabel),
+                    DeskText('${s.gstRatePercent}%'),
+                    StatusPill(label: s.isActive ? 'Active' : 'Inactive', color: s.isActive ? AppTheme.checkedIn : AppTheme.muted),
+                  ],
+                  actions: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CompactActionButton(label: 'Edit', color: AppTheme.edit, onTap: () => showServiceFormScreen(context, service: s)),
+                      const SizedBox(width: 6),
+                      CompactActionButton(
+                        label: s.isActive ? 'Deactivate' : 'Activate',
+                        color: s.isActive ? AppTheme.danger : AppTheme.accent,
+                        onTap: () => notifier.toggleActive(s),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
       ],
     );
   }

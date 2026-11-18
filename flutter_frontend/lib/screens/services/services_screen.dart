@@ -102,8 +102,15 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s8),
-          child: _SubTabs(selected: _view, onSelect: (v) => setState(() => _view = v)),
+          padding: EdgeInsets.fromLTRB(AppTheme.gutter(context), AppTheme.s8, AppTheme.gutter(context), AppTheme.s8),
+          // Desktop: a compact tab strip at the left, not stretched across the window.
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: AppTheme.isDesktop(context) ? 440 : double.infinity),
+              child: _SubTabs(selected: _view, onSelect: (v) => setState(() => _view = v)),
+            ),
+          ),
         ),
         Expanded(child: _view == 'catalogue' ? const ServicesCataloguePanel() : const ServiceUsagePanel()),
       ],

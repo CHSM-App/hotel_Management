@@ -443,6 +443,9 @@ const checkInSchema = z
       .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
       .optional()
       .default(false),
+    // When the guest really arrived, if the desk recorded it offline and is only
+    // now sending it. An ISO instant; validated in the controller (clientTime.js).
+    checkedInAt: z.string().trim().max(40).optional(),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
     idProofNumber: idProofNumberField(),
     guests: z.array(bookingGuestSchema).optional().default([]),

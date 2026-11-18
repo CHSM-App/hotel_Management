@@ -150,7 +150,8 @@ bool Win32Window::Create(const std::wstring& title,
 }
 
 bool Win32Window::Show() {
-  return ShowWindow(window_handle_, SW_SHOWNORMAL);
+  // Opens maximized: the desk app is meant to use the whole screen.
+  return ShowWindow(window_handle_, SW_SHOWMAXIMIZED);
 }
 
 // static
@@ -195,6 +196,15 @@ Win32Window::MessageHandler(HWND hwnd,
       SetWindowPos(hwnd, nullptr, newRectSize->left, newRectSize->top, newWidth,
                    newHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
+      return 0;
+    }
+    case WM_GETMINMAXINFO: {
+      // Smallest usable window: below this the layouts have no room to work.
+      // Scaled for the monitor's DPI.
+      auto info = reinterpret_cast<MINMAXINFO*>(lparam);
+      double scale = GetDpiForWindow(hwnd) / 96.0;
+      info->ptMinTrackSize.x = static_cast<LONG>(960 * scale);
+      info->ptMinTrackSize.y = static_cast<LONG>(600 * scale);
       return 0;
     }
     case WM_SIZE: {

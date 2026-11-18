@@ -233,132 +233,169 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 child: LayoutBuilder(
                   builder: (context, outer) {
                     final wide = outer.maxWidth >= 480;
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: AppTheme.maxContentWidth,
-                        ),
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppTheme.s12,
-                            AppTheme.s4,
-                            AppTheme.s12,
-                            AppTheme.s24,
-                          ),
-                          physics: const AlwaysScrollableScrollPhysics(
-                            parent: BouncingScrollPhysics(),
-                          ),
-                          children: [
-                            _TopBar(booking: booking),
-                            const SizedBox(height: AppTheme.s8),
-                            _StayRoomSection(
-                              booking: booking,
-                              clearingLockout: _clearingLockout,
-                              onClearLockout: _clearFoodLockout,
-                              busy: _busy,
-                              onCheckOutRoom: _checkOutRoom,
-                            ),
-                            const SizedBox(height: AppTheme.s8),
-                            _GuestSection(
-                              booking: booking,
-                              onViewIdProof: () => _viewIdProof(
-                                'ID proof · ${booking.guestName ?? 'Guest'}',
-                              ),
-                              onViewGuestIdProof: (g) =>
-                                  _viewIdProof('ID proof · ${g.name}', guestId: g.id),
-                            ),
-                            const SizedBox(height: AppTheme.s8),
-                            Builder(
-                              builder: (context) {
-                                // Side by side above a phone's own width, the
-                                // way the web panel pairs them — both are
-                                // usually short, and stacked they push the
-                                // money section further down than either
-                                // earns.
-                                final advance = _AdvanceSection(booking: booking);
-                                final vehicles = _VehiclesSection(booking: booking);
-                                return wide
-                                    ? Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(child: advance),
-                                          const SizedBox(width: AppTheme.s12),
-                                          Expanded(child: vehicles),
-                                        ],
-                                      )
-                                    : Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          advance,
-                                          const SizedBox(height: AppTheme.s8),
-                                          vehicles,
-                                        ],
-                                      );
-                              },
-                            ),
-                            const SizedBox(height: AppTheme.s8),
-                            _ChargesSection(booking: booking),
-                            if (booking.foodOrders.isNotEmpty) ...[
-                              const SizedBox(height: AppTheme.s8),
-                              _FoodOrdersSection(
-                                orders: booking.foodOrders,
-                                canAdd:
-                                    !widget.readOnly &&
-                                    booking.invoice == null &&
-                                    booking.status != 'CANCELLED',
-                                onAdded: _load,
-                                bookingId: widget.bookingId,
-                              ),
-                            ],
-                            if (booking.serviceUsages.isNotEmpty) ...[
-                              const SizedBox(height: AppTheme.s8),
-                              _ServicesSection(usages: booking.serviceUsages),
-                            ],
-                            if (booking.invoice != null) ...[
-                              const SizedBox(height: AppTheme.s8),
-                              _BillSection(invoice: booking.invoice!),
-                            ],
-                            if (widget.readOnly && widget.onIssueBill != null) ...[
-                              const SizedBox(height: AppTheme.s12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: NeuButton(
-                                      expand: true,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppTheme.s12,
-                                        vertical: 13,
-                                      ),
-                                      onPressed: () =>
-                                          Navigator.of(context).pop(),
-                                      child: const Text('Close'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: AppTheme.s8),
-                                  Expanded(
-                                    child: NeuButton(
-                                      primary: true,
-                                      expand: true,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppTheme.s12,
-                                        vertical: 13,
-                                      ),
-                                      onPressed: widget.onIssueBill,
-                                      child: const Text('Issue bill'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                            if (!widget.readOnly &&
-                                (booking.status == 'BOOKED' ||
-                                    booking.status == 'CHECKED_IN')) ...[
-                              const SizedBox(height: AppTheme.s12),
-                              _actions(booking),
-                            ],
-                          ],
-                        ),
+                    // A wide window uses all of it: the stay and the guest on
+                    // the left, the money and what was charged on the right,
+                    // so nothing needs scrolling past to reach the bill.
+                    final split = outer.maxWidth >= 1100;
+                    final gutter = AppTheme.gutter(context);
+
+                    final stay = _StayRoomSection(
+                      booking: booking,
+                      clearingLockout: _clearingLockout,
+                      onClearLockout: _clearFoodLockout,
+                      busy: _busy,
+                      onCheckOutRoom: _checkOutRoom,
+                    );
+                    final guest = _GuestSection(
+                      booking: booking,
+                      onViewIdProof: () => _viewIdProof(
+                        'ID proof · ${booking.guestName ?? 'Guest'}',
                       ),
+                      onViewGuestIdProof: (g) =>
+                          _viewIdProof('ID proof · ${g.name}', guestId: g.id),
+                    );
+                    final advance = _AdvanceSection(booking: booking);
+                    final vehicles = _VehiclesSection(booking: booking);
+                    final charges = _ChargesSection(booking: booking);
+                    final food = booking.foodOrders.isEmpty
+                        ? null
+                        : _FoodOrdersSection(
+                            orders: booking.foodOrders,
+                            canAdd:
+                                !widget.readOnly &&
+                                booking.invoice == null &&
+                                booking.status != 'CANCELLED',
+                            onAdded: _load,
+                            bookingId: widget.bookingId,
+                          );
+                    final services = booking.serviceUsages.isEmpty
+                        ? null
+                        : _ServicesSection(usages: booking.serviceUsages);
+                    final bill = booking.invoice == null
+                        ? null
+                        : _BillSection(invoice: booking.invoice!);
+
+                    const gap = SizedBox(height: AppTheme.s8);
+                    Widget stack(List<Widget?> items) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final w in items.whereType<Widget>()) ...[
+                          w,
+                          if (w != items.whereType<Widget>().last) gap,
+                        ],
+                      ],
+                    );
+
+                    final Widget sections = split
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: stack([stay, guest, vehicles]),
+                              ),
+                              const SizedBox(width: AppTheme.s12),
+                              Expanded(
+                                flex: 2,
+                                child: stack([advance, charges, food, services, bill]),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              stay,
+                              gap,
+                              guest,
+                              gap,
+                              // Side by side above a phone's own width, the
+                              // way the web panel pairs them — both are
+                              // usually short, and stacked they push the
+                              // money section further down than either
+                              // earns.
+                              wide
+                                  ? Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(child: advance),
+                                        const SizedBox(width: AppTheme.s12),
+                                        Expanded(child: vehicles),
+                                      ],
+                                    )
+                                  : Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [advance, gap, vehicles],
+                                    ),
+                              gap,
+                              charges,
+                              if (food != null) ...[gap, food],
+                              if (services != null) ...[gap, services],
+                              if (bill != null) ...[gap, bill],
+                            ],
+                          );
+
+                    return ListView(
+                      padding: EdgeInsets.fromLTRB(
+                        split ? gutter : AppTheme.s12,
+                        AppTheme.s4,
+                        split ? gutter : AppTheme.s12,
+                        AppTheme.s24,
+                      ),
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      children: [
+                        if (booking.offlinePending) const _NotSyncedNote(),
+                        _TopBar(booking: booking),
+                        const SizedBox(height: AppTheme.s8),
+                        sections,
+                        if (widget.readOnly && widget.onIssueBill != null) ...[
+                          const SizedBox(height: AppTheme.s12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: NeuButton(
+                                  expand: true,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppTheme.s12,
+                                    vertical: 13,
+                                  ),
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: const Text('Close'),
+                                ),
+                              ),
+                              const SizedBox(width: AppTheme.s8),
+                              Expanded(
+                                child: NeuButton(
+                                  primary: true,
+                                  expand: true,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppTheme.s12,
+                                    vertical: 13,
+                                  ),
+                                  onPressed: widget.onIssueBill,
+                                  child: const Text('Issue bill'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (!widget.readOnly &&
+                            (booking.status == 'BOOKED' ||
+                                booking.status == 'CHECKED_IN')) ...[
+                          const SizedBox(height: AppTheme.s12),
+                          // Buttons keep a sensible width on a wide window.
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: split ? 640 : double.infinity,
+                              ),
+                              child: _actions(booking),
+                            ),
+                          ),
+                        ],
+                      ],
                     );
                   },
                 ),
@@ -502,6 +539,37 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 }
 
 // ── The top bar: who, their status, and the way out ─────────────────────────
+
+/// What the desk is told when the stay it is looking at has changes that only
+/// exist on this device so far.
+class _NotSyncedNote extends StatelessWidget {
+  const _NotSyncedNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12, vertical: AppTheme.s8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFB45309).withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: const Color(0xFFB45309).withValues(alpha: 0.35)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.cloud_upload_outlined, size: 18, color: Color(0xFFB45309)),
+          SizedBox(width: AppTheme.s8),
+          Expanded(
+            child: Text(
+              'Saved on this device. It will reach the server when the connection is back.',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFB45309)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _TopBar extends StatelessWidget {
   final Booking booking;

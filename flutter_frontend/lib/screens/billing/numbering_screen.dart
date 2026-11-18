@@ -57,7 +57,7 @@ class _NumberingScreenState extends ConsumerState<NumberingScreen> {
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+        constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
         child: RefreshIndicator(
           onRefresh: _load,
           color: AppTheme.accent,

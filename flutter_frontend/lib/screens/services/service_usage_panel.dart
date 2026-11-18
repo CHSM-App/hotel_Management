@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/lodge_service.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../presentation/view_models/lodge_services_viewmodel.dart' show LodgeServicesState;
+import '../../widgets/desk_table.dart';
 import '../../widgets/format.dart';
+import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
 import '../housekeeping/housekeeping_parts.dart';
 import '../theme.dart';
@@ -84,6 +87,8 @@ class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
     };
     final shown = _filter == 'ALL' ? searched : searched.where((u) => u.status == _filter).toList();
 
+    if (AppTheme.isDesktop(context)) return _desktop(state, shown);
+
     return Stack(
       children: [
         RefreshIndicator(
@@ -146,6 +151,94 @@ class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
       ],
     );
   }
+
+  /// Desktop: a toolbar (search, filter, Start service) over a table whose
+  /// rows carry View / Complete / Cancel on the right — no full-width cards
+  /// and no floating button.
+  Widget _desktop(LodgeServicesState state, List<ServiceUsage> shown) {
+    final notifier = ref.read(lodgeServicesViewModelProvider.notifier);
+    final gutter = AppTheme.gutter(context);
+    return TablePageBody(
+      table: shown.isNotEmpty,
+      padding: EdgeInsets.fromLTRB(gutter, AppTheme.s12, gutter, AppTheme.s16),
+      children: [
+        if (state.error != null) ...[
+          _ErrorBanner(state.error!),
+          const SizedBox(height: AppTheme.s12),
+        ],
+        Row(
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: SizedBox(
+                width: 460,
+                child: _SearchField(controller: _search, hint: 'Search by service, guest or room…', onChanged: (_) => setState(() {})),
+              ),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            _FilterButton(on: _filter != 'ALL', open: false, onTap: _openFilter),
+            const Spacer(),
+            NeuButton(
+              primary: true,
+              onPressed: () => showStartUsageScreen(context),
+              child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.add_rounded, size: 18, color: Colors.white), SizedBox(width: 6), Text('Start service')]),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s12),
+        if (shown.isEmpty)
+          NeuNotice(icon: Icons.spa_outlined, message: state.usages.isEmpty ? 'Nothing yet.' : 'Nothing matches this search.')
+        else
+          DeskTable(
+            columns: const [
+              DeskColumn('Service', 190),
+              DeskColumn('Units', 150),
+              DeskColumn('Guest', 150),
+              DeskColumn('Room', 80),
+              DeskColumn('Status', 110),
+              DeskColumn('Billing', 110),
+              DeskColumn('Amount', 100, align: TextAlign.right),
+            ],
+            actionsWidth: 250,
+            rows: [
+              for (final u in shown)
+                DeskRow(
+                  onTap: () => showUsageDetailDialog(context, u),
+                  cells: [
+                    DeskText(u.serviceName, bold: true),
+                    DeskText('${u.quantity} ${u.unitLabel}${u.headcount > 1 ? ' × ${u.headcount} people' : ''}'),
+                    DeskText(u.guestName ?? ''),
+                    DeskText(u.roomNumber ?? ''),
+                    StatusPill(label: kServiceUsageStatusLabel[u.status] ?? u.status, color: _toneOf(u)),
+                    DeskText(u.status == 'COMPLETED' ? (u.billed ? 'Billed' : (u.onRoomBill ? 'On room bill' : 'Ready to bill')) : ''),
+                    DeskText(formatPrice(u.lineTotal), bold: true),
+                  ],
+                  actions: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CompactActionButton(label: 'View', color: AppTheme.edit, onTap: () => showUsageDetailDialog(context, u)),
+                      if (u.status == 'IN_USE') ...[
+                        const SizedBox(width: 6),
+                        CompactActionButton(label: 'Complete', color: AppTheme.accent, primary: true, onTap: () => notifier.completeUsage(u.id)),
+                      ],
+                      if (!u.billed && u.status != 'CANCELLED') ...[
+                        const SizedBox(width: 6),
+                        CompactActionButton(label: 'Cancel', color: AppTheme.danger, onTap: () => notifier.cancelUsage(u.id)),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Color _toneOf(ServiceUsage u) => switch (u.status) {
+    'IN_USE' => AppTheme.edit,
+    'CANCELLED' => AppTheme.danger,
+    _ => u.billed ? AppTheme.muted : AppTheme.checkedIn,
+  };
 }
 
 /// Every field the card itself has no room for — mirrors ServicesPanel.jsx's

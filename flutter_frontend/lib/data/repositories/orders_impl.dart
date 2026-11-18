@@ -4,11 +4,12 @@ import '../../domain/models/room.dart';
 import '../../domain/repository/orders_repo.dart';
 import '../api/api_service.dart';
 
-/// Pure-remote, like the rest.
+/// Remote today.
 ///
-/// A kitchen queue is the least cacheable thing in the app: its whole value is
-/// that it says what is true right now. A cached ticket is a dish nobody is
-/// cooking, or one being cooked twice.
+/// The kitchen queue is deliberately never served from cache: its whole value
+/// is that it says what is true right now, and a cached ticket is a dish nobody
+/// is cooking. Counter orders placed offline queue and reach the kitchen on
+/// sync (offline plan, phase 8).
 class OrdersImpl implements OrdersRepository {
   final ApiService api;
 

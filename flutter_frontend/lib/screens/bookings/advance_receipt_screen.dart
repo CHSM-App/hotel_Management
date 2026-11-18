@@ -635,7 +635,7 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+        constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
             AppTheme.s12,

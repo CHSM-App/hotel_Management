@@ -16,6 +16,7 @@ const bookingsService = require('./bookings.service');
 const draftsService = require('./drafts.service');
 const pricingService = require('../pricing/pricing.service');
 const { ApiError } = require('../../middleware/errorHandler');
+const { parseClientTime } = require('./clientTime');
 const { UPLOAD_DIR } = require('../../middleware/idProofUpload');
 
 // One sentence for both doors, because they are the same requirement asked at
@@ -455,10 +456,14 @@ async function checkInHandler(req, res, next) {
       throw new ApiError(IDENTIFY_MSG, 400);
     }
 
+    // The moment the guest really arrived, when the desk recorded it offline.
+    const checkedInAt = parseClientTime(parsed.data.checkedInAt, 'The check-in time');
+
     // /:id/rooms/:roomId/check-in brings one room in; /:id/check-in every room
     // whose date has come.
     const booking = await bookingsService.checkIn(req.user.lodgeId, Number(req.params.id), {
       ...parsed.data,
+      checkedInAt,
       idProofDocument: primaryFile ? primaryFile.filename : null,
       guests: attachGuestFiles(parsed.data.guests, files),
     }, req.user.sub, { roomId: req.params.roomId ? Number(req.params.roomId) : null });

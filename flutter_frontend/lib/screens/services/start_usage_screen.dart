@@ -190,7 +190,7 @@ class _StartUsageScreenState extends ConsumerState<StartUsageScreen> {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
             child: Column(
               children: [
                 Expanded(

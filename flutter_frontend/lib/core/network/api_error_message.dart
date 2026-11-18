@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../offline/offline_interceptor.dart';
+
 /// Turns any caught error into a message safe to show a user.
 ///
 /// Prefers the server's own words when it sent any — "This room is already
@@ -8,6 +10,9 @@ import 'package:dio/dio.dart';
 /// but never surfaces raw exception text (stack traces, type names, file
 /// paths) for anything the backend didn't already sanitize itself.
 String apiErrorMessage(Object e) {
+  if (e is OfflineUnavailable) {
+    return e.reason ?? 'Not available offline. It will work once you are connected.';
+  }
   if (e is DioException) {
     final data = e.response?.data;
     if (data is Map && data['message'] is String) return data['message'];

@@ -874,9 +874,7 @@ class _MaterialFormPageState extends ConsumerState<_MaterialFormPage> {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: AppTheme.maxContentWidth,
-            ),
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(
                 AppTheme.s12,

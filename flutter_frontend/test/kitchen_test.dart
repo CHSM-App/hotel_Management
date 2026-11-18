@@ -61,6 +61,13 @@ class _FakeAuth implements AuthRepository {
 
   @override
   Future<Me> removeMyLodgeLogo() async => throw UnimplementedError();
+
+  @override
+  Future<Me> updateMyLodgeHeroImage(FormData form) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Me> removeMyLodgeHeroImage() async => throw UnimplementedError();
 }
 
 class _FakeOrders implements OrdersRepository {

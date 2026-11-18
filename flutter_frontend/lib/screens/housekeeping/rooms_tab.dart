@@ -466,7 +466,7 @@ class _RoomsTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -476,7 +476,7 @@ class _RoomsTable extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      for (final c in columns) SizedBox(width: c.width, child: HkTableHeaderCell(c.label)),
+                      for (final c in columns) TableCol(width: c.width, child: HkTableHeaderCell(c.label)),
                       const SizedBox(width: _actionsWidth, child: HkTableHeaderCell('Action')),
                     ],
                   ),
@@ -531,7 +531,7 @@ class _RoomTableRow extends StatelessWidget {
     final detail = _detailOf(room, now);
     final notes = [detail, room.openIssues > 0 ? '${room.openIssues} open ${room.openIssues == 1 ? 'issue' : 'issues'}' : ''].where((s) => s.isNotEmpty).join(' · ');
 
-    Widget cell(double width, Widget child) => SizedBox(width: width, child: Padding(padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10), child: child));
+    Widget cell(double width, Widget child) => TableCol(width: width, child: Padding(padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10), child: child));
     Widget text(String s, {Color color = AppTheme.text, FontWeight weight = FontWeight.w400}) =>
         Text(s.isEmpty ? '—' : s, softWrap: true, style: TextStyle(color: s.isEmpty ? AppTheme.muted : color, fontSize: 12.5, fontWeight: weight));
 

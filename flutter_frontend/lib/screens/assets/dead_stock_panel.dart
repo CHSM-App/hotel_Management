@@ -7,6 +7,7 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'asset_detail_screen.dart';
+import '../../widgets/adaptive_grid.dart';
 
 /// Assets > Dead Stock — mirrors the Dead Stock tab in AssetsPanel.jsx:
 /// every retired asset with when it died, why, how it was disposed of, and
@@ -38,16 +39,12 @@ class DeadStockPanel extends ConsumerWidget {
                   'Nothing here yet. Retiring an asset from the Asset Register logs it here with when it died, why, how it was disposed of, and anything recovered.',
             )
           else
-            for (final a in deadStock)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                child: _DeadStockCard(
+            AdaptiveGrid(children: [for (final a in deadStock) _DeadStockCard(
                   asset: a,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => AssetDetailScreen(assetId: a.id)),
                   ),
-                ),
-              ),
+                )]),
         ],
       ),
     );

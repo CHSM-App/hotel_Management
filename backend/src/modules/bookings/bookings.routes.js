@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { authenticate, requirePermission } = require('../../middleware/authenticate');
 const { idProofUpload } = require('../../middleware/idProofUpload');
+const { idempotent } = require('../../middleware/idempotency');
 const {
   listAvailableRoomsHandler,
   listAvailableRoomsForBookingHandler,
@@ -65,12 +66,12 @@ router.get('/:id/rooms/:roomId/late-checkout', authenticate, staff, getLateCheck
 router.get('/:id/id-proof', authenticate, canSeeRegister, getIdProofHandler);
 router.get('/:id/guests/:guestId/id-proof', authenticate, canSeeRegister, getGuestIdProofHandler);
 router.post('/past', authenticate, staff, idProofUpload, createPastBookingHandler);
-router.post('/', authenticate, staff, idProofUpload, createBookingHandler);
+router.post('/', authenticate, staff, idempotent, idProofUpload, createBookingHandler);
 router.patch('/:id', authenticate, staff, idProofUpload, updateBookingHandler);
-router.patch('/:id/check-in', authenticate, staff, idProofUpload, checkInHandler);
+router.patch('/:id/check-in', authenticate, staff, idempotent, idProofUpload, checkInHandler);
 router.patch('/:id/check-out', authenticate, staff, checkOutHandler);
 // One room of a multi-room booking; the plain routes above act on all of them.
-router.patch('/:id/rooms/:roomId/check-in', authenticate, staff, idProofUpload, checkInHandler);
+router.patch('/:id/rooms/:roomId/check-in', authenticate, staff, idempotent, idProofUpload, checkInHandler);
 router.patch('/:id/rooms/:roomId/check-out', authenticate, staff, checkOutHandler);
 router.patch('/:id/cancel', authenticate, staff, cancelBookingHandler);
 router.post('/:id/send-whatsapp', authenticate, staff, sendBookingWhatsAppHandler);

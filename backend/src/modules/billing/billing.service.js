@@ -1398,11 +1398,13 @@ async function settleRoomCheckout(lodgeId, userId, bookingId, roomId, input) {
     lateCharge,
   });
   if (first.mode !== 'ROOM') {
-    const invoice = await issueInvoice(lodgeId, userId, bookingId, input, { settle: { roomId, lateCharge } });
+    const invoice = await issueInvoice(lodgeId, userId, bookingId, input, {
+      settle: { roomId, lateCharge, checkedOutAt: input.checkedOutAt ?? null, invoiceAt: input.invoiceAt ?? null },
+    });
     return { mode: 'FINAL', invoice };
   }
 
-  const prepared = await lazyBookings().prepareCheckOut(lodgeId, bookingId, roomId);
+  const prepared = await lazyBookings().prepareCheckOut(lodgeId, bookingId, roomId, input.checkedOutAt ?? null);
   const paymentLines = paymentLinesOf(input, input.collectedAmount ?? 0);
 
   const transaction = new sql.Transaction(pool);
@@ -3102,6 +3104,7 @@ async function reviseInvoice(
 }
 
 module.exports = {
+  priceStayBill,
   getInvoiceEditWindow,
   getPastBookingWindow,
   pastWindowViolation,

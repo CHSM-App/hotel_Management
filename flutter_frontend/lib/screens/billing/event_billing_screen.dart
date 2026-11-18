@@ -371,7 +371,7 @@ class EventReadyToBillTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -387,7 +387,7 @@ class EventReadyToBillTable extends StatelessWidget {
                 child: Row(
                   children: [
                     for (final c in _columns)
-                      SizedBox(
+                      TableCol(
                         width: c.$2,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -452,7 +452,7 @@ class _EventReadyToBillRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
+          TableCol(
             width: 150,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -471,7 +471,7 @@ class _EventReadyToBillRow extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(
+          TableCol(
             width: 130,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -508,7 +508,7 @@ class _EventReadyToBillRow extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(
+          TableCol(
             width: 90,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -523,7 +523,7 @@ class _EventReadyToBillRow extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(
+          TableCol(
             width: 100,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -578,7 +578,7 @@ class _EventReadyToBillRow extends StatelessWidget {
     Color color = AppTheme.text,
     double fontSize = 12.5,
   }) {
-    return SizedBox(
+    return TableCol(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -656,7 +656,7 @@ class _EventReadyToBillFooter extends StatelessWidget {
         events.fold<num>(0, (sum, e) => sum + f(e));
     final advanceTotal = sumOf((e) => e.advanceAmount);
 
-    Widget cell(double width, String text, {bool strong = false}) => SizedBox(
+    Widget cell(double width, String text, {bool strong = false}) => TableCol(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -685,7 +685,7 @@ class _EventReadyToBillFooter extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
+          TableCol(
             width: 150 + 130 + 90 + 100,
             child: Padding(
               padding: const EdgeInsets.symmetric(

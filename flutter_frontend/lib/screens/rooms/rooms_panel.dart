@@ -10,6 +10,7 @@ import '../theme.dart';
 import 'add_room_page.dart';
 import 'room_form_pieces.dart';
 import 'room_form_sheet.dart';
+import '../../widgets/adaptive_grid.dart';
 
 /// The room grid — same cards the web "Rooms" tab shows, minus the photo
 /// lightbox (a phone opens one photo full-screen just by tapping it).
@@ -60,7 +61,7 @@ class _RoomsPanelState extends ConsumerState<RoomsPanel> {
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+              constraints: BoxConstraints(maxWidth: AppTheme.pageMaxWidth(context)),
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(
                   AppTheme.s16,
@@ -175,11 +176,12 @@ class _RoomsPanelState extends ConsumerState<RoomsPanel> {
                       message: 'Nothing matches that search.',
                     )
                   else
-                    for (final room in rooms)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: AppTheme.s12),
-                        child: _RoomCard(room: room),
-                      ),
+                    AdaptiveGrid(
+                      minTileWidth: 460,
+                      children: [
+                        for (final room in rooms) _RoomCard(room: room),
+                      ],
+                    ),
                 ],
               ),
             ),

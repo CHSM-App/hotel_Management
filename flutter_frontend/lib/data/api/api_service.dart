@@ -74,6 +74,21 @@ class ApiService {
   // ===== SESSION =====
 
   /// Who is signed in, and what this property is.
+  /// A request the app may send again if its reply is lost carries a key, so
+  /// the server can tell a repeat from a new request (see the server's
+  /// middleware/idempotency.js). The same key goes with the copy saved for
+  /// replay, so the two are recognised as one.
+  Options? _keyed(String? key) =>
+      key == null ? null : Options(headers: {'Idempotency-Key': key});
+
+  /// Everything a device needs to keep running with no network: rooms and
+  /// rates, seasons, GST slabs, the check-out policy and the room chart. Read
+  /// by anyone who can take a booking.
+  Future<Map<String, dynamic>> syncBootstrap() async {
+    final res = await _dio.get('/sync/bootstrap');
+    return _map(res.data);
+  }
+
   Future<Me> me() async {
     final res = await _dio.get('/me');
     return Me.fromJson(_map(res.data));
@@ -317,8 +332,8 @@ class ApiService {
   }
 
   /// Take a booking. Multipart, for the reason in the class comment.
-  Future<Booking> createBooking(FormData form) async {
-    final res = await _dio.post('/bookings', data: form);
+  Future<Booking> createBooking(FormData form, {String? idempotencyKey}) async {
+    final res = await _dio.post('/bookings', data: form, options: _keyed(idempotencyKey));
     final body = _map(res.data);
     // The controller answers with the created row directly on this route,
     // rather than the {booking} envelope the read endpoints use.
@@ -328,8 +343,8 @@ class ApiService {
     );
   }
 
-  Future<Booking> checkIn(int id, FormData form) async {
-    final res = await _dio.patch('/bookings/$id/check-in', data: form);
+  Future<Booking> checkIn(int id, FormData form, {String? idempotencyKey}) async {
+    final res = await _dio.patch('/bookings/$id/check-in', data: form, options: _keyed(idempotencyKey));
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
   }
 
@@ -493,11 +508,18 @@ class ApiService {
     bool includeLateCheckout = true,
     num discountAmount = 0,
     String? discountReason,
+    BillSettle? settle,
   }) async {
     final res = await _dio.get(
       '/billing/bookings/$bookingId/preview',
       queryParameters: {
         'includeLateCheckout': includeLateCheckout,
+        // Priced as if the guest left now: the bill that is also their checkout.
+        if (settle != null) ...{
+          'settle': 1,
+          'lateCharge': settle.lateCharge,
+          if (settle.roomId != null) 'roomId': settle.roomId,
+        },
         if (discountAmount > 0) ...{
           'discountAmount': discountAmount,
           'discountReason': (discountReason ?? '').trim(),
@@ -520,6 +542,34 @@ class ApiService {
     final invoice = map['invoice'];
     return Invoice.fromJson(
       invoice is Map<String, dynamic> ? invoice : map,
+    );
+  }
+
+  /// Check the guest out and bill them in one step.
+  ///
+  /// The server refuses the standalone check-out (409 "Check-out now happens
+  /// with the bill"), so this is the only way a stay ends: the booking leaves
+  /// CHECKED_IN only if this whole request succeeds. With [roomId] and other
+  /// rooms staying, only that room pays and leaves — no invoice yet, `mode` is
+  /// 'ROOM'. Otherwise the final invoice is written, `mode` is 'FINAL'.
+  Future<SettleResult> settleCheckout(
+    int bookingId,
+    Map<String, dynamic> body, {
+    int? roomId,
+    String? idempotencyKey,
+  }) async {
+    final res = await _dio.post(
+      roomId == null
+          ? '/billing/bookings/$bookingId/settle-checkout'
+          : '/billing/bookings/$bookingId/rooms/$roomId/settle-checkout',
+      data: body,
+      options: _keyed(idempotencyKey),
+    );
+    final map = _map(res.data);
+    final invoice = map['invoice'];
+    return SettleResult(
+      mode: map['mode']?.toString() ?? 'FINAL',
+      invoice: invoice is Map<String, dynamic> ? Invoice.fromJson(invoice) : null,
     );
   }
 

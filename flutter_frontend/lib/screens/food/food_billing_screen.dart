@@ -62,13 +62,20 @@ class _FoodBillingScreenState extends ConsumerState<FoodBillingScreen> {
       children: [
         if (segments.length > 1)
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppTheme.s16,
+            padding: EdgeInsets.fromLTRB(
+              AppTheme.gutter(context),
               AppTheme.s8,
-              AppTheme.s16,
+              AppTheme.gutter(context),
               0,
             ),
-            child: _TabStrip(segments: segments),
+            // Desktop: a compact strip at the left, not stretched across the window.
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: AppTheme.isDesktop(context) ? 440 : double.infinity),
+                child: _TabStrip(segments: segments),
+              ),
+            ),
           ),
         Expanded(
           child: canOrders

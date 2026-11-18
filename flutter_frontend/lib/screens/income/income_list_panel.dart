@@ -12,6 +12,7 @@ import '../../widgets/neu.dart';
 import '../bookings/id_proof_viewer_screen.dart';
 import '../theme.dart';
 import 'income_form_screen.dart';
+import '../../widgets/adaptive_grid.dart';
 
 /// Income > Income — mirrors the Income tab in IncomePanel.jsx: a search box
 /// and every logged receipt, either as cards or as a spreadsheet-style
@@ -261,11 +262,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                     onDelete: (e) => _confirmDelete(context, ref, e),
                   )
                 else
-                  for (final e in shown)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                      child: _IncomeCard(income: e),
-                    ),
+                  AdaptiveGrid(children: [for (final e in shown) _IncomeCard(income: e)]),
               ],
             ],
           ),
@@ -633,7 +630,7 @@ class _IncomeTableState extends State<_IncomeTable> {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -644,7 +641,7 @@ class _IncomeTableState extends State<_IncomeTable> {
                   child: Row(
                     children: [
                       for (final c in _kIncomeTableColumns)
-                        SizedBox(
+                        TableCol(
                           width: c.width,
                           child: GestureDetector(
                             onTap: () => _toggleSort(c.key),
@@ -722,7 +719,7 @@ class _IncomeTableRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             for (final c in _kIncomeTableColumns)
-              SizedBox(
+              TableCol(
                 width: c.width,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),

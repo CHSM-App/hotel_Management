@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 /// The flat palette: a grey-50 surface with white cards sitting on it.
@@ -9,6 +10,9 @@ import 'package:flutter/material.dart';
 /// a filled variant instead. Named `shadowDark`/`shadowLight` are kept as
 /// aliases so call sites built against the old neumorphic tokens still
 /// resolve to the right flat colours without per-screen edits.
+/// Window-width tiers; see [AppTheme.screenSize].
+enum ScreenSize { mobile, tablet, desktop, large }
+
 class AppTheme {
   // ── Surface ───────────────────────────────────────────────────────────────
   static const Color bg = Color(0xFFF4F6FA);
@@ -106,10 +110,77 @@ class AppTheme {
   static bool isExpanded(BuildContext context) =>
       MediaQuery.sizeOf(context).shortestSide >= bpExpanded;
 
+  // ── Width tiers (layout choices inside a page) ────────────────────────────
+  // mobile <600, tablet 600-1023, desktop 1024-1439, large >=1440. By window
+  // width, so a dragged window re-flows live. [isDesktop] above (800) still
+  // drives control density; this drives column counts and max widths.
+  static const double bpTablet = 600;
+  static const double bpDesktopTier = 1024;
+  static const double bpLarge = 1440;
+
+  static ScreenSize screenSize(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    if (w >= bpLarge) return ScreenSize.large;
+    if (w >= bpDesktopTier) return ScreenSize.desktop;
+    if (w >= bpTablet) return ScreenSize.tablet;
+    return ScreenSize.mobile;
+  }
+
+  /// Per-tier value; a missing tier falls back to the next smaller one.
+  static T pick<T>(BuildContext context, {required T mobile, T? tablet, T? desktop, T? large}) {
+    switch (screenSize(context)) {
+      case ScreenSize.large:
+        return large ?? desktop ?? tablet ?? mobile;
+      case ScreenSize.desktop:
+        return desktop ?? tablet ?? mobile;
+      case ScreenSize.tablet:
+        return tablet ?? mobile;
+      case ScreenSize.mobile:
+        return mobile;
+    }
+  }
+
   /// A phone-width column for anything meant to be read top to bottom (a
   /// form, a detail page) — centered rather than stretched once the surface
   /// is wider than a phone.
   static const double maxContentWidth = 640;
+
+  /// A desktop-sized window — same 800 px cutoff the web dashboard uses for its
+  /// permanent sidebar. By width (not shortest side) so a window dragged short
+  /// but still wide does not fall back to the phone layout. Pages use the full
+  /// width on desktop; see [pageMaxWidth].
+  static const double bpDesktop = 800;
+  static bool isDesktop(BuildContext context) =>
+      MediaQuery.sizeOf(context).width >= bpDesktop;
+
+  /// Side padding of a page: roomier on a wide window.
+  static double gutter(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    return w >= 1280 ? 32 : (w >= bpDesktop ? 24 : 16);
+  }
+
+  /// What a self-capped form/detail page should use instead of
+  /// [maxContentWidth]: the phone column on a phone, the whole window on
+  /// desktop (pages lay their sections out in columns there).
+  static double pageMaxWidth(BuildContext context) =>
+      isDesktop(context) ? double.infinity : maxContentWidth;
+
+  /// Mobile-sized controls (tall fields, fat buttons, roomy cards) take too much
+  /// of a desktop window. The shared widgets pass their padding through this:
+  /// on desktop the vertical part shrinks by [factor], the horizontal stays.
+  static EdgeInsetsGeometry compactPadding(BuildContext context, EdgeInsetsGeometry padding, [double factor = 0.6]) {
+    if (!isDesktop(context)) return padding;
+    final e = padding.resolve(TextDirection.ltr);
+    return EdgeInsets.fromLTRB(e.left, e.top * factor, e.right, e.bottom * factor);
+  }
+
+  /// A form or detail page: the phone column on a phone, a comfortable
+  /// reading width (centered) on desktop — a field stretched across a 1900 px
+  /// window is harder to use, not easier. The maximize view still fills the
+  /// window for the data screens that benefit.
+  static const double formWidthDesktop = 960;
+  static double formMaxWidth(BuildContext context) =>
+      isDesktop(context) ? formWidthDesktop : maxContentWidth;
 
   // ── Radius ────────────────────────────────────────────────────────────────
   /// Inputs and small buttons.
@@ -174,6 +245,24 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      // Desktop builds get the compact density a mouse-driven app wants
+      // (tighter list tiles, buttons, fields); phones are unchanged.
+      visualDensity: VisualDensity.adaptivePlatformDensity,
+      // A pushed page fades up on desktop instead of Android's zoom, which
+      // reads as a phone gesture on a wide window. Phones keep their own.
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: ZoomPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
+          TargetPlatform.macOS: FadeForwardsPageTransitionsBuilder(),
+        },
+      ),
+      // Keyboard focus and mouse hover are visible, as the web's 2px focus
+      // ring and hover wash are.
+      focusColor: accent.withValues(alpha: 0.18),
+      hoverColor: accent.withValues(alpha: 0.06),
       scaffoldBackgroundColor: bg,
       canvasColor: bg,
       // No fontFamily on purpose: the platform default is the face.
@@ -338,4 +427,22 @@ class AccentLineBorder extends ShapeBorder {
 
   @override
   ShapeBorder scale(double t) => this;
+}
+
+/// Motion tokens for the desktop layout (one set, not a duration per widget).
+///
+/// Short: motion that confirms something already happening (hover, focus).
+/// Medium: layout that rearranges (sidebar, maximize view, section change).
+/// Exits are quicker than entrances, and a transition that is interrupted is
+/// replaced, not queued — the animated widgets used here all retarget on
+/// rebuild. With the system's "reduce motion" on, [of] returns zero.
+class AppMotion {
+  static const Duration short = Duration(milliseconds: 120);
+  static const Duration medium = Duration(milliseconds: 200);
+  static const Duration exit = Duration(milliseconds: 140);
+  static const Curve enter = Curves.easeOutCubic;
+  static const Curve leave = Curves.easeInCubic;
+
+  static Duration of(BuildContext context, [Duration d = medium]) =>
+      MediaQuery.disableAnimationsOf(context) ? Duration.zero : d;
 }

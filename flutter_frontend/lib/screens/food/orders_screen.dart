@@ -110,10 +110,10 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           color: AppTheme.accent,
           child: TablePageBody(
             table: state.listView == 'sheet',
-            padding: const EdgeInsets.fromLTRB(
-              AppTheme.s16,
+            padding: EdgeInsets.fromLTRB(
+              AppTheme.gutter(context),
               AppTheme.s8,
-              AppTheme.s16,
+              AppTheme.gutter(context),
               88,
             ),
             children: [
@@ -155,16 +155,13 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           Positioned(
             right: AppTheme.s16,
             bottom: AppTheme.s16,
-            child: FloatingActionButton(
-              backgroundColor: AppTheme.accent,
-              foregroundColor: Colors.white,
+            child: _NewOrderButton(
               onPressed: () async {
                 final placed = await Navigator.of(context).push<bool>(
                   MaterialPageRoute(builder: (_) => const CounterOrderScreen()),
                 );
                 if (placed == true) await vm.loadQueue();
               },
-              child: const Icon(Icons.add_rounded),
             ),
           ),
       ],
@@ -230,25 +227,16 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
             : sorted.where((o) => o.matchesSearch(_queueSearchText)).toList();
 
         return [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _SearchField(
+          _ToolbarRow(search: _SearchField(
                   controller: _queueSearch,
                   hint: 'Order #, room/table, guest, dish…',
                   onChanged: (v) => setState(() => _queueSearchText = v),
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              OrdersViewToggle(
+                ), toggle: OrdersViewToggle(
                 view: state.listView,
                 onChanged: ref
                     .read(ordersViewModelProvider.notifier)
                     .setListView,
-              ),
-            ],
-          ),
+              )),
           const SizedBox(height: AppTheme.s8),
           if (pending > 0)
             Padding(
@@ -342,22 +330,12 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     }
 
     final head = <Widget>[
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: _SearchField(
+      _ToolbarRow(search: _SearchField(
               controller: _historySearch,
               hint: 'Order #, room/table, guest, dish…',
               onChanged: vm.setHistorySearch,
-            ),
-          ),
-          const SizedBox(width: AppTheme.s8),
-          OrdersViewToggle(view: state.listView, onChanged: vm.setListView),
-        ],
-      ),
-      const SizedBox(height: AppTheme.s8),
-      _PeriodChipsRow(
+            ), toggle: OrdersViewToggle(view: state.listView, onChanged: vm.setListView),
+        below: _PeriodChipsRow(
         period: state.historyPeriod,
         from: state.historyCustomFrom,
         to: state.historyCustomTo,
@@ -380,6 +358,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
             await vm.setHistoryCustomRange(range.start, range.end);
           }
         },
+      ),
       ),
       const SizedBox(height: AppTheme.s12),
     ];
@@ -494,20 +473,11 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         // right for whichever one is actually showing nothing.
         final onQueueTab = state.tab == OrdersTab.queue;
         final head = <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _SearchField(
+          _ToolbarRow(search: _SearchField(
                   controller: _historySearch,
                   hint: 'Order #, room/table, guest, dish…',
                   onChanged: vm.setHistorySearch,
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              OrdersViewToggle(view: state.listView, onChanged: vm.setListView),
-            ],
-          ),
+                ), toggle: OrdersViewToggle(view: state.listView, onChanged: vm.setListView)),
           const SizedBox(height: AppTheme.s12),
         ];
 
@@ -579,6 +549,81 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           ),
         ];
       },
+    );
+  }
+}
+
+/// Search + list-view toggle. Phone: search fills the row. Desktop: search at a
+/// readable 460 px with the toggle beside it, not pinned to the far edge.
+class _ToolbarRow extends StatelessWidget {
+  final Widget search;
+  final Widget toggle;
+
+  /// Period chips (History). Desktop: same row as the search, after the
+  /// toggle. Phone: on their own row underneath, as before.
+  final Widget? below;
+  const _ToolbarRow({required this.search, required this.toggle, this.below});
+
+  @override
+  Widget build(BuildContext context) {
+    final desktop = AppTheme.isDesktop(context);
+    if (desktop) {
+      // Flexible: everything sits on one row while it fits, and the chips
+      // (then the toggle) drop to the next line as the window narrows. The
+      // search shrinks first, down to 220 px, before anything wraps.
+      return LayoutBuilder(
+        builder: (context, c) {
+          final searchW = (c.maxWidth - 120).clamp(220.0, 380.0);
+          return Wrap(
+            spacing: AppTheme.s12,
+            runSpacing: AppTheme.s8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(width: searchW, child: search),
+              toggle,
+              if (below != null) below!,
+            ],
+          );
+        },
+      );
+    }
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: search),
+        const SizedBox(width: AppTheme.s8),
+        toggle,
+      ],
+    );
+    if (below == null) return row;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [row, const SizedBox(height: AppTheme.s8), below!],
+    );
+  }
+}
+
+/// New order: a round + on a phone, a labelled button on desktop.
+class _NewOrderButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  const _NewOrderButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!AppTheme.isDesktop(context)) {
+      return FloatingActionButton(
+        backgroundColor: AppTheme.accent,
+        foregroundColor: Colors.white,
+        onPressed: onPressed,
+        child: const Icon(Icons.add_rounded),
+      );
+    }
+    return FloatingActionButton.extended(
+      backgroundColor: AppTheme.accent,
+      foregroundColor: Colors.white,
+      onPressed: onPressed,
+      icon: const Icon(Icons.add_rounded),
+      label: const Text('New order'),
     );
   }
 }
@@ -710,13 +755,19 @@ class _TabRow extends StatelessWidget {
     // The new-order count rides on the Kitchen tab so a cook (or captain)
     // looking at History still sees something has come in.
     final waiting = state.needsAccepting;
-    return PillTabs(
-      selected: state.tab == OrdersTab.queue ? 'queue' : 'history',
-      onSelect: (k) => onSelect(k == 'queue' ? OrdersTab.queue : OrdersTab.history),
-      tabs: [
-        PillTab('queue', 'Kitchen', Icons.soup_kitchen_rounded, count: waiting > 0 ? waiting : null),
-        const PillTab('history', 'History', Icons.history_rounded),
-      ],
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: AppTheme.isDesktop(context) ? 440 : double.infinity),
+        child: PillTabs(
+          selected: state.tab == OrdersTab.queue ? 'queue' : 'history',
+          onSelect: (k) => onSelect(k == 'queue' ? OrdersTab.queue : OrdersTab.history),
+          tabs: [
+            PillTab('queue', 'Kitchen', Icons.soup_kitchen_rounded, count: waiting > 0 ? waiting : null),
+            const PillTab('history', 'History', Icons.history_rounded),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -983,16 +1034,20 @@ class _PeriodChipsRow extends StatelessWidget {
       );
     }
 
+    final chips = [
+      chip('today', 'Today'),
+      chip('month', 'This month'),
+      chip('year', 'This year'),
+      chip('custom', period == 'custom' ? _customLabel : 'Custom'),
+    ];
+    // Desktop: wrap onto a second line when the window is narrow instead of
+    // scrolling sideways.
+    if (AppTheme.isDesktop(context)) {
+      return Wrap(runSpacing: AppTheme.s8, children: chips);
+    }
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          chip('today', 'Today'),
-          chip('month', 'This month'),
-          chip('year', 'This year'),
-          chip('custom', period == 'custom' ? _customLabel : 'Custom'),
-        ],
-      ),
+      child: Row(children: chips),
     );
   }
 }
@@ -2142,7 +2197,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: _totalWidth,
             child: StickyHeaderTable(
               header: _sheetRow(header: true, cells: headerCells),
@@ -2179,7 +2234,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
     // than assuming a fixed final column.
     const totalIndex = 6;
     final labelWidth =
-        _widths.sublist(0, totalIndex).reduce((a, b) => a + b) + _railWidth;
+        _widths.sublist(0, totalIndex).reduce((a, b) => a + b);
     final amountWidth = _widths[totalIndex];
     final trailingWidth = _widths
         .sublist(totalIndex + 1)
@@ -2193,7 +2248,8 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
+          const SizedBox(width: _railWidth),
+          TableCol(
             width: labelWidth,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -2209,7 +2265,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
               ),
             ),
           ),
-          SizedBox(
+          TableCol(
             width: amountWidth,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -2229,7 +2285,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
               ),
             ),
           ),
-          SizedBox(width: trailingWidth),
+          TableCol(width: trailingWidth),
         ],
       ),
     );
@@ -2261,7 +2317,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
           children: [
             Container(width: _railWidth, color: accent ?? Colors.transparent),
             for (var i = 0; i < cells.length; i++)
-              SizedBox(
+              TableCol(
                 width: _widths[i],
                 child: Padding(
                   padding: EdgeInsets.symmetric(
@@ -2342,7 +2398,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
   /// pills, a dish's pill tinted once the kitchen has ticked it ready.
   Widget _dishesExpanded(FoodOrder order, {required bool shaded}) {
     return Container(
-      width: _totalWidth,
+      width: double.infinity,
       color: shaded ? AppTheme.border.withValues(alpha: 0.25) : AppTheme.bg,
       padding: const EdgeInsets.fromLTRB(
         AppTheme.s16 + AppTheme.s8,
@@ -2554,10 +2610,14 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
       textAlign: TextAlign.right,
       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
     );
-    final actionsCell = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: _sheetActionButtons(context, order),
-    );
+    // Desktop: the column is wide, so the buttons sit side by side instead
+    // of one under another (which made every row as tall as its button stack).
+    final actionsCell = AppTheme.isDesktop(context)
+        ? Wrap(spacing: AppTheme.s8, children: _sheetActionButtons(context, order))
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: _sheetActionButtons(context, order),
+          );
 
     if (widget.live) {
       final waited = order.waitingFor(widget.now);

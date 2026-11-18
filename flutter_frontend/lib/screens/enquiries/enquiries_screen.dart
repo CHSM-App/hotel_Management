@@ -651,7 +651,7 @@ class _EnquiryTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -664,7 +664,7 @@ class _EnquiryTable extends StatelessWidget {
                 child: Row(
                   children: [
                     for (final c in _cols)
-                      SizedBox(
+                      TableCol(
                         width: c.width,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
@@ -742,7 +742,7 @@ class _EnquiryTableRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           for (final c in _cols)
-            SizedBox(
+            TableCol(
               width: c.width,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),

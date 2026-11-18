@@ -42,8 +42,13 @@ class IssueBillScreen extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Issue bill',
+            Text(
+              // A guest still checked in leaves on this bill, so say so.
+              state.settle == null
+                  ? 'Issue bill'
+                  : state.settle!.roomId != null
+                  ? 'Settle room & check out'
+                  : 'Bill & check out',
               style: TextStyle(
                 color: AppTheme.heading,
                 fontSize: 16,
@@ -79,9 +84,7 @@ class IssueBillScreen extends ConsumerWidget {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: AppTheme.maxContentWidth,
-            ),
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
             child: preview == null
                 ? Center(
                     child: state.previewing
@@ -749,10 +752,30 @@ class _IssueBar extends ConsumerWidget {
                           ?.lodge
                           .name;
 
+                      final settled = state.settle != null;
                       final invoice = await vm.issue();
-                      // A failure keeps the page open with the reason on it —
-                      // there is nothing to go back to, the bill is not cut.
-                      if (invoice == null) return;
+
+                      // The guest left, so the chart is out of date whatever
+                      // comes next — including a room that left alone.
+                      if (settled &&
+                          ref.read(billingViewModelProvider).lastSettledBookingId !=
+                              null) {
+                        ref.read(bookingViewModelProvider.notifier).loadChart();
+                      }
+
+                      if (invoice == null) {
+                        // One room of several left and the stay carries on:
+                        // paid and gone, no bill yet — it comes with the last.
+                        if (settled &&
+                            ref.read(billingViewModelProvider).lastSettleMode ==
+                                'ROOM') {
+                          vm.close();
+                          navigator.pop();
+                        }
+                        // Otherwise a failure: the page stays open with the
+                        // reason on it — the bill is not cut.
+                        return;
+                      }
 
                       // The bill exists; the desk chooses whether to look at the
                       // receipt now or just get back to the queue.
@@ -861,16 +884,20 @@ class _IssueBar extends ConsumerWidget {
                         color: Colors.white,
                       ),
                     )
-                  : const Row(
+                  : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.receipt_long_rounded,
                           size: 18,
                           color: Colors.white,
                         ),
-                        SizedBox(width: 8),
-                        Text('Issue bill'),
+                        const SizedBox(width: 8),
+                        Text(
+                          state.settle == null
+                              ? 'Issue bill'
+                              : 'Collect & check out',
+                        ),
                       ],
                     ),
             ),

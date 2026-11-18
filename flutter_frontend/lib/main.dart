@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/network/token_provider.dart';
+import 'core/offline/offline_controllers.dart';
+import 'data/db/app_database.dart';
 import 'screens/login_screen.dart';
 import 'screens/shell/dashboard_shell.dart';
 import 'screens/theme.dart';
@@ -15,6 +17,7 @@ final routeObserver = RouteObserver<ModalRoute<void>>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppDatabase.init();
 
   // The session is read off disk before the first frame, and the warmed
   // container is handed to the tree.
@@ -26,6 +29,10 @@ Future<void> main() async {
   // second load and no frame of "signed out" before a signed-in user's shell.
   final container = ProviderContainer();
   await container.read(tokenProvider.notifier).loadSession();
+
+  // Keeps the offline data fresh and sends what was saved offline, for the
+  // life of the app.
+  container.read(offlineControllerProvider);
 
   runApp(
     UncontrolledProviderScope(
@@ -73,6 +80,8 @@ class FrontDeskApp extends StatelessWidget {
 /// even started: not a bug in the chart's own paging logic, just a gesture
 /// Flutter was never told to recognise.
 class _AppScrollBehavior extends MaterialScrollBehavior {
+  // (Scrollbars on desktop come from MaterialScrollBehavior itself.)
+
   @override
   Set<PointerDeviceKind> get dragDevices => {
     PointerDeviceKind.touch,

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/models/draft.dart';
 import '../../domain/models/tape_chart.dart';
 import '../../main.dart';
 import '../../presentation/providers/usecase_provider.dart';
@@ -65,6 +66,103 @@ class _TapeChartState extends ConsumerState<TapeChart>
   /// [_growPast]'s scroll compensation can convert prepended days into
   /// pixels without a `LayoutBuilder` of its own.
   double _tile = 40;
+
+  /// A desktop-sized window (see [build]): the whole month is fitted to the
+  /// width, rows are compact, and a toolbar with the status legend sits above.
+  bool _desktop = false;
+
+  /// Width the nights should fill (desktop) — see [_fillWindow].
+  double _viewportW = 0;
+
+  /// Bookings the desk has parked half-finished — what the toolbar's Drafts
+  /// button lists. Refreshed on open and whenever a pushed page returns.
+  List<BookingDraft> _drafts = const [];
+
+  Future<void> _loadDrafts() async {
+    try {
+      final rows = await ref.read(bookingUsecaseProvider).drafts();
+      if (mounted) setState(() => _drafts = rows);
+    } catch (_) {
+      // Quiet: the button just shows no count.
+    }
+  }
+
+  Future<void> _showDrafts() async {
+    await _loadDrafts();
+    if (!mounted) return;
+    // The dialog is a route too; its close must not snap the chart to today.
+    _suppressSnapToToday = true;
+    final picked = await showDialog<BookingDraft>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: AppTheme.bg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rLarge)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
+          child: Padding(
+            padding: const EdgeInsets.all(AppTheme.s16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Draft bookings',
+                        style: TextStyle(color: AppTheme.heading, fontSize: 17, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.s4),
+                if (_drafts.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: AppTheme.s24),
+                    child: Center(
+                      child: Text('No drafts parked.', style: TextStyle(color: AppTheme.muted)),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _drafts.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, i) {
+                        final d = _drafts[i];
+                        final where = [
+                          if ((d.roomNumber ?? '').isNotEmpty) 'Room ${d.roomNumber}',
+                          if ((d.checkInDate ?? '').isNotEmpty)
+                            '${formatIsoDate(d.checkInDate!)}${(d.checkOutDate ?? '').isNotEmpty ? ' → ${formatIsoDate(d.checkOutDate!)}' : ''}',
+                        ].join(' · ');
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.edit_note_rounded, color: AppTheme.draft),
+                          title: Text(
+                            (d.guestName ?? '').isEmpty ? 'Unnamed guest' : d.guestName!,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text(where.isEmpty ? 'No room or dates yet' : where),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () => Navigator.of(dialogContext).pop(d),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (picked != null && mounted) await _openDraft(context, picked.id);
+  }
 
   /// Set once the chart has auto-scrolled to today on this mount, so a
   /// later rebuild (a search hit, a chip tap, the chart quietly regrowing
@@ -146,6 +244,10 @@ class _TapeChartState extends ConsumerState<TapeChart>
   /// repaint one highlighted chip. Only the chip strip listens now.
   final _activeCategory = ValueNotifier<String?>(null);
 
+  /// First and last night currently on screen (desktop) — the toolbar shows
+  /// it as "start – end" instead of just a month name.
+  final _visibleRange = ValueNotifier<(DateTime, DateTime)?>(null);
+
   /// [BookingState.chartSections] regroups every booking on each read, and
   /// the scroll listener below reads it every frame — so it is memoised per
   /// loaded chart. It also keeps the [ChartRoom] instances stable, which is
@@ -195,7 +297,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
     if (sections.isEmpty) return;
     final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
     if (viewportBox is! RenderBox || !viewportBox.attached) return;
-    final headerHeight = _DateHeaderDelegate.heightFor(sections.length > 1);
+    final headerHeight = _DateHeaderDelegate.heightFor(sections.length > 1, datesPinned: !_desktop);
     final viewportHeight = viewportBox.size.height;
     // The active section is whichever band actually occupies the most of
     // the visible area below the pinned header right now — not just the
@@ -289,6 +391,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
     // target landing partly under (or with a gap below) the pinned header.
     final headerHeight = _DateHeaderDelegate.heightFor(
       _sectionsOf(ref.read(bookingViewModelProvider)).length > 1,
+      datesPinned: !_desktop,
     );
     final rawTarget = _vScroll.offset + sectionTop - headerHeight;
     final target = rawTarget.clamp(
@@ -339,6 +442,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
     _vScroll.addListener(_updateActiveCategoryFromScroll);
     _snapToToday();
     _loadNotReady();
+    _loadDrafts();
     // A room cleaned upstairs turns green here without a refresh — mirrors
     // the web chart's own 30s poll.
     _hkTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadNotReady());
@@ -386,7 +490,10 @@ class _TapeChartState extends ConsumerState<TapeChart>
       _suppressSnapToToday = false;
       return;
     }
-    if (mounted) setState(_snapToToday);
+    if (mounted) {
+      _loadDrafts();
+      setState(_snapToToday);
+    }
   }
 
   @override
@@ -431,6 +538,23 @@ class _TapeChartState extends ConsumerState<TapeChart>
 
   static const _growWithinPx = 90.0;
 
+  /// With small square boxes a month no longer reaches across a wide window,
+  /// so the loaded range is extended (once per shortfall) until the nights
+  /// fill it and then some — otherwise the grid would stop short and leave an
+  /// empty strip, with nothing to scroll.
+  void _fillWindow(int days, double tile) {
+    if (_growingFuture || _viewportW <= 0) return;
+    if (days * tile >= _viewportW + 4 * tile) return;
+    _growingFuture = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _growingFuture = false;
+        return;
+      }
+      ref.read(bookingViewModelProvider.notifier).growFuture().whenComplete(() => _growingFuture = false);
+    });
+  }
+
   void _handleNearEdge(ScrollMetrics metrics, bool towardEnd) {
     if (_jumpingToToday) return;
     if (towardEnd) {
@@ -472,6 +596,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
     _vScroll.removeListener(_updateActiveCategoryFromScroll);
     _vScroll.dispose();
     _activeCategory.dispose();
+    _visibleRange.dispose();
     _hSync.dispose();
     super.dispose();
   }
@@ -489,9 +614,19 @@ class _TapeChartState extends ConsumerState<TapeChart>
         // The room cell needs room for two lines (number + floor), so the
         // row height stays as before — the tile matches it to come out
         // square, rather than the row being squeezed down to the tile.
-        final rowHeight = wide ? 41.6 : 32.0;
+        // A desktop window fits the whole month across the screen, the way the
+        // web chart does, with compact rows — no sideways scrolling to see a
+        // month, and every category on screen at once.
+        final desktop = constraints.maxWidth >= 1100;
+        _desktop = desktop;
+        final rowHeight = desktop ? 30.0 : (wide ? 41.6 : 32.0);
+        final roomCol = desktop ? 112.0 : (wide ? 96.0 : 44.0);
+        // Square boxes (width = row height), small enough that a wide window
+        // shows as many nights as possible; the rest scrolls sideways, with the
+        // scrollbar along the bottom of the chart.
         final tile = rowHeight;
-        final roomCol = wide ? 96.0 : 44.0;
+        // What the date strip has to span for the grid to fill the window.
+        _viewportW = constraints.maxWidth - roomCol - 36;
         _tile = tile;
 
         return _buildBody(state, dates, tile, roomCol, rowHeight);
@@ -558,6 +693,8 @@ class _TapeChartState extends ConsumerState<TapeChart>
       }
     }
 
+    if (_desktop) _fillWindow(dates.length, tile);
+
     final hitIds = state.chartSearchHits.map((b) => b.id).toSet();
     final activeHitId = state.chartActiveHit?.id;
 
@@ -585,7 +722,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
       if (mounted) _updateActiveCategoryFromScroll();
     });
 
-    return RefreshIndicator(
+    final chart = RefreshIndicator(
       onRefresh: () => ref.read(bookingViewModelProvider.notifier).loadChart(),
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
@@ -624,6 +761,8 @@ class _TapeChartState extends ConsumerState<TapeChart>
                 tile: tile,
                 roomCol: roomCol,
                 hSync: _hSync,
+                desktop: _desktop,
+                visibleRange: _desktop ? _visibleRange : null,
               ),
             ),
             SliverPadding(
@@ -631,7 +770,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
               // chart would shrink the header and legend too and still leave
               // the last card's own scroll area squeezed against the button;
               // this instead gives only the trailing space the extra room.
-              padding: const EdgeInsets.only(top: AppTheme.s12, bottom: 96),
+              padding: EdgeInsets.only(top: _desktop ? AppTheme.s8 : AppTheme.s12, bottom: _desktop ? AppTheme.s12 : 96),
               // A plain Column in one SliverToBoxAdapter rather than a
               // SliverList: a SliverList's children are built lazily as they
               // scroll near the viewport, even with a fixed
@@ -682,9 +821,12 @@ class _TapeChartState extends ConsumerState<TapeChart>
                           roomKeyFor: _roomKeyFor,
                           flashBookingId: _flashBookingId,
                           flashRoomId: _flashRoomId,
+                          compact: _desktop,
+                          onTapToday: _scrollToToday,
+                          visibleRange: section == sections.first ? _visibleRange : null,
                         ),
                       ),
-                      const SizedBox(height: AppTheme.s12),
+                      SizedBox(height: _desktop ? AppTheme.s8 : AppTheme.s12),
                     ],
                   ],
                 ),
@@ -693,6 +835,32 @@ class _TapeChartState extends ConsumerState<TapeChart>
           ],
         ),
       ),
+    );
+
+    if (!_desktop) return chart;
+    return Column(
+      children: [
+        _ChartToolbar(
+          sections: sections,
+          today: todayDate,
+          from: state.chartFrom,
+          visibleRange: _visibleRange,
+          notReady: _notReady,
+          draftCount: _drafts.length,
+          onNewBooking: () => _takeBooking(context),
+          onDrafts: _showDrafts,
+          onPrev: () {
+            _hSync.jumpAllTo(0);
+            ref.read(bookingViewModelProvider.notifier).shiftChart(-1);
+          },
+          onNext: () {
+            _hSync.jumpAllTo(0);
+            ref.read(bookingViewModelProvider.notifier).shiftChart(1);
+          },
+          onToday: _scrollToToday,
+        ),
+        Expanded(child: chart),
+      ],
     );
   }
 
@@ -1536,6 +1704,11 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
   final double roomCol;
   final _HorizontalSync hSync;
 
+  /// Desktop: month banners name every month on screen, and the first/last
+  /// night in view is published to [visibleRange] for the toolbar.
+  final bool desktop;
+  final ValueNotifier<(DateTime, DateTime)?>? visibleRange;
+
   _DateHeaderDelegate({
     required this.sections,
     required this.activeCategory,
@@ -1546,6 +1719,8 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.tile,
     required this.roomCol,
     required this.hSync,
+    this.desktop = false,
+    this.visibleRange,
   });
 
   // Both a little over the sum of `_DateHeader`'s own fixed row heights and
@@ -1559,15 +1734,18 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   bool get _hasChips => sections != null && sections!.isNotEmpty;
 
-  double get _height => heightFor(_hasChips);
+  double get _height => heightFor(_hasChips, datesPinned: !desktop);
 
   /// The exact pinned extent this delegate reserves for a given chip-row
   /// state — the number the sliver layout actually uses, as opposed to
   /// whatever the header's own `OverflowBox`'d content measures at paint
   /// time. [_TapeChartState._jumpTo] needs this precise figure to land a
   /// chip jump flush under the header instead of a few pixels off.
-  static double heightFor(bool hasChips) =>
-      _dateHeaderHeight + (hasChips ? _chipsHeight + AppTheme.s8 : 0);
+  ///
+  /// [datesPinned] is false on desktop, where every category card carries its
+  /// own date header and only the chip strip stays pinned.
+  static double heightFor(bool hasChips, {bool datesPinned = true}) =>
+      (datesPinned ? _dateHeaderHeight : 0) + (hasChips ? _chipsHeight + AppTheme.s8 : 0);
 
   @override
   double get minExtent => _height;
@@ -1623,23 +1801,24 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
               ),
               const SizedBox(height: AppTheme.s8),
             ],
-            Container(
-              decoration: BoxDecoration(
-                color: AppTheme.card,
-                borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                border: Border.all(color: AppTheme.border2),
-                boxShadow: AppTheme.extruded,
+            if (!desktop)
+              Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                  border: Border.all(color: AppTheme.border2),
+                  boxShadow: AppTheme.extruded,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _DateHeader(
+                  dates: dates,
+                  today: today,
+                  tile: tile,
+                  roomCol: roomCol,
+                  hSync: hSync,
+                  onTapToday: onTapToday,
+                ),
               ),
-              clipBehavior: Clip.antiAlias,
-              child: _DateHeader(
-                dates: dates,
-                today: today,
-                tile: tile,
-                roomCol: roomCol,
-                hSync: hSync,
-                onTapToday: onTapToday,
-              ),
-            ),
           ],
         ),
       ),
@@ -1668,7 +1847,8 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
         oldDelegate.today != today ||
         oldDelegate.tile != tile ||
         oldDelegate.roomCol != roomCol ||
-        oldDelegate.hSync != hSync;
+        oldDelegate.hSync != hSync ||
+        oldDelegate.desktop != desktop;
   }
 }
 
@@ -1679,6 +1859,8 @@ class _DateHeader extends StatefulWidget {
   final double roomCol;
   final _HorizontalSync hSync;
   final VoidCallback onTapToday;
+  final bool desktop;
+  final ValueNotifier<(DateTime, DateTime)?>? visibleRange;
 
   const _DateHeader({
     required this.dates,
@@ -1687,6 +1869,8 @@ class _DateHeader extends StatefulWidget {
     required this.roomCol,
     required this.hSync,
     required this.onTapToday,
+    this.desktop = false,
+    this.visibleRange,
   });
 
   static const _weekdayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -1739,10 +1923,46 @@ class _DateHeaderState extends State<_DateHeader> {
     super.dispose();
   }
 
+  /// Width of the night strip, noted from the banner row's own layout.
+  double _viewW = 0;
+
+  void _noteViewport(double w) {
+    if (!widget.desktop || widget.visibleRange == null || w == _viewW) return;
+    _viewW = w;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _publishRange();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _DateHeader old) {
+    super.didUpdateWidget(old);
+    if (old.dates != widget.dates || old.tile != widget.tile) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _publishRange();
+      });
+    }
+  }
+
+  /// First and last night on screen right now (a partly visible night counts),
+  /// for the toolbar's "start – end" label.
+  void _publishRange() {
+    final notifier = widget.visibleRange;
+    final dates = widget.dates;
+    final tile = widget.tile;
+    if (!widget.desktop || notifier == null) return;
+    if (dates.isEmpty || tile <= 0 || _viewW <= 0) return;
+    final off = _tracker.hasClients ? _tracker.offset : 0.0;
+    final first = (off / tile).floor().clamp(0, dates.length - 1);
+    final last = (((off + _viewW) / tile).ceil() - 1).clamp(first, dates.length - 1);
+    notifier.value = (dates[first], dates[last]);
+  }
+
   void _onScroll() {
     final dates = widget.dates;
     final tile = widget.tile;
     if (dates.isEmpty || tile <= 0 || !_tracker.hasClients) return;
+    _publishRange();
     final index = (_tracker.offset / tile).floor().clamp(0, dates.length - 1);
     if (index == _lastVisibleIndex) return;
     _lastVisibleIndex = index;
@@ -1796,6 +2016,7 @@ class _DateHeaderState extends State<_DateHeader> {
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
+                  _noteViewport(constraints.maxWidth);
                   // Only worth a button once today has actually scrolled out
                   // of the visible window — while it's still on screen the
                   // ring drawn on its own tile already says where it is.
@@ -1833,6 +2054,61 @@ class _DateHeaderState extends State<_DateHeader> {
                       // [_onScroll] fires, the same way a spreadsheet's own frozen
                       // corner reads off whatever is scrolled beneath it rather
                       // than moving with the data.
+                      // Desktop names every month in view instead: each label
+                      // centred in the visible part of its month, a hairline
+                      // where one month ends and the next begins — like the web
+                      // chart's NOVEMBER 2026 | DECEMBER 2026 banner.
+                      if (widget.desktop)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: AnimatedBuilder(
+                              animation: _tracker,
+                              builder: (context, _) {
+                                final off = _tracker.hasClients ? _tracker.offset : 0.0;
+                                final maxW = constraints.maxWidth;
+                                final labels = <Widget>[];
+                                var startIdx = 0;
+                                for (final span in monthSpans) {
+                                  final left = startIdx * tile - off;
+                                  final right = left + span.$2 * tile;
+                                  startIdx += span.$2;
+                                  final vl = left.clamp(0.0, maxW);
+                                  final vr = right.clamp(0.0, maxW);
+                                  if (vr - vl <= 0) continue;
+                                  labels.add(
+                                    Positioned(
+                                      left: vl,
+                                      width: vr - vl,
+                                      top: 0,
+                                      bottom: 0,
+                                      child: Container(
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          border: left > 0.5
+                                              ? const Border(left: BorderSide(color: AppTheme.border))
+                                              : null,
+                                        ),
+                                        child: Text(
+                                          span.$1,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.clip,
+                                          style: const TextStyle(
+                                            color: AppTheme.muted,
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return Stack(children: labels);
+                              },
+                            ),
+                          ),
+                        )
+                      else
                       Positioned(
                         left: 0,
                         top: 0,
@@ -1914,12 +2190,13 @@ class _DateHeaderState extends State<_DateHeader> {
                 color: AppTheme.card,
                 border: Border(right: BorderSide(color: AppTheme.border)),
               ),
-              child: const Text(
-                'Room',
+              child: Text(
+                widget.desktop ? 'ROOM' : 'Room',
                 style: TextStyle(
                   color: AppTheme.muted,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
+                  letterSpacing: widget.desktop ? 1 : 0,
                 ),
               ),
             ),
@@ -2028,6 +2305,14 @@ class _CategoryBand extends StatelessWidget {
   final int? flashRoomId;
   final Map<int, ({String label, String note})> notReady;
 
+  /// Desktop: a slimmer header, with the date calendar repeated in every card
+  /// (like the web chart) and the card's own scrollbar lane.
+  final bool compact;
+  final VoidCallback? onTapToday;
+
+  /// Only one card publishes the on-screen date range to the toolbar.
+  final ValueNotifier<(DateTime, DateTime)?>? visibleRange;
+
   const _CategoryBand({
     required this.section,
     required this.dates,
@@ -2047,7 +2332,23 @@ class _CategoryBand extends StatelessWidget {
     required this.flashBookingId,
     required this.flashRoomId,
     required this.notReady,
+    this.compact = false,
+    this.onTapToday,
+    this.visibleRange,
   });
+
+  /// Sold nights over all nights (rooms x loaded dates) of this category.
+  int _soldPercent() {
+    final total = section.rooms.length * dates.length;
+    if (total == 0) return 0;
+    var sold = 0;
+    for (final r in section.rooms) {
+      for (final d in dates) {
+        if (r.stayOn(d) != null) sold++;
+      }
+    }
+    return ((sold * 100) / total).round();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2056,9 +2357,9 @@ class _CategoryBand extends StatelessWidget {
       children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(
+          padding: EdgeInsets.symmetric(
             horizontal: AppTheme.s16,
-            vertical: AppTheme.s12,
+            vertical: compact ? AppTheme.s8 : AppTheme.s12,
           ),
           decoration: BoxDecoration(
             color: AppTheme.card,
@@ -2100,9 +2401,29 @@ class _CategoryBand extends StatelessWidget {
                   ),
                 ),
               ),
+              // Desktop: how much of this category's loaded nights are sold,
+              // a thin bar and a percentage at the right of the card header.
+              if (compact) ...[const Spacer(), _SoldMeter(percent: _soldPercent())],
             ],
           ),
         ),
+        if (compact)
+          Container(
+            decoration: const BoxDecoration(
+              color: AppTheme.card,
+              border: Border(bottom: BorderSide(color: AppTheme.border)),
+            ),
+            child: _DateHeader(
+              dates: dates,
+              today: today,
+              tile: tile,
+              roomCol: roomCol,
+              hSync: hSync,
+              onTapToday: onTapToday ?? () {},
+              desktop: true,
+              visibleRange: visibleRange,
+            ),
+          ),
         for (final room in section.rooms)
           // Every room row is mounted up front, not lazily (see the
           // SliverToBoxAdapter note above) — a large property can be dozens
@@ -2176,6 +2497,37 @@ class _CategoryBand extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SoldMeter extends StatelessWidget {
+  final int percent;
+  const _SoldMeter({required this.percent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: SizedBox(
+            width: 110,
+            height: 6,
+            child: LinearProgressIndicator(
+              value: percent / 100,
+              backgroundColor: AppTheme.border,
+              valueColor: const AlwaysStoppedAnimation(AppTheme.accent),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppTheme.s8),
+        Text(
+          '$percent% sold',
+          style: const TextStyle(color: AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w700),
         ),
       ],
     );
@@ -2769,20 +3121,257 @@ class _TileState extends State<_Tile> {
                       fontWeight: FontWeight.w700,
                     ),
                   )
-                : (!isPartial && s != null && widget.size >= 48)
-                ? Text(
-                    (s.guestName ?? '').isEmpty
-                        ? ''
-                        : s.guestName![0].toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  )
                 : null,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Desktop toolbar: month, today, the two ways in, and the colour key ──────
+
+/// Above the chart on a desktop window, laid out like the web's: month stepper
+/// and Today on the left, the Drafts and New booking buttons on the right,
+/// and under them the colour key as pills — what each tile colour means and
+/// how many rooms are in that state today, plus the day's occupancy.
+class _ChartToolbar extends StatelessWidget {
+  final List<ChartSection> sections;
+  final DateTime today;
+  final DateTime from;
+  final ValueListenable<(DateTime, DateTime)?> visibleRange;
+  final Map<int, ({String label, String note})> notReady;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+  final VoidCallback onToday;
+  final int draftCount;
+  final VoidCallback onNewBooking;
+  final VoidCallback onDrafts;
+
+  const _ChartToolbar({
+    required this.sections,
+    required this.today,
+    required this.from,
+    required this.visibleRange,
+    required this.notReady,
+    required this.draftCount,
+    required this.onNewBooking,
+    required this.onDrafts,
+    required this.onPrev,
+    required this.onNext,
+    required this.onToday,
+  });
+
+  static const _short = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  /// "14 Nov – 23 Dec 2026", or with both years when the range crosses one.
+  static String _rangeLabel(DateTime a, DateTime b) {
+    String d(DateTime x, {bool year = false}) => '${x.day} ${_short[x.month - 1]}${year ? ' ${x.year}' : ''}';
+    return a.year == b.year ? '${d(a)} – ${d(b, year: true)}' : '${d(a, year: true)} – ${d(b, year: true)}';
+  }
+
+  static BoxDecoration _pill() => BoxDecoration(
+    color: AppTheme.card,
+    borderRadius: BorderRadius.circular(999),
+    border: Border.all(color: AppTheme.border2),
+    boxShadow: AppTheme.extruded,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    var reserved = 0, checkedIn = 0, stayed = 0, drafts = 0, blocked = 0, vacant = 0, total = 0;
+    for (final section in sections) {
+      for (final r in section.rooms) {
+        total++;
+        final stay = r.stayOn(today);
+        if (stay != null) {
+          switch (stay.status) {
+            case 'CHECKED_IN':
+              checkedIn++;
+            case 'CHECKED_OUT':
+              stayed++;
+            default:
+              reserved++;
+          }
+        } else if (r.draftOn(today) != null) {
+          drafts++;
+        } else if (notReady.containsKey(r.room.id)) {
+          blocked++;
+        } else {
+          vacant++;
+        }
+      }
+    }
+    final sold = total == 0 ? 0 : (((reserved + checkedIn + stayed) * 100) / total).round();
+
+    final navButtonShape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.rMedium));
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTheme.s8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              // Month stepper pill.
+              Container(
+                decoration: _pill(),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Previous month',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.chevron_left_rounded),
+                      onPressed: onPrev,
+                    ),
+                    SizedBox(
+                      width: 250,
+                      child: ValueListenableBuilder<(DateTime, DateTime)?>(
+                        valueListenable: visibleRange,
+                        builder: (_, range, __) => Text(
+                          range == null
+                              ? '${_DateHeader._months[from.month - 1]} ${from.year}'
+                              : _rangeLabel(range.$1, range.$2),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppTheme.heading, fontSize: 15, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Next month',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.chevron_right_rounded),
+                      onPressed: onNext,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.s12),
+              InkWell(
+                onTap: onToday,
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  decoration: _pill(),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                  child: const Text(
+                    'Today',
+                    style: TextStyle(color: AppTheme.heading, fontSize: 14, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              // Drafts: the amber button, with the count when there is one.
+              FilledButton.icon(
+                onPressed: onDrafts,
+                icon: const Icon(Icons.edit_note_rounded, size: 20),
+                label: Text(draftCount > 0 ? '$draftCount Drafts' : 'Drafts'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.draft,
+                  foregroundColor: AppTheme.heading,
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                  shape: navButtonShape,
+                  elevation: 3,
+                  shadowColor: AppTheme.draft.withValues(alpha: 0.5),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s12),
+              // New booking: the primary action.
+              FilledButton.icon(
+                onPressed: onNewBooking,
+                icon: const Icon(Icons.add_rounded, size: 20),
+                label: const Text('New booking'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.accent,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 22),
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                  shape: navButtonShape,
+                  elevation: 3,
+                  shadowColor: AppTheme.accent.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _LegendItem(color: AppTheme.vacant.withValues(alpha: 0.35), label: 'Vacant', count: vacant, outlined: true),
+                    _LegendItem(color: _kTapeNotReadyColor, label: 'Not ready', count: blocked),
+                    _LegendItem(color: AppTheme.reserved, label: 'Reserved', count: reserved),
+                    _LegendItem(color: AppTheme.checkedIn, label: 'Checked in', count: checkedIn),
+                    _LegendItem(color: AppTheme.stayed, label: 'Stayed', count: stayed),
+                    _LegendItem(color: AppTheme.draft, label: 'Draft', count: drafts),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.s12),
+              Text(
+                '$sold% sold today',
+                style: const TextStyle(color: AppTheme.muted, fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One colour-key pill: swatch, the status's name, and today's room count.
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+  final int count;
+  final bool outlined;
+
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    required this.count,
+    this.outlined = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: _ChartToolbar._pill(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 13,
+            height: 13,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(3),
+              border: outlined ? Border.all(color: AppTheme.vacant.withValues(alpha: 0.6)) : null,
+            ),
+          ),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$count',
+            style: const TextStyle(color: AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+        ],
       ),
     );
   }

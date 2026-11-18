@@ -996,8 +996,8 @@ class _DishTable extends StatelessWidget {
   static const colName = 170.0;
   static const colDesc = 190.0;
   static const colPrice = 120.0;
-  static const colStatus = 72.0;
-  static const colActions = 116.0;
+  static const colStatus = 80.0;
+  static const colActions = 144.0;
   static const _gap = 10.0;
   static const _rowWidth =
       colMark +
@@ -1030,8 +1030,8 @@ class _DishTable extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: HScrollTable(
         rowsScrollbar: true,
-        child: SizedBox(
-          width: _rowWidth + AppTheme.s12 * 2,
+        child: TableSheet(
+          width: _rowWidth + AppTheme.s12 * 2 + 3,
           child: StickyHeaderTable(
             header: const _DishTableHeader(),
             rows: [
@@ -1077,29 +1077,29 @@ class _DishTableHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const SizedBox(width: _DishTable.colMark),
+          const TableCol(width: _DishTable.colMark),
           const SizedBox(width: _DishTable._gap),
-          const SizedBox(
+          const TableCol(
             width: _DishTable.colName,
             child: Text('DISH', style: style),
           ),
           const SizedBox(width: _DishTable._gap),
-          const SizedBox(
+          const TableCol(
             width: _DishTable.colDesc,
             child: Text('DESCRIPTION', style: style),
           ),
           const SizedBox(width: _DishTable._gap),
-          const SizedBox(
+          const TableCol(
             width: _DishTable.colPrice,
             child: Text('PRICE', style: style),
           ),
           const SizedBox(width: _DishTable._gap),
-          const SizedBox(
+          const TableCol(
             width: _DishTable.colStatus,
             child: Text('STATUS', style: style),
           ),
           const SizedBox(width: _DishTable._gap),
-          const SizedBox(width: _DishTable.colActions),
+          const TableCol(width: _DishTable.colActions),
         ],
       ),
     );
@@ -1158,7 +1158,7 @@ class _DishTableRow extends ConsumerWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                SizedBox(
+                TableCol(
                   width: _DishTable.colMark,
                   child: Container(
                     width: 14,
@@ -1179,7 +1179,7 @@ class _DishTableRow extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: _DishTable._gap),
-                SizedBox(
+                TableCol(
                   width: _DishTable.colName,
                   child: Text(
                     item.name,
@@ -1193,7 +1193,7 @@ class _DishTableRow extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: _DishTable._gap),
-                SizedBox(
+                TableCol(
                   width: _DishTable.colDesc,
                   child: Text(
                     (item.description ?? '').isNotEmpty
@@ -1208,7 +1208,7 @@ class _DishTableRow extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: _DishTable._gap),
-                SizedBox(
+                TableCol(
                   width: _DishTable.colPrice,
                   child: Align(
                     alignment: Alignment.centerLeft,
@@ -1235,12 +1235,12 @@ class _DishTableRow extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: _DishTable._gap),
-                SizedBox(
+                TableCol(
                   width: _DishTable.colStatus,
                   child: _DishStatusChips(item: item),
                 ),
                 const SizedBox(width: _DishTable._gap),
-                SizedBox(
+                TableCol(
                   width: _DishTable.colActions,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,

@@ -359,7 +359,7 @@ class _OrderTableState extends State<_OrderTable> {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -418,7 +418,7 @@ class _OrderHeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return TableCol(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
@@ -448,7 +448,7 @@ class _SortableOrderHeaderCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final icon = sortDir == null ? Icons.unfold_more_rounded : (sortDir == 1 ? Icons.arrow_drop_up_rounded : Icons.arrow_drop_down_rounded);
-    return SizedBox(
+    return TableCol(
       width: width,
       child: InkWell(
         onTap: onTap,
@@ -507,7 +507,7 @@ class _OrderTableRow extends StatelessWidget {
       _ => AppTheme.edit,
     };
 
-    Widget cell(double width, Widget child, {bool alignStart = false}) => SizedBox(
+    Widget cell(double width, Widget child, {bool alignStart = false}) => TableCol(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),

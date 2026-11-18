@@ -157,32 +157,39 @@ class BookingActions {
       charge = decided;
     }
 
-    final done = await vm.checkOut(bookingId, lateCharge: charge);
-    if (!context.mounted) return false;
-    if (done == null) {
-      _say(ref.read(bookingViewModelProvider).error ?? 'Could not check out.');
-      return false;
-    }
-
+    // The guest is still checked in. The server no longer lets a stay end on
+    // its own (a stay could read "checked out" with nothing collected), so the
+    // bill opens as a settlement: they leave only when it is paid and issued.
     final navigator = Navigator.of(context);
     await ref.read(billingViewModelProvider.notifier).open(
-      BillableStay(
-        id: bookingId,
-        guestName: done.guestName ?? booking.guestName,
-        guestPhone: done.guestPhone ?? booking.guestPhone,
-        roomNumber: done.roomNumber ?? booking.roomNumber,
-        categoryName: booking.categoryName,
-        checkInDate: done.checkInDate ?? booking.checkInDate,
-        checkOutDate: done.checkOutDate ?? booking.checkOutDate,
-        totalPrice: done.totalPrice ?? booking.totalPrice,
-        advanceAmount: done.advanceAmount ?? booking.advanceAmount,
-        actualCheckOutAt: done.actualCheckOutAt,
-      ),
+      _stayFor(booking),
+      settle: BillSettle(lateCharge: charge),
     );
+    await navigator.push(MaterialPageRoute(builder: (_) => const IssueBillScreen()));
+    if (!context.mounted) return false;
+
+    // Backed out of the bill: nothing was settled, the guest is still here and
+    // this stay panel is still the right place to be.
+    if (ref.read(billingViewModelProvider).lastSettledBookingId != bookingId) {
+      return false;
+    }
+    // The stay is over — nothing left on this panel to look at.
     navigator.pop();
-    navigator.push(MaterialPageRoute(builder: (_) => const IssueBillScreen()));
     return false;
   }
+
+  /// What the bill screen needs to know about a stay it is about to open.
+  BillableStay _stayFor(Booking booking) => BillableStay(
+    id: booking.id,
+    guestName: booking.guestName,
+    guestPhone: booking.guestPhone,
+    roomNumber: booking.roomNumber,
+    categoryName: booking.categoryName,
+    checkInDate: booking.checkInDate,
+    checkOutDate: booking.checkOutDate,
+    totalPrice: booking.totalPrice,
+    advanceAmount: booking.advanceAmount,
+  );
 
   /// Checking one room of a multi-room stay out on its own — the same two
   /// steps as [checkOut], scoped to a single room: each keeps its own
@@ -213,34 +220,22 @@ class BookingActions {
       charge = decided;
     }
 
-    final done = await vm.checkOutRoom(bookingId, roomId, lateCharge: charge);
-    if (!context.mounted) return false;
-    if (done == null) {
-      _say(ref.read(bookingViewModelProvider).error ?? 'Could not check out this room.');
-      return false;
-    }
-
-    if (done.status != 'CHECKED_OUT') {
-      return true;
-    }
-
+    // Same settlement as the whole stay, scoped to this one room: it pays for
+    // its own nights and leaves; the bill itself comes with the last room.
     final navigator = Navigator.of(context);
     await ref.read(billingViewModelProvider.notifier).open(
-      BillableStay(
-        id: bookingId,
-        guestName: done.guestName ?? booking.guestName,
-        guestPhone: done.guestPhone ?? booking.guestPhone,
-        roomNumber: done.roomNumber ?? booking.roomNumber,
-        categoryName: booking.categoryName,
-        checkInDate: done.checkInDate ?? booking.checkInDate,
-        checkOutDate: done.checkOutDate ?? booking.checkOutDate,
-        totalPrice: done.totalPrice ?? booking.totalPrice,
-        advanceAmount: done.advanceAmount ?? booking.advanceAmount,
-        actualCheckOutAt: done.actualCheckOutAt,
-      ),
+      _stayFor(booking),
+      settle: BillSettle(roomId: roomId, lateCharge: charge),
     );
+    await navigator.push(MaterialPageRoute(builder: (_) => const IssueBillScreen()));
+    if (!context.mounted) return false;
+
+    final billing = ref.read(billingViewModelProvider);
+    if (billing.lastSettledBookingId != bookingId) return false;
+    // Other rooms are still staying: reload this same panel to show them.
+    if (billing.lastSettleMode == 'ROOM') return true;
+    // That was the last room, and the bill has been issued.
     navigator.pop();
-    navigator.push(MaterialPageRoute(builder: (_) => const IssueBillScreen()));
     return false;
   }
 

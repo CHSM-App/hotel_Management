@@ -48,6 +48,15 @@ class _HScrollTableState extends State<HScrollTable> {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => _TableViewport(
+        width: constraints.hasBoundedWidth ? constraints.maxWidth : 0,
+        child: _themed(context),
+      ),
+    );
+  }
+
+  Widget _themed(BuildContext context) {
     return ScrollbarTheme(
       data: ScrollbarThemeData(
         thumbColor: WidgetStateProperty.all(
@@ -115,6 +124,71 @@ class _HScrollTableState extends State<HScrollTable> {
       child: widget.child,
     ),
   );
+}
+
+/// How wide the sheet's window onto the table is — what [TableSheet] stretches
+/// its columns to fill.
+class _TableViewport extends InheritedWidget {
+  final double width;
+  const _TableViewport({required this.width, required super.child});
+
+  @override
+  bool updateShouldNotify(_TableViewport old) => old.width != width;
+}
+
+class _TableScale extends InheritedWidget {
+  final double scale;
+  const _TableScale({required this.scale, required super.child});
+
+  @override
+  bool updateShouldNotify(_TableScale old) => old.scale != scale;
+}
+
+/// The table's own sheet, in place of `SizedBox(width: <sum of columns>)`.
+///
+/// Columns are laid out at fixed widths (a phone scrolls them sideways). On a
+/// wide desktop window that left the right half of the screen empty, so here
+/// every column grows by the same factor until the sheet fills the window —
+/// never past [maxScale], and never below its own width, so a phone sees
+/// exactly what it saw before.
+class TableSheet extends StatelessWidget {
+  final double width;
+  final Widget child;
+  static const double maxScale = 3;
+
+  const TableSheet({super.key, required this.width, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final viewport =
+        context.dependOnInheritedWidgetOfExactType<_TableViewport>()?.width ?? 0;
+    // Room for the rows' scrollbar lane.
+    final available = viewport - 14;
+    final scale = available > width
+        ? (available / width).clamp(1.0, maxScale)
+        : 1.0;
+    return _TableScale(
+      scale: scale,
+      child: SizedBox(width: width * scale, child: child),
+    );
+  }
+}
+
+/// One column's cell, in place of `SizedBox(width: column.width)`: the same
+/// width times whatever the enclosing [TableSheet] stretched the table by.
+class TableCol extends StatelessWidget {
+  final double width;
+  final Widget? child;
+
+  const TableCol({super.key, required this.width, this.child});
+
+  /// For widths computed by hand rather than through [TableCol].
+  static double scaleOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_TableScale>()?.scale ?? 1;
+
+  @override
+  Widget build(BuildContext context) =>
+      SizedBox(width: width * scaleOf(context), child: child);
 }
 
 class _RowsScroll extends InheritedWidget {

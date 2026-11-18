@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_service.dart';
 import '../constant.dart';
+import '../../presentation/providers/network_provider.dart';
+import '../offline/offline_interceptor.dart';
 import 'interceptor.dart';
+import 'token_provider.dart';
 
 /// A plain Provider, not a FutureProvider.
 ///
@@ -34,6 +37,14 @@ final dioProvider = Provider<Dio>((ref) {
     dio.interceptors.add(LogInterceptor(requestBody: true, responseBody: true));
   }
 
+  // First, so an offline request is answered from the cache (or refused
+  // calmly) before it can reach the token renewal or sit out a 30 s timeout.
+  dio.interceptors.add(
+    OfflineInterceptor(
+      isOffline: () => ref.read(networkStatusProvider).valueOrNull == false,
+      scope: () => '${ref.read(tokenProvider).lodgeId ?? 0}',
+    ),
+  );
   dio.interceptors.add(TokenInterceptor(ref: ref));
   return dio;
 });

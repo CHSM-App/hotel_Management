@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constant.dart';
+import '../../core/offline/offline_controllers.dart';
+import '../../core/offline/outbox_status.dart';
 import '../../domain/models/me.dart';
 import '../../presentation/providers/network_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
@@ -30,6 +33,8 @@ import '../rooms/rooms_rates_screen.dart';
 import '../services/services_screen.dart';
 import '../staff/staff_roles_screen.dart';
 import '../theme.dart';
+import 'offline_scope.dart';
+import 'sync_center_screen.dart';
 import 'feature.dart';
 import 'sidebar.dart';
 import 'sign_out_dialog.dart';
@@ -57,6 +62,12 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   /// Icon-only rail — only meaningful for the permanent rail; the phone
   /// drawer never collapses (see [Sidebar.onToggleCollapsed]).
   bool _railCollapsed = false;
+
+  /// "Maximize view": sidebar and top bar hidden so the section fills the whole
+  /// window. Desktop only; F11 / Ctrl+Shift+F toggle it, Esc leaves it.
+  bool _focus = false;
+
+  void _toggleFocus() => setState(() => _focus = !_focus);
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -176,13 +187,36 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         child: Scaffold(
           key: _scaffoldKey,
           drawer: (me != null && compact) ? _drawer(me, issueCount) : null,
-          body: Column(
+          body: CallbackShortcuts(
+           bindings: {
+            const SingleActivator(LogicalKeyboardKey.f11): () {
+              if (!compact) _toggleFocus();
+            },
+            const SingleActivator(LogicalKeyboardKey.keyF, control: true, shift: true): () {
+              if (!compact) _toggleFocus();
+            },
+            const SingleActivator(LogicalKeyboardKey.escape): () {
+              if (_focus) setState(() => _focus = false);
+            },
+            const SingleActivator(LogicalKeyboardKey.keyB, control: true): () {
+              if (!compact && !_focus) setState(() => _railCollapsed = !_railCollapsed);
+            },
+           },
+           child: Focus(
+            autofocus: true,
+            child: Stack(
             children: [
-              _TopBar(
+          Column(
+            children: [
+              _Collapse(
+                open: !_focus,
+                axis: Axis.vertical,
+                child: _TopBar(
                 title: me == null ? null : _activeTitle(_features(me)),
                 onMenuTap: (me != null && compact)
                     ? () => _scaffoldKey.currentState?.openDrawer()
                     : null,
+                onToggleFocus: compact ? null : _toggleFocus,
                 actions: _headerActions,
                 bell: (me != null && _canSeeStaffAlerts(me))
                     ? StaffAlertsBell(
@@ -195,7 +229,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                       )
                     : null,
               ),
-              const _OfflineBanner(),
+              ),
               Expanded(
                 child: SafeArea(
                   top: false,
@@ -203,7 +237,12 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (me != null && !compact) _rail(me, issueCount),
+                      if (me != null && !compact)
+                        _Collapse(
+                          open: !_focus,
+                          axis: Axis.horizontal,
+                          child: _rail(me, issueCount),
+                        ),
                       Expanded(
                         child: _ResponsiveBody(
                           child: _body(state.isLoading, state.error, me),
@@ -213,7 +252,28 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                   ),
                 ),
               ),
+              const ConnectionStrip(),
             ],
+          ),
+          if (_focus)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Tooltip(
+                message: 'Exit maximize view (Esc)',
+                child: Material(
+                  color: AppTheme.navbar.withValues(alpha: 0.85),
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    icon: const Icon(Icons.fullscreen_exit_rounded, color: Colors.white),
+                    onPressed: _toggleFocus,
+                  ),
+                ),
+              ),
+            ),
+            ],
+          ),
+          ),
           ),
         ),
       ),
@@ -327,14 +387,40 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   Widget _rail(Me me, int issueCount) {
     final features = _features(me);
     if (features.isEmpty) return const SizedBox.shrink();
+    final railWidth = _railCollapsed ? 72.0 : 240.0;
+    // Framer-style: a fast-in, soft-landing curve on the width (only layout
+    // property animated), while the content cross-fades between the two
+    // layouts, each laid out at its own final width and merely revealed by the
+    // clip — so labels never squash or overflow mid-animation.
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-      width: _railCollapsed ? 72 : 240,
+      duration: AppMotion.of(context, const Duration(milliseconds: 280)),
+      curve: const Cubic(0.22, 1, 0.36, 1),
+      width: railWidth,
+      clipBehavior: Clip.hardEdge,
       decoration: const BoxDecoration(
         border: Border(right: BorderSide(color: AppTheme.sidebarBorder)),
       ),
-      child: Sidebar(
+      child: AnimatedSwitcher(
+        duration: AppMotion.of(context, const Duration(milliseconds: 200)),
+        switchInCurve: AppMotion.enter,
+        switchOutCurve: AppMotion.leave,
+        layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.centerLeft,
+          children: [...previous, if (current != null) current],
+        ),
+        child: OverflowBox(
+          key: ValueKey(_railCollapsed),
+          alignment: Alignment.centerLeft,
+          minWidth: railWidth - 1,
+          maxWidth: railWidth - 1,
+          child: _railSidebar(me, issueCount, features),
+        ),
+      ),
+    );
+  }
+
+  Widget _railSidebar(Me me, int issueCount, List<Feature> features) {
+    return Sidebar(
         features: features,
         activeKey: _activeKey(features),
         onSelect: _select,
@@ -349,7 +435,6 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         collapsed: _railCollapsed,
         onToggleCollapsed: () =>
             setState(() => _railCollapsed = !_railCollapsed),
-      ),
     );
   }
 
@@ -414,6 +499,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       orElse: () => features.first,
     );
 
+    Widget section() {
     switch (active.key) {
       case 'bookings':
         return const BookingsScreen();
@@ -472,12 +558,47 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         // Every other section is deliberately still a stub — see the file.
         return PlaceholderScreen(feature: active);
     }
+    }
+    return OfflineScope(sectionKey: active.key, child: section());
   }
 }
 
-/// Caps a section's width and centers it once the surface is wider than a
-/// phone — a tablet or the desktop/web build — instead of stretching every
-/// list and form full-bleed the way a phone screen naturally does.
+/// Slides its child away (and unmounts it once gone) when [open] turns false,
+/// and back in when it turns true. Used by the maximize view: leaving is a
+/// touch quicker than arriving, and flipping the flag mid-animation simply
+/// retargets it. Honors the system "reduce motion" setting.
+class _Collapse extends StatelessWidget {
+  final bool open;
+  final Axis axis;
+  final Widget child;
+
+  const _Collapse({required this.open, required this.axis, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final horizontal = axis == Axis.horizontal;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: open ? 1.0 : 0.0),
+      duration: AppMotion.of(context, open ? AppMotion.medium : AppMotion.exit),
+      curve: open ? AppMotion.enter : AppMotion.leave,
+      builder: (context, t, child) {
+        if (t == 0) return const SizedBox.shrink();
+        return ClipRect(
+          child: Align(
+            alignment: horizontal ? Alignment.centerLeft : Alignment.topCenter,
+            widthFactor: horizontal ? t : null,
+            heightFactor: horizontal ? null : t,
+            child: child,
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+/// Lets a section use the whole desktop window, and keeps a narrow tablet to
+/// the phone column instead of stretching every list and form full-bleed.
 class _ResponsiveBody extends StatelessWidget {
   final Widget child;
 
@@ -489,84 +610,124 @@ class _ResponsiveBody extends StatelessWidget {
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+        constraints: BoxConstraints(
+          // A desktop window is all the section's: each screen fills it with
+          // tables, card grids or a centered form. Only a narrow tablet
+          // (600-800 px wide) keeps the phone column.
+          maxWidth: AppTheme.pageMaxWidth(context),
+        ),
         child: child,
       ),
     );
   }
 }
 
-// ── Offline banner ──────────────────────────────────────────────────────────
+// ── Connection strip ────────────────────────────────────────────────────────
 
-/// Said once, at the top, rather than as a failure on each screen.
+/// A slim status strip along the bottom edge, the way billing software shows
+/// it: always in the same place, never a card pushing the page down, and gone
+/// entirely when there is nothing to say.
 ///
-/// Nothing in this app works offline and that is deliberate — availability, the
-/// price of a stay and taking a booking are all decisions about a room somebody
-/// else may also be selling, and only the server can make them. So the honest
-/// thing is to say the connection is gone, not to queue work that might sell a
-/// room twice when it drains.
-class _OfflineBanner extends ConsumerWidget {
-  const _OfflineBanner();
+/// The app is offline-first (see the offline plan): reads come from the
+/// on-device cache and writes are saved on the device until the server can be
+/// reached. So the strip reports state rather than failure — and never says
+/// "error". It is the last child of the shell column, so it sits under the
+/// content and never covers it; it carries its own bottom inset because the
+/// body's SafeArea above deliberately leaves the bottom alone.
+class ConnectionStrip extends ConsumerWidget {
+  const ConnectionStrip({super.key});
+
+  static String get _serverAddress {
+    final u = Uri.parse(baseUrl);
+    return u.hasPort ? '${u.host}:${u.port}' : u.host;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final online = ref.watch(networkStatusProvider);
-    // Loading and error both read as "assume it works": a banner that flashes
-    // on every cold start is a banner the desk stops seeing.
-    final offline = online.valueOrNull == false;
+    // Loading and error both read as "assume it works": a strip that flashes on
+    // every cold start is a strip the desk stops seeing.
+    final offline = ref.watch(networkStatusProvider).valueOrNull == false;
+    final waiting = ref.watch(pendingOutboxCountProvider).valueOrNull ?? 0;
+    final attention = ref.watch(attentionOutboxCountProvider).valueOrNull ?? 0;
+    final syncing = ref.watch(syncBusyProvider);
+
+    final String? text;
+    final Color color;
+    final IconData icon;
+    if (offline) {
+      text = waiting > 0
+          ? 'No connection · $waiting saved, will sync when back'
+          : 'No connection';
+      color = AppTheme.danger;
+      icon = Icons.wifi_off_rounded;
+    } else if (attention > 0) {
+      text = attention == 1
+          ? '1 thing needs your attention'
+          : '$attention things need your attention';
+      color = const Color(0xFFEA580C);
+      icon = Icons.error_outline_rounded;
+    } else if (syncing) {
+      text = 'Syncing…';
+      color = const Color(0xFF2563EB);
+      icon = Icons.sync_rounded;
+    } else if (waiting > 0) {
+      text = '$waiting waiting to sync';
+      color = const Color(0xFFB45309);
+      icon = Icons.sync_rounded;
+    } else {
+      text = null;
+      color = AppTheme.danger;
+      icon = Icons.wifi_off_rounded;
+    }
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
-      alignment: Alignment.topCenter,
-      child: !offline
+      alignment: Alignment.bottomCenter,
+      child: text == null
           ? const SizedBox(width: double.infinity, height: 0)
-          : Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(
-                AppTheme.s12,
-                AppTheme.s8,
-                AppTheme.s12,
-                0,
-              ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.s12,
-                vertical: AppTheme.s8,
-              ),
-              decoration: BoxDecoration(
-                color: AppTheme.danger.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(AppTheme.rMedium),
-                border: Border.all(color: AppTheme.danger.withValues(alpha: 0.25)),
-                boxShadow: AppTheme.subtle,
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      color: AppTheme.danger.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.wifi_off_rounded,
-                      size: 14,
-                      color: AppTheme.danger,
-                    ),
+          : Semantics(
+              liveRegion: true,
+              child: Tooltip(
+                message: offline ? 'Server: $_serverAddress' : '',
+                child: InkWell(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SyncCenterScreen()),
                   ),
-                  const SizedBox(width: AppTheme.s8),
-                  const Expanded(
-                    child: Text(
-                      'No connection — bookings can\'t be taken right now.',
-                      style: TextStyle(
-                        color: AppTheme.danger,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        height: 1.2,
+                  child: Container(
+                  width: double.infinity,
+                  color: color,
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.s12,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(icon, size: 14, color: Colors.white),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              text,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ],
+                  ),
+                ),
               ),
             ),
     );
@@ -597,7 +758,17 @@ class _TopBar extends StatelessWidget {
   /// permissions any alert category needs (see [_canSeeStaffAlerts]).
   final Widget? bell;
 
-  const _TopBar({this.title, this.onMenuTap, this.actions, this.bell});
+  /// Desktop only: hides the sidebar and this bar so the section fills the
+  /// window (see _DashboardShellState._focus). Null on a phone.
+  final VoidCallback? onToggleFocus;
+
+  const _TopBar({
+    this.title,
+    this.onMenuTap,
+    this.actions,
+    this.bell,
+    this.onToggleFocus,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -649,6 +820,12 @@ class _TopBar extends StatelessWidget {
               ValueListenableBuilder<Widget?>(
                 valueListenable: actions!,
                 builder: (context, child, _) => child ?? const SizedBox.shrink(),
+              ),
+            if (onToggleFocus != null)
+              IconButton(
+                tooltip: 'Maximize view (F11)',
+                icon: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 24),
+                onPressed: onToggleFocus,
               ),
             if (bell != null) bell!,
           ],

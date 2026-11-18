@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/db/app_database.dart';
 import '../storage/token_storage.dart';
 
 /// The session, in memory.
@@ -108,6 +109,12 @@ class TokenNotifier extends StateNotifier<TokenState> {
   /// Sign out, or a session the server has stopped accepting.
   Future<void> clearSession() async {
     await TokenStorage.clear();
+    // Guest names, phones and bills live in the cache; they leave with the
+    // session. The outbox is untouched: queued writes are not this session's to
+    // throw away (sign-out is blocked while any remain).
+    try {
+      await AppDatabase.clearCache();
+    } catch (_) {}
     state = state.copyWith(clearSession: true);
   }
 

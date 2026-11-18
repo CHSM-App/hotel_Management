@@ -38,9 +38,7 @@ class IssueEventBillScreen extends ConsumerWidget {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: AppTheme.maxContentWidth,
-            ),
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
             child: preview == null
                 ? Center(
                     child: state.previewing

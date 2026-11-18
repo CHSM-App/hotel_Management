@@ -85,6 +85,16 @@ class BillingState {
   /// The reason printed beside the discount on the bill.
   final String discountReason;
 
+  /// Set when this bill is also the guest's checkout (see [BillSettle]).
+  final BillSettle? settle;
+
+  /// The stay a settlement last went through for, and how ('ROOM' or
+  /// 'FINAL'). Not cleared by [BillingViewModel.close]: the screen that opened
+  /// the bill reads it after the bill page has closed, to learn whether the
+  /// guest actually left. Reset by the next [BillingViewModel.open].
+  final int? lastSettledBookingId;
+  final String? lastSettleMode;
+
   const BillingState({
     this.queue = const AsyncValue.loading(),
     this.eventQueue = const AsyncValue.loading(),
@@ -109,6 +119,9 @@ class BillingState {
     this.issuing = false,
     this.discountInput = '',
     this.discountReason = '',
+    this.settle,
+    this.lastSettledBookingId,
+    this.lastSettleMode,
   });
 
   BillingState copyWith({
@@ -144,6 +157,11 @@ class BillingState {
     bool? issuing,
     String? discountInput,
     String? discountReason,
+    BillSettle? settle,
+    bool clearSettle = false,
+    int? lastSettledBookingId,
+    String? lastSettleMode,
+    bool clearLastSettled = false,
   }) => BillingState(
     queue: queue ?? this.queue,
     eventQueue: eventQueue ?? this.eventQueue,
@@ -168,6 +186,13 @@ class BillingState {
     issuing: issuing ?? this.issuing,
     discountInput: discountInput ?? this.discountInput,
     discountReason: discountReason ?? this.discountReason,
+    settle: clearSettle ? null : (settle ?? this.settle),
+    lastSettledBookingId: clearLastSettled
+        ? null
+        : (lastSettledBookingId ?? this.lastSettledBookingId),
+    lastSettleMode: clearLastSettled
+        ? null
+        : (lastSettleMode ?? this.lastSettleMode),
   );
 
   /// Only a cycle property discounts here: on the other two modes the bill is
@@ -288,10 +313,15 @@ class BillingViewModel extends StateNotifier<BillingState> {
     }
   }
 
-  /// Open a stay for billing.
-  Future<void> open(BillableStay stay) async {
+  /// Open a stay for billing. Pass [settle] when the guest is still checked
+  /// in: the bill is then also their checkout, and they leave only if it is
+  /// paid in full and issued.
+  Future<void> open(BillableStay stay, {BillSettle? settle}) async {
     state = state.copyWith(
       target: stay,
+      settle: settle,
+      clearSettle: settle == null,
+      clearLastSettled: true,
       clearPreview: true,
       clearError: true,
       includeLateCheckout: true,
@@ -308,6 +338,7 @@ class BillingViewModel extends StateNotifier<BillingState> {
 
   void close() => state = state.copyWith(
     clearTarget: true,
+    clearSettle: true,
     clearPreview: true,
     clearError: true,
     payment: const [],
@@ -387,6 +418,7 @@ class BillingViewModel extends StateNotifier<BillingState> {
         includeLateCheckout: state.includeLateCheckout,
         discountAmount: state.cycleDiscount,
         discountReason: state.discountReason,
+        settle: state.settle,
       );
       final rows = state.payment.isEmpty
           ? <PaymentDraft>[PaymentDraft()]
@@ -478,7 +510,8 @@ class BillingViewModel extends StateNotifier<BillingState> {
     state = state.copyWith(issuing: true, clearError: true);
     try {
       final rows = state.payment.where((p) => p.value > 0).toList();
-      final invoice = await usecase.issue(stay.id, {
+      final settle = state.settle;
+      final body = <String, dynamic>{
         'billingSide': preview.billingSide,
         // What the server itself worked out, read back off the preview rather
         // than recomputed — the two must not be able to disagree.
@@ -497,7 +530,28 @@ class BillingViewModel extends StateNotifier<BillingState> {
           if (rows.length > 1)
             'paymentLines': rows.map((r) => r.toJson()).toList(),
         },
-      });
+        // What the screen showed, so the server can refuse a bill that moved
+        // (an order added from the kitchen meanwhile) instead of settling it
+        // for the wrong amount.
+        if (settle != null) ...{
+          'lateCharge': settle.lateCharge,
+          'expectedDue': state.balanceDue > 0 ? state.balanceDue : 0,
+        },
+      };
+
+      if (settle != null) {
+        final result = await usecase.settle(stay.id, body, roomId: settle.roomId);
+        state = state.copyWith(
+          issuing: false,
+          lastSettledBookingId: stay.id,
+          lastSettleMode: result.mode,
+        );
+        // One room left and the stay carries on: paid and gone, no document
+        // yet — the bill comes when the last room leaves.
+        return result.invoice;
+      }
+
+      final invoice = await usecase.issue(stay.id, body);
       state = state.copyWith(issuing: false);
       // Deliberately not reloading here.
       //

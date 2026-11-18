@@ -26,7 +26,7 @@ class PriceChartPanel extends ConsumerWidget {
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+          constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
             physics: const AlwaysScrollableScrollPhysics(),

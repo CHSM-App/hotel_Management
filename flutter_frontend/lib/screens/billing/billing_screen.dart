@@ -1,3 +1,4 @@
+import '../../widgets/adaptive_grid.dart';
 import 'package:flutter/material.dart';
 import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -413,20 +414,17 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           ),
         ];
       }
-      return [
+      return _cardList(context, [
         for (final g in groups)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
-            child: _ServiceUsageRow(
-              usage: g.display,
-              itemCount: g.display.laundryOrderId != null
-                  ? g.members.length
-                  : null,
-              onAddToRoom: () => _addServicesToRoom(g.members),
-              onBill: () => _billSelectedServices(g.members),
-            ),
+          _ServiceUsageRow(
+            usage: g.display,
+            itemCount: g.display.laundryOrderId != null
+                ? g.members.length
+                : null,
+            onAddToRoom: () => _addServicesToRoom(g.members),
+            onBill: () => _billSelectedServices(g.members),
           ),
-      ];
+      ]);
     },
   );
 
@@ -561,6 +559,22 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         ];
       }
 
+      if (AppTheme.isDesktop(context)) {
+        return [
+          AdaptiveGrid(
+            minTileWidth: 380,
+            children: [
+              for (final stay in rows)
+                _StayCard(
+                  stay: stay,
+                  onBill: () => openStay(stay),
+                  onView: () => viewStay(stay),
+                ),
+            ],
+          ),
+        ];
+      }
+
       final queueRows = [
         for (final stay in rows)
           BillingQueueRow(
@@ -687,14 +701,21 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       ];
     }
     if (_view == 'table') return [BillingInvoiceTable(documents: rows)];
-    return [
-      for (final doc in rows)
-        Padding(
-          padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
-          child: BillingInvoiceCard(document: doc),
-        ),
-    ];
+    return _cardList(context, [
+      for (final doc in rows) BillingInvoiceCard(document: doc),
+    ]);
   }
+}
+
+/// Queue cards: stacked on a phone, a multi-column grid on a wide window.
+List<Widget> _cardList(BuildContext context, List<Widget> cards) {
+  if (AppTheme.isDesktop(context)) {
+    return [AdaptiveGrid(minTileWidth: 420, children: cards)];
+  }
+  return [
+    for (final c in cards)
+      Padding(padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2), child: c),
+  ];
 }
 
 // ── A queue row ──────────────────────────────────────────────────────────────
@@ -1093,7 +1114,7 @@ class _ServiceQueueTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -1109,7 +1130,7 @@ class _ServiceQueueTable extends StatelessWidget {
                 child: Row(
                   children: [
                     for (final c in _columns)
-                      SizedBox(
+                      TableCol(
                         width: c.width,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -1184,7 +1205,7 @@ class _ServiceTableRow extends StatelessWidget {
       color: shaded ? AppTheme.bg : Colors.transparent,
       child: Row(
         children: [
-          SizedBox(
+          TableCol(
             width: _ServiceQueueTable._columns[0].width,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -1203,7 +1224,7 @@ class _ServiceTableRow extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(
+          TableCol(
             width: _ServiceQueueTable._columns[1].width,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -1218,7 +1239,7 @@ class _ServiceTableRow extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(
+          TableCol(
             width: _ServiceQueueTable._columns[2].width,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -2528,7 +2549,7 @@ class BillingQueueTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -2544,7 +2565,7 @@ class BillingQueueTable extends StatelessWidget {
                 child: Row(
                   children: [
                     for (final c in _kQueueTableColumns)
-                      SizedBox(
+                      TableCol(
                         width: c.width,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -2671,7 +2692,7 @@ class _QueueTableRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             for (final c in _kQueueTableColumns)
-              SizedBox(
+              TableCol(
                 width: c.width,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -2774,9 +2795,9 @@ class ReadyToBillTable extends StatelessWidget {
   });
 
   static const List<(String label, double width, bool numeric)> _columns = [
-    ('Guest', 130, false),
-    ('Room', 90, false),
-    ('Stay', 200, false),
+    ('Guest', 190, false),
+    ('Room', 110, false),
+    ('Stay', 230, false),
     ('Room charge', 100, true),
     ('Food', 90, true),
     ('Subtotal', 100, true),
@@ -2784,7 +2805,7 @@ class ReadyToBillTable extends StatelessWidget {
     ('To collect', 110, true),
   ];
 
-  static const double _actionWidth = 170;
+  static const double _actionWidth = 192;
 
   @override
   Widget build(BuildContext context) {
@@ -2799,7 +2820,7 @@ class ReadyToBillTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -2815,7 +2836,7 @@ class ReadyToBillTable extends StatelessWidget {
                 child: Row(
                   children: [
                     for (final c in _columns)
-                      SizedBox(
+                      TableCol(
                         width: c.$2,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -2836,7 +2857,7 @@ class ReadyToBillTable extends StatelessWidget {
                           ),
                         ),
                       ),
-                    SizedBox(width: _actionWidth),
+                    TableCol(width: _actionWidth),
                   ],
                 ),
               ),
@@ -2853,6 +2874,191 @@ class ReadyToBillTable extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Desktop card for one stay ready to bill: who and where on top, the money as
+/// a labelled strip, both actions on the bottom edge. Phones keep
+/// [BillingRowCard].
+class _StayCard extends StatelessWidget {
+  final BillableStay stay;
+  final VoidCallback onBill;
+  final VoidCallback onView;
+
+  const _StayCard({
+    required this.stay,
+    required this.onBill,
+    required this.onView,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget fig(String label, String value, {Color? color, bool bold = false}) =>
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color ?? AppTheme.text,
+                  fontSize: 13,
+                  fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        );
+
+    final adv = (stay.advanceAmount ?? 0) > 0;
+    final food = (stay.foodTotal ?? 0) > 0;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.subtle,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppTheme.s12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppTheme.sidebarBrandWash,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'ROOM',
+                        style: TextStyle(
+                          color: AppTheme.sidebarBrandInk,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        stay.roomNumber ?? '—',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.sidebarBrandInk,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stay.guestName ?? 'Guest',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          if ((stay.bookingNumber ?? '').isNotEmpty)
+                            stay.bookingNumber!,
+                          if ((stay.categoryName ?? '').isNotEmpty)
+                            stay.categoryName!,
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.event_outlined,
+                            size: 13,
+                            color: AppTheme.muted,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              '${formatIsoDate(stay.checkInDate)} → ${formatIsoDate(stay.checkOutDate)} · ${nightsLabel(stay.nights)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppTheme.text,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            color: AppTheme.bg,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.s12,
+              vertical: AppTheme.s8 + 2,
+            ),
+            child: Row(
+              children: [
+                fig('Room', formatPrice(stay.totalPrice)),
+                fig('Food', food ? formatPrice(stay.foodTotal) : '—'),
+                fig('Advance', adv ? '− ${formatPrice(stay.advanceAmount)}' : '—'),
+                fig(
+                  'To collect',
+                  formatPrice(stay.balanceDue),
+                  color: const Color(0xFFB8741A),
+                  bold: true,
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppTheme.s8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _ViewPillButton(onPressed: onView),
+                const SizedBox(width: AppTheme.s8),
+                _BillPillButton(onPressed: onBill),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2884,8 +3090,8 @@ class _ReadyToBillRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 130,
+          TableCol(
+            width: 190,
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.s8,
@@ -2920,8 +3126,8 @@ class _ReadyToBillRow extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(
-            width: 90,
+          TableCol(
+            width: 110,
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.s8,
@@ -2967,8 +3173,8 @@ class _ReadyToBillRow extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(
-            width: 200,
+          TableCol(
+            width: 230,
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.s8,
@@ -3020,11 +3226,12 @@ class _ReadyToBillRow extends StatelessWidget {
             color: const Color(0xFFB8741A),
             fontSize: 13.5,
           ),
-          SizedBox(
+          TableCol(
             width: ReadyToBillTable._actionWidth,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   if (onView != null) ...[
                     _ViewPillButton(onPressed: onView!),
@@ -3047,7 +3254,7 @@ class _ReadyToBillRow extends StatelessWidget {
     Color color = AppTheme.text,
     double fontSize = 12.5,
   }) {
-    return SizedBox(
+    return TableCol(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -3102,7 +3309,7 @@ class _ViewPillButton extends StatelessWidget {
                 size: 13,
                 color: const Color(0xFF7C3AED),
               ),
-              const SizedBox(width: 4),
+              const TableCol(width: 4),
               const Text(
                 'View',
                 style: TextStyle(
@@ -3178,7 +3385,7 @@ class _ReadyToBillFooter extends StatelessWidget {
       String text, {
       bool strong = false,
       Color color = AppTheme.heading,
-    }) => SizedBox(
+    }) => TableCol(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -3239,7 +3446,7 @@ class _ReadyToBillFooter extends StatelessWidget {
             strong: true,
             color: const Color(0xFFB8741A),
           ),
-          SizedBox(width: ReadyToBillTable._actionWidth),
+          TableCol(width: ReadyToBillTable._actionWidth),
         ],
       ),
     );
@@ -3333,7 +3540,7 @@ class BillingInvoiceTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -3349,7 +3556,7 @@ class BillingInvoiceTable extends StatelessWidget {
                 child: Row(
                   children: [
                     for (final c in _kInvoiceTableColumns)
-                      SizedBox(
+                      TableCol(
                         width: c.width,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -3523,7 +3730,7 @@ class _InvoiceTableRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               for (final c in _kInvoiceTableColumns)
-                SizedBox(
+                TableCol(
                   width: c.width,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(

@@ -2239,7 +2239,11 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
   // checked in early, only from its reserved date onward. A walk-in is
   // always booked for today, so this never blocks the common case. Each room
   // has its own date, so only the rooms whose day has come are taken in.
-  const today = todayIsoIST();
+  // When the desk recorded the arrival offline, "today" is the day it happened,
+  // not the day it reached this server — a guest checked in on the reserved
+  // date must not be refused because the sync ran a day later, and a device set
+  // to before the reserved date is still refused.
+  const today = input.checkedInAt ? lateCheckout.isoDateInLodgeZone(input.checkedInAt) : todayIsoIST();
   const arriving = waitingResult.recordset.filter((r) => toIsoDate(r.check_in_date) <= today);
   if (arriving.length === 0) {
     throw new ApiError('This booking is for a future date — check-in opens on the reserved date.', 409);
@@ -2417,9 +2421,10 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
       const roomResult = await new sql.Request(transaction)
         .input('id', sql.BigInt, room.id)
         .input('foodPin', sql.NVarChar, pin)
+        .input('at', sql.DateTimeOffset, input.checkedInAt ?? null)
         .query(`
           UPDATE dbo.booking_rooms
-          SET status = 'CHECKED_IN', actual_check_in_at = SYSDATETIMEOFFSET(), food_pin = @foodPin
+          SET status = 'CHECKED_IN', actual_check_in_at = COALESCE(@at, SYSDATETIMEOFFSET()), food_pin = @foodPin
           OUTPUT inserted.id
           WHERE id = @id AND status = 'BOOKED'
         `);
@@ -3620,6 +3625,7 @@ async function getEditWindow(lodgeId, bookingId) {
 }
 
 module.exports = {
+  spreadConcession,
   getPastWindow,
   createPastBooking,
   getEditWindow,

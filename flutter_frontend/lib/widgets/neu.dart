@@ -76,7 +76,7 @@ class NeuCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final body = Container(
-      padding: padding,
+      padding: AppTheme.compactPadding(context, padding, 0.75),
       margin: margin,
       decoration: BoxDecoration(
         color: color,
@@ -739,7 +739,7 @@ class NeuPressed extends StatelessWidget {
         : (focused ? AppTheme.accent : AppTheme.border);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
-      padding: padding,
+      padding: AppTheme.compactPadding(context, padding),
       decoration: BoxDecoration(
         color: AppTheme.bg,
         borderRadius: BorderRadius.circular(radius),
@@ -844,7 +844,7 @@ class _NeuButtonState extends State<NeuButton> {
             : (widget.outlineColor != null
                   ? (widget.outlineTextColor ?? widget.outlineColor!)
                   : AppTheme.heading),
-        fontSize: 14,
+        fontSize: AppTheme.isDesktop(context) ? 13.5 : 14,
         fontWeight: FontWeight.w600,
       ),
       // Squeezed too tight (three buttons sharing a narrow row, say), Text
@@ -867,8 +867,13 @@ class _NeuButtonState extends State<NeuButton> {
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOut,
           width: widget.expand ? double.infinity : null,
-          constraints: BoxConstraints(minHeight: widget.minHeight),
-          padding: widget.padding,
+          // Desktop: a mouse needs no 44 px touch target.
+          constraints: BoxConstraints(
+            minHeight: AppTheme.isDesktop(context)
+                ? (widget.minHeight < 36 ? widget.minHeight : 36)
+                : widget.minHeight,
+          ),
+          padding: AppTheme.compactPadding(context, widget.padding, 0.5),
           decoration: BoxDecoration(
             color: widget.soft
                 ? (widget.softColor ?? AppTheme.sidebarBrandWash)
@@ -1018,6 +1023,9 @@ class _NeuFieldState extends State<NeuField> {
   @override
   Widget build(BuildContext context) {
     final hasLabel = widget.label.isNotEmpty || widget.labelAction != null;
+    // On desktop every field is the compact one, whatever a screen asked for.
+    final desktop = AppTheme.isDesktop(context);
+    final dense = widget.dense || desktop;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1049,15 +1057,15 @@ class _NeuFieldState extends State<NeuField> {
               if (widget.labelAction != null) widget.labelAction!,
             ],
           ),
-          SizedBox(height: widget.dense ? AppTheme.s4 : AppTheme.s8),
+          SizedBox(height: dense ? (desktop ? 3 : AppTheme.s4) : AppTheme.s8),
         ],
         NeuPressed(
           focused: _focused,
           hasError: widget.errorText != null,
           padding: EdgeInsets.only(
-            left: widget.dense ? AppTheme.s12 : AppTheme.s16,
+            left: dense ? AppTheme.s12 : AppTheme.s16,
             right: widget.suffix == null
-                ? (widget.dense ? AppTheme.s12 : AppTheme.s16)
+                ? (dense ? AppTheme.s12 : AppTheme.s16)
                 : AppTheme.s4,
           ),
           child: Row(
@@ -1085,20 +1093,20 @@ class _NeuFieldState extends State<NeuField> {
                   onChanged: widget.onChanged,
                   style: TextStyle(
                     color: AppTheme.heading,
-                    fontSize: widget.dense ? 14 : 16,
+                    fontSize: desktop ? 13.5 : (dense ? 14 : 16),
                   ),
                   cursorColor: AppTheme.accent,
                   decoration: InputDecoration(
                     hintText: widget.hint,
                     hintStyle: TextStyle(
                       color: AppTheme.muted,
-                      fontSize: widget.dense ? 13 : null,
+                      fontSize: dense ? 13 : null,
                     ),
                     border: InputBorder.none,
                     counterText: '',
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(
-                      vertical: widget.dense ? 6 : 10,
+                      vertical: desktop ? 4 : (dense ? 6 : 10),
                     ),
                   ),
                 ),

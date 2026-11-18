@@ -102,7 +102,51 @@ class BillPdf {
           marginLeft: 18,
           marginRight: 18,
         ),
-        build: (context) => _memo(invoice, lodgeName, logo),
+        build: (context) {
+          final memo = _memo(invoice, lodgeName, logo);
+          if (!invoice.isProvisional) return memo;
+          // Written with no network, so the invoice number is not the server's
+          // yet. Said across the page and again at the foot, so it cannot be
+          // mistaken for the tax invoice it will be replaced by.
+          return pw.Stack(
+            children: [
+              memo,
+              pw.Positioned.fill(
+                child: pw.Center(
+                  child: pw.Transform.rotate(
+                    angle: -0.6,
+                    child: pw.Opacity(
+                      opacity: 0.16,
+                      child: pw.Text(
+                        'PROVISIONAL',
+                        style: pw.TextStyle(
+                          fontSize: 64,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.red800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: pw.Text(
+                  'PROVISIONAL BILL - not a tax invoice. The official invoice is '
+                  'issued when this is recorded with the server.',
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    fontSize: 7,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.red800,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
 

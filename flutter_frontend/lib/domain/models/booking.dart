@@ -190,6 +190,7 @@ class Booking {
     this.rooms = const [],
     this.roomCount,
     this.roomNumbers,
+    this.offlinePending = false,
   });
 
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
@@ -276,7 +277,12 @@ class Booking {
         const [],
     roomCount: asIntOrNull(json['roomCount']),
     roomNumbers: asStringOrNull(json['roomNumbers']),
+    offlinePending: asBool(json['offlinePending']),
   );
+
+  /// Saved on this device and not yet accepted by the server — a booking, a
+  /// check-in or a check-out made while offline that is still queued.
+  final bool offlinePending;
 
   /// Whether this stay holds more than one room.
   bool get isMultiRoom => rooms.length > 1;

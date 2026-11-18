@@ -93,11 +93,9 @@ class IdProofFields extends StatelessWidget {
     this.onFile,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+  Widget _typePart(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
         required
             ? const RequiredLabel('ID proof')
             : Text('ID proof', style: AppTheme.fieldLabel(context)),
@@ -180,9 +178,13 @@ class IdProofFields extends StatelessWidget {
           const SizedBox(height: AppTheme.s4),
           Text(errorText!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
         ],
-        if (type != null) ...[
-          const SizedBox(height: AppTheme.s4),
-          NeuField(
+    ],
+  );
+
+  Widget _numberPart(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      NeuField(
             controller: number,
             label: 'ID number',
             required: required,
@@ -195,8 +197,12 @@ class IdProofFields extends StatelessWidget {
             const SizedBox(height: AppTheme.s4),
             Text('Not required', style: Theme.of(context).textTheme.bodySmall),
           ],
-          if (onFile != null) ...[
-            const SizedBox(height: AppTheme.s4),
+    ],
+  );
+
+  Widget _docPart(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
             Text('Document photo (optional)', style: AppTheme.fieldLabel(context)),
             const SizedBox(height: AppTheme.s4),
             if (file != null)
@@ -211,9 +217,47 @@ class IdProofFields extends StatelessWidget {
                   if (picked != null) onFile!(picked);
                 },
               ),
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // With the width for it, the three sit on one row — type, number and
+        // the document photo — so a guest's ID takes one line of the form
+        // instead of a stack of them.
+        if (constraints.maxWidth >= 560) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _typePart(context)),
+              if (type != null) ...[
+                const SizedBox(width: AppTheme.s12),
+                Expanded(child: _numberPart(context)),
+                if (onFile != null) ...[
+                  const SizedBox(width: AppTheme.s12),
+                  _docPart(context),
+                ],
+              ],
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _typePart(context),
+            if (type != null) ...[
+              const SizedBox(height: AppTheme.s4),
+              _numberPart(context),
+              if (onFile != null) ...[
+                const SizedBox(height: AppTheme.s4),
+                _docPart(context),
+              ],
+            ],
           ],
-        ],
-      ],
+        );
+      },
     );
   }
 }

@@ -93,7 +93,7 @@ class _FinishCleaningScreenState extends ConsumerState<FinishCleaningScreen> {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
               children: [

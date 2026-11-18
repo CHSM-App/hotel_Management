@@ -18,5 +18,7 @@
 /// 
 const String baseUrl = String.fromEnvironment(
   'API_BASE_URL',
+  // defaultValue: 'http://192.168.1.2:5000',
   defaultValue: 'https://hotel.vengurlatech.com',
+
 );

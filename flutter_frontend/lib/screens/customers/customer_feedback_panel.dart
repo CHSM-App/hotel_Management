@@ -178,7 +178,7 @@ class _FeedbackTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: width,
             child: StickyHeaderTable(
               header: Container(
@@ -189,7 +189,7 @@ class _FeedbackTable extends StatelessWidget {
                   child: Row(
                     children: [
                       for (final c in _kFeedbackColumns)
-                        SizedBox(
+                        TableCol(
                           width: c.width,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
@@ -250,7 +250,7 @@ class _FeedbackRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           for (final c in _kFeedbackColumns)
-            SizedBox(
+            TableCol(
               width: c.width,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),

@@ -309,6 +309,11 @@ class BillPreview {
   /// the figure a percentage discount is a percentage *of*.
   final num discountBase;
 
+  /// Set only when the preview was asked for as a checkout (`settle=1`):
+  /// 'ROOM' when one room leaves and the stay carries on (no bill yet),
+  /// otherwise the whole stay is being settled and billed.
+  final String? settleMode;
+
   const BillPreview({
     this.bookingId,
     this.guestName,
@@ -333,6 +338,7 @@ class BillPreview {
     this.alreadyInvoiced = false,
     this.checkinMode,
     this.discountBase = 0,
+    this.settleMode,
   });
 
   factory BillPreview.fromJson(Map<String, dynamic> json) => BillPreview(
@@ -384,6 +390,7 @@ class BillPreview {
       (json['document'] as Map<String, dynamic>?)?['checkinMode'],
     ),
     discountBase: asNum(json['discountBase']),
+    settleMode: asStringOrNull(json['settleMode']),
   );
 
   /// Which side is actually issued.
@@ -401,6 +408,30 @@ class BillPreview {
     final total = amounts?.totalAmount ?? 0;
     return ((total - advancePaid) * 100).round() / 100;
   }
+}
+
+/// A checkout that is paid for on the bill: the guest is still checked in when
+/// the bill opens, and leaves only if the settlement succeeds (the server does
+/// both in one transaction, so a stay can never read "checked out" with
+/// nothing collected). [roomId] scopes it to one room of a multi-room stay.
+class BillSettle {
+  final int? roomId;
+
+  /// What reception agreed for staying past the deadline; 0 when nothing.
+  final num lateCharge;
+
+  const BillSettle({this.roomId, this.lateCharge = 0});
+}
+
+/// What `settle-checkout` answers: the bill, or — when other rooms are still
+/// staying and only this one left — just the room's settlement.
+class SettleResult {
+  final String mode;
+  final Invoice? invoice;
+
+  const SettleResult({required this.mode, this.invoice});
+
+  bool get isRoomOnly => mode == 'ROOM';
 }
 
 /// One line of food ordered — "2× Chicken Biryani ₹560" — on a food bill's
@@ -1118,6 +1149,12 @@ class Invoice {
     if (lateCheckoutCharge > 0)
       BillLine(label: 'Late checkout', amount: lateCheckoutCharge),
   ];
+
+  /// A bill written on a device with no network. It carries a number of the
+  /// device's own (OFF-B-0001), not one from the gapless series — the real
+  /// invoice is issued when the settlement reaches the server — so it is handed
+  /// over marked PROVISIONAL and is not a tax invoice.
+  bool get isProvisional => invoiceNumber?.startsWith('OFF-') ?? false;
 
   bool get isVoid => status == 'VOID';
 

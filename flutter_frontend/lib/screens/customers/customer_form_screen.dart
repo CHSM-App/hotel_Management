@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/form_feedback.dart';
 import '../../domain/models/customer.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/form_grid.dart';
 import '../../widgets/neu.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
@@ -140,7 +141,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
               children: [
@@ -158,60 +159,74 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
 
                       const SectionLabel('Identity', number: 1, icon: Icons.badge_rounded),
                       const SizedBox(height: AppTheme.s12),
-                      NeuField(
-                        dense: true,
-                        controller: _name,
-                        label: 'Name',
-                        required: true,
-                        errorText: _nameError,
-                        focusNode: _nameFocus,
-                        onChanged: (_) => setState(() {}),
-                        forceCapitalizeWords: true,
+                      FormGrid(
+                        children: [
+                          NeuField(
+                            dense: true,
+                            controller: _name,
+                            label: 'Name',
+                            required: true,
+                            errorText: _nameError,
+                            focusNode: _nameFocus,
+                            onChanged: (_) => setState(() {}),
+                            forceCapitalizeWords: true,
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              NeuField(
+                                dense: true,
+                                controller: _phone,
+                                label: 'Phone',
+                                required: true,
+                                readOnly: _isEdit,
+                                keyboardType: TextInputType.phone,
+                                maxLength: 10,
+                                errorText: _phoneError,
+                                focusNode: _phoneFocus,
+                                hint: '9876543210',
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              if (_isEdit) ...[
+                                const SizedBox(height: AppTheme.s4),
+                                const Text(
+                                  "Phone can't be changed here.",
+                                  style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: AppTheme.s8),
-                      NeuField(
-                        dense: true,
-                        controller: _phone,
-                        label: 'Phone',
-                        required: true,
-                        readOnly: _isEdit,
-                        keyboardType: TextInputType.phone,
-                        maxLength: 10,
-                        errorText: _phoneError,
-                        focusNode: _phoneFocus,
-                        hint: '9876543210',
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      if (_isEdit) ...[
-                        const SizedBox(height: AppTheme.s4),
-                        const Text(
-                          "Phone can't be changed here.",
-                          style: TextStyle(color: AppTheme.muted, fontSize: 12),
-                        ),
-                      ],
 
                       const SectionDivider(),
                       const SectionLabel('Contact', number: 2, icon: Icons.call_rounded),
                       const SizedBox(height: AppTheme.s12),
-                      NeuField(
-                        dense: true,
-                        controller: _email,
-                        label: 'Email (optional)',
-                        keyboardType: TextInputType.emailAddress,
-                        errorText: _emailError,
-                        focusNode: _emailFocus,
-                        onChanged: (_) => setState(() {}),
+                      FormGrid(
+                        children: [
+                          NeuField(
+                            dense: true,
+                            controller: _email,
+                            label: 'Email (optional)',
+                            keyboardType: TextInputType.emailAddress,
+                            errorText: _emailError,
+                            focusNode: _emailFocus,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          NeuField(dense: true, controller: _tags, label: 'Tags (optional)', hint: 'e.g. VIP, Repeat guest'),
+                        ],
                       ),
-                      const SizedBox(height: AppTheme.s8),
-                      NeuField(dense: true, controller: _tags, label: 'Tags (optional)', hint: 'e.g. VIP, Repeat guest'),
 
                       if (_isEdit) ...[
                         const SectionDivider(),
                         const SectionLabel('ID proof', number: 3, icon: Icons.badge_outlined),
                         const SizedBox(height: AppTheme.s12),
-                        NeuField(dense: true, controller: _idProofType, label: 'ID proof type (optional)', hint: 'e.g. Aadhaar'),
-                        const SizedBox(height: AppTheme.s8),
-                        NeuField(dense: true, controller: _idProofNumber, label: 'ID proof number (optional)'),
+                        FormGrid(
+                          children: [
+                            NeuField(dense: true, controller: _idProofType, label: 'ID proof type (optional)', hint: 'e.g. Aadhaar'),
+                            NeuField(dense: true, controller: _idProofNumber, label: 'ID proof number (optional)'),
+                          ],
+                        ),
                       ],
 
                       const SectionDivider(),
@@ -234,11 +249,10 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                   ),
                 ),
                 const SizedBox(height: AppTheme.s16),
-                NeuButton(
-                  primary: true,
-                  expand: true,
-                  onPressed: submitting ? null : _save,
-                  child: submitting
+                FormActions(
+                  onSave: submitting ? null : _save,
+                  onCancel: () => Navigator.pop(context),
+                  saveChild: submitting
                       ? const SizedBox(
                           height: 18,
                           width: 18,

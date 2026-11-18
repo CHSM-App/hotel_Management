@@ -434,7 +434,7 @@ class _LinenSpreadsheet extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         child: HScrollTable(
           rowsScrollbar: true,
-          child: SizedBox(
+          child: TableSheet(
             width: totalWidth,
             child: StickyHeaderTable(
               header: Container(
@@ -481,7 +481,7 @@ class _HeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return TableCol(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
@@ -516,7 +516,7 @@ class _SpreadsheetRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget cell(String text, double width, {TextStyle? style, bool alignStart = false}) => SizedBox(
+    Widget cell(String text, double width, {TextStyle? style, bool alignStart = false}) => TableCol(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),
@@ -953,7 +953,7 @@ class _HistoryTableState extends State<_HistoryTable> {
       borderRadius: BorderRadius.circular(AppTheme.rMedium),
       child: HScrollTable(
         rowsScrollbar: true,
-        child: SizedBox(
+        child: TableSheet(
           width: totalWidth,
           child: StickyHeaderTable(
             header: Container(
@@ -999,7 +999,7 @@ class _SortableHeaderCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final icon = sortDir == null ? Icons.unfold_more_rounded : (sortDir == 1 ? Icons.arrow_drop_up_rounded : Icons.arrow_drop_down_rounded);
-    return SizedBox(
+    return TableCol(
       width: width,
       child: InkWell(
         onTap: onTap,
@@ -1043,7 +1043,7 @@ class _HistoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget cell(String text, double width, {bool alignStart = false}) => SizedBox(
+    Widget cell(String text, double width, {bool alignStart = false}) => TableCol(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 10),

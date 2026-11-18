@@ -1045,13 +1045,76 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                 ),
       ),
       body: SafeArea(
-        child: ListView(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // A wide window gets the live price in a column of its own, so the
+            // desk sees the quote change as they fill the form instead of
+            // scrolling back to it.
+            final split = constraints.maxWidth >= 1100;
+            final desktop = AppTheme.isDesktop(context);
+            // The two sections that share a row on a wide window.
+            final paymentWidgets = <Widget>[
+                      Builder(
+                        builder: (context) {
+                          final advanceTotal = sumPayments(
+                            _advance.where((l) => l.value > 0).toList(),
+                          );
+                          return _SectionLabel(
+                            _paidInFull ? 'Payment' : 'Advance payment',
+                            number: 3,
+                            trailing: _paidInFull
+                                ? 'Paid in full · ${formatPrice(advanceTotal)}'
+                                : (advanceTotal > 0
+                                      ? formatPrice(advanceTotal)
+                                      : null),
+                            trailingFull: _paidInFull,
+                          );
+                        },
+                      ),
+                      const SizedBox(height: AppTheme.s4),
+                      KeyedSubtree(
+                        key: _advanceKey,
+                        child: _AdvanceCard(
+                          lines: _advance,
+                          errorText: _advanceError,
+                          // Mirrors the web form's own hint under the advance
+                          // rows once what's typed in happens to add up to the
+                          // stay total — nothing forced it, so nothing undoes
+                          // it either; the desk just edits the rows further.
+                          hintText: _paidInFull && state.quote != null
+                              ? 'Full payment of ${formatPrice(state.quote!.totalPrice)} is being collected at booking.'
+                              : null,
+                          onAdd: () =>
+                              setState(() => _advance.add(PaymentDraft())),
+                          onRemove: (i) => setState(() => _advance.removeAt(i)),
+                          onChanged: () => setState(() {}),
+                        ),
+                      ),
+            ];
+            final vehicleWidgets = <Widget>[
+                    _SectionLabel(
+                      'Vehicles',
+                      number: vehiclesNumber,
+                      trailing: _vehicles.isEmpty
+                          ? null
+                          : '${_vehicles.length}',
+                    ),
+                    const SizedBox(height: AppTheme.s4),
+                    _VehicleList(
+                      vehicles: _vehicles,
+                      onAdd: () =>
+                          setState(() => _vehicles.add(VehicleDraft())),
+                      onRemove: (i) => setState(() => _vehicles.removeAt(i)),
+                      onChanged: () => setState(() {}),
+                    ),
+            ];
+            final list = ListView(
           controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(
-            AppTheme.s8,
-            AppTheme.s4,
-            AppTheme.s8,
-            AppTheme.s16,
+          padding: EdgeInsets.fromLTRB(
+            desktop ? AppTheme.s16 : AppTheme.s8,
+            desktop ? AppTheme.s16 : AppTheme.s4,
+            desktop ? AppTheme.s16 : AppTheme.s8,
+            AppTheme.s24,
           ),
           children: [
             // Not a choice the desk makes on an edit — the stay it is
@@ -1059,7 +1122,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             // about the past.
             if (!_editing) ...[
               _BookingTypeHeader(state: state),
-              const SizedBox(height: AppTheme.s4),
+              SizedBox(height: desktop ? AppTheme.s12 : AppTheme.s4),
             ],
 
             if (!_editing && (widget.prefillExtrasNote ?? '').isNotEmpty) ...[
@@ -1102,12 +1165,13 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             NeuCard(
               radius: AppTheme.rLarge,
               shadow: AppTheme.elevated,
-              padding: const EdgeInsets.all(AppTheme.s4),
+              // Desktop: the card breathes — a phone keeps its tight one.
+              padding: EdgeInsets.all(desktop ? AppTheme.s16 : AppTheme.s4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const _SectionLabel('Stay & room', number: 1),
-                  const SizedBox(height: AppTheme.s4),
+                  SizedBox(height: desktop ? AppTheme.s12 : AppTheme.s4),
 
                   // On a multi-room booking, room 1 reads as one of a set
                   // rather than as the form itself — the same bordered box
@@ -1223,14 +1287,18 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       ],
                     ],
 
-                    const SizedBox(height: AppTheme.s4),
-                    KeyedSubtree(
-                      key: _priceKey,
-                      child: _QuoteCard(
-                        state: state,
-                        submitAttempted: _submitAttempted,
+                    // On a wide window the quote sits in its own column beside
+                    // the form instead (see the split below).
+                    if (!split) ...[
+                      const SizedBox(height: AppTheme.s4),
+                      KeyedSubtree(
+                        key: _priceKey,
+                        child: _QuoteCard(
+                          state: state,
+                          submitAttempted: _submitAttempted,
+                        ),
                       ),
-                    ),
+                    ],
                     if (_roomPriceError != null) ...[
                       const SizedBox(height: AppTheme.s4),
                       Text(
@@ -1282,7 +1350,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       padding: const EdgeInsets.all(AppTheme.s8),
                       child: Column(
                         children: [
-                          KeyedSubtree(
+                          _FieldPair(
+                            first: KeyedSubtree(
                             key: _nameKey,
                             child: _editing
                                 ? NeuField(
@@ -1360,8 +1429,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                     ),
                                   ),
                           ),
-                          const SizedBox(height: AppTheme.s4),
-                          NeuField(
+                            second: NeuField(
                             key: _phoneKey,
                             controller: _phone,
                             label: 'Mobile',
@@ -1372,6 +1440,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                             errorText: _phoneError,
                             onChanged: (_) => setState(() {}),
                             dense: true,
+                          ),
                           ),
                           const SizedBox(height: AppTheme.s4),
                           KeyedSubtree(
@@ -1466,65 +1535,37 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       ),
                     ],
 
-                    // Advance first, then vehicles below it — one under the
-                    // other rather than sharing a row, so neither is
-                    // squeezed down to fit beside the other.
-                    if (!_editing) ...[
+                    // Wide: payment and vehicles sit side by side, one row of the
+                    // form instead of two stacked sections. Narrow: one under
+                    // the other, as on a phone.
+                    if (split && !_editing) ...[
                       const _SectionDivider(),
-                      Builder(
-                        builder: (context) {
-                          final advanceTotal = sumPayments(
-                            _advance.where((l) => l.value > 0).toList(),
-                          );
-                          return _SectionLabel(
-                            _paidInFull ? 'Payment' : 'Advance payment',
-                            number: 3,
-                            trailing: _paidInFull
-                                ? 'Paid in full · ${formatPrice(advanceTotal)}'
-                                : (advanceTotal > 0
-                                      ? formatPrice(advanceTotal)
-                                      : null),
-                            trailingFull: _paidInFull,
-                          );
-                        },
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: paymentWidgets,
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.s24),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: vehicleWidgets,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: AppTheme.s4),
-                      KeyedSubtree(
-                        key: _advanceKey,
-                        child: _AdvanceCard(
-                          lines: _advance,
-                          errorText: _advanceError,
-                          // Mirrors the web form's own hint under the advance
-                          // rows once what's typed in happens to add up to the
-                          // stay total — nothing forced it, so nothing undoes
-                          // it either; the desk just edits the rows further.
-                          hintText: _paidInFull && state.quote != null
-                              ? 'Full payment of ${formatPrice(state.quote!.totalPrice)} is being collected at booking.'
-                              : null,
-                          onAdd: () =>
-                              setState(() => _advance.add(PaymentDraft())),
-                          onRemove: (i) => setState(() => _advance.removeAt(i)),
-                          onChanged: () => setState(() {}),
-                        ),
-                      ),
+                    ] else ...[
+                      if (!_editing) ...[
+                        const _SectionDivider(),
+                        ...paymentWidgets,
+                      ],
+                      const _SectionDivider(),
+                      ...vehicleWidgets,
                     ],
-
-                    const _SectionDivider(),
-                    _SectionLabel(
-                      'Vehicles',
-                      number: vehiclesNumber,
-                      trailing: _vehicles.isEmpty
-                          ? null
-                          : '${_vehicles.length}',
-                    ),
-                    const SizedBox(height: AppTheme.s4),
-                    _VehicleList(
-                      vehicles: _vehicles,
-                      onAdd: () =>
-                          setState(() => _vehicles.add(VehicleDraft())),
-                      onRemove: (i) => setState(() => _vehicles.removeAt(i)),
-                      onChanged: () => setState(() {}),
-                    ),
                   ],
                 ],
               ),
@@ -1592,6 +1633,61 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                   : 'Create reservation',
             ),
           ],
+        );
+            final centered = Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: AppTheme.formMaxWidth(context),
+                ),
+                child: list,
+              ),
+            );
+            if (!split) return centered;
+
+            // Wide: the form on the left (kept to a readable width, so fields
+            // don't stretch across the window), and a price summary on the
+            // right that stays put while the form scrolls.
+            final summary = state.room != null
+                ? KeyedSubtree(
+                    key: _priceKey,
+                    child: _QuoteCard(
+                      state: state,
+                      submitAttempted: _submitAttempted,
+                    ),
+                  )
+                : const _SummaryPlaceholder();
+            return Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1320),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: list),
+                    SizedBox(
+                      width: 392,
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTheme.s8,
+                          AppTheme.s16,
+                          AppTheme.s16,
+                          AppTheme.s24,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const _SummaryHeading(),
+                            summary,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -2387,7 +2483,8 @@ class _RoomPicker extends ConsumerWidget {
             child: DropdownButton<int>(
               value: state.room?.id,
               isExpanded: true,
-              isDense: false,
+              // Desktop: the closed field is one slim line, not two.
+              isDense: AppTheme.isDesktop(context),
               itemHeight: 56,
               menuMaxHeight: 360,
               elevation: 4,
@@ -2479,9 +2576,10 @@ class _RoomBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final size = AppTheme.isDesktop(context) ? 28.0 : 36.0;
     return Container(
-      width: 36,
-      height: 36,
+      width: size,
+      height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: AppTheme.accent.withValues(alpha: 0.10),
@@ -3558,14 +3656,16 @@ class _BedChoiceChip extends StatelessWidget {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: AppTheme.compactPadding(context, const EdgeInsets.symmetric(horizontal: 12, vertical: 8), 0.6),
         decoration: BoxDecoration(
           color: fill,
           border: Border.all(color: fill),
           borderRadius: BorderRadius.circular(AppTheme.rSmall),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // Desktop: "Bed 1 · Free" on one line.
+        child: Flex(
+          direction: AppTheme.isDesktop(context) ? Axis.horizontal : Axis.vertical,
+          crossAxisAlignment: AppTheme.isDesktop(context) ? CrossAxisAlignment.center : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
@@ -3576,6 +3676,7 @@ class _BedChoiceChip extends StatelessWidget {
                 fontSize: 12.5,
               ),
             ),
+            if (AppTheme.isDesktop(context)) const SizedBox(width: 8),
             Text(
               sublabel,
               style: const TextStyle(
@@ -3948,18 +4049,34 @@ class _PartyCounts extends StatelessWidget {
               horizontal: AppTheme.s12,
               vertical: AppTheme.s4,
             ),
-            child: Column(
-              children: [
-                row(Icons.person_rounded, 'Adults', adults, onAdults, minAdults),
-                const Divider(height: 1, color: AppTheme.border),
-                row(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final adultsRow = row(Icons.person_rounded, 'Adults', adults, onAdults, minAdults);
+                final childrenRow = row(
                   Icons.child_care_rounded,
                   'Children',
                   children,
                   onChildren,
                   minChildren,
-                ),
-              ],
+                );
+                // Wide: both counters on one row.
+                if (constraints.maxWidth >= 460) {
+                  return Row(
+                    children: [
+                      Expanded(child: adultsRow),
+                      const SizedBox(width: AppTheme.s24),
+                      Expanded(child: childrenRow),
+                    ],
+                  );
+                }
+                return Column(
+                  children: [
+                    adultsRow,
+                    const Divider(height: 1, color: AppTheme.border),
+                    childrenRow,
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -4496,7 +4613,8 @@ class _GuestCardState extends State<_GuestCard> {
           // The delete icon sits on the "Name" label's own line, trailing
           // it — the same NeuField.labelAction slot the vehicle card's own
           // delete icon uses.
-          NeuField(
+          _FieldPair(
+            first: NeuField(
             controller: _name,
             label: widget.optionalName ? 'Name (optional)' : 'Name',
             onChanged: (v) => widget.guest.name = v,
@@ -4514,8 +4632,7 @@ class _GuestCardState extends State<_GuestCard> {
               ),
             ),
           ),
-          const SizedBox(height: AppTheme.s4),
-          NeuField(
+            second: NeuField(
             controller: _phone,
             label: 'Mobile (optional)',
             hint: '10-digit mobile',
@@ -4523,6 +4640,7 @@ class _GuestCardState extends State<_GuestCard> {
             maxLength: 10,
             onChanged: (v) => widget.guest.phone = v,
             dense: true,
+          ),
           ),
           const SizedBox(height: AppTheme.s4),
           _IdProofFields(
@@ -4769,6 +4887,87 @@ class _AdvanceCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// The right-hand summary's title, in the same voice as the form's own section
+/// heads.
+class _SummaryHeading extends StatelessWidget {
+  const _SummaryHeading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(left: 2, bottom: AppTheme.s8),
+      child: Row(
+        children: [
+          Icon(Icons.receipt_long_rounded, size: 16, color: AppTheme.accent),
+          SizedBox(width: AppTheme.s8),
+          Text(
+            'PRICE SUMMARY',
+            style: TextStyle(
+              color: AppTheme.heading,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Stands in for the price card until a room is chosen, so the form does not
+/// shift sideways the moment one is picked.
+class _SummaryPlaceholder extends StatelessWidget {
+  const _SummaryPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return NeuCard(
+      padding: const EdgeInsets.all(AppTheme.s16),
+      shadow: AppTheme.subtle,
+      child: const Text(
+        'Choose dates and a room, and the price appears here as you fill in the booking.',
+        style: TextStyle(color: AppTheme.muted, fontSize: 13, height: 1.4),
+      ),
+    );
+  }
+}
+
+/// Two fields on one row when the card is wide enough, stacked when it is not.
+/// Halves the height of every name/mobile pair on a desktop window.
+class _FieldPair extends StatelessWidget {
+  final Widget first;
+  final Widget second;
+
+  const _FieldPair({required this.first, required this.second});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 520) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: first),
+              const SizedBox(width: AppTheme.s12),
+              Expanded(child: second),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            first,
+            const SizedBox(height: AppTheme.s4),
+            second,
+          ],
+        );
+      },
     );
   }
 }

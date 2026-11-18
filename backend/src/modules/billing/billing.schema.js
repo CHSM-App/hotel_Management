@@ -65,6 +65,11 @@ const issueInvoiceSchema = z
     // back so a bill that changed meanwhile is refused instead of settled short.
     lateCharge: z.coerce.number().nonnegative().max(100000).optional().default(0),
     expectedDue: z.coerce.number().optional(),
+    // When the guest really left and the bill was really written, if the desk
+    // did this offline and is only now sending it. ISO instants; validated in
+    // the controller (bookings/clientTime.js).
+    checkedOutAt: z.string().trim().max(40).optional(),
+    invoiceAt: z.string().trim().max(40).optional(),
   })
   // A method, or lines, or nothing collected at all. The middle case is the one
   // this had to grow: without it every lines-only settlement is refused for a

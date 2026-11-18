@@ -4,19 +4,32 @@ import '../../domain/models/event_booking.dart';
 import '../../domain/models/invoice.dart';
 import '../../domain/models/lodge_service.dart' show ServiceUsage;
 import '../../domain/repository/billing_repo.dart';
+import '../../core/offline/offline_desk.dart';
+import '../../core/offline/offline_interceptor.dart';
+import '../../core/offline/offline_store.dart';
 import '../api/api_service.dart';
 
-/// Pure-remote, and necessarily so.
+/// The server first; a guest's check-out and bill can also be done on the
+/// device when the network is down.
 ///
-/// Nothing here can be answered from a cache. A bill's total depends on the
-/// stay's own snapshot and on GST bands the server applies night by night, and
-/// issuing one takes the next serial in a gapless series — a document number
-/// cannot be handed out by a phone. Failures rethrow so the desk is told rather
-/// than shown a figure that may already be wrong.
+/// A bill's total depends on the stay's own nightly snapshot and the GST bands
+/// the server applies night by night; [OfflineDesk] ports that arithmetic and is
+/// held to the server's own figures by test/pricing_golden_test.dart. What it
+/// cannot do is hand out an invoice number — the gapless series is the
+/// server's — so an offline bill is PROVISIONAL and carries a number of the
+/// device's own until the settlement reaches the server and the real one is
+/// issued. Everything else still needs the server.
 class BillingImpl implements BillingRepository {
   final ApiService api;
+  final OfflineDesk? desk;
 
-  BillingImpl(this.api);
+  BillingImpl(this.api, [this.desk]);
+
+  Future<Map<String, dynamic>?> _cachedRaw(int id) async {
+    final raw = await desk?.store.cachedGet('/bookings/$id');
+    final b = raw is Map ? raw['booking'] : null;
+    return b is Map ? b.cast<String, dynamic>() : null;
+  }
 
   @override
   Future<List<BillableStay>> queue() => api.billingQueue();
@@ -30,16 +43,56 @@ class BillingImpl implements BillingRepository {
     bool includeLateCheckout = true,
     num discountAmount = 0,
     String? discountReason,
-  }) => api.previewBill(
-    bookingId,
-    includeLateCheckout: includeLateCheckout,
-    discountAmount: discountAmount,
-    discountReason: discountReason,
-  );
+    BillSettle? settle,
+  }) async {
+    // A booking made on this device has no server record to ask about.
+    if (bookingId >= 0) {
+      try {
+        return await api.previewBill(
+          bookingId,
+          includeLateCheckout: includeLateCheckout,
+          discountAmount: discountAmount,
+          discountReason: discountReason,
+          settle: settle,
+        );
+      } on OfflineUnavailable {
+        if (desk == null) rethrow;
+      }
+    }
+    return desk!.previewBill(
+      bookingId,
+      includeLateCheckout: includeLateCheckout,
+      discountAmount: discountAmount,
+      discountReason: discountReason,
+      settle: settle,
+      cachedRaw: await _cachedRaw(bookingId),
+    );
+  }
 
   @override
   Future<Invoice> issue(int bookingId, Map<String, dynamic> body) =>
       api.issueInvoice(bookingId, body);
+
+  @override
+  Future<SettleResult> settle(
+    int bookingId,
+    Map<String, dynamic> body, {
+    int? roomId,
+  }) async {
+    final local = desk == null ? null : await desk!.store.stayGet(bookingId);
+    // Already checked out on this device and waiting to sync: do not do it twice.
+    // One key for the attempt now and the copy saved for later, so the server
+    // can tell a replay from a new bill (see middleware/idempotency.js).
+    final key = newUuid();
+    if (bookingId >= 0 && local == null) {
+      try {
+        return await api.settleCheckout(bookingId, body, roomId: roomId, idempotencyKey: key);
+      } on OfflineUnavailable {
+        if (desk == null) rethrow;
+      }
+    }
+    return desk!.settle(bookingId, body, roomId: roomId, cachedRaw: await _cachedRaw(bookingId), key: key);
+  }
 
   @override
   Future<List<FoodTab>> foodTabs() => api.foodTabs();
@@ -75,8 +128,10 @@ class BillingImpl implements BillingRepository {
   }) => api.shareInvoiceWhatsApp(invoiceId, pdfBytes, filename, phone: phone);
 
   @override
-  Future<List<AdvanceReceipt>> advanceReceipts(int bookingId) =>
-      api.advanceReceipts(bookingId);
+  Future<List<AdvanceReceipt>> advanceReceipts(int bookingId) async {
+    if (bookingId < 0) return desk?.advanceReceipts(bookingId) ?? const [];
+    return api.advanceReceipts(bookingId);
+  }
 
   @override
   Future<List<AdvanceReceipt>> allAdvanceReceipts() => api.allAdvanceReceipts();

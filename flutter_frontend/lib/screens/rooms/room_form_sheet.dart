@@ -200,7 +200,7 @@ class _EditRoomPageState extends ConsumerState<EditRoomPage> {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
             child: ListView(
               controller: _scrollController,
               padding: const EdgeInsets.fromLTRB(

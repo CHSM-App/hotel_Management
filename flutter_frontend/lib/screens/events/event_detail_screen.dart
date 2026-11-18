@@ -102,7 +102,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                 color: AppTheme.accent,
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+                    constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
                     child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                   padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s24),

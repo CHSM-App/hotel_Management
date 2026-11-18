@@ -15,9 +15,17 @@ abstract class BillingRepository {
     bool includeLateCheckout,
     num discountAmount,
     String? discountReason,
+    BillSettle? settle,
   });
 
   Future<Invoice> issue(int bookingId, Map<String, dynamic> body);
+
+  /// Check out and bill in one step (see [ApiService.settleCheckout]).
+  Future<SettleResult> settle(
+    int bookingId,
+    Map<String, dynamic> body, {
+    int? roomId,
+  });
 
   /// Tables, rooms, and takeaways holding delivered food nobody has paid for.
   Future<List<FoodTab>> foodTabs();

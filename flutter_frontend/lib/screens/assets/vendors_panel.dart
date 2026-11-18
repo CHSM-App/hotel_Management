@@ -7,6 +7,7 @@ import '../../widgets/neu.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 import 'asset_icons.dart';
+import '../../widgets/adaptive_grid.dart';
 
 /// Assets > Vendors — mirrors the Vendors tab in AssetsPanel.jsx: a plain
 /// list (name, specialty · phone), tap to edit, "Add vendor" to file a new
@@ -39,11 +40,7 @@ class VendorsPanel extends ConsumerWidget {
                   message: 'No vendors yet. Add the AC contractor, lift AMC firm, or electrician you call for repairs.',
                 )
               else
-                for (final v in state.vendors)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppTheme.s8),
-                    child: _VendorCard(vendor: v, onTap: () => _editVendor(context, vendor: v)),
-                  ),
+                AdaptiveGrid(children: [for (final v in state.vendors) _VendorCard(vendor: v, onTap: () => _editVendor(context, vendor: v))]),
             ],
           ),
         ),
@@ -200,7 +197,7 @@ class _VendorFormScreenState extends ConsumerState<VendorFormScreen> {
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidth),
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s12, AppTheme.s12, AppTheme.s16),
               children: [

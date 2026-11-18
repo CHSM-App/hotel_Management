@@ -11,6 +11,7 @@ const seriesService = require('./series.service');
 const billShareService = require('./billShare.service');
 const receiptShareService = require('./receiptShare.service');
 const { ApiError } = require('../../middleware/errorHandler');
+const { parseClientTime } = require('../bookings/clientTime');
 
 async function listBillableBookingsHandler(req, res, next) {
   try {
@@ -92,13 +93,22 @@ async function settleCheckoutHandler(req, res, next) {
     }
     const bookingId = Number(req.params.bookingId);
     const roomId = req.params.roomId ? Number(req.params.roomId) : null;
+
+    // When the guest really left and the bill was really written, if the desk
+    // did it offline: recorded as they happened, not as they reached us. The
+    // bill is never dated before the departure it bills.
+    const checkedOutAt = parseClientTime(parsed.data.checkedOutAt, 'The check-out time');
+    let invoiceAt = parseClientTime(parsed.data.invoiceAt, 'The bill time') ?? checkedOutAt;
+    if (checkedOutAt && invoiceAt && invoiceAt < checkedOutAt) invoiceAt = checkedOutAt;
+    const data = { ...parsed.data, checkedOutAt, invoiceAt };
+
     const result =
       roomId != null
-        ? await billingService.settleRoomCheckout(req.user.lodgeId, req.user.sub, bookingId, roomId, parsed.data)
+        ? await billingService.settleRoomCheckout(req.user.lodgeId, req.user.sub, bookingId, roomId, data)
         : {
             mode: 'FINAL',
-            invoice: await billingService.issueInvoice(req.user.lodgeId, req.user.sub, bookingId, parsed.data, {
-              settle: { lateCharge: parsed.data.lateCharge },
+            invoice: await billingService.issueInvoice(req.user.lodgeId, req.user.sub, bookingId, data, {
+              settle: { lateCharge: data.lateCharge, checkedOutAt, invoiceAt },
             }),
           };
     res.status(201).json(result);

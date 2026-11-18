@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/dio_provider.dart';
+import '../../core/network/token_provider.dart';
+import '../../core/offline/offline_desk.dart';
+import '../../core/offline/offline_store.dart';
 import '../../data/repositories/assets_impl.dart';
 import '../../data/repositories/auth_impl.dart';
 import '../../data/repositories/booking_impl.dart';
@@ -48,12 +51,18 @@ final authRepositoryProvider = Provider<AuthRepository>(
   (ref) => AuthImpl(ref.watch(apiServiceProvider)),
 );
 
+/// What the device can do with no network (see OfflineDesk). Scoped to the
+/// lodge in the session, the same key the HTTP cache uses.
+final offlineDeskProvider = Provider<OfflineDesk>(
+  (ref) => OfflineDesk(OfflineStore(() => '${ref.read(tokenProvider).lodgeId ?? 0}')),
+);
+
 final bookingRepositoryProvider = Provider<BookingRepository>(
-  (ref) => BookingImpl(ref.watch(apiServiceProvider)),
+  (ref) => BookingImpl(ref.watch(apiServiceProvider), ref.watch(offlineDeskProvider)),
 );
 
 final billingRepositoryProvider = Provider<BillingRepository>(
-  (ref) => BillingImpl(ref.watch(apiServiceProvider)),
+  (ref) => BillingImpl(ref.watch(apiServiceProvider), ref.watch(offlineDeskProvider)),
 );
 
 final ordersRepositoryProvider = Provider<OrdersRepository>(

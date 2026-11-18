@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotel_manager/domain/models/booking.dart';
@@ -16,8 +17,13 @@ import 'package:hotel_manager/domain/repository/auth_repo.dart';
 import 'package:hotel_manager/domain/repository/booking_repo.dart';
 import 'package:hotel_manager/domain/usecase/auth_usecase.dart';
 import 'package:hotel_manager/domain/usecase/booking_usecase.dart';
+import 'package:hotel_manager/core/offline/outbox_status.dart';
+import 'package:hotel_manager/presentation/providers/network_provider.dart';
 import 'package:hotel_manager/presentation/providers/usecase_provider.dart';
+import 'package:hotel_manager/screens/bookings/booking_detail_screen.dart';
+import 'package:hotel_manager/screens/bookings/take_booking_screen.dart';
 import 'package:hotel_manager/screens/shell/dashboard_shell.dart';
+import 'package:hotel_manager/screens/shell/feature.dart';
 import 'package:hotel_manager/screens/theme.dart';
 
 /// Renders the signed-in app against a canned /me and tape chart.
@@ -66,6 +72,13 @@ class _FakeAuth implements AuthRepository {
 
   @override
   Future<Me> removeMyLodgeLogo() async => throw UnimplementedError();
+
+  @override
+  Future<Me> updateMyLodgeHeroImage(FormData form) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Me> removeMyLodgeHeroImage() async => throw UnimplementedError();
 }
 
 /// One stay for the chart, and the room it sits on. The chart needs both a
@@ -258,6 +271,10 @@ Me _owner() => Me.fromJson(const {
 
 Widget _app(Me me, List<_Stay> stays) => ProviderScope(
   overrides: [
+    // No connectivity probe (it keeps a periodic timer alive past the test).
+    networkStatusProvider.overrideWith((ref) => Stream.value(true)),
+    pendingOutboxCountProvider.overrideWith((ref) => Stream.value(0)),
+    attentionOutboxCountProvider.overrideWith((ref) => Stream.value(0)),
     authUsecaseProvider.overrideWithValue(AuthUsecase(_FakeAuth(me))),
     bookingUsecaseProvider.overrideWithValue(
       BookingUsecase(_FakeBookings(stays)),
@@ -267,6 +284,209 @@ Widget _app(Me me, List<_Stay> stays) => ProviderScope(
 );
 
 void main() {
+  // Every section the owner can reach, at a desktop, a laptop, a small window
+  // and a phone: none may throw while laying out (an overflow, an unbounded
+  // width, a bad constraint). Data-less, so this guards the frames and
+  // empty/error states; the table and grid widgets have their own tests.
+  for (final size in const [
+    Size(1920, 1080),
+    Size(1280, 720),
+    Size(960, 600),
+    Size(400, 800),
+  ]) {
+    testWidgets('every section lays out at ${size.width.toInt()}x${size.height.toInt()}', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final me = _owner();
+      final compact = size.shortestSide < AppTheme.bpMedium;
+
+      await tester.pumpWidget(_app(me, const []));
+      await tester.pumpAndSettle();
+
+      for (final f in kFeatures.where((f) => f.availableTo(me))) {
+        if (compact) {
+          await tester.tap(find.byIcon(Icons.menu_rounded));
+          await tester.pumpAndSettle();
+        }
+        if (f.group != null && find.text(f.title).evaluate().isEmpty) {
+          final header = find.text(f.group!.toUpperCase());
+          if (header.evaluate().isNotEmpty) {
+            await tester.tap(header.first);
+            await tester.pumpAndSettle();
+          }
+        }
+        final item = find.text(f.title);
+        if (item.evaluate().isEmpty) continue;
+        await tester.tap(item.first);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '${f.title} at $size');
+      }
+    });
+  }
+
+  for (final size in const [Size(1920, 1080), Size(1280, 720), Size(900, 700), Size(400, 800)]) {
+    testWidgets('booking detail lays out at ${size.width.toInt()} wide', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final stay = _Stay(
+        Booking.fromJson(const {
+          'id': '66',
+          'roomId': '202',
+          'guestName': 'Sukhada Kudalkar',
+          'guestPhone': '9000000000',
+          'roomNumber': '202',
+          'checkInDate': '2026-08-27',
+          'checkOutDate': '2026-08-29',
+          'status': 'BOOKED',
+          'totalPrice': 6400,
+          'advanceAmount': 1000,
+        }),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            networkStatusProvider.overrideWith((ref) => Stream.value(true)),
+            pendingOutboxCountProvider.overrideWith((ref) => Stream.value(0)),
+            attentionOutboxCountProvider.overrideWith((ref) => Stream.value(0)),
+            bookingUsecaseProvider.overrideWithValue(BookingUsecase(_FakeBookings([stay]))),
+          ],
+          child: MaterialApp(theme: AppTheme.light, home: const BookingDetailScreen(bookingId: 66)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Sukhada Kudalkar'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('desktop room chart: status legend on top, New booking bar below, month fits', (tester) async {
+    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final now = DateTime.now();
+    String iso(DateTime d) => d.toIso8601String().substring(0, 10);
+    await tester.pumpWidget(
+      _app(_owner(), [
+        _Stay(
+          Booking.fromJson({
+            'id': '66',
+            'roomId': '202',
+            'guestName': 'Sukhada Kudalkar',
+            'roomNumber': '202',
+            'checkInDate': iso(now),
+            'checkOutDate': iso(now.add(const Duration(days: 2))),
+            'status': 'CHECKED_IN',
+            'totalPrice': 6400,
+          }),
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    // Legend: every status colour is named, with today's count.
+    for (final label in ['Vacant', 'Reserved', 'Checked in', 'Stayed', 'Draft', 'Not ready']) {
+      expect(find.text(label), findsOneWidget, reason: label);
+    }
+    // The bottom bar's labelled button (not just a floating +).
+    // New booking and Drafts are buttons in the chart's top row; no bottom bar.
+    expect(find.widgetWithText(FilledButton, 'New booking'), findsOneWidget);
+    // Drafts, at the top as on the web - opens the list of parked bookings.
+    await tester.tap(find.widgetWithText(FilledButton, 'Drafts'));
+    await tester.pumpAndSettle();
+    expect(find.text('Draft bookings'), findsOneWidget);
+    expect(find.text('No drafts parked.'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    // Month navigation is there, since the whole month is on screen at once.
+    expect(find.byTooltip('Next month'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('phone room chart: no legend bar, floating + stays', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_app(_owner(), const []));
+    await tester.pumpAndSettle();
+    expect(find.text('Reserved'), findsNothing);
+    expect(find.widgetWithText(FilledButton, 'New booking'), findsNothing);
+    expect(find.byIcon(Icons.add_rounded), findsOneWidget);
+  });
+
+  for (final size in const [Size(1920, 1080), Size(1280, 720), Size(900, 700), Size(400, 800)]) {
+    testWidgets('new booking lays out at ${size.width.toInt()} wide', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            networkStatusProvider.overrideWith((ref) => Stream.value(true)),
+            pendingOutboxCountProvider.overrideWith((ref) => Stream.value(0)),
+            attentionOutboxCountProvider.overrideWith((ref) => Stream.value(0)),
+            bookingUsecaseProvider.overrideWithValue(BookingUsecase(_FakeBookings(const []))),
+          ],
+          child: MaterialApp(theme: AppTheme.light, home: const TakeBookingScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('New booking'), findsWidgets);
+      // The price summary column is a wide-window thing.
+      expect(find.text('PRICE SUMMARY'), size.width >= 1100 ? findsOneWidget : findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('desktop: maximize view hides sidebar and top bar, Esc brings them back', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_app(_owner(), const []));
+    await tester.pumpAndSettle();
+
+    // Normal: the rail names the property, and the top bar offers the toggle.
+    expect(find.text('Anand Executive Home Stay'), findsOneWidget);
+    expect(find.byIcon(Icons.fullscreen_rounded), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.fullscreen_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Anand Executive Home Stay'), findsNothing);
+    expect(find.byIcon(Icons.fullscreen_exit_rounded), findsOneWidget);
+    // The section is still there, now with the whole window.
+    expect(find.text('No active rooms yet.'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('Anand Executive Home Stay'), findsOneWidget);
+
+    // F11 toggles it too.
+    await tester.sendKeyEvent(LogicalKeyboardKey.f11);
+    await tester.pumpAndSettle();
+    expect(find.text('Anand Executive Home Stay'), findsNothing);
+  });
+
+  testWidgets('phone: no maximize button, the drawer layout is unchanged', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_app(_owner(), const []));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.fullscreen_rounded), findsNothing);
+    expect(find.byIcon(Icons.menu_rounded), findsOneWidget);
+  });
+
   testWidgets('the shell draws the property, the tabs and the chart', (
     tester,
   ) async {

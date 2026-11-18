@@ -67,9 +67,7 @@ class InvoicePreviewScreen extends ConsumerWidget {
               child: Align(
                 alignment: Alignment.topCenter,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: AppTheme.maxContentWidth,
-                  ),
+                  constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(
                       AppTheme.s12,

@@ -19,8 +19,33 @@ class BookingsScreen extends ConsumerStatefulWidget {
 }
 
 class _BookingsScreenState extends ConsumerState<BookingsScreen> {
+  Future<void> _newBooking() async {
+    final booked = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const TakeBookingScreen()),
+    );
+    if (booked == true) {
+      ref.read(bookingViewModelProvider.notifier).loadChart();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // A desktop window: the chart takes the whole page; New booking and
+        // Drafts are buttons in the chart's own top row.
+        if (constraints.maxWidth >= 1100) {
+          return const Padding(
+            padding: EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 0),
+            child: TapeChart(),
+          );
+        }
+        return _phone();
+      },
+    );
+  }
+
+  Widget _phone() {
     return Stack(
       // Expand rather than the default loose fit, so the chart fills the
       // screen instead of being asked how tall it would like to be.
@@ -46,14 +71,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
               customBorder: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppTheme.rLarge),
               ),
-              onTap: () async {
-                final booked = await Navigator.of(context).push<bool>(
-                  MaterialPageRoute(builder: (_) => const TakeBookingScreen()),
-                );
-                if (booked == true) {
-                  ref.read(bookingViewModelProvider.notifier).loadChart();
-                }
-              },
+              onTap: _newBooking,
               child: Container(
                 padding: const EdgeInsets.all(AppTheme.s16),
                 decoration: BoxDecoration(

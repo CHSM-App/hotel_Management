@@ -12,6 +12,8 @@ import '../theme.dart';
 import 'booking_actions.dart';
 import 'booking_detail_screen.dart';
 import 'take_booking_screen.dart';
+import '../../widgets/adaptive_grid.dart';
+import '../../widgets/h_scroll_table.dart';
 
 /// The guest register: every stay whose dates overlap a range, searchable and
 /// cut by status, with the same summary strip the web's own Guest register
@@ -34,6 +36,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   /// Empty means "no cut" — the same meaning 'ALL' carries on the web page.
   final Set<String> _statuses = {};
+
+  /// Desktop only: the register as a table (default) or as cards.
+  bool _asTable = true;
 
   List<Booking>? _bookings;
   List<BookingDraft> _drafts = const [];
@@ -286,6 +291,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       ? _searchedDrafts
       : const [];
 
+  Future<void> _open(Booking b) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => BookingDetailScreen(bookingId: b.id)),
+    );
+    _load(silent: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
@@ -327,36 +339,41 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 icon: Icons.groups_outlined,
                 message: 'No guests match this range and filter.',
               )
-            else
-              for (final b in visibleBookings)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppTheme.s12),
-                  child: _RegisterCard(
-                    booking: b,
-                    onTap: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => BookingDetailScreen(bookingId: b.id),
-                        ),
-                      );
-                      _load(silent: true);
-                    },
-                  ),
+            else ...[
+              if (AppTheme.isDesktop(context))
+                _RegisterHeader(
+                  count: visibleBookings.length,
+                  asTable: _asTable,
+                  onChanged: (v) => setState(() => _asTable = v),
                 ),
-            for (final d in visibleDrafts)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppTheme.s12),
-                child: _DraftRegisterCard(
-                  draft: d,
-                  onTap: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => TakeBookingScreen(draft: d),
-                      ),
-                    );
-                    _load(silent: true);
-                  },
+              if (AppTheme.isDesktop(context) && _asTable)
+                _RegisterTable(bookings: visibleBookings, onOpen: _open)
+              else
+                AdaptiveGrid(
+                  minTileWidth: 440,
+                  children: [
+                    for (final b in visibleBookings)
+                      _RegisterCard(booking: b, onTap: () => _open(b)),
+                  ],
                 ),
+            ],
+            if (visibleDrafts.isNotEmpty)
+              AdaptiveGrid(
+                minTileWidth: 440,
+                children: [
+                  for (final d in visibleDrafts)
+                    _DraftRegisterCard(
+                      draft: d,
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => TakeBookingScreen(draft: d),
+                          ),
+                        );
+                        _load(silent: true);
+                      },
+                    ),
+                ],
               ),
           ],
         ],
@@ -414,35 +431,18 @@ class _RangeAndSearch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _DateField(
-                label: 'From',
-                value: fromDate,
-                onPick: (v) => onFromTo(v, toDate),
-              ),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              child: _DateField(
-                label: 'To',
-                value: toDate,
-                minDate: fromDate,
-                onPick: (v) => onFromTo(fromDate, v),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppTheme.s8),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Container(
+    final from = _DateField(
+      label: 'From',
+      value: fromDate,
+      onPick: (v) => onFromTo(v, toDate),
+    );
+    final to = _DateField(
+      label: 'To',
+      value: toDate,
+      minDate: fromDate,
+      onPick: (v) => onFromTo(fromDate, v),
+    );
+    final search = Container(
                 height: 40,
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                 decoration: BoxDecoration(
@@ -513,10 +513,42 @@ class _RangeAndSearch extends StatelessWidget {
                       ),
                   ],
                 ),
-              ),
-            ),
+              );
+    final filter = _FilterButton(
+      count: activeFilterCount,
+      onTap: onToggleFilter,
+    );
+    if (AppTheme.isDesktop(context)) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(width: 220, child: from),
+          const SizedBox(width: AppTheme.s8),
+          SizedBox(width: 220, child: to),
+          const SizedBox(width: AppTheme.s12),
+          Expanded(child: search),
+          const SizedBox(width: AppTheme.s8),
+          filter,
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: from),
             const SizedBox(width: AppTheme.s8),
-            _FilterButton(count: activeFilterCount, onTap: onToggleFilter),
+            Expanded(child: to),
+          ],
+        ),
+        const SizedBox(height: AppTheme.s8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(child: search),
+            const SizedBox(width: AppTheme.s8),
+            filter,
           ],
         ),
       ],
@@ -789,6 +821,329 @@ class _DraftRegisterCard extends StatelessWidget {
 }
 
 // ── One row ───────────────────────────────────────────────────────────────
+
+// ── Desktop: count + cards/table toggle, and the register table ─────────────
+
+class _RegisterHeader extends StatelessWidget {
+  final int count;
+  final bool asTable;
+  final ValueChanged<bool> onChanged;
+
+  const _RegisterHeader({
+    required this.count,
+    required this.asTable,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget seg(bool table, IconData icon, String tip) {
+      final on = asTable == table;
+      return Tooltip(
+        message: tip,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.rSmall),
+          onTap: () => onChanged(table),
+          child: AnimatedContainer(
+            duration: AppMotion.short,
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: on ? AppTheme.accent : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppTheme.rSmall),
+            ),
+            child: Icon(
+              icon,
+              size: 18,
+              color: on ? Colors.white : AppTheme.muted,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTheme.s12),
+      child: Row(
+        children: [
+          Text(
+            '$count ${count == 1 ? 'stay' : 'stays'}',
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.circular(AppTheme.rSmall + 2),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Row(
+              children: [
+                seg(true, Icons.table_rows_rounded, 'Table'),
+                seg(false, Icons.view_agenda_rounded, 'Cards'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RegisterTable extends StatelessWidget {
+  final List<Booking> bookings;
+  final ValueChanged<Booking> onOpen;
+
+  const _RegisterTable({required this.bookings, required this.onOpen});
+
+  static const _cols = <(String, double, bool)>[
+    ('Booking no.', 120, false),
+    ('Guest', 200, false),
+    ('Phone', 120, false),
+    ('Room', 170, false),
+    ('Came in', 160, false),
+    ('Left', 160, false),
+    ('Status', 120, false),
+    ('Amount', 110, true),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final width = _cols.fold<double>(0, (sum, c) => sum + c.$2);
+    return NeuCard(
+      padding: EdgeInsets.zero,
+      radius: AppTheme.rMedium,
+      shadow: AppTheme.subtle,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        child: HScrollTable(
+          rowsScrollbar: true,
+          child: TableSheet(
+            width: width,
+            child: StickyHeaderTable(
+              header: Container(
+                decoration: const BoxDecoration(
+                  color: AppTheme.sidebarBrandWash,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppTheme.sidebarBrandWashEdge,
+                      width: 0.8,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    for (final c in _cols)
+                      TableCol(
+                        width: c.$2,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.s8,
+                            vertical: 10,
+                          ),
+                          child: Text(
+                            c.$1.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: c.$3 ? TextAlign.right : TextAlign.left,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              rows: [
+                for (var i = 0; i < bookings.length; i++)
+                  _RegisterTableRow(
+                    booking: bookings[i],
+                    shaded: i.isOdd,
+                    onTap: () => onOpen(bookings[i]),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RegisterTableRow extends StatefulWidget {
+  final Booking booking;
+  final bool shaded;
+  final VoidCallback onTap;
+
+  const _RegisterTableRow({
+    required this.booking,
+    required this.shaded,
+    required this.onTap,
+  });
+
+  @override
+  State<_RegisterTableRow> createState() => _RegisterTableRowState();
+}
+
+class _RegisterTableRowState extends State<_RegisterTableRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final b = widget.booking;
+    final cameIn = b.actualCheckInAt;
+    final left = b.actualCheckOutAt;
+    final statusColor = BookingActions.statusColor(b.status);
+
+    Widget cell(int i, Widget child, {double v = 12}) => TableCol(
+      width: _RegisterTable._cols[i].$2,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: v),
+        child: child,
+      ),
+    );
+    Widget txt(String t, {Color c = AppTheme.text, FontWeight w = FontWeight.w500, TextAlign? a}) => Text(
+      t,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: a,
+      style: TextStyle(color: c, fontSize: 12.5, fontWeight: w),
+    );
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: AppMotion.short,
+          decoration: BoxDecoration(
+            color: _hover
+                ? AppTheme.accent.withValues(alpha: 0.06)
+                : widget.shaded
+                ? AppTheme.border.withValues(alpha: 0.25)
+                : AppTheme.card,
+            border: const Border(
+              bottom: BorderSide(color: AppTheme.border, width: 0.8),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              cell(0, txt(b.bookingNumber ?? '—', c: AppTheme.muted, w: FontWeight.w700)),
+              cell(
+                1,
+                txt(
+                  (b.guestName ?? '').trim().isEmpty
+                      ? 'Guest'
+                      : capitalizeWords(b.guestName),
+                  c: AppTheme.heading,
+                  w: FontWeight.w700,
+                ),
+              ),
+              cell(2, txt((b.guestPhone ?? '').isEmpty ? '—' : b.guestPhone!)),
+              cell(
+                3,
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppTheme.sidebarBrandWash,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        b.roomNumber ?? '—',
+                        style: const TextStyle(
+                          color: AppTheme.sidebarBrandInk,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    if ((b.categoryName ?? '').isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Flexible(child: txt(b.categoryName!, c: AppTheme.muted)),
+                    ],
+                  ],
+                ),
+              ),
+              cell(
+                4,
+                txt(
+                  cameIn != null
+                      ? formatDateTime(cameIn)
+                      : 'Due ${formatIsoDate(b.checkInDate)}',
+                  c: cameIn != null ? AppTheme.text : AppTheme.muted,
+                ),
+              ),
+              cell(
+                5,
+                txt(
+                  left != null
+                      ? formatDateTime(left)
+                      : cameIn != null
+                      ? 'Still staying'
+                      : 'Due ${formatIsoDate(b.checkOutDate)}',
+                  c: left != null ? AppTheme.text : AppTheme.muted,
+                ),
+              ),
+              cell(
+                6,
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_kStatusIcon[b.status] ?? Icons.circle, size: 11, color: statusColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          kRegisterStatusLabel[b.status] ?? b.status ?? '',
+                          style: TextStyle(
+                            color: statusColor,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              cell(
+                7,
+                txt(
+                  formatPrice(b.billAmount ?? b.totalPrice),
+                  c: AppTheme.accent,
+                  w: FontWeight.w800,
+                  a: TextAlign.right,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 
 class _RegisterCard extends StatelessWidget {
   final Booking booking;

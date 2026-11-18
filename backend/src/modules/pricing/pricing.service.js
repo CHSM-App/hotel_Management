@@ -423,4 +423,6 @@ async function simulateRange(
   };
 }
 
-module.exports = { simulate, simulateRange, normalizeSelections, parseChargeSelections };
+// priceNight and basePriceOf are exported so the offline fixtures can run the
+// real per-night arithmetic (backend/scripts/dump-pricing-fixtures.js).
+module.exports = { simulate, simulateRange, normalizeSelections, parseChargeSelections, priceNight, basePriceOf };
