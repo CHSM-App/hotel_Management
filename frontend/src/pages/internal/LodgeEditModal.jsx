@@ -20,6 +20,7 @@ const ADDONS = [
   // Rooms or event venues: either gives these two something to look after.
   { key: 'hasHousekeeping', feature: FEATURES.find((f) => f.key === 'housekeeping'), needsRooms: true, orEvents: true },
   { key: 'hasLaundry', feature: FEATURES.find((f) => f.key === 'laundry'), needsRooms: true, orEvents: true },
+  { key: 'hasBar', feature: FEATURES.find((f) => f.key === 'bar') },
 ];
 
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -72,6 +73,7 @@ function formFromLodge(lodge, owner) {
     hasOtherServices: !!lodge.has_other_services,
     hasHousekeeping: !!lodge.has_housekeeping,
     hasLaundry: !!lodge.has_laundry,
+    hasBar: !!lodge.has_bar,
     canEditBilledStays: !!lodge.can_edit_billed_stays,
     canAddPastBookings: !!lodge.can_add_past_bookings,
     // dbo.lodge_settings switches; the defaults match a lodge with no row.

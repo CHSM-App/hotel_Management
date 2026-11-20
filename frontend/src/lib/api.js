@@ -3,8 +3,27 @@ import { clearSession, getSession } from './auth';
 // Local development: points at the backend on port 8000 (PORT in backend/.env).
 // Swap to the production line below before building for deploy.
 export const API_BASE = 'https://hotel.vengurlatech.com';
-// export const API_BASE = 'http://192.168.1.21:5000';
+// export const API_BASE = 'http://192.168.1.2:5000';
 
+// Stable per-browser id, sent on every request so the server can record which
+// device made a change. A browser has no hardware id; this is a random UUID
+// made once and kept in localStorage, so clearing site data gives a new one.
+function deviceHeader() {
+  try {
+    let id = localStorage.getItem('deviceId');
+    if (!id) {
+      // getRandomValues, not randomUUID: the latter needs https and the LAN
+      // deployment is plain http.
+      id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+        b.toString(16).padStart(2, '0')
+      ).join('');
+      localStorage.setItem('deviceId', id);
+    }
+    return { 'X-Device-Id': id };
+  } catch {
+    return {};
+  }
+}
 
 
 // `field`, when the server sent one, names the form input the message is about,
@@ -68,6 +87,7 @@ export async function apiGet(path, { token } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...deviceHeader(),
     },
   });
 
@@ -80,6 +100,7 @@ export async function apiPost(path, body, { token } = {}) {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...deviceHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -94,6 +115,7 @@ export async function apiPostForm(path, formData, { token } = {}) {
     method: 'POST',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...deviceHeader(),
     },
     body: formData,
   });
@@ -105,6 +127,7 @@ export async function apiGetBlob(path, { token } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...deviceHeader(),
     },
   });
 
@@ -127,6 +150,7 @@ export async function apiPatch(path, body, { token } = {}) {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...deviceHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -143,6 +167,7 @@ export async function apiPut(path, body, { token } = {}) {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...deviceHeader(),
     },
     body: JSON.stringify(body),
   });
@@ -155,6 +180,7 @@ export async function apiPatchForm(path, formData, { token } = {}) {
     method: 'PATCH',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...deviceHeader(),
     },
     body: formData,
   });
@@ -167,6 +193,7 @@ export async function apiPutForm(path, formData, { token } = {}) {
     method: 'PUT',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...deviceHeader(),
     },
     body: formData,
   });
@@ -179,6 +206,7 @@ export async function apiDelete(path, { token } = {}) {
     method: 'DELETE',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...deviceHeader(),
     },
   });
 

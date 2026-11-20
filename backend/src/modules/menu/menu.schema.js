@@ -82,8 +82,22 @@ const menuImportRowSchema = z.object({
   section: z.string().trim().min(1, 'Section is required.'),
   name: z.string().trim().min(1, 'Item name is required.'),
   description: z.string().trim().max(300).optional().default(''),
-  price: z.coerce.number().min(0, 'Price can’t be negative.'),
+  price: z.coerce.number().min(0, 'Price can’t be negative.').optional(),
   foodType: z.enum(FOOD_TYPES, { error: 'Type must be VEG or NON_VEG.' }).optional().default('VEG'),
+  // Sizes come from the sheet's own extra columns (header = size name).
+  portions: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(60),
+        price: z.coerce.number().min(0, 'Price can’t be negative.'),
+      })
+    )
+    .max(10, 'That’s a lot of sizes for one dish.')
+    .optional()
+    .default([]),
+}).refine((r) => r.price !== undefined || r.portions.length > 0, {
+  message: 'Price is required.',
+  path: ['price'],
 });
 
 // The envelope only checks there's a non-empty, not-absurd array of raw row

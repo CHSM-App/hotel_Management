@@ -96,6 +96,7 @@ const createLodgeSchema = z
     hasOtherServices: z.boolean().default(false),
     hasHousekeeping: z.boolean().default(false),
     hasLaundry: z.boolean().default(false),
+    hasBar: z.boolean().default(false),
     ownerName: z.string().trim().min(1, 'Owner name is required.'),
     ownerEmail: z.string().trim().email('Enter a valid email.').optional().or(z.literal('')).default(''),
     ownerPhone: z.string().trim().min(1, 'Owner phone is required.'),
@@ -181,6 +182,7 @@ const updateLodgeSchema = z.object({
   hasOtherServices: z.boolean().optional(),
   hasHousekeeping: z.boolean().optional(),
   hasLaundry: z.boolean().optional(),
+  hasBar: z.boolean().optional(),
   // Lets the property correct the dates of checked-out, billed stays.
   canEditBilledStays: z.boolean().optional(),
   // Lets the property record a missed stay after the fact, checked out and billed.

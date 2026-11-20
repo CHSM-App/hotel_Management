@@ -20,6 +20,7 @@ const { ApiError } = require('../../middleware/errorHandler');
 
 const FINAL = 'FINAL';
 const ADVANCE = 'ADVANCE';
+const FOOD = 'FOOD';
 
 // SQL Server INT. next_number is an INT column, so a serial set near the top of
 // the range would overflow on the next allocation rather than on being saved.
@@ -39,8 +40,15 @@ async function getLodgeBillingSide(pool, lodgeId) {
 // Maps the owner-facing name onto the row actually used to allocate.
 async function resolveSeriesType(pool, lodgeId, series) {
   if (series === ADVANCE) return 'ADVANCE';
+  if (series === FOOD) return 'FOOD';
   if (series === FINAL) return getLodgeBillingSide(pool, lodgeId);
   throw new ApiError('Unknown document series.', 400);
+}
+
+// What a restaurant bill is numbered with: the lodge's booking code and an R
+// (SKR12). A lodge with no code still bills, as R12.
+async function foodPrefix() {
+  return ''; // plain numbers: the restaurant series is separate, not prefixed
 }
 
 // What this lodge has already printed.
@@ -57,6 +65,19 @@ async function resolveSeriesType(pool, lodgeId, series) {
 // zero highest does NOT mean nothing was ever billed. Reporting only the floor
 // would tell a property holding forty bills that it had issued none.
 async function issuedSummary(pool, lodgeId, series) {
+  if (series === FOOD) {
+    // Only numbers shaped <prefix><digits> count; everything else (room bills,
+    // restaurant bills printed before this series existed) is a different run.
+    const r = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .query(`
+        SELECT COUNT(*) AS issued_count, MAX(TRY_CAST(invoice_number AS INT)) AS highest
+        FROM dbo.invoices
+        WHERE lodge_id = @lodgeId AND number_series = 'FOOD'
+      `);
+    return { count: r.recordset[0].issued_count || 0, highest: r.recordset[0].highest || 0 };
+  }
   const table = series === ADVANCE ? 'dbo.advance_receipts' : 'dbo.invoices';
   const column = series === ADVANCE ? 'receipt_number' : 'invoice_number';
 
@@ -67,7 +88,7 @@ async function issuedSummary(pool, lodgeId, series) {
       SELECT COUNT(*) AS issued_count,
              MAX(TRY_CAST(${column} AS INT)) AS highest
       FROM ${table}
-      WHERE lodge_id = @lodgeId
+      WHERE lodge_id = @lodgeId ${series === ADVANCE ? '' : "AND number_series = 'MAIN'"}
     `);
 
   const row = result.recordset[0];
@@ -125,6 +146,7 @@ async function listSeries(lodgeId) {
   return {
     final: await readSeries(pool, lodgeId, FINAL),
     advance: await readSeries(pool, lodgeId, ADVANCE),
+    food: await readSeries(pool, lodgeId, FOOD),
   };
 }
 
@@ -167,6 +189,12 @@ async function updateSeries(lodgeId, series, nextNumber) {
   const table = series === ADVANCE ? 'dbo.advance_receipts' : 'dbo.invoices';
   const column = series === ADVANCE ? 'receipt_number' : 'invoice_number';
 
+  // Each series counts only its own numbers: the restaurant run (FOOD) and the room/stay/event
+  // run (MAIN) can both hold a bill 5.
+  const floorSql =
+    series === ADVANCE
+      ? `SELECT MAX(TRY_CAST(${column} AS INT)) FROM ${table} WHERE lodge_id = @lodgeId`
+      : `SELECT MAX(TRY_CAST(${column} AS INT)) FROM ${table} WHERE lodge_id = @lodgeId AND number_series = '${series === FOOD ? 'FOOD' : 'MAIN'}'`;
   const updated = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -179,9 +207,7 @@ async function updateSeries(lodgeId, series, nextNumber) {
       FROM dbo.invoice_series s
       WHERE s.lodge_id = @lodgeId AND s.series_type = @seriesType
         AND @nextNumber > ISNULL((
-          SELECT MAX(TRY_CAST(${column} AS INT))
-          FROM ${table}
-          WHERE lodge_id = @lodgeId
+          ${floorSql}
         ), 0)
     `);
 
@@ -196,4 +222,4 @@ async function updateSeries(lodgeId, series, nextNumber) {
   return readSeries(pool, lodgeId, series);
 }
 
-module.exports = { listSeries, updateSeries, FINAL, ADVANCE };
+module.exports = { listSeries, updateSeries, foodPrefix, FINAL, ADVANCE, FOOD };

@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../../config/connection');
+const seriesService = require('./series.service');
 const { ApiError } = require('../../middleware/errorHandler');
 const { toClockTime } = require('../rooms/checkoutPolicy.service');
 const lateCheckout = require('../bookings/lateCheckout');
@@ -408,7 +409,7 @@ function ratePercentFromAmount(taxAmount, subtotal) {
 // which is why the split is recomputed here rather than only in the caller.
 //
 // `food` is optional so every room-only caller keeps its old shape.
-function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, service = null, discountAmount = 0 }) {
+function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, service = null, bar = null, discountAmount = 0 }) {
   const foodSubtotal = food ? round2(food.subtotal) : 0;
   const foodCgst = food ? food.cgstAmount : 0;
   const foodSgst = food ? food.sgstAmount : 0;
@@ -417,10 +418,18 @@ function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, ser
   const serviceCgst = service ? service.cgstAmount : 0;
   const serviceSgst = service ? service.sgstAmount : 0;
 
-  const grossSubtotal = round2(roomSubtotal + foodSubtotal + serviceSubtotal);
+  // Bar orders posted to the room: drinks at the bar's own tax rate (not GST) and any
+  // restaurant dishes at food GST. A fourth line, reported under Bar, never as food.
+  const barDrinks = bar ? round2(bar.drinksSubtotal) : 0;
+  const barFood = bar ? round2(bar.foodSubtotal) : 0;
+  const barGross = round2(barDrinks + barFood);
+  const barTax = bar ? bar.taxAmount : 0;
+  const barFoodTax = bar ? bar.foodTaxAmount : 0;
+
+  const grossSubtotal = round2(roomSubtotal + foodSubtotal + serviceSubtotal + barGross);
   const discount = cappedDiscount(discountAmount, grossSubtotal);
-  const [roomGross, foodGross, serviceGross] = netOfDiscount(
-    [round2(roomSubtotal), foodSubtotal, serviceSubtotal],
+  const [roomGross, foodGross, serviceGross, barGrossNet] = netOfDiscount(
+    [round2(roomSubtotal), foodSubtotal, serviceSubtotal, barGross],
     discount,
     grossSubtotal
   );
@@ -434,6 +443,7 @@ function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, ser
   const roomNet = round2(roomGross - cgstAmount - sgstAmount);
   const foodNet = round2(foodGross - foodCgst - foodSgst);
   const serviceNet = round2(serviceGross - serviceCgst - serviceSgst);
+  const barNet = round2(barGrossNet - barTax - barFoodTax);
 
   const subtotal = round2(grossSubtotal - discount);
 
@@ -489,6 +499,15 @@ function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, ser
     serviceSgstRatePercent: ratePercentFromAmount(serviceSgst, serviceNet),
     serviceTaxable: serviceNet,
 
+    // Bar side, zeroed when there is none.
+    barSubtotal: barDrinks,
+    barFoodSubtotal: barFood,
+    barTaxAmount: barTax,
+    barFoodTaxAmount: barFoodTax,
+    barTaxPercent: bar ? bar.taxPercent : 0,
+    barFoodTaxPercent: bar ? bar.foodRatePercent : 0,
+    barTaxable: barNet,
+
     // What the desk took off this document, and what that came to as a
     // percentage of everything on it before tax — the two ways the same
     // decision gets described, both printed.
@@ -518,7 +537,7 @@ async function listBillableBookings(lodgeId) {
              -- cancelled), so this row and the modal never disagree.
              (SELECT COALESCE(SUM(fo.subtotal), 0) FROM dbo.food_orders fo
               WHERE fo.booking_id = b.id
-                AND fo.status <> 'CANCELLED' AND fo.invoice_id IS NULL) AS food_total,
+                AND fo.status <> 'CANCELLED' AND fo.invoice_id IS NULL AND fo.bar_order_id IS NULL) AS food_total,
              COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
                        FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
                        WHERE brm.booking_id = b.id AND brm.status <> 'CANCELLED'), r.room_number) AS room_number, c.name AS category_name
@@ -563,29 +582,32 @@ async function listBillableBookings(lodgeId) {
 // loaded orders, the GST slabs and the food rate — which is what lets
 // solveDiscountForTarget call it twenty-odd times without touching the
 // database. buildStayBill is the wrapper that fetches those two lookups.
-function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmount, slabs, foodRate, services = [] }) {
+function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmount, slabs, foodRate, services = [], bars = [] }) {
   // What was sold, before anything comes off it.
   const grossNights = nightlyAmounts(booking);
   const nightsSubtotal = round2(grossNights.reduce((sum, n) => sum + n, 0));
   const grossLate = includeLateCheckout ? round2(Number(booking.late_checkout_charge) || 0) : 0;
   const grossFood = foodSubtotalOf(foodOrders);
   const grossService = serviceSubtotalOf(services);
-  const grossSubtotal = round2(nightsSubtotal + grossLate + grossFood + grossService);
+  const grossBar = barSubtotalOf(bars);
+  const grossSubtotal = round2(nightsSubtotal + grossLate + grossFood + grossService + grossBar);
 
   // What it is actually being charged at, which is what GST is due on. The
   // nights, the overstay, the food and the services each give up their share of
   // the discount before any of them is banded or taxed.
   const discount = cappedDiscount(discountAmount, grossSubtotal);
-  const net = netOfDiscount([...grossNights, grossLate, grossFood, grossService], discount, grossSubtotal);
+  const net = netOfDiscount([...grossNights, grossLate, grossFood, grossService, grossBar], discount, grossSubtotal);
   const netNights = net.slice(0, grossNights.length);
   const netLate = net[grossNights.length];
   const netFood = net[grossNights.length + 1];
   const netService = net[grossNights.length + 2];
+  const netBar = net[grossNights.length + 3];
 
   const { cgstAmount, sgstAmount, anyTaxable } = computeGstBreakdown(netNights, slabs);
   const late = lateChargeTax(netLate, netNights, slabs, true);
   const food = foodSideOf(foodOrders, netFood, foodRate);
   const service = serviceSideOf(services, netService);
+  const bar = barSideOf(bars, netBar);
 
   // The room block on the document: the nights plus the overstay, gross. The
   // overstay is carried inside the accommodation subtotal so its SAC and its
@@ -605,6 +627,7 @@ function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmoun
           sgstAmount: round2(sgstAmount + late.sgstAmount),
           food,
           service,
+          bar,
           discountAmount: discount,
         }),
       }
@@ -618,6 +641,8 @@ function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmoun
       sgstAmount: 0,
       food: food ? { ...food, cgstAmount: 0, sgstAmount: 0 } : null,
       service: service ? { ...service, cgstAmount: 0, sgstAmount: 0 } : null,
+      // Drinks tax is the bar's own and stays; food GST only applies on a registered lodge.
+      bar: bar ? { ...bar, foodTaxAmount: 0, foodRatePercent: 0 } : null,
       discountAmount: discount,
     }),
   };
@@ -835,6 +860,9 @@ async function previewBill(
     (u) => scoped.roomId == null || Number(u.roomId) === Number(scoped.roomId)
   );
 
+  // Bar orders the desk posted to this stay.
+  const bars = await loadBarOrders(() => pool.request(), lodgeId, { bookingId, roomId: scoped.roomId });
+
   const advancePaid = scoped.advancePaid;
 
   // A target is the desk saying what the guest hands over; the discount that
@@ -846,7 +874,7 @@ async function previewBill(
   if (targetTotal > 0) {
     context = await loadPricingContext(pool, booking, foodOrders);
     const priced = (d) =>
-      priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmount: d, services, ...context });
+      priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmount: d, services, bars, ...context });
     const sideOf = (b) => b.gst ?? b.nonGst;
     // What the guest hands over, not the bill's own total — the advance is
     // already in the property's hands.
@@ -860,6 +888,7 @@ async function previewBill(
     includeLateCheckout,
     discountAmount: applied,
     services,
+    bars,
     ...(context ?? {}),
   });
   const { gst, nonGst, grossNights, nightsSubtotal } = bill;
@@ -908,6 +937,7 @@ async function previewBill(
     foodOrders,
     foodItems,
     serviceItems: services,
+    barItems: barLinesOf(bars),
     gst,
     nonGst,
     // The document itself, ready to render. Built for the side this property
@@ -919,6 +949,7 @@ async function previewBill(
       billingSide: booking.is_gst_registered ? 'GST' : 'NON_GST',
       foodItems,
       serviceItems: services,
+      barItems: barLinesOf(bars),
       lateCheckoutCharge: bill.grossLate,
       kind: 'STAY',
       discountReason: bill.discount > 0 ? discountReason : null,
@@ -960,7 +991,7 @@ async function loadStayFoodOrders(request, lodgeId, bookingId, roomId = null) {
       FROM dbo.food_orders
       WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND on_room_bill = 1
         AND (@roomId IS NULL OR room_id = @roomId)
-        AND status IN ('READY', 'DELIVERED') AND invoice_id IS NULL
+        AND status IN ('READY', 'DELIVERED') AND invoice_id IS NULL AND bar_order_id IS NULL
       ORDER BY placed_at ASC
     `);
   return result.recordset.map((row) => ({
@@ -1062,6 +1093,146 @@ function serviceSubtotalOf(usages) {
 }
 
 // Pure. `netSubtotal` is the services' share of the bill after any discount.
+// ---- Bar orders posted to a stay's room bill. Kept apart from food and services:
+// drinks carry the bar's plain inclusive tax %, dishes carry food GST, and the sale is
+// reported under Bar. Each entry: { id, orderNumber, drinks, food, taxPercent,
+// foodRatePercent, items }.
+function barSubtotalOf(bars) {
+  return round2(bars.reduce((sum, b) => sum + b.drinks + b.food, 0));
+}
+
+function barSideOf(bars, netTotal) {
+  if (bars.length === 0) return null;
+  const drinks = round2(bars.reduce((sum, b) => sum + b.drinks, 0));
+  const food = round2(bars.reduce((sum, b) => sum + b.food, 0));
+  const gross = round2(drinks + food);
+  const net = netTotal == null ? gross : round2(netTotal);
+  // The discount comes off drinks and dishes in proportion.
+  const netFood = gross > 0 ? round2((net * food) / gross) : 0;
+  const netDrinks = round2(net - netFood);
+  const { taxPercent, foodRatePercent } = bars[0];
+  const foodTax = computeFoodTax(netFood, foodRatePercent);
+  return {
+    drinksSubtotal: drinks,
+    foodSubtotal: food,
+    taxAmount: round2(taxWithin(netDrinks, taxPercent)),
+    foodTaxAmount: round2(foodTax.cgstAmount + foodTax.sgstAmount),
+    taxPercent,
+    foodRatePercent,
+    taxable: taxPercent > 0 || foodRatePercent > 0,
+  };
+}
+
+// One query per request: callers hand in a way to make a request (pool, transaction or
+// the revise helper), so this works inside whichever transaction the bill is in.
+async function loadBarOrders(newRequest, lodgeId, { bookingId = null, roomId = null, invoiceId = null }) {
+  const request = newRequest()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .input('roomId', sql.BigInt, roomId)
+    .input('invoiceId', sql.BigInt, invoiceId);
+  const scope = invoiceId != null
+    ? 'o.invoice_id = @invoiceId'
+    : "o.booking_id = @bookingId AND o.on_room_bill = 1 AND o.invoice_id IS NULL AND o.status = 'OPEN' AND (@roomId IS NULL OR o.room_id = @roomId)";
+  const orders = (
+    await request.query(`
+      SELECT o.id, o.order_number, l.bar_tax_percent, l.is_gst_registered, l.is_specified_premises,
+             (SELECT ISNULL(SUM(i.line_total), 0) FROM dbo.bar_order_items i WHERE i.order_id = o.id AND i.is_cancelled = 0) AS drinks,
+             (SELECT ISNULL(SUM(fi.line_total), 0) FROM dbo.food_orders fo JOIN dbo.food_order_items fi ON fi.order_id = fo.id
+              WHERE fo.bar_order_id = o.id AND fo.lodge_id = @lodgeId AND fo.status <> 'CANCELLED') AS food
+      FROM dbo.bar_orders o JOIN dbo.lodges l ON l.id = o.lodge_id
+      WHERE o.lodge_id = @lodgeId AND ${scope}
+      ORDER BY o.id
+    `)
+  ).recordset;
+  if (orders.length === 0) return [];
+
+  const lodge = orders[0];
+  const foodRatePercent = lodge.is_gst_registered && orders.some((o) => Number(o.food) > 0)
+    ? (await getFoodRate(await getPool(), lodge.is_specified_premises)).ratePercent
+    : 0;
+  const items = await loadBarItems(newRequest, lodgeId, orders.map((o) => o.id));
+  return orders.map((o) => ({
+    id: o.id,
+    orderNumber: o.order_number,
+    drinks: Number(o.drinks),
+    food: Number(o.food),
+    taxPercent: Number(o.bar_tax_percent),
+    foodRatePercent,
+    items: items.get(String(o.id)) || [],
+  }));
+}
+
+// What was ordered, drinks then dishes, for the printed bill.
+async function loadBarItems(newRequest, lodgeId, orderIds) {
+  const byOrder = new Map();
+  if (orderIds.length === 0) return byOrder;
+  const list = orderIds.map((_, i) => `@b${i}`).join(', ');
+  const bind = (r) => {
+    r.input('lodgeId', sql.BigInt, lodgeId);
+    orderIds.forEach((id, i) => r.input(`b${i}`, sql.BigInt, id));
+    return r;
+  };
+  const drinks = (
+    await bind(newRequest()).query(`
+      SELECT i.order_id, i.item_name, i.size_label, i.unit_price, i.quantity, i.line_total
+      FROM dbo.bar_order_items i JOIN dbo.bar_orders o ON o.id = i.order_id
+      WHERE o.lodge_id = @lodgeId AND i.order_id IN (${list}) AND i.is_cancelled = 0 ORDER BY i.id`)
+  ).recordset;
+  const dishes = (
+    await bind(newRequest()).query(`
+      SELECT fo.bar_order_id AS order_id, fi.item_name, fi.portion_label, fi.unit_price, fi.quantity, fi.line_total
+      FROM dbo.food_orders fo JOIN dbo.food_order_items fi ON fi.order_id = fo.id
+      WHERE fo.lodge_id = @lodgeId AND fo.bar_order_id IN (${list}) AND fo.status <> 'CANCELLED' ORDER BY fi.id`)
+  ).recordset;
+  const push = (id, item) => byOrder.set(String(id), [...(byOrder.get(String(id)) || []), item]);
+  for (const d of drinks) {
+    push(d.order_id, { kind: 'DRINK', name: d.item_name, size: d.size_label, unitPrice: Number(d.unit_price), quantity: d.quantity, lineTotal: Number(d.line_total) });
+  }
+  for (const f of dishes) {
+    push(f.order_id, { kind: 'FOOD', name: f.item_name, size: f.portion_label || '', unitPrice: Number(f.unit_price), quantity: f.quantity, lineTotal: Number(f.line_total) });
+  }
+  return byOrder;
+}
+
+// The lines for the printed bill, flattened across orders.
+const barLinesOf = (bars) => bars.flatMap((b) => b.items.map((i) => ({ ...i, orderNumber: b.orderNumber })));
+
+// Printed lines of bar orders on bills already issued, for a whole page at once.
+async function loadBarItemsByInvoice(pool, invoiceIds) {
+  const out = new Map();
+  if (invoiceIds.length === 0) return out;
+  const request = pool.request();
+  invoiceIds.forEach((id, i) => request.input(`binv${i}`, sql.BigInt, id));
+  const list = invoiceIds.map((_, i) => `@binv${i}`).join(', ');
+  const rows = (
+    await request.query(`
+      SELECT COALESCE(invoice_id, voided_invoice_id) AS invoice_id, id, order_number
+      FROM dbo.bar_orders WHERE invoice_id IN (${list}) OR voided_invoice_id IN (${list}) ORDER BY id`)
+  ).recordset;
+  if (rows.length === 0) return out;
+  // lodge scope comes from the bar order's own lodge, via the invoice rows asked for
+  const lodgeRow = (await pool.request().input('i', sql.BigInt, rows[0].id).query('SELECT lodge_id FROM dbo.bar_orders WHERE id = @i')).recordset[0];
+  const items = await loadBarItems(() => pool.request(), lodgeRow.lodge_id, rows.map((r) => r.id));
+  for (const r of rows) {
+    const key = String(r.invoice_id);
+    out.set(key, [...(out.get(key) || []), ...(items.get(String(r.id)) || []).map((i) => ({ ...i, orderNumber: r.order_number }))]);
+  }
+  return out;
+}
+
+// Marks bar orders as carried by a stay invoice. AND invoice_id IS NULL stops a second bill
+// sweeping the same order.
+async function stampBarOrders(transaction, lodgeId, invoiceId, bars) {
+  if (bars.length === 0) return;
+  const request = new sql.Request(transaction).input('lodgeId', sql.BigInt, lodgeId).input('invoiceId', sql.BigInt, invoiceId);
+  bars.forEach((b, i) => request.input(`bo${i}`, sql.BigInt, b.id));
+  await request.query(`
+    UPDATE dbo.bar_orders SET invoice_id = @invoiceId, status = 'BILLED'
+    WHERE lodge_id = @lodgeId AND invoice_id IS NULL AND id IN (${bars.map((_, i) => `@bo${i}`).join(', ')})
+  `);
+}
+
 function serviceSideOf(usages, netSubtotal) {
   if (usages.length === 0) return null;
   const subtotal = serviceSubtotalOf(usages);
@@ -1220,11 +1391,13 @@ async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null }
     // ones priced.
     const foodOrders = await loadStayFoodOrders(new sql.Request(transaction), lodgeId, bookingId);
     const services = await loadStayServiceUsages(new sql.Request(transaction), lodgeId, bookingId);
+    const bars = await loadBarOrders(() => new sql.Request(transaction), lodgeId, { bookingId });
 
     // Priced by the same code the preview ran, so the document written here is
     // the one the desk agreed to on screen.
     const bill = await buildStayBill(db, booking, foodOrders, {
       services,
+      bars,
       includeLateCheckout,
       discountAmount: input.discountAmount ?? 0,
     });
@@ -1321,6 +1494,10 @@ async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null }
       .input('serviceSubtotal', sql.Decimal(10, 2), breakdown.serviceSubtotal)
       .input('serviceCgstAmount', sql.Decimal(10, 2), breakdown.serviceCgstAmount)
       .input('serviceSgstAmount', sql.Decimal(10, 2), breakdown.serviceSgstAmount)
+      .input('barSubtotal', sql.Decimal(10, 2), breakdown.barSubtotal)
+      .input('barFoodSubtotal', sql.Decimal(10, 2), breakdown.barFoodSubtotal)
+      .input('barTaxAmount', sql.Decimal(10, 2), breakdown.barTaxAmount)
+      .input('barFoodTaxAmount', sql.Decimal(10, 2), breakdown.barFoodTaxAmount)
       .input('lateCheckoutCharge', sql.Decimal(10, 2), bill.grossLate)
       .input('discountAmount', sql.Decimal(10, 2), breakdown.discountAmount)
       .input('discountPercent', sql.Decimal(5, 2), breakdown.discountPercent)
@@ -1335,6 +1512,7 @@ async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null }
           (lodge_id, booking_id, document_type, billing_side, invoice_number, room_subtotal,
            cgst_amount, sgst_amount, food_subtotal, food_cgst_amount, food_sgst_amount,
            service_subtotal, service_cgst_amount, service_sgst_amount,
+           bar_subtotal, bar_food_subtotal, bar_tax_amount, bar_food_tax_amount,
            late_checkout_charge, discount_amount, discount_percent, discount_reason, round_off, total_amount,
            advance_paid, balance_collected, balance_payment_method, balance_reference, created_by, created_at)
         OUTPUT inserted.id
@@ -1342,6 +1520,7 @@ async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null }
           (@lodgeId, @bookingId, @documentType, @billingSide, @invoiceNumber, @roomSubtotal,
            @cgstAmount, @sgstAmount, @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
            @serviceSubtotal, @serviceCgstAmount, @serviceSgstAmount,
+           @barSubtotal, @barFoodSubtotal, @barTaxAmount, @barFoodTaxAmount,
            @lateCheckoutCharge, @discountAmount, @discountPercent, @discountReason, @roundOff, @totalAmount,
            @advancePaid, @balanceCollected, @balancePaymentMethod, @balanceReference, @createdBy,
            COALESCE(SWITCHOFFSET(@createdAt, '+05:30'), SYSDATETIMEOFFSET()))
@@ -1349,6 +1528,7 @@ async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null }
 
     const invoiceId = inserted.recordset[0].id;
     await stampServiceUsages(transaction, invoiceId, services);
+    await stampBarOrders(transaction, lodgeId, invoiceId, bars);
 
     await insertPaymentLines(transaction, lodgeId, { invoiceId }, paymentLines);
 
@@ -1426,7 +1606,8 @@ async function settleRoomCheckout(lodgeId, userId, bookingId, roomId, input) {
     const services = (await loadStayServiceUsages(new sql.Request(transaction), lodgeId, bookingId)).filter(
       (u) => Number(u.roomId) === Number(scoped.roomId)
     );
-    const bill = await buildStayBill(db, booking, foodOrders, { services, includeLateCheckout: true, discountAmount: 0 });
+    const bars = await loadBarOrders(() => new sql.Request(transaction), lodgeId, { bookingId, roomId: scoped.roomId });
+    const bill = await buildStayBill(db, booking, foodOrders, { services, bars, includeLateCheckout: true, discountAmount: 0 });
     const side = booking.is_gst_registered && input.billingSide !== 'NON_GST' ? bill.gst : bill.nonGst;
     const roomTotal = side.totalAmount;
     const advanceApplied = round2(Math.min(scoped.advancePaid, roomTotal));
@@ -1535,10 +1716,15 @@ function mapInvoice(row) {
   const serviceSubtotal = Number(row.service_subtotal ?? 0);
   const serviceCgst = Number(row.service_cgst_amount ?? 0);
   const serviceSgst = Number(row.service_sgst_amount ?? 0);
-  const [roomGross, foodGross, serviceGross] = netOfDiscount(
-    [roomSubtotal, foodSubtotal, serviceSubtotal],
+  const barSubtotal = Number(row.bar_subtotal ?? 0);
+  const barFoodSubtotal = Number(row.bar_food_subtotal ?? 0);
+  const barTaxAmount = Number(row.bar_tax_amount ?? 0);
+  const barFoodTaxAmount = Number(row.bar_food_tax_amount ?? 0);
+  const barGross = round2(barSubtotal + barFoodSubtotal);
+  const [roomGross, foodGross, serviceGross, barGrossNet] = netOfDiscount(
+    [roomSubtotal, foodSubtotal, serviceSubtotal, barGross],
     discountAmount,
-    round2(roomSubtotal + foodSubtotal + serviceSubtotal)
+    round2(roomSubtotal + foodSubtotal + serviceSubtotal + barGross)
   );
 
   // ...and then the tax that was sitting inside those amounts comes out, the
@@ -1550,6 +1736,7 @@ function mapInvoice(row) {
   const roomNet = round2(roomGross - Number(row.cgst_amount) - Number(row.sgst_amount));
   const foodNet = round2(foodGross - foodCgst - foodSgst);
   const serviceNet = round2(serviceGross - serviceCgst - serviceSgst);
+  const barNet = round2(barGrossNet - barTaxAmount - barFoodTaxAmount);
 
   return {
     id: row.id,
@@ -1644,6 +1831,14 @@ function mapInvoice(row) {
     serviceCgstRatePercent: ratePercentFromAmount(serviceCgst, serviceNet),
     serviceSgstRatePercent: ratePercentFromAmount(serviceSgst, serviceNet),
     serviceTaxable: serviceNet,
+    // Bar orders posted to the room: drinks at the bar's own tax %, dishes at food GST.
+    barSubtotal,
+    barFoodSubtotal,
+    barTaxAmount,
+    barFoodTaxAmount,
+    barTaxPercent: ratePercentFromAmount(barTaxAmount, round2((barGrossNet * barSubtotal) / (barGross || 1) - barTaxAmount)),
+    barFoodTaxPercent: ratePercentFromAmount(barFoodTaxAmount, round2((barGrossNet * barFoodSubtotal) / (barGross || 1) - barFoodTaxAmount)),
+    barTaxable: barNet,
     // What the desk took off this bill, and the percentage it was agreed as.
     // 0 on every bill written before discounts existed, which prints nothing.
     discountAmount,
@@ -1711,6 +1906,7 @@ function buildPreviewDocument({
   billingSide,
   foodItems,
   serviceItems = [],
+  barItems = [],
   lateCheckoutCharge,
   kind,
   tableLabel,
@@ -1794,6 +1990,15 @@ function buildPreviewDocument({
     serviceSgstRatePercent: side.serviceSgstRatePercent ?? 0,
     serviceTaxable: side.serviceTaxable ?? 0,
     serviceItems,
+
+    barSubtotal: side.barSubtotal ?? 0,
+    barFoodSubtotal: side.barFoodSubtotal ?? 0,
+    barTaxAmount: side.barTaxAmount ?? 0,
+    barFoodTaxAmount: side.barFoodTaxAmount ?? 0,
+    barTaxPercent: side.barTaxPercent ?? 0,
+    barFoodTaxPercent: side.barFoodTaxPercent ?? 0,
+    barTaxable: side.barTaxable ?? 0,
+    barItems,
 
     discountAmount: side.discountAmount,
     discountPercent: side.discountPercent,
@@ -1916,16 +2121,25 @@ async function getInvoice(lodgeId, invoiceId) {
   }
   const items = await loadFoodItemsByInvoice(pool, [invoiceId]);
   const serviceItems = await loadServiceItemsByInvoice(pool, [invoiceId]);
+  const barItems = await loadBarItemsByInvoice(pool, [invoiceId]);
   const invoice = mapInvoice(row);
   return {
     ...invoice,
     foodItems: invoice.kind === 'EVENT' ? cateringItemsOf(row, invoice) : items.get(String(invoiceId)) || [],
     serviceItems: serviceItems.get(String(invoiceId)) || [],
+    barItems: barItems.get(String(invoiceId)) || [],
   };
 }
 
-async function listInvoices(lodgeId) {
+// stream 'restaurant' limits the list to restaurant bills (no stay, no event, not a
+// services-only bill), so the 200-row cap is spent on them alone. Food added to a
+// stay's room bill is part of the stay invoice and never appears here.
+async function listInvoices(lodgeId, { stream = null } = {}) {
   const pool = await getPool();
+  const restaurantOnly =
+    stream === 'restaurant'
+      ? 'AND i.booking_id IS NULL AND i.event_booking_id IS NULL AND NOT (ISNULL(i.service_subtotal, 0) > 0 AND i.food_subtotal = 0 AND i.room_subtotal = 0)'
+      : '';
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -2012,7 +2226,7 @@ async function listInvoices(lodgeId) {
         ORDER BY fo2.id
       ) fo
       JOIN dbo.lodges l ON l.id = i.lodge_id
-      WHERE i.lodge_id = @lodgeId
+      WHERE i.lodge_id = @lodgeId ${restaurantOnly}
       ORDER BY i.created_at DESC
     `);
 
@@ -2022,10 +2236,12 @@ async function listInvoices(lodgeId) {
   const invoices = result.recordset.map(mapInvoice);
   const items = await loadFoodItemsByInvoice(pool, invoices.filter((i) => i.foodSubtotal > 0).map((i) => i.id));
   const serviceItems = await loadServiceItemsByInvoice(pool, invoices.filter((i) => i.serviceSubtotal > 0).map((i) => i.id));
+  const barItems = await loadBarItemsByInvoice(pool, invoices.filter((i) => i.barSubtotal + i.barFoodSubtotal > 0).map((i) => i.id));
   return invoices.map((invoice, index) => ({
     ...invoice,
     foodItems: invoice.kind === 'EVENT' ? cateringItemsOf(result.recordset[index], invoice) : items.get(String(invoice.id)) || [],
     serviceItems: serviceItems.get(String(invoice.id)) || [],
+    barItems: barItems.get(String(invoice.id)) || [],
   }));
 }
 
@@ -2072,7 +2288,8 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
       await new sql.Request(transaction)
         .input('invoiceId', sql.BigInt, invoiceId)
         .query(`UPDATE dbo.food_orders SET invoice_id = NULL, voided_invoice_id = @invoiceId WHERE invoice_id = @invoiceId;
-                UPDATE dbo.service_usages SET invoice_id = NULL, voided_invoice_id = @invoiceId WHERE invoice_id = @invoiceId`);
+                UPDATE dbo.service_usages SET invoice_id = NULL, voided_invoice_id = @invoiceId WHERE invoice_id = @invoiceId;
+                UPDATE dbo.bar_orders SET invoice_id = NULL, voided_invoice_id = @invoiceId, status = 'OPEN' WHERE invoice_id = @invoiceId`);
     }
 
     // Voiding used to send a settled function back to CONFIRMED so a fresh
@@ -2100,8 +2317,10 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
 // Food charged to a stay rides on that stay's bill, so it is not restaurant
 // billing — unless the stay's bill was already issued, when the food would
 // otherwise be stranded with nowhere to be collected.
-const NOT_ON_STAY_BILL = `(o.on_room_bill = 0 OR EXISTS (
-  SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = o.booking_id AND bi.status = 'ISSUED'))`;
+// Food ordered on a bar order (bar_order_id set) is billed on the bar bill, so it
+// is never part of restaurant billing.
+const NOT_ON_STAY_BILL = `((o.on_room_bill = 0 OR EXISTS (
+  SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = o.booking_id AND bi.status = 'ISSUED')) AND o.bar_order_id IS NULL)`;
 
 // Orders on a tab that are still in the kitchen or on their way (not yet
 // delivered). Billing a tab while these exist leaves food off the bill.
@@ -2110,7 +2329,7 @@ async function countLiveOrdersOnTab(request, lodgeId, tab) {
   const scope = tabScope(request, tab);
   const result = await request.query(`
     SELECT COUNT(*) AS n FROM dbo.food_orders o
-    WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING') AND o.invoice_id IS NULL ${scope}
+    WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING') AND o.invoice_id IS NULL AND o.bar_order_id IS NULL ${scope}
   `);
   return result.recordset[0].n;
 }
@@ -2178,7 +2397,7 @@ async function listOpenFoodTabs(lodgeId) {
       FROM dbo.food_orders o
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
-      WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') AND o.invoice_id IS NULL
+      WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') AND o.invoice_id IS NULL AND o.bar_order_id IS NULL
       GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
                CASE WHEN o.source = 'ROOM' THEN o.booking_id END,
                CASE WHEN o.source = 'COUNTER' THEN o.id END
@@ -2525,7 +2744,9 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
     const bill = await buildFoodBill(pool, lodge, orders, input.discountAmount ?? 0);
     const { documentType, ...breakdown } = billingSide === 'GST' ? bill.gst : bill.nonGst;
 
-    const seriesType = billingSide;
+    // Restaurant bills run their own series, plain 1, 2, 3, apart from the room/stay run
+    // (number_series 'FOOD' keeps the two runs' numbers from clashing). Rows are per lodge.
+    const seriesType = 'FOOD';
     const seriesResult = await new sql.Request(transaction)
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('seriesType', sql.NVarChar, seriesType)
@@ -2538,8 +2759,6 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
         .query('INSERT INTO dbo.invoice_series (lodge_id, series_type, prefix, next_number) VALUES (@lodgeId, @seriesType, @prefix, 1)');
     }
 
-    // Same series as room bills on purpose: GST wants one continuous invoice
-    // sequence per registration, not a separate run per revenue stream.
     const allocated = await new sql.Request(transaction)
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('seriesType', sql.NVarChar, seriesType)
@@ -2549,7 +2768,7 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
         OUTPUT deleted.next_number AS number, deleted.prefix AS prefix
         WHERE lodge_id = @lodgeId AND series_type = @seriesType
       `);
-    const { number, prefix } = allocated.recordset[0];
+    const { number } = allocated.recordset[0];
 
     const inserted = await new sql.Request(transaction)
       .input('lodgeId', sql.BigInt, lodgeId)
@@ -2557,7 +2776,7 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
       .input('roomId', sql.BigInt, tabRoomId)
       .input('documentType', sql.NVarChar, documentType)
       .input('billingSide', sql.NVarChar, billingSide)
-      .input('invoiceNumber', sql.NVarChar, `${prefix}${number}`)
+      .input('invoiceNumber', sql.NVarChar, String(number))
       .input('foodSubtotal', sql.Decimal(10, 2), breakdown.foodSubtotal)
       .input('foodCgstAmount', sql.Decimal(10, 2), breakdown.foodCgstAmount)
       .input('foodSgstAmount', sql.Decimal(10, 2), breakdown.foodSgstAmount)
@@ -2579,7 +2798,7 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
       .input('customerPhone', sql.NVarChar, orders[0].customerPhone || null)
       .query(`
         INSERT INTO dbo.invoices
-          (lodge_id, booking_id, table_id, room_id, document_type, billing_side, invoice_number,
+          (lodge_id, booking_id, table_id, room_id, document_type, billing_side, invoice_number, number_series,
            room_subtotal, cgst_amount, sgst_amount,
            food_subtotal, food_cgst_amount, food_sgst_amount,
            discount_amount, discount_percent,
@@ -2588,7 +2807,7 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
            customer_name, customer_phone)
         OUTPUT inserted.id
         VALUES
-          (@lodgeId, NULL, @tableId, @roomId, @documentType, @billingSide, @invoiceNumber,
+          (@lodgeId, NULL, @tableId, @roomId, @documentType, @billingSide, @invoiceNumber, 'FOOD',
            0, 0, 0,
            @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
            @discountAmount, @discountPercent,
@@ -2665,7 +2884,7 @@ async function addTabToRoomBill(lodgeId, tab, bookingId) {
                  o.ready_to_bill_at = COALESCE(o.ready_to_bill_at, SYSDATETIMEOFFSET())
     FROM dbo.food_orders o
     WHERE o.lodge_id = @lodgeId AND o.status IN ('READY', 'DELIVERED') AND o.invoice_id IS NULL
-      AND o.on_room_bill = 0 ${scope}
+      AND o.on_room_bill = 0 AND o.bar_order_id IS NULL ${scope}
   `);
   if (result.rowsAffected[0] === 0) {
     throw new ApiError('Nothing to add — no delivered orders are waiting on this tab.', 409);
@@ -3006,9 +3225,11 @@ async function reviseInvoice(
       .input('invoiceId', sql.BigInt, old.id)
       .query(`SELECT ${SERVICE_COLUMNS} FROM dbo.service_usages WHERE invoice_id = @invoiceId`)
   ).recordset.map(mapServiceUsage);
+  const bars = await loadBarOrders(tx, lodgeId, { invoiceId: old.id });
 
   const bill = await buildStayBill(db, booking, foodOrders, {
     services,
+    bars,
     includeLateCheckout: Number(old.late_checkout_charge) > 0,
     discountAmount: Number(old.discount_amount) || 0,
   });
@@ -3073,6 +3294,10 @@ async function reviseInvoice(
     .input('serviceSubtotal', sql.Decimal(10, 2), b.serviceSubtotal)
     .input('serviceCgst', sql.Decimal(10, 2), b.serviceCgstAmount)
     .input('serviceSgst', sql.Decimal(10, 2), b.serviceSgstAmount)
+    .input('barSubtotal', sql.Decimal(10, 2), b.barSubtotal)
+    .input('barFoodSubtotal', sql.Decimal(10, 2), b.barFoodSubtotal)
+    .input('barTaxAmount', sql.Decimal(10, 2), b.barTaxAmount)
+    .input('barFoodTaxAmount', sql.Decimal(10, 2), b.barFoodTaxAmount)
     .input('lateCharge', sql.Decimal(10, 2), bill.grossLate)
     .input('discountAmount', sql.Decimal(10, 2), b.discountAmount)
     .input('discountPercent', sql.Decimal(5, 2), b.discountPercent)
@@ -3082,6 +3307,7 @@ async function reviseInvoice(
         balance_collected = @balanceCollected,
         food_subtotal = @foodSubtotal, food_cgst_amount = @foodCgst, food_sgst_amount = @foodSgst,
         service_subtotal = @serviceSubtotal, service_cgst_amount = @serviceCgst, service_sgst_amount = @serviceSgst,
+        bar_subtotal = @barSubtotal, bar_food_subtotal = @barFoodSubtotal, bar_tax_amount = @barTaxAmount, bar_food_tax_amount = @barFoodTaxAmount,
         late_checkout_charge = @lateCharge, discount_amount = @discountAmount, discount_percent = @discountPercent
       WHERE id = @id AND lodge_id = @lodgeId
     `);

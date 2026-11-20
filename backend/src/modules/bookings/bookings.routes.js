@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { authenticate, requirePermission } = require('../../middleware/authenticate');
 const { idProofUpload } = require('../../middleware/idProofUpload');
 const { idempotent } = require('../../middleware/idempotency');
+const { bookingEditLog } = require('../../middleware/bookingEditLog');
 const {
   listAvailableRoomsHandler,
   listAvailableRoomsForBookingHandler,
@@ -33,6 +34,13 @@ const {
 } = require('./bookings.controller');
 
 const router = Router();
+
+// Who/device behind a booking edit or cancel. New bookings, check-in/out and
+// drafts are not logged.
+const LOGGED = /^\/\d+(\/cancel)?$/;
+router.use((req, res, next) =>
+  req.method === 'PATCH' && LOGGED.test(req.path) ? bookingEditLog(req, res, next) : next()
+);
 
 const staff = requirePermission('bookings.manage');
 // The guest & ID register reads this same list, so a role granted only

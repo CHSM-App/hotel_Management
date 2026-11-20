@@ -125,6 +125,9 @@ export default function StaySummary({ booking, idProofError = '', onViewIdProof,
   const tagFor = (item) => (item.billed ? 'Billed' : item.onRoomBill ? 'On room bill' : 'Not on room bill yet');
   const foodOpenTotal = round2(foodOpen.reduce((n, o) => n + o.subtotal, 0));
   const servicesOpenTotal = round2(servicesOpen.reduce((n, u) => n + u.amount, 0));
+  // Bar orders posted to the room bill, not billed yet.
+  const barOpen = (booking.barOrders || []).filter((o) => !o.billed && o.onRoomBill);
+  const barOpenTotal = round2(barOpen.reduce((n, o) => n + o.amount, 0));
   const paidInFull =
     booking.advanceAmount != null &&
     booking.totalPrice != null &&
@@ -448,7 +451,25 @@ export default function StaySummary({ booking, idProofError = '', onViewIdProof,
                 </div>
               </>
             )}
-            {(booking.advanceAmount != null || foodOpen.length > 0 || servicesOpen.length > 0) && (
+            {barOpen.length > 0 && (
+              <>
+                <div className="stay-summary__pb-group stay-summary__pb-group--gap">Bar</div>
+                {barOpen.map((o) => (
+                  <div className="stay-summary__pb-line" key={o.id}>
+                    <span>
+                      Bar order #{o.orderNumber}
+                      <span className="stay-summary__pb-nights">{o.food > 0 ? `drinks ${formatPrice(o.drinks)} + food ${formatPrice(o.food)}` : 'drinks'}</span>
+                    </span>
+                    <span>{formatPrice(o.amount)}</span>
+                  </div>
+                ))}
+                <div className="stay-summary__pb-sub">
+                  <span>Bar · {barOpen.length} {barOpen.length === 1 ? 'order' : 'orders'}</span>
+                  <span>{formatPrice(barOpenTotal)}</span>
+                </div>
+              </>
+            )}
+            {(booking.advanceAmount != null || foodOpen.length > 0 || servicesOpen.length > 0 || barOpen.length > 0) && (
               <div className="stay-summary__pb-group stay-summary__pb-group--gap">Payments</div>
             )}
             {booking.advanceAmount != null && (
@@ -473,10 +494,11 @@ export default function StaySummary({ booking, idProofError = '', onViewIdProof,
                       (booking.lateCheckoutCharge > 0 ? ' + late checkout' : '') +
                       (foodOpen.length > 0 ? ' + food' : '') +
                       (servicesOpen.length > 0 ? ' + services' : '') +
+                      (barOpen.length > 0 ? ' + bar' : '') +
                       ' − advance'}
                   </small>
                 </div>
-                <strong>{formatPrice(outstandingBeforeTax(booking) + foodOpenTotal + servicesOpenTotal)}</strong>
+                <strong>{formatPrice(outstandingBeforeTax(booking) + foodOpenTotal + servicesOpenTotal + barOpenTotal)}</strong>
               </div>
             ) : (
               <div className="stay-summary__total">

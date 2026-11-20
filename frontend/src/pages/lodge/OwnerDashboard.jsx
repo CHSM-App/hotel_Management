@@ -9,6 +9,8 @@ import RoomsAndRates from './RoomsAndRates';
 import ServicesPanel from './ServicesPanel';
 import HousekeepingPanel from './HousekeepingPanel';
 import LaundryPanel from './LaundryPanel';
+import BarSection from './BarSection';
+import BarSetup from './BarSetup';
 import { useOpenIssues } from './useOpenIssues';
 import { useCheckoutAlerts } from './useCheckoutAlerts';
 import { useCheckinAlerts } from './useCheckinAlerts';
@@ -197,6 +199,7 @@ const ICON_PATHS = {
   sparkles: (
     <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.9 5.9l2.5 2.5M15.6 15.6l2.5 2.5M18.1 5.9l-2.5 2.5M8.4 15.6l-2.5 2.5" />
   ),
+  wine: <path d="M8 3h8l-.6 6.2A3.4 3.4 0 0 1 12 12.3a3.4 3.4 0 0 1-3.4-3.1L8 3ZM12 12.3V20M8.5 20h7" />,
   droplet: <path d="M12 2.5s7 7.1 7 12a7 7 0 1 1-14 0c0-4.9 7-12 7-12Z" />,
   grid: (
     <>
@@ -651,6 +654,7 @@ export default function OwnerDashboard() {
   // that's gone stale, not just the kitchen.
   const canManageOrders = permissions.includes('orders.manage') || permissions.includes('orders.take');
   const canViewReports = permissions.includes('reports.view');
+  const canViewBarReport = permissions.includes('bar.report') || permissions.includes('bar.manage');
   const canManageEnquiries = permissions.includes('enquiries.manage');
 
   const checkoutAlerts = useCheckoutAlerts(session?.token, canManageBookings);
@@ -1132,6 +1136,10 @@ export default function OwnerDashboard() {
                 />
               )}
 
+              {activeFeature && activeFeature.key === 'bar' && <BarSection lodge={me.lodge} permissions={permissions} onViewReport={canViewBarReport ? () => openReportsTab('bar') : null} />}
+
+              {activeFeature && activeFeature.key === 'barMenu' && <BarSetup onViewReport={canViewBarReport ? () => openReportsTab('bar') : null} />}
+
               {activeFeature && activeFeature.key === 'menu' && (
                 <FoodSetup
                   lodge={me.lodge}
@@ -1153,7 +1161,7 @@ export default function OwnerDashboard() {
 
               {activeFeature &&
                 !activeFeature.key.startsWith('report-') &&
-                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'enquiries', 'staff', 'billNumbering', 'whatsappSettings', 'food', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
+                !['rooms', 'otherServices', 'housekeeping', 'laundry', 'bookings', 'billing', 'eventBilling', 'guests', 'customers', 'enquiries', 'staff', 'billNumbering', 'whatsappSettings', 'food', 'bar', 'barMenu', 'menu', 'events', 'eventRegister', 'eventSetup', 'assets', 'expenses', 'income'].includes(
                   activeFeature.key
                 ) && (
                   <div className="dash-card">

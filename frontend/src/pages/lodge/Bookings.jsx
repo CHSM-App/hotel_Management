@@ -6839,15 +6839,27 @@ function GuestNameField({ id, value, token, onChange, onPick }) {
                 }}
                 onMouseEnter={() => setActive(i)}
               >
-                <span className="guest-typeahead__name">{guest.name}</span>
-                <span className="guest-typeahead__meta">
-                  {guest.phone}
-                  {guest.stayCount > 1 ? ` · ${guest.stayCount} stays` : ''}
-                  {guest.lastStayDate ? ` · last ${formatDateLong(guest.lastStayDate)}` : ''}
+                <span className="guest-typeahead__avatar" aria-hidden="true">{(guest.name || '?').trim().charAt(0).toUpperCase()}</span>
+                <span className="guest-typeahead__main">
+                  <span className="guest-typeahead__name">{guest.name}</span>
+                  <span className="guest-typeahead__meta">
+                    {guest.phone}
+                    {guest.stayCount > 1 ? ` · ${guest.stayCount} stays` : ''}
+                  </span>
+                  <span className="guest-typeahead__sub">
+                    {guest.lastStayDate ? `Last stay ${formatDateLong(guest.lastStayDate)}` : 'New guest'}
+                    {/* The one thing that changes what reception has to do next. */}
+                    {guest.hasIdProofDocument && (
+                      <span className="guest-typeahead__badge">{idProofLabel(guest.idProofType)} on file</span>
+                    )}
+                  </span>
                 </span>
-                {/* The one thing that changes what reception has to do next. */}
-                {guest.hasIdProofDocument && (
-                  <span className="guest-typeahead__badge">{idProofLabel(guest.idProofType)} on file</span>
+                {/* What this guest has paid the property so far, across every billed stay. */}
+                {guest.totalBusiness > 0 && (
+                  <span className="guest-typeahead__business" title="Total billed to this guest's stays">
+                    <b>{formatPrice(guest.totalBusiness)}</b>
+                    <small>{guest.billCount} {guest.billCount === 1 ? 'bill' : 'bills'}</small>
+                  </span>
                 )}
               </button>
             </li>

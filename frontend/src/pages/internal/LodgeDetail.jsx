@@ -413,6 +413,7 @@ export default function LodgeDetail() {
     hasOtherServices: lodge.has_other_services,
     hasHousekeeping: lodge.has_housekeeping,
     hasLaundry: lodge.has_laundry,
+    hasBar: lodge.has_bar,
   };
   const type = capabilities ? propertyTypeOf(capabilities) : null;
 

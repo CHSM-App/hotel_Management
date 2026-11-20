@@ -72,13 +72,11 @@ export default function GlobalLoader() {
               )}
               <svg className="global-loader__ring" viewBox="0 0 84 84" aria-hidden="true">
                 <circle className="track" cx="42" cy="42" r="38" />
-                <motion.g
-                  style={{ originX: '42px', originY: '42px' }}
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: still ? 4 : 1.15, ease: 'linear', repeat: Infinity }}
-                >
-                  <circle className="arc" cx="42" cy="42" r="38" transform="rotate(-90 42 42)" />
-                </motion.g>
+              </svg>
+              {/* The orbiting arc is its own element, spun by CSS around the box centre.
+                  Rotating an SVG <g> with a JS transform-origin wobbled off-centre. */}
+              <svg className="global-loader__spin" viewBox="0 0 84 84" aria-hidden="true">
+                <circle className="arc" cx="42" cy="42" r="38" transform="rotate(-90 42 42)" />
               </svg>
               <motion.div
                 className="global-loader__center"

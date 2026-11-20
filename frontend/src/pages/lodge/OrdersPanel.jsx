@@ -179,6 +179,8 @@ function dateTimeLabel(iso) {
 // it in. Says where the food is going too (room = charged to a stay).
 function SourceTag({ order }) {
   const place = order.source === 'ROOM' ? 'Room' : order.source === 'TABLE' ? 'Table' : 'Counter';
+  // Food on a bar order: the kitchen cooks it, the bar bills it.
+  if (order.barOrderId) return <span className="src-tag src-tag--bar">Bar · {place}</span>;
   return order.guestOrder ? (
     <span className="src-tag src-tag--qr">{place} QR</span>
   ) : (
@@ -190,6 +192,7 @@ function SourceTag({ order }) {
 // or plain Billed when no payment is on record.
 const METHOD_LABEL = { CASH: 'Cash', UPI: 'UPI', CARD: 'Card' };
 function billedLabel(order) {
+  if (order.barOrderId) return 'On bar bill';
   const p = order.payment;
   if (!p) return 'Billed';
   if (p.status === 'PAID') return p.method ? `Paid · ${METHOD_LABEL[p.method] || p.method}` : 'Paid';
@@ -298,7 +301,7 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
   const [billTab, setBillTab] = useState(null);
   const [roomOrder, setRoomOrder] = useState(null);
   // A table or takeaway can also go on a staying guest's room bill (rooms only).
-  const canIssue = (o) => canBillHere && ['READY', 'DELIVERED'].includes(o.status) && !o.onRoomBill && !o.voided;
+  const canIssue = (o) => canBillHere && ['READY', 'DELIVERED'].includes(o.status) && !o.onRoomBill && !o.voided && !o.barOrderId;
   // A room order can go on its own guest's room bill; the room is already known.
   const canRoom = (o) => canIssue(o) && lodge?.hasRooms !== false && (o.source !== 'ROOM' || Boolean(o.bookingId));
   const issueBill = async (o) => {
@@ -1564,7 +1567,7 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
       (canHandOver() && ['PREPARING', 'READY'].includes(o.status) && o.items.length > 0 && o.items.every((i) => i.readyAt)) ||
       (viewBill && o.invoiceId != null) ||
       (onEdit && !o.billed && !o.readyToBill && o.status !== 'CANCELLED') ||
-      (readyToBill && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && (o.status === 'DELIVERED' || (readyToBill.issues && o.status === 'READY'))) ||
+      (readyToBill && !o.barOrderId && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && (o.status === 'DELIVERED' || (readyToBill.issues && o.status === 'READY'))) ||
       (canDeliver && !o.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(o.status) && o.items.some((i) => !i.readyAt))
   );
 
@@ -1868,12 +1871,12 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
                                 Edit
                               </button>
                             )}
-                            {readyToBill && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && (o.status === 'DELIVERED' || (readyToBill.issues && o.status === 'READY')) && (
+                            {readyToBill && !o.barOrderId && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && (o.status === 'DELIVERED' || (readyToBill.issues && o.status === 'READY')) && (
                               <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => readyToBill(o)}>
                                 {readyToBill.issues ? 'Issue bill' : 'Ready to bill'}
                               </button>
                             )}
-                            {readyToBill && readyToBill.addToRoom && !o.billed && !o.onRoomBill && !o.voided && o.status === 'DELIVERED' && (o.source !== 'ROOM' || o.bookingId) && (
+                            {readyToBill && readyToBill.addToRoom && !o.barOrderId && !o.billed && !o.onRoomBill && !o.voided && o.status === 'DELIVERED' && (o.source !== 'ROOM' || o.bookingId) && (
                               <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => readyToBill.addToRoom(o)}>
                                 Add to room bill
                               </button>
@@ -1913,7 +1916,7 @@ function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, del
     canDeliver && !order.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(order.status) &&
     order.items.some((i) => !i.readyAt);
   // Every dish handed over and not yet billed: the captain can send it to billing.
-  const canBillNow = Boolean(readyToBill) && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && (order.status === 'DELIVERED' || (readyToBill.issues && order.status === 'READY'));
+  const canBillNow = Boolean(readyToBill) && !order.barOrderId && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && (order.status === 'DELIVERED' || (readyToBill.issues && order.status === 'READY'));
 
   return (
     <div className={`order-card order-card--${order.status.toLowerCase()}${order.items.length > 10 ? ' order-card--full' : order.items.length > 6 ? ' order-card--wide' : ''}`} key={order.id}>
@@ -2029,7 +2032,7 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
   const canCancel = canDeliver && !order.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(order.status) &&
     order.items.some((i) => !i.readyAt);
   // Every dish handed over and not yet billed: the captain can send it to billing.
-  const canBillNow = Boolean(readyToBill) && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && (order.status === 'DELIVERED' || (readyToBill.issues && order.status === 'READY'));
+  const canBillNow = Boolean(readyToBill) && !order.barOrderId && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && (order.status === 'DELIVERED' || (readyToBill.issues && order.status === 'READY'));
   // How long the kitchen actually had it. Only honest once the order has
   // landed somewhere — a live one is still running.
   const settledAt = order.deliveredAt || order.cancelledAt;

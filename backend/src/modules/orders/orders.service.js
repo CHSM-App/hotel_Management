@@ -160,7 +160,12 @@ async function resolveOrderLines(pool, lodgeId, requestedItems) {
 // table QR, or reception typing it in. Callers have already established *who*
 // is ordering (see placeRoomOrder / placeTableOrder in public.service.js);
 // this is only concerned with turning resolved lines into a numbered order.
-async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestName, guestPhone, note, items, status, createdBy }) {
+// barOrderId / outerTransaction: a bar order that includes restaurant food
+// creates its food ticket here (so the kitchen queue, ready/deliver flow and
+// recipe stock all work as usual), tagged with the bar order it belongs to.
+// The bar passes its own transaction so the two orders are created atomically;
+// the caller then owns commit and rollback.
+async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestName, guestPhone, note, items, status, createdBy, barOrderId = null, transaction: outerTransaction = null }) {
   if (items.length === 0) {
     throw new ApiError('Add at least one item to the order.', 400);
   }
@@ -172,8 +177,9 @@ async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestN
 
   const publicToken = newPublicToken();
 
-  const transaction = new sql.Transaction(pool);
-  await transaction.begin();
+  const ownsTransaction = !outerTransaction;
+  const transaction = outerTransaction || new sql.Transaction(pool);
+  if (ownsTransaction) await transaction.begin();
   try {
     const orderNumber = await allocateOrderNumber(transaction, lodgeId, orderDate);
 
@@ -192,15 +198,16 @@ async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestN
       .input('status', sql.NVarChar, status)
       .input('subtotal', sql.Decimal(10, 2), subtotal)
       .input('createdBy', sql.BigInt, createdBy ?? null)
+      .input('barOrderId', sql.BigInt, barOrderId)
       .query(`
         INSERT INTO dbo.food_orders
           (lodge_id, order_date, order_number, source, room_id, booking_id, table_id,
-           guest_name, guest_phone, note, status, subtotal, accepted_at, created_by, public_token)
+           guest_name, guest_phone, note, status, subtotal, accepted_at, created_by, public_token, bar_order_id)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @orderDate, @orderNumber, @source, @roomId, @bookingId, @tableId,
            @guestName, @guestPhone, @note, @status, @subtotal,
-           CASE WHEN @status = 'QUEUED' THEN SYSDATETIMEOFFSET() ELSE NULL END, @createdBy, @publicToken)
+           CASE WHEN @status = 'QUEUED' THEN SYSDATETIMEOFFSET() ELSE NULL END, @createdBy, @publicToken, @barOrderId)
       `);
 
     const orderId = orderResult.recordset[0].id;
@@ -225,11 +232,11 @@ async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestN
         `);
     }
 
-    await transaction.commit();
+    if (ownsTransaction) await transaction.commit();
 
     return { id: orderId, orderNumber, orderDate, status, subtotal, publicToken };
   } catch (err) {
-    await transaction.rollback();
+    if (ownsTransaction) await transaction.rollback();
     throw err;
   }
 }
@@ -359,7 +366,8 @@ function mapOrder(row, items) {
     // Once an invoice carries the order its lines are money — no more edits.
     // A food bill that was voided keeps its link to the orders, but they are no
     // longer billed: they read as Voided until someone deals with them.
-    billed: row.invoice_id != null && row.inv_status !== 'VOID',
+    // Food ordered on a bar order counts as billed once the bar bill is issued.
+    billed: (row.invoice_id != null && row.inv_status !== 'VOID') || (row.bar_order_id != null && row.bar_status === 'BILLED'),
     voided: row.invoice_id != null && row.inv_status === 'VOID',
     invoiceId: row.invoice_id ?? null,
     invoiceNumber: row.inv_number ?? null,
@@ -371,6 +379,10 @@ function mapOrder(row, items) {
     // staff-entered orders carry their author from the start.
     tableId: row.table_id ?? null,
     roomId: row.room_id ?? null,
+    // Food ordered on a bar order: cooked by this kitchen, but billed on the bar
+    // bill and reported under Bar, so restaurant billing screens skip it.
+    barOrderId: row.bar_order_id ?? null,
+    barBilled: row.bar_order_id != null && row.bar_status === 'BILLED',
     // Paid or part-paid once a bill carries it; null while it is unbilled.
     payment:
       row.invoice_id == null || row.inv_status === 'VOID'
@@ -400,7 +412,7 @@ async function listOrders(lodgeId, { status, date, from, to, live, awaitingBill 
     // it has been billed, or — for a room order — added to the room bill.
     filters.push(
       awaitingBill
-        ? "(o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') OR (o.status = 'DELIVERED' AND o.invoice_id IS NULL AND o.on_room_bill = 0))"
+        ? "(o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') OR (o.status = 'DELIVERED' AND o.invoice_id IS NULL AND o.on_room_bill = 0 AND o.bar_order_id IS NULL))"
         : "o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY')"
     );
   } else {
@@ -437,7 +449,8 @@ async function listOrders(lodgeId, { status, date, from, to, live, awaitingBill 
            COALESCE(o.guest_name, bk.guest_name) AS guest_name, COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
            o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
            o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.on_room_bill, o.created_by, uh.name AS handler_name,
-           o.table_id, o.room_id,
+           o.table_id, o.room_id, o.bar_order_id,
+           (SELECT status FROM dbo.bar_orders WHERE id = o.bar_order_id) AS bar_status,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
            (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,
            (SELECT status FROM dbo.invoices WHERE id = o.invoice_id) AS inv_status,
@@ -496,7 +509,8 @@ async function getOrder(lodgeId, orderId) {
            COALESCE(o.guest_name, bk.guest_name) AS guest_name, COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
              o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
              o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.on_room_bill, o.created_by, uh.name AS handler_name,
-           o.table_id, o.room_id,
+           o.table_id, o.room_id, o.bar_order_id,
+           (SELECT status FROM dbo.bar_orders WHERE id = o.bar_order_id) AS bar_status,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
            (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,
            (SELECT status FROM dbo.invoices WHERE id = o.invoice_id) AS inv_status,
@@ -736,7 +750,7 @@ async function markReadyToBill(lodgeId, orderId) {
     .input('orderId', sql.BigInt, orderId)
     .query(`
       UPDATE dbo.food_orders SET ready_to_bill_at = COALESCE(ready_to_bill_at, SYSDATETIMEOFFSET())
-      WHERE id = @orderId AND lodge_id = @lodgeId AND status = 'DELIVERED' AND invoice_id IS NULL
+      WHERE id = @orderId AND lodge_id = @lodgeId AND status = 'DELIVERED' AND invoice_id IS NULL AND bar_order_id IS NULL
     `);
   if (result.rowsAffected[0] === 0) {
     throw new ApiError('Only a fully delivered, unbilled order can be marked ready to bill.', 409);
@@ -764,7 +778,7 @@ async function listRunningTabs(lodgeId) {
       FROM dbo.food_orders o
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
       LEFT JOIN dbo.rooms r ON r.id = o.room_id
-      WHERE o.lodge_id = @lodgeId AND o.invoice_id IS NULL AND o.status <> 'CANCELLED'
+      WHERE o.lodge_id = @lodgeId AND o.invoice_id IS NULL AND o.status <> 'CANCELLED' AND o.bar_order_id IS NULL
         AND o.source IN ('TABLE', 'ROOM')
       GROUP BY o.source, o.table_id, o.room_id, CASE WHEN o.source = 'ROOM' THEN o.booking_id END
       ORDER BY MAX(o.placed_at) DESC

@@ -3462,3 +3462,275 @@ IF OBJECT_ID('dbo.lodge_settings', 'U') IS NULL
 EXEC('INSERT INTO dbo.lodge_settings (lodge_id)
       SELECT l.id FROM dbo.lodges l
       WHERE NOT EXISTS (SELECT 1 FROM dbo.lodge_settings s WHERE s.lodge_id = l.id)');
+
+-- Bar module (163). Separate from the restaurant on purpose: own menu, orders,
+-- bills and stock, so no restaurant report (food-orders, GST, collections,
+-- P&L) ever sees a bar sale. Stock is kept only in ml; bottles are derived.
+-- Remember: the same change must also land in src/config/schema.sql.
+
+-- Owner roles get the bar permissions once, together with the column, so an
+-- owner who later removes one is not overruled on a re-run.
+IF COL_LENGTH('dbo.lodges', 'has_bar') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.lodges ADD has_bar BIT NOT NULL CONSTRAINT df_lodges_has_bar DEFAULT 0');
+    UPDATE dbo.roles
+    SET permissions = LEFT(permissions, LEN(permissions) - 1) + ',"bar.manage","bar.bill","bar.report"]'
+    WHERE role_key = 'OWNER' AND permissions LIKE '%]' AND permissions NOT LIKE '%"bar.manage"%';
+END
+
+-- Bar tax % (alcohol is excise/VAT, not GST, so it is a plain per-lodge rate,
+-- prices are tax-inclusive) and the low-stock limit used when a product has none.
+IF COL_LENGTH('dbo.lodges', 'bar_tax_percent') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD bar_tax_percent DECIMAL(5,2) NOT NULL CONSTRAINT df_lodges_bar_tax DEFAULT 0');
+IF COL_LENGTH('dbo.lodges', 'bar_default_low_stock_ml') IS NULL
+    EXEC('ALTER TABLE dbo.lodges ADD bar_default_low_stock_ml INT NULL');
+
+IF OBJECT_ID('dbo.bar_categories', 'U') IS NULL
+CREATE TABLE dbo.bar_categories (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id    BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    name        NVARCHAR(100) NOT NULL,
+    sort_order  INT NOT NULL DEFAULT 0,
+    is_active   BIT NOT NULL DEFAULT 1,
+    CONSTRAINT uq_bar_categories UNIQUE (lodge_id, name)
+);
+
+-- One row per physical stock item (a bottle brand/size). stock_ml may go negative.
+IF OBJECT_ID('dbo.bar_products', 'U') IS NULL
+CREATE TABLE dbo.bar_products (
+    id           BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id     BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    category_id  BIGINT NULL REFERENCES dbo.bar_categories(id),
+    name         NVARCHAR(150) NOT NULL,
+    brand        NVARCHAR(100) NULL,
+    bottle_ml    INT NOT NULL CHECK (bottle_ml > 0),
+    stock_ml     INT NOT NULL DEFAULT 0,
+    low_stock_ml INT NULL,
+    is_active    BIT NOT NULL DEFAULT 1,
+    created_at   DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+-- A selling size of a product: 30 ml, 60 ml, Half, Full ...
+IF OBJECT_ID('dbo.bar_menu_items', 'U') IS NULL
+CREATE TABLE dbo.bar_menu_items (
+    id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id      BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    product_id    BIGINT NOT NULL REFERENCES dbo.bar_products(id),
+    size_label    NVARCHAR(50) NOT NULL,
+    ml_per_unit   INT NOT NULL CHECK (ml_per_unit > 0),
+    price         DECIMAL(10,2) NOT NULL CHECK (price >= 0),
+    is_available  BIT NOT NULL DEFAULT 1,
+    is_active     BIT NOT NULL DEFAULT 1
+);
+
+IF OBJECT_ID('dbo.bar_stock_movements', 'U') IS NULL
+CREATE TABLE dbo.bar_stock_movements (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id       BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    product_id     BIGINT NOT NULL REFERENCES dbo.bar_products(id),
+    change_ml      INT NOT NULL,
+    balance_after  INT NOT NULL,
+    reason         NVARCHAR(20) NOT NULL
+                   CHECK (reason IN ('OPENING','PURCHASE','SALE','ADJUSTMENT','WASTAGE','REVERSAL')),
+    ref_order_id   BIGINT NULL,
+    note           NVARCHAR(200) NULL,
+    created_by     BIGINT NULL,
+    created_at     DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF OBJECT_ID('dbo.bar_orders', 'U') IS NULL
+CREATE TABLE dbo.bar_orders (
+    id                   BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id             BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    order_date           DATE NOT NULL,
+    order_number         INT NOT NULL,
+    source               NVARCHAR(10) NOT NULL CHECK (source IN ('COUNTER','TABLE','ROOM')),
+    table_id             BIGINT NULL,
+    room_id              BIGINT NULL,
+    booking_id           BIGINT NULL,
+    restaurant_order_id  BIGINT NULL,
+    guest_name           NVARCHAR(100) NULL,
+    guest_phone          NVARCHAR(20) NULL,
+    status               NVARCHAR(10) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','BILLED','CANCELLED')),
+    subtotal             DECIMAL(10,2) NOT NULL DEFAULT 0,
+    bill_id              BIGINT NULL,
+    created_by           BIGINT NULL,
+    created_at           DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+);
+
+IF OBJECT_ID('dbo.bar_order_items', 'U') IS NULL
+CREATE TABLE dbo.bar_order_items (
+    id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    order_id       BIGINT NOT NULL REFERENCES dbo.bar_orders(id),
+    menu_item_id   BIGINT NOT NULL REFERENCES dbo.bar_menu_items(id),
+    product_id     BIGINT NOT NULL REFERENCES dbo.bar_products(id),
+    item_name      NVARCHAR(200) NOT NULL,
+    size_label     NVARCHAR(50) NOT NULL,
+    ml_per_unit    INT NOT NULL,
+    unit_price     DECIMAL(10,2) NOT NULL,
+    quantity       INT NOT NULL CHECK (quantity > 0),
+    line_total     DECIMAL(10,2) NOT NULL,
+    is_cancelled   BIT NOT NULL DEFAULT 0
+);
+
+IF OBJECT_ID('dbo.bar_bills', 'U') IS NULL
+CREATE TABLE dbo.bar_bills (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id        BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    bill_seq        INT NOT NULL,
+    bill_date       DATE NOT NULL,
+    subtotal        DECIMAL(10,2) NOT NULL,
+    tax_percent     DECIMAL(5,2) NOT NULL,
+    tax_amount      DECIMAL(10,2) NOT NULL,
+    total           DECIMAL(10,2) NOT NULL,
+    customer_name   NVARCHAR(100) NULL,
+    customer_phone  NVARCHAR(20) NULL,
+    created_by      BIGINT NULL,
+    created_at      DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT uq_bar_bills_seq UNIQUE (lodge_id, bill_seq)
+);
+
+IF OBJECT_ID('dbo.bar_bill_payments', 'U') IS NULL
+CREATE TABLE dbo.bar_bill_payments (
+    id         BIGINT IDENTITY(1,1) PRIMARY KEY,
+    bill_id    BIGINT NOT NULL REFERENCES dbo.bar_bills(id),
+    method     NVARCHAR(10) NOT NULL CHECK (method IN ('CASH','UPI','CARD')),
+    amount     DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+    reference  NVARCHAR(100) NULL
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_bar_orders_lodge' AND object_id = OBJECT_ID('dbo.bar_orders'))
+CREATE INDEX ix_bar_orders_lodge ON dbo.bar_orders(lodge_id, status, order_date);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_bar_moves_product' AND object_id = OBJECT_ID('dbo.bar_stock_movements'))
+CREATE INDEX ix_bar_moves_product ON dbo.bar_stock_movements(product_id, id DESC);
+
+-- Bar orders get a delivery step, can carry restaurant food, and captains get
+-- their own bar.take permission (164). Remember: the same change must also land
+-- in src/config/schema.sql.
+--
+-- Food on a bar order is a normal food_orders row (so the kitchen queue, the
+-- ready/deliver flow and recipe stock all work) tagged with the bar order it
+-- belongs to. Tagged rows are left out of every restaurant billing screen and
+-- report; the bar bill and the bar report include them.
+
+IF COL_LENGTH('dbo.bar_order_items', 'delivered_at') IS NULL
+    EXEC('ALTER TABLE dbo.bar_order_items ADD delivered_at DATETIMEOFFSET NULL');
+
+IF COL_LENGTH('dbo.bar_orders', 'food_subtotal') IS NULL
+    EXEC('ALTER TABLE dbo.bar_orders ADD food_subtotal DECIMAL(10,2) NOT NULL CONSTRAINT df_bar_orders_food_subtotal DEFAULT 0');
+
+IF COL_LENGTH('dbo.bar_bills', 'food_subtotal') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.bar_bills ADD food_subtotal DECIMAL(10,2) NOT NULL CONSTRAINT df_bar_bills_food_subtotal DEFAULT 0');
+    EXEC('ALTER TABLE dbo.bar_bills ADD food_tax_percent DECIMAL(5,2) NOT NULL CONSTRAINT df_bar_bills_food_tax_pct DEFAULT 0');
+    EXEC('ALTER TABLE dbo.bar_bills ADD food_tax_amount DECIMAL(10,2) NOT NULL CONSTRAINT df_bar_bills_food_tax_amt DEFAULT 0');
+END
+
+-- bar.take once, together with the column, so a role an owner later trims is not
+-- overruled on a re-run. Gated by hasBar like every bar permission.
+IF COL_LENGTH('dbo.food_orders', 'bar_order_id') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.food_orders ADD bar_order_id BIGINT NULL');
+    UPDATE dbo.roles
+    SET permissions = LEFT(permissions, LEN(permissions) - 1) + ',"bar.take"]'
+    WHERE role_key IN ('OWNER', 'CAPTAIN') AND permissions LIKE '%]' AND permissions NOT LIKE '%"bar.take"%';
+END
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_food_orders_bar_order' AND object_id = OBJECT_ID('dbo.food_orders'))
+    EXEC('CREATE INDEX ix_food_orders_bar_order ON dbo.food_orders(bar_order_id) WHERE bar_order_id IS NOT NULL');
+
+-- Booking edit log (165): who/device behind each booking write.
+IF OBJECT_ID('dbo.booking_edit_log', 'U') IS NULL
+CREATE TABLE dbo.booking_edit_log (
+    id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id    BIGINT NOT NULL,
+    booking_id  BIGINT NULL,
+    user_id     BIGINT NULL,
+    user_role   NVARCHAR(20) NULL,
+    device_id   NVARCHAR(64) NULL,
+    client_ip   NVARCHAR(45) NULL,
+    action      NVARCHAR(200) NOT NULL,   -- "PATCH /bookings/:id/check-out"
+    fields      NVARCHAR(1000) NULL,      -- body field names only, never values
+    created_at  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_edit_log_booking' AND object_id = OBJECT_ID('dbo.booking_edit_log'))
+    EXEC('CREATE INDEX ix_booking_edit_log_booking ON dbo.booking_edit_log(booking_id, created_at DESC)');
+
+-- Bar orders can be marked "ready to bill" (captain / reception), and reception
+-- gets the bar order and billing permissions (165). Remember: the same change
+-- must also land in src/config/schema.sql.
+--
+-- Roles are touched once, together with the column, so a role an owner later
+-- trims is not overruled on a re-run. Owners are always granted the bar
+-- permissions in code (roles.service getEffectiveRole).
+IF COL_LENGTH('dbo.bar_orders', 'ready_to_bill_at') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.bar_orders ADD ready_to_bill_at DATETIMEOFFSET NULL');
+    UPDATE dbo.roles
+    SET permissions = LEFT(permissions, LEN(permissions) - 1) + ',"bar.take"]'
+    WHERE role_key = 'RECEPTION' AND permissions LIKE '%]' AND permissions NOT LIKE '%"bar.take"%';
+    UPDATE dbo.roles
+    SET permissions = LEFT(permissions, LEN(permissions) - 1) + ',"bar.bill"]'
+    WHERE role_key = 'RECEPTION' AND permissions LIKE '%]' AND permissions NOT LIKE '%"bar.bill"%';
+END
+
+-- Restaurant bills get a series of their own (167): numbered <booking code>R<n>
+-- (for example SKR12), separate from the room/stay run. Allocation is the same
+-- atomic UPDATE on dbo.invoice_series, under a new 'FOOD' series type. Bills
+-- already issued keep the numbers they were printed with.
+-- Remember: the same change must also land in src/config/schema.sql.
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_invoice_series_type')
+ALTER TABLE dbo.invoice_series DROP CONSTRAINT ck_invoice_series_type;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_invoice_series_type')
+ALTER TABLE dbo.invoice_series ADD CONSTRAINT ck_invoice_series_type
+    CHECK (series_type IN ('GST', 'NON_GST', 'ADVANCE', 'FOOD'));
+GO
+
+-- Bar orders can be posted to a guest's room (stay) bill (168). Remember: the same
+-- change must also land in src/config/schema.sql.
+--
+-- A bar order on the room bill is carried by the stay invoice like a service use:
+-- on_room_bill marks it parked, invoice_id says which bill billed it, voided_invoice_id
+-- keeps the link after a void. The stay invoice gets its own Bar line: drinks at the
+-- bar's plain tax %, restaurant dishes at food GST. Neither lands in the food or service
+-- columns, so restaurant revenue and the GST register are not changed by bar sales.
+IF COL_LENGTH('dbo.bar_orders', 'on_room_bill') IS NULL
+    EXEC('ALTER TABLE dbo.bar_orders ADD on_room_bill BIT NOT NULL CONSTRAINT df_bar_orders_on_room_bill DEFAULT 0');
+GO
+
+IF COL_LENGTH('dbo.bar_orders', 'invoice_id') IS NULL
+    EXEC('ALTER TABLE dbo.bar_orders ADD invoice_id BIGINT NULL CONSTRAINT fk_bar_orders_invoice REFERENCES dbo.invoices(id)');
+GO
+
+IF COL_LENGTH('dbo.bar_orders', 'voided_invoice_id') IS NULL
+    EXEC('ALTER TABLE dbo.bar_orders ADD voided_invoice_id BIGINT NULL CONSTRAINT fk_bar_orders_voided_invoice REFERENCES dbo.invoices(id)');
+GO
+
+IF COL_LENGTH('dbo.invoices', 'bar_subtotal') IS NULL
+BEGIN
+    EXEC('ALTER TABLE dbo.invoices ADD bar_subtotal DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_bar_subtotal DEFAULT 0');
+    EXEC('ALTER TABLE dbo.invoices ADD bar_food_subtotal DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_bar_food_subtotal DEFAULT 0');
+    EXEC('ALTER TABLE dbo.invoices ADD bar_tax_amount DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_bar_tax_amount DEFAULT 0');
+    EXEC('ALTER TABLE dbo.invoices ADD bar_food_tax_amount DECIMAL(10,2) NOT NULL CONSTRAINT df_invoices_bar_food_tax_amount DEFAULT 0');
+END
+GO
+
+-- Plain numbers for every bill series (169). Restaurant bills run 1, 2, 3 on their own
+-- (invoice_series type FOOD), apart from the room/stay/event run, so the same number can
+-- exist once in each series. The uniqueness rule becomes per series: number_series is
+-- 'MAIN' for every existing bill and 'FOOD' for restaurant bills issued from now on.
+-- Remember: the same change must also land in src/config/schema.sql.
+IF COL_LENGTH('dbo.invoices', 'number_series') IS NULL
+    EXEC('ALTER TABLE dbo.invoices ADD number_series NVARCHAR(10) NOT NULL CONSTRAINT df_invoices_number_series DEFAULT ''MAIN''');
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_invoices_lodge_series_number' AND object_id = OBJECT_ID('dbo.invoices'))
+    CREATE UNIQUE INDEX uq_invoices_lodge_series_number ON dbo.invoices(lodge_id, number_series, invoice_number);
+GO
+
+IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_invoices_lodge_number' AND object_id = OBJECT_ID('dbo.invoices'))
+    DROP INDEX uq_invoices_lodge_number ON dbo.invoices;
+GO

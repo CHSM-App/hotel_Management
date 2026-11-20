@@ -793,11 +793,13 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
   // payload predating that field, and is exact whenever the bill carries a
   // single supply — which is every bill that isn't a stay with a food tab.
   const serviceSubtotal = invoice.serviceSubtotal ?? 0;
-  const gross = round2(invoice.roomSubtotal + invoice.foodSubtotal + serviceSubtotal);
+  const barSubtotal = round2((invoice.barSubtotal ?? 0) + (invoice.barFoodSubtotal ?? 0));
+  const gross = round2(invoice.roomSubtotal + invoice.foodSubtotal + serviceSubtotal + barSubtotal);
   const shareOf = (part) => (gross > 0 ? round2(part - (invoice.discountAmount * part) / gross) : part);
   const roomTaxable = invoice.roomTaxable ?? shareOf(invoice.roomSubtotal);
   const foodTaxable = invoice.foodTaxable ?? shareOf(invoice.foodSubtotal);
   const serviceTaxable = invoice.serviceTaxable ?? shareOf(serviceSubtotal);
+  const barTaxable = invoice.barTaxable ?? 0;
 
   // The room charge is built base rate first, then any season uplift, then each
   // switched-on extra — bed, AC, extra person — in the order the quote applied
@@ -1274,6 +1276,24 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
                   ))}
                 </div>
               )}
+
+              {/* Bar orders posted to the room: drinks at the bar's own tax rate, dishes at food GST. */}
+              {barSubtotal > 0 && (
+                <div className="memo__misc">
+                  <div className="memo__misc-head">Bar</div>
+                  {invoice.barItems?.map((item, index) => (
+                    <div className="memo__misc-line" key={`${item.name}-${item.size}-${index}`}>
+                      <span>
+                        {item.name}
+                        <span className="memo__qty">
+                          {item.size ? `${item.size} · ` : ''}{item.quantity} × {amt(item.unitPrice)}
+                        </span>
+                      </span>
+                      <span>{amt(item.lineTotal)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </td>
             {/* The money cells stay for the column's rules; the figure that
                 used to head them is gone — TOTAL AMOUNT below says it. */}
@@ -1299,7 +1319,7 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
               value={-invoice.discountAmount}
             />
           )}
-          <Money label={isGst ? T.taxableValue : T.totalAmount} value={round2(roomTaxable + foodTaxable + serviceTaxable)} rule strong total />
+          <Money label={isGst ? T.taxableValue : T.totalAmount} value={round2(roomTaxable + foodTaxable + serviceTaxable + barTaxable)} rule strong total />
           {invoice.cgstAmount > 0 && <Money label={`CGST ${invoice.cgstRatePercent} %`} value={invoice.cgstAmount} />}
           {invoice.sgstAmount > 0 && <Money label={`SGST ${invoice.sgstRatePercent} %`} value={invoice.sgstAmount} />}
           {invoice.foodCgstAmount > 0 && (
@@ -1313,6 +1333,12 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
           )}
           {invoice.serviceSgstAmount > 0 && (
             <Money label={`SGST ${invoice.serviceSgstRatePercent} % (Services)`} value={invoice.serviceSgstAmount} />
+          )}
+          {invoice.barFoodTaxAmount > 0 && (
+            <Money label={`GST ${invoice.barFoodTaxPercent} % (Bar food)`} value={invoice.barFoodTaxAmount} />
+          )}
+          {invoice.barTaxAmount > 0 && (
+            <Money label={`Bar tax ${invoice.barTaxPercent} % (incl.)`} value={invoice.barTaxAmount} />
           )}
           {invoice.roundOff !== 0 && <Money label={T.roundOff} value={invoice.roundOff} />}
           <Money label={T.grandTotal} value={invoice.totalAmount} strong rule />

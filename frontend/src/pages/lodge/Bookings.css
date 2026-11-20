@@ -858,7 +858,7 @@
      the modal and gave the form a sideways scroll. */
   min-width: 100%;
   width: max-content;
-  max-width: min(320px, calc(100vw - 40px));
+  max-width: min(380px, calc(100vw - 40px));
   max-height: 264px;
   overflow-y: auto;
   margin: 0;
@@ -873,14 +873,14 @@
 }
 
 .guest-typeahead__option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  padding: 7px 9px;
+  padding: 8px 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   background: none;
   text-align: left;
   cursor: pointer;
@@ -889,29 +889,85 @@
 /* One highlight, driven by the arrow keys, which the pointer also sets on
    hover — so there is never a keyboard row and a mouse row lit at once. */
 .guest-typeahead__option--active {
-  background: var(--paper);
+  background: var(--brand-wash);
+}
+
+/* The guest's initial, so a list of names reads as people rather than rows of text. */
+.guest-typeahead__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--brand);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.guest-typeahead__main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
 .guest-typeahead__name {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 700;
   color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .guest-typeahead__meta {
-  font-size: 11.5px;
-  color: var(--text-muted);
+  font-size: 12px;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
+.guest-typeahead__sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
 .guest-typeahead__badge {
-  margin-top: 3px;
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--ok-bg, #e4f0e8);
   color: var(--ok-ink, #2f6b45);
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+/* What the guest has paid the property so far: the figure reception reads to see who a
+   returning guest is worth, on its own at the right edge. */
+.guest-typeahead__business {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 4px 9px;
+  border-radius: 10px;
+  background: var(--brand-wash);
+  border: 1px solid var(--brand-wash-edge);
+  line-height: 1.15;
+}
+.guest-typeahead__business b {
+  font-size: 13px;
+  color: var(--brand-ink);
+  font-variant-numeric: tabular-nums;
+}
+.guest-typeahead__business small {
+  font-size: 10.5px;
+  color: var(--text);
+}
+.guest-typeahead__option--active .guest-typeahead__business {
+  background: var(--surface);
 }
 
 /* Icon-only, so it is sized as a square target rather than by its text.

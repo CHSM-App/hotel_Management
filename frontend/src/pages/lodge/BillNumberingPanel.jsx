@@ -20,6 +20,12 @@ const SERIES = [
     note: 'The bill a guest is given at checkout.',
   },
   {
+    key: 'food',
+    api: 'FOOD',
+    title: 'Restaurant bills',
+    note: 'Restaurant bills run their own numbers, starting at 1, apart from room bills.',
+  },
+  {
     key: 'advance',
     api: 'ADVANCE',
     title: 'Advance receipts',

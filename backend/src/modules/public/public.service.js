@@ -629,7 +629,7 @@ async function listGuestOrders(slug, roomNumber, pin) {
              o.id, o.public_token, o.order_number, o.status, o.subtotal, o.note,
              o.placed_at, o.cancelled_at
       FROM dbo.food_orders o
-      WHERE o.lodge_id = @lodgeId AND o.booking_id = @bookingId AND o.source = 'ROOM'
+      WHERE o.lodge_id = @lodgeId AND o.booking_id = @bookingId AND o.source = 'ROOM' AND o.bar_order_id IS NULL
       ORDER BY o.placed_at DESC
     `);
 
@@ -643,7 +643,7 @@ async function listGuestOrders(slug, roomNumber, pin) {
       SELECT COALESCE(SUM(subtotal), 0) AS total, COUNT(*) AS n
       FROM dbo.food_orders
       WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND source = 'ROOM'
-        AND status <> 'CANCELLED' AND invoice_id IS NULL
+        AND status <> 'CANCELLED' AND invoice_id IS NULL AND bar_order_id IS NULL
     `);
   const tab = { total: Number(totalResult.recordset[0].total), orderCount: totalResult.recordset[0].n };
 

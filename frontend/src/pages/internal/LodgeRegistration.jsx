@@ -58,6 +58,7 @@ const initialForm = {
   hasOtherServices: false,
   hasHousekeeping: false,
   hasLaundry: false,
+  hasBar: false,
   isGstRegistered: false,
   gstin: '',
   isSpecifiedPremises: false,
@@ -135,8 +136,9 @@ export default function LodgeRegistration() {
       // Rooms or event venues: either gives housekeeping and laundry something to look after.
       hasHousekeeping: form.hasHousekeeping && (baseCapabilities.hasRooms || form.hasEvents),
       hasLaundry: form.hasLaundry && (baseCapabilities.hasRooms || form.hasEvents),
+      hasBar: form.hasBar,
     }),
-    [baseCapabilities, form.hasEvents, form.hasAssets, form.hasExpenses, form.hasOtherServices, form.hasHousekeeping, form.hasLaundry]
+    [baseCapabilities, form.hasEvents, form.hasAssets, form.hasExpenses, form.hasOtherServices, form.hasHousekeeping, form.hasLaundry, form.hasBar]
   );
 
   const includedFeatures = useMemo(() => featuresForCapabilities(capabilities), [capabilities]);
@@ -158,6 +160,7 @@ export default function LodgeRegistration() {
     { key: 'otherServices', formKey: 'hasOtherServices', feature: FEATURES.find((f) => f.key === 'otherServices'), needsRooms: true },
     { key: 'housekeeping', formKey: 'hasHousekeeping', feature: FEATURES.find((f) => f.key === 'housekeeping'), needsRooms: true, orEvents: true },
     { key: 'laundry', formKey: 'hasLaundry', feature: FEATURES.find((f) => f.key === 'laundry'), needsRooms: true, orEvents: true },
+    { key: 'bar', formKey: 'hasBar', feature: FEATURES.find((f) => f.key === 'bar') },
   ];
   const baseFeatures = FEATURES.filter((f) => !ADDONS.some((a) => a.key === f.key));
 
@@ -230,6 +233,7 @@ export default function LodgeRegistration() {
       caps.hasOtherServices = Boolean(rest.hasOtherServices) && caps.hasRooms;
       caps.hasHousekeeping = Boolean(rest.hasHousekeeping) && (caps.hasRooms || caps.hasEvents);
       caps.hasLaundry = Boolean(rest.hasLaundry) && (caps.hasRooms || caps.hasEvents);
+      caps.hasBar = Boolean(rest.hasBar);
       const payload = {
         ...rest,
         ...caps,

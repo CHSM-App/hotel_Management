@@ -645,17 +645,23 @@ async function importRows(lodgeId, rows) {
         categoryId,
         name: row.name,
         description: row.description || '',
-        price: row.price,
+        price: row.price ?? Math.min(...row.portions.map((p) => p.price)),
         foodType: row.foodType,
         sortOrder: 0,
       };
 
+      let itemId;
       if (existingItem.recordset.length > 0) {
-        await updateItem(lodgeId, existingItem.recordset[0].id, itemInput);
+        itemId = existingItem.recordset[0].id;
+        await updateItem(lodgeId, itemId, itemInput);
         updated += 1;
       } else {
-        await createItem(lodgeId, itemInput);
+        itemId = (await createItem(lodgeId, itemInput)).id;
         created += 1;
+      }
+      // A plain row leaves existing sizes alone; a row with size cells replaces them.
+      if (row.portions.length > 0) {
+        await setItemPortions(lodgeId, itemId, { portions: row.portions });
       }
     } catch (err) {
       errors.push({ row: rowNum, name: raw.name ?? '', message: err.message });

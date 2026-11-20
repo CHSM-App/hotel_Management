@@ -1413,6 +1413,7 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     invoice: extra.invoice ?? null,
     // Food this stay has ordered (room service, plus table food added to the room bill).
     foodOrders: extra.foodOrders ?? [],
+    barOrders: extra.barOrders ?? [],
     serviceUsages: extra.serviceUsages ?? [],
     availableSwitchableCharges: extra.availableSwitchableCharges || [],
   };
@@ -1554,6 +1555,30 @@ async function searchGuests(lodgeId, query) {
       stayCount: chosen.stay_count,
       lastStayDate: toIsoDate(chosen.last_stay),
     });
+  }
+  // How much business each guest has given: everything billed to their stays so far (issued
+  // invoices only; a voided bill or an unbilled stay is not business done), by name and phone,
+  // the same way the suggestion itself is grouped.
+  if (suggestions.length > 0) {
+    const request = pool.request().input('lodgeId', sql.BigInt, lodgeId);
+    const pairs = suggestions.map((g, i) => {
+      request.input(`n${i}`, sql.NVarChar, g.name).input(`p${i}`, sql.NVarChar, g.phone ?? '');
+      return `(b.guest_name = @n${i} AND ISNULL(b.guest_phone, '') = @p${i})`;
+    });
+    const billed = await request.query(`
+      SELECT b.guest_name, ISNULL(b.guest_phone, '') AS guest_phone,
+             SUM(i.total_amount) AS billed, COUNT(*) AS bills
+      FROM dbo.bookings b
+      JOIN dbo.invoices i ON i.booking_id = b.id AND i.lodge_id = @lodgeId AND i.status = 'ISSUED'
+      WHERE b.lodge_id = @lodgeId AND b.status <> 'CANCELLED' AND (${pairs.join(' OR ')})
+      GROUP BY b.guest_name, ISNULL(b.guest_phone, '')
+    `);
+    const byKey = new Map(billed.recordset.map((r) => [`${r.guest_name} ${r.guest_phone}`, r]));
+    for (const g of suggestions) {
+      const hit = byKey.get(`${g.name} ${g.phone ?? ''}`);
+      g.totalBusiness = hit ? Number(hit.billed) : 0;
+      g.billCount = hit ? hit.bills : 0;
+    }
   }
   return suggestions;
 }
@@ -1820,7 +1845,7 @@ async function getBooking(lodgeId, bookingId) {
              t.label AS table_label
       FROM dbo.food_orders o
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
-      WHERE o.lodge_id = @lodgeId AND o.booking_id = @bookingId AND o.status <> 'CANCELLED'
+      WHERE o.lodge_id = @lodgeId AND o.booking_id = @bookingId AND o.status <> 'CANCELLED' AND o.bar_order_id IS NULL
       ORDER BY o.placed_at ASC
     `);
   const foodItemsResult = foodOrdersResult.recordset.length
@@ -1878,6 +1903,32 @@ async function getBooking(lodgeId, bookingId) {
     startedAt: u.started_at,
   }));
 
+  // Bar orders the desk posted to this stay's room bill (drinks and any dishes), so the stay
+  // shows what is about to land on the bill under Bar, not under Food.
+  const barOrdersResult = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('bookingId', sql.BigInt, bookingId)
+    .query(`
+      SELECT o.id, o.order_number, o.on_room_bill, o.invoice_id, o.created_at,
+             (SELECT ISNULL(SUM(i.line_total), 0) FROM dbo.bar_order_items i WHERE i.order_id = o.id AND i.is_cancelled = 0) AS drinks,
+             (SELECT ISNULL(SUM(fi.line_total), 0) FROM dbo.food_orders fo JOIN dbo.food_order_items fi ON fi.order_id = fo.id
+              WHERE fo.bar_order_id = o.id AND fo.lodge_id = @lodgeId AND fo.status <> 'CANCELLED') AS food
+      FROM dbo.bar_orders o
+      WHERE o.lodge_id = @lodgeId AND o.booking_id = @bookingId AND o.on_room_bill = 1 AND o.status <> 'CANCELLED'
+      ORDER BY o.id
+    `);
+  const barOrders = barOrdersResult.recordset.map((o) => ({
+    id: o.id,
+    orderNumber: o.order_number,
+    drinks: Number(o.drinks),
+    food: Number(o.food),
+    amount: Math.round((Number(o.drinks) + Number(o.food)) * 100) / 100,
+    billed: o.invoice_id != null,
+    onRoomBill: !!o.on_room_bill,
+    placedAt: o.created_at,
+  }));
+
   // How the advance on this stay actually arrived, one entry per method.
   //
   // Grouped, so an advance taken across two receipts by the same method reads
@@ -1913,6 +1964,7 @@ async function getBooking(lodgeId, bookingId) {
     invoice,
     foodOrders,
     serviceUsages,
+    barOrders,
     availableSwitchableCharges,
     foodOrderingLockedUntil: lockedUntilOf(row.room_number),
     extraBeds: extraBedsResult.recordset.map((r) => ({ id: r.bed_id, bedLabel: r.bed_label })),

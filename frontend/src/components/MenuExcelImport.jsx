@@ -6,26 +6,40 @@ import './MenuExcelImport.css';
 // Column headings the sheet must use, read case/space-insensitively so
 // "Food Type" and "food type" both work. Matches what menu.schema.js's
 // menuImportRowSchema validates row-by-row on the server.
-const SCHEMA = {
-  section: { column: 'Section', type: String },
-  name: { column: 'Item Name', type: String },
-  description: { column: 'Description', type: String, required: false },
-  price: { column: 'Price', type: Number },
-  foodType: {
-    column: 'Type',
-    required: false,
-    // read-excel-file v9 has no separate "parse" option — a custom
-    // conversion is the `type` itself, a function from cell value to parsed
-    // value. This accepts "Veg"/"Non-Veg"/"NON_VEG" the way a hotelier would
-    // type it, not just the exact enum menu.schema.js stores. (It only runs
-    // for a non-empty cell; see propertyValueWhenCellIsEmpty below for a
-    // blank one.)
-    type: (value) => (/non/i.test(value || '') ? 'NON_VEG' : 'VEG'),
-  },
-};
+const KNOWN = { section: 'section', 'item name': 'name', description: 'description', price: 'price', type: 'foodType' };
 
-const TEMPLATE_HEADERS = ['Section', 'Item Name', 'Description', 'Price', 'Type'];
-const TEMPLATE_EXAMPLE = ['Starters', 'Veg Manchurian', 'Crispy vegetable balls in tangy sauce', '180', 'Veg'];
+// Any header that isn't one of KNOWN is a size (Half, Full, Quarter...) and its
+// cells are that size's price. Rows come in as arrays, header row first.
+function parseSheet(table) {
+  const [header = [], ...body] = table;
+  const cols = header.map((h) => {
+    const text = String(h ?? '').trim();
+    return { text, field: KNOWN[text.toLowerCase()] };
+  });
+  const num = (v, rowNum, col) => {
+    const n = Number(v);
+    if (Number.isNaN(n)) throw new Error(`Row ${rowNum}, column "${col}": couldn't read that value. Fix it and try again.`);
+    return n;
+  };
+  return body
+    .map((cells, i) => ({ cells, rowNum: i + 2 }))
+    .filter(({ cells }) => cells.some((c) => c !== null && c !== ''))
+    .map(({ cells, rowNum }) => {
+      const row = { portions: [] };
+      cols.forEach(({ text, field }, i) => {
+        const v = cells[i];
+        if (!text || v === null || v === undefined || v === '') return;
+        if (field === 'price') row.price = num(v, rowNum, text);
+        else if (field === 'foodType') row.foodType = /non/i.test(String(v)) ? 'NON_VEG' : 'VEG';
+        else if (field) row[field] = String(v);
+        else row.portions.push({ label: text, price: num(v, rowNum, text) });
+      });
+      return row;
+    });
+}
+
+const TEMPLATE_HEADERS = ['Section', 'Item Name', 'Description', 'Price', 'Type', 'Half', 'Full'];
+const TEMPLATE_EXAMPLE = ['Starters', 'Veg Manchurian', 'Crispy vegetable balls in tangy sauce', '', 'Veg', '100', '180'];
 
 // .xlsx, not .csv — the only format readSheet() below can parse, so the file
 // downloaded here has to be the same one the picker accepts. Built with
@@ -113,17 +127,8 @@ export default function MenuExcelImport({ importPath, token, onImported }) {
       // rejects outright — z.string().optional() and z.enum().optional()
       // only special-case `undefined`, not `null`. `undefined` is what lets
       // their .default(...) actually kick in for a blank cell.
-      const { objects: rows, errors } = await readSheet(file, {
-        schema: SCHEMA,
-        propertyValueWhenCellIsEmpty: undefined,
-      });
-      if (errors && errors.length > 0) {
-        const first = errors[0];
-        throw new Error(
-          `Row ${first.row}, column "${first.column}": couldn't read that value. Fix it and try again.`
-        );
-      }
-      if (!rows || rows.length === 0) {
+      const rows = parseSheet(await readSheet(file));
+      if (rows.length === 0) {
         throw new Error('That file has no rows to import.');
       }
 
@@ -169,7 +174,8 @@ export default function MenuExcelImport({ importPath, token, onImported }) {
                 </div>
                 <p className="modal-form__sub">
                   Columns: <strong>Section, Item Name, Description, Price, Type</strong> (Veg / Non-Veg).
-                  A section or item that already exists by name is updated, not duplicated — safe to
+                  Any extra column is a size, e.g. <strong>Half, Full</strong> — put that size's price in the
+                  cell (Price can then be left blank). A section or item that already exists by name is updated, not duplicated — safe to
                   re-upload after fixing a mistake.
                 </p>
               </div>

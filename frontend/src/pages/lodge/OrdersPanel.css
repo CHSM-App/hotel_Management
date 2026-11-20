@@ -3659,3 +3659,6 @@ label.order-card__item { padding: 3px 6px; }
   cursor: pointer;
   box-shadow: var(--shadow-raised);
 }
+
+/* Food ordered on a bar order: cooked here, billed and reported under Bar. */
+.src-tag--bar { background: #f3e4ff; color: #5b2a86; }

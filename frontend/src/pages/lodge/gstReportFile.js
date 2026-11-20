@@ -50,10 +50,12 @@ function supplyRows(invoices) {
     { label: 'Functions / venue', sac: '', taxable: 0, cgst: 0, sgst: 0 },
     { label: 'Food', sac: SAC.food, taxable: 0, cgst: 0, sgst: 0 },
     { label: 'Other services', sac: '', taxable: 0, cgst: 0, sgst: 0 },
+    // Bar orders posted to a room bill: the bar's drinks sit in the taxable value, GST is on the dishes only.
+    { label: 'Bar (on room bills)', sac: '', taxable: 0, cgst: 0, sgst: 0 },
   ];
   for (const i of invoices) {
     const main = rows[i.isEvent ? 1 : 0];
-    main.taxable += i.taxableValue - i.foodTaxable - i.serviceTaxable;
+    main.taxable += i.taxableValue - i.foodTaxable - i.serviceTaxable - (i.barTaxable || 0);
     main.cgst += i.roomCgst;
     main.sgst += i.roomSgst;
     rows[2].taxable += i.foodTaxable;
@@ -62,6 +64,9 @@ function supplyRows(invoices) {
     rows[3].taxable += i.serviceTaxable;
     rows[3].cgst += i.serviceCgst;
     rows[3].sgst += i.serviceSgst;
+    rows[4].taxable += i.barTaxable || 0;
+    rows[4].cgst += i.barCgst || 0;
+    rows[4].sgst += i.barSgst || 0;
   }
   return rows
     .map((r) => ({ ...r, taxable: round2(r.taxable), cgst: round2(r.cgst), sgst: round2(r.sgst) }))

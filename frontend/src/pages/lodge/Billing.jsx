@@ -573,7 +573,10 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
       : filteredQueue;
   const [foodTabs, setFoodTabs] = useState(() => readCache('/billing/food-tabs'));
   const [foodTabsError, setFoodTabsError] = useState('');
-  const [invoices, setInvoices] = useState(() => readCache('/billing/invoices'));
+  // The restaurant's Bills list asks the server for restaurant bills only, so the
+  // 200-row cap is not spent on room and event invoices (and caches under its own key).
+  const invoicesPath = stream === 'restaurant' ? '/billing/invoices?stream=restaurant' : '/billing/invoices';
+  const [invoices, setInvoices] = useState(() => readCache(invoicesPath));
   const [invoicesError, setInvoicesError] = useState('');
   // Advance receipts share the bills list with invoices — both are money taken,
   // and a month's takings that showed only invoices would understate what the
@@ -764,9 +767,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   };
 
   const loadInvoices = () => {
-    apiGet('/billing/invoices', { token })
+    apiGet(invoicesPath, { token })
       .then((data) => {
-        setInvoices(writeCache('/billing/invoices', data.invoices));
+        setInvoices(writeCache(invoicesPath, data.invoices));
         setInvoicesError('');
       })
       .catch((err) => setInvoicesError(err instanceof ApiError ? err.message : 'Could not load bills.'));
@@ -3173,6 +3176,26 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   </div>
                 )}
 
+                {/* Bar orders posted to this room, itemised the same way. */}
+                {preview.barItems?.length > 0 && (
+                  <div className="form-section">
+                    <div className="form-section__title">Bar</div>
+                    <div className="chart-list">
+                      {preview.barItems.map((item, index) => (
+                        <div className="chart-row" key={`${item.orderNumber}-${item.name}-${index}`}>
+                          <span className="chart-row__name">
+                            {item.name}
+                            <span className="chart-row__dates">
+                              {item.size ? `${item.size} · ` : ''}{item.quantity} × {formatPrice(item.unitPrice)} · Order #{item.orderNumber}
+                            </span>
+                          </span>
+                          <span className="chart-row__value">{formatPrice(item.lineTotal)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Which side a bill is issued on isn't the desk's call — it
                     follows the property's registration. Offering the choice
                     only invited a cash receipt to be cut by mistake, which
@@ -3242,6 +3265,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                         <div className="sim-result__line">
                           <span>Food</span>
                           <span>{formatPrice(activeAmounts.foodSubtotal)}</span>
+                        </div>
+                      )}
+
+                      {activeAmounts.barSubtotal + activeAmounts.barFoodSubtotal > 0 && (
+                        <div className="sim-result__line">
+                          <span>Bar</span>
+                          <span>{formatPrice(activeAmounts.barSubtotal + activeAmounts.barFoodSubtotal)}</span>
                         </div>
                       )}
 

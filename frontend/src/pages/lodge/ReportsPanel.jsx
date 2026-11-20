@@ -6,6 +6,7 @@ import { BillsReport } from './Billing';
 import { getSession } from '../../lib/auth';
 import { formatPrice } from './priceFormat';
 import PageLoader from '../../components/PageLoader';
+import BarReports from './BarReports';
 import ReportDownloadMenu from '../../components/ReportDownloadMenu';
 import ReportPreviewModal from '../../components/ReportPreviewModal';
 import {
@@ -66,6 +67,8 @@ const ALL_TABS = [
   { key: 'bookings', label: 'Room Bookings', capability: 'hasRooms' },
   { key: 'events', label: 'Events & Functions', capability: 'hasEvents' },
   { key: 'food', label: 'Restaurant', capability: 'servesFood' },
+  // The bar's own report (bar_* tables); never mixed into the restaurant tab.
+  { key: 'bar', label: 'Bar', capability: 'hasBar', permissionAny: ['bar.report', 'bar.manage'] },
   // Pool, gaming ... sold from the rooms side. Guest laundry bills through here too.
   { key: 'services', label: 'Other services', capability: 'hasOtherServices' },
   // Counts, not sales: linen through the wash, and guest laundry orders.
@@ -252,6 +255,10 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
       (!t.capability || Boolean(lodge?.[t.capability])) &&
       (!t.capabilityAny || t.capabilityAny.some((c) => Boolean(lodge?.[c]))) &&
       (!t.permission || permissions.includes(t.permission)) &&
+      (!t.permissionAny || t.permissionAny.some((p) => permissions.includes(p))) &&
+      // Tabs with no permission of their own ride on reports.view, so a login that
+      // only holds bar.report sees the Bar tab and nothing else here.
+      (t.permission || t.permissionAny || t.requiresAll || permissions.includes('reports.view')) &&
       (!t.requiresAll || t.requiresAll.every((p) => permissions.includes(p)))
   );
   const [urlTab, setTab] = useUrlState('tab', 'overview');
@@ -260,6 +267,8 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
   // rather than matching nothing and rendering an empty page under an
   // unselected strip.
   const activeTab = TABS.some((t) => t.key === tab) ? tab : TABS[0]?.key;
+  const [barViewHost, setBarViewHost] = useState(null);
+  const [barActionsHost, setBarActionsHost] = useState(null);
   const [fromDate, setFromDate] = useState(startOfMonthIso());
   const [toDate, setToDate] = useState(todayIso());
   const validRange = Boolean(fromDate && toDate && toDate >= fromDate);
@@ -984,7 +993,13 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
             </>
           )}
 
+          {/* The Bar tab draws its Sales | Stock | Bills switch here, in this card. */}
+          {activeTab === 'bar' && <div className="reports-panel__compact-divider" />}
+          {activeTab === 'bar' && <div ref={setBarViewHost} />}
+
           <div className="reports-panel__compact-spacer" />
+
+          {activeTab === 'bar' && <div className="reports-panel__compact-actions" ref={setBarActionsHost} />}
 
           {activeTab === 'bookings' && bookings && (
             <div className="reports-panel__compact-actions">
@@ -2309,6 +2324,8 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
           )}
         </>
       )}
+
+      {activeTab === 'bar' && validRange && <BarReports from={fromDate} to={toDate} lodgeName={lodge?.name} viewHost={barViewHost} actionsHost={barActionsHost} />}
 
       {activeTab === 'food' && (
         <>

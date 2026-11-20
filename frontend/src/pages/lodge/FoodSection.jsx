@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useUrlState } from '../../lib/urlState';
 import OrdersPanel from './OrdersPanel';
 import Billing from './Billing';
+import BarBilling from './BarBilling';
 import './Events.css';
 
 // One sidebar entry for the restaurant, one tab strip: the orders tabs, then the
@@ -40,6 +41,9 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
       { replace: true }
     );
   const [pending, setPending] = useState(0);
+  // The common Billing screen serves both streams: Restaurant | Bar.
+  const canBar = Boolean(lodge?.hasBar) && permissions.includes('bar.bill');
+  const [stream, setStream] = useState('restaurant');
   // Where the orders actions (sound, take an order) land: the right end of this
   // same strip, so the tabs and the buttons share one row.
   const [toolsHost, setToolsHost] = useState(null);
@@ -51,10 +55,10 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
   const orderKeys = [liveKey, 'history'];
   const wanted = view || initialView;
   const showing = canOrders && !(wanted === 'billing' && canBill) ? (orderKeys.includes(wanted) ? wanted : liveKey) : 'billing';
-  // With the orders tabs there is no separate Food to bill or Bills list: History
-  // rows carry an Issue bill button and each bill's number / View bill, so a
-  // login with the orders tabs has no billing strip left at all.
-  const billingTabs = BILLING_TABS.filter((t) => !(canOrders && (t.key === 'bills' || t.key === 'tables')));
+  // With the orders tabs there is no separate Food to bill list (History rows carry
+  // the Issue bill button), but the Bills tab stays: every restaurant bill, with its
+  // R-series number, one tap away for whoever can bill.
+  const billingTabs = BILLING_TABS.filter((t) => !(canOrders && t.key === 'tables'));
   const activeBillTab = billingTabs.some((t) => t.key === billTab) ? billTab : billingTabs[0]?.key;
 
   const strip = [
@@ -64,9 +68,6 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
           { id: 'history', label: 'History', on: showing === 'history', go: () => go('history') },
         ]
       : []),
-    // "Bills" is left out when the login has the orders tabs: History already
-    // shows each order's bill number, status and View bill, so the two lists
-    // were the same rows. Billing-only logins (accountant) keep the Bills list.
     ...(canBill
       ? billingTabs.map((t) => ({
           id: t.key,
@@ -109,7 +110,18 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
         />
       )}
 
-      {showing === 'billing' && <Billing lodge={lodge} stream="restaurant" hideTabs={canOrders} forceTab={canOrders ? activeBillTab : null} />}
+      {showing === 'billing' && canBar && (
+        <div className="subtabs">
+          {[['restaurant', 'Restaurant'], ['bar', 'Bar']].map(([key, label]) => (
+            <button key={key} type="button" className="subtabs__item" aria-current={stream === key ? 'page' : undefined} onClick={() => setStream(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {showing === 'billing' && !(canBar && stream === 'bar') && <Billing lodge={lodge} stream="restaurant" hideTabs={canOrders} forceTab={canOrders ? activeBillTab : null} />}
+      {showing === 'billing' && canBar && stream === 'bar' && <BarBilling lodge={lodge} />}
     </div>
   );
 }

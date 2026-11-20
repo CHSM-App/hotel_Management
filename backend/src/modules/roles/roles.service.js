@@ -41,7 +41,7 @@ async function lodgeCapabilities(pool, lodgeId) {
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .query('SELECT has_rooms, serves_food, has_events, has_assets, has_expenses, has_other_services, has_housekeeping, has_laundry FROM dbo.lodges WHERE id = @lodgeId');
+    .query('SELECT has_rooms, serves_food, has_events, has_assets, has_expenses, has_other_services, has_housekeeping, has_laundry, has_bar FROM dbo.lodges WHERE id = @lodgeId');
   const row = result.recordset[0];
   return {
     hasRooms: !!row?.has_rooms,
@@ -52,6 +52,7 @@ async function lodgeCapabilities(pool, lodgeId) {
     hasOtherServices: !!row?.has_other_services,
     hasHousekeeping: !!row?.has_housekeeping,
     hasLaundry: !!row?.has_laundry,
+    hasBar: !!row?.has_bar,
   };
 }
 
@@ -105,7 +106,14 @@ async function getEffectiveRole(lodgeId, roleKey) {
       ORDER BY CASE WHEN lodge_id IS NULL THEN 1 ELSE 0 END
     `);
   const row = result.recordset[0];
-  return row ? mapRole(row) : null;
+  const role = row ? mapRole(row) : null;
+  // The owner always holds the bar permissions (each is still gated by the lodge's
+  // hasBar add-on), so a role row saved before they existed cannot lock the owner
+  // out of taking bar orders.
+  if (role && roleKey === 'OWNER') {
+    role.permissions = [...new Set([...role.permissions, 'bar.manage', 'bar.take', 'bar.bill', 'bar.report'])];
+  }
+  return role;
 }
 
 async function getLodgeCapabilities(lodgeId) {

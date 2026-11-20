@@ -27,7 +27,7 @@ async function getMe(userId) {
         l.name_mr, l.address_mr, l.latitude, l.longitude,
         l.is_gst_registered, l.gstin, l.is_specified_premises,
         l.has_rooms, l.serves_food, l.food_room_service, l.food_table_service, l.has_events,
-        l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry,
+        l.has_assets, l.has_expenses, l.has_other_services, l.has_housekeeping, l.has_laundry, l.has_bar, l.bar_tax_percent,
         l.can_edit_billed_stays, l.can_add_past_bookings,
         l.logo_path, l.show_logo_on_receipt, l.hero_image_path,
         ${SETTINGS_COLS}
@@ -88,6 +88,8 @@ async function getMe(userId) {
       hasOtherServices: !!row.has_other_services,
       hasHousekeeping: !!row.has_housekeeping,
       hasLaundry: !!row.has_laundry,
+      hasBar: !!row.has_bar,
+      barTaxPercent: Number(row.bar_tax_percent || 0),
       canEditBilledStays: !!row.can_edit_billed_stays,
       canAddPastBookings: !!row.can_add_past_bookings,
       logoUrl: row.logo_path ? `/hotel-logos/${row.logo_path}` : null,

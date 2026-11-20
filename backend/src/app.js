@@ -23,6 +23,7 @@ const menuRoutes = require('./modules/menu/menu.routes');
 const tablesRoutes = require('./modules/tables/tables.routes');
 const ordersRoutes = require('./modules/orders/orders.routes');
 const inventoryRoutes = require('./modules/inventory/inventory.routes');
+const barRoutes = require('./modules/bar/bar.routes');
 const eventsRoutes = require('./modules/events/events.routes');
 const assetsRoutes = require('./modules/assets/assets.routes');
 const expensesRoutes = require('./modules/expenses/expenses.routes');
@@ -280,6 +281,7 @@ const API_ROUTES = [
   ['/tables', tablesRoutes],
   ['/orders', ordersRoutes],
   ['/inventory', inventoryRoutes],
+  ['/bar', barRoutes],
   ['/events', eventsRoutes],
   ['/assets', assetsRoutes],
   ['/expenses', expensesRoutes],

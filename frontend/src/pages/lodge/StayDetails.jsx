@@ -69,6 +69,9 @@ export default function StayDetails({
   const servicesOpen = (booking.serviceUsages || []).filter((u) => !u.billed && u.onRoomBill && u.status === 'COMPLETED');
   const servicesOpenTotal = Math.round(servicesOpen.reduce((sum, u) => sum + u.amount, 0) * 100) / 100;
   const foodOpenTotal = Math.round(foodOrdersOpen.reduce((sum, o) => sum + o.subtotal, 0) * 100) / 100;
+  // Bar orders posted to this stay's room bill, not billed yet.
+  const barOpen = (booking.barOrders || []).filter((o) => !o.billed && o.onRoomBill);
+  const barOpenTotal = Math.round(barOpen.reduce((sum, o) => sum + o.amount, 0) * 100) / 100;
   const paidInFull =
     booking.advanceAmount != null &&
     booking.totalPrice != null &&
@@ -511,8 +514,29 @@ export default function StayDetails({
             </>
           )}
 
+          {barOpen.length > 0 && (
+            <>
+              <div className="pb__group">Bar</div>
+              {barOpen.map((o) => (
+                <div className="sim-result__line sim-result__line--part" key={o.id}>
+                  <span>
+                    Bar order #{o.orderNumber}
+                    <span className="sim-result__part-nights">
+                      {o.food > 0 ? `drinks ${formatPrice(o.drinks)} + food ${formatPrice(o.food)}` : 'drinks'}
+                    </span>
+                  </span>
+                  <span>{formatPrice(o.amount)}</span>
+                </div>
+              ))}
+              <div className="pb__sub">
+                <span>Bar · {barOpen.length} {barOpen.length === 1 ? 'order' : 'orders'}</span>
+                <span>{formatPrice(barOpenTotal)}</span>
+              </div>
+            </>
+          )}
+
           {/* PAYMENTS */}
-          {(booking.advanceAmount != null || foodOrdersOpen.length > 0 || servicesOpen.length > 0) && <div className="pb__group">Payments</div>}
+          {(booking.advanceAmount != null || foodOrdersOpen.length > 0 || servicesOpen.length > 0 || barOpen.length > 0) && <div className="pb__group">Payments</div>}
           {booking.advanceAmount != null && (
             <div className="sim-result__line">
               <span>
@@ -535,10 +559,10 @@ export default function StayDetails({
               <div>
                 <span>Still to collect</span>
                 <small>
-                  {'Room' + (booking.lateCheckoutCharge > 0 ? ' + late checkout' : '') + (foodOrdersOpen.length > 0 ? ' + food' : '') + (servicesOpen.length > 0 ? ' + services' : '') + ' − advance'}
+                  {'Room' + (booking.lateCheckoutCharge > 0 ? ' + late checkout' : '') + (foodOrdersOpen.length > 0 ? ' + food' : '') + (servicesOpen.length > 0 ? ' + services' : '') + (barOpen.length > 0 ? ' + bar' : '') + ' − advance'}
                 </small>
               </div>
-              <strong>{formatPrice(outstandingBeforeTax(booking) + foodOpenTotal + servicesOpenTotal)}</strong>
+              <strong>{formatPrice(outstandingBeforeTax(booking) + foodOpenTotal + servicesOpenTotal + barOpenTotal)}</strong>
             </div>
           )}
         </div>

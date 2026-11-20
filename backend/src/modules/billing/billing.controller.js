@@ -338,7 +338,7 @@ async function addServicesToRoomBillHandler(req, res, next) {
 
 async function listInvoicesHandler(req, res, next) {
   try {
-    const invoices = await billingService.listInvoices(req.user.lodgeId);
+    const invoices = await billingService.listInvoices(req.user.lodgeId, { stream: req.query.stream === 'restaurant' ? 'restaurant' : null });
     res.json({ invoices });
   } catch (err) {
     next(err);

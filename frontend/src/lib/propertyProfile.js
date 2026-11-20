@@ -143,6 +143,24 @@ export const FEATURES = [
     group: 'Restaurant',
   },
   {
+    key: 'bar',
+    title: 'Bar orders & Billing',
+    description: 'Take bar orders (drinks and restaurant food), mark them delivered, and bill them (also from the Billing screen’s Restaurant | Bar toggle).',
+    permission: ['bar.take', 'bar.bill'],
+    capability: 'hasBar',
+    icon: 'wine',
+    group: 'Bar',
+  },
+  {
+    key: 'barMenu',
+    title: 'Bar menu & Stock',
+    description: 'The bar menu, stock in ml and bottles, low-stock alerts and bar tax.',
+    permission: 'bar.manage',
+    capability: 'hasBar',
+    icon: 'layers',
+    group: 'Bar',
+  },
+  {
     key: 'events',
     title: 'Event Chart',
     description: 'The function diary — drafts, quotes and advances for halls and lawns.',
@@ -306,9 +324,9 @@ export const FEATURES = [
     key: 'report-sales',
     title: 'Sales reports',
     description: 'Room bookings, restaurant orders and events — whichever this property sells.',
-    permission: 'reports.view',
+    permission: ['reports.view', 'bar.report'],
     // Any one earns the section; the tabs inside show only what the property has.
-    capability: ['hasRooms', 'servesFood', 'hasEvents'],
+    capability: ['hasRooms', 'servesFood', 'hasEvents', 'hasBar'],
     icon: 'pieChart',
     group: 'Reports & Analytics',
   },
@@ -331,7 +349,7 @@ export const FEATURES = [
   },
 ];
 
-export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Events', 'Housekeeping', 'Finance & Management', 'Customers', 'Reports & Analytics', 'Setup'];
+export const SIDEBAR_GROUP_ORDER = ['Rooms', 'Restaurant', 'Bar', 'Events', 'Housekeeping', 'Finance & Management', 'Customers', 'Reports & Analytics', 'Setup'];
 
 // A section exists for a property if the property has the capability it needs
 // — any one of them, when a feature (like Reports) is earned by more than

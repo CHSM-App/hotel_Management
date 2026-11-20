@@ -129,18 +129,31 @@ function billFigures(row) {
   const serviceGross = Number(row.service_subtotal ?? 0);
   const serviceCgst = Number(row.service_cgst_amount ?? 0);
   const serviceSgst = Number(row.service_sgst_amount ?? 0);
+  // Bar orders posted to the room bill: drinks (no GST, the bar's own tax) and dishes (food GST).
+  const barGross = round2(Number(row.bar_subtotal ?? 0) + Number(row.bar_food_subtotal ?? 0));
+  const barFoodTax = Number(row.bar_food_tax_amount ?? 0);
   const discountAmount = Number(row.discount_amount ?? 0);
-  const grossAmount = round2(roomGross + foodGross + serviceGross);
-  const [roomNetOfDiscount, foodNetOfDiscount, serviceNetOfDiscount] = netOfDiscount(
-    [roomGross, foodGross, serviceGross],
+  const grossAmount = round2(roomGross + foodGross + serviceGross + barGross);
+  const [roomNetOfDiscount, foodNetOfDiscount, serviceNetOfDiscount, barNetOfDiscount] = netOfDiscount(
+    [roomGross, foodGross, serviceGross, barGross],
     discountAmount,
     grossAmount
   );
   const roomTaxable = round2(roomNetOfDiscount - roomCgst - roomSgst);
   const foodTaxable = round2(foodNetOfDiscount - foodCgst - foodSgst);
   const serviceTaxable = round2(serviceNetOfDiscount - serviceCgst - serviceSgst);
+  // Only the dishes' GST is GST; the drinks tax stays inside the bar's taxable value.
+  const barCgst = round2(barFoodTax / 2);
+  const barSgst = round2(barFoodTax - barCgst);
+  const barTaxable = round2(barNetOfDiscount - barFoodTax);
   return {
     grossAmount,
+    barGross,
+    barTaxable,
+    barCgst,
+    barSgst,
+    // What the bar part of the bill came to, tax inside, after its share of the discount.
+    barBilled: barNetOfDiscount,
     roomGross,
     foodGross,
     serviceGross,
@@ -150,16 +163,16 @@ function billFigures(row) {
     roomTaxable,
     foodTaxable,
     serviceTaxable,
-    taxableValue: round2(roomTaxable + foodTaxable + serviceTaxable),
+    taxableValue: round2(roomTaxable + foodTaxable + serviceTaxable + barTaxable),
     roomCgst,
     roomSgst,
     foodCgst,
     foodSgst,
     serviceCgst,
     serviceSgst,
-    cgstAmount: round2(roomCgst + foodCgst + serviceCgst),
-    sgstAmount: round2(roomSgst + foodSgst + serviceSgst),
-    totalTax: round2(roomCgst + foodCgst + serviceCgst + roomSgst + foodSgst + serviceSgst),
+    cgstAmount: round2(roomCgst + foodCgst + serviceCgst + barCgst),
+    sgstAmount: round2(roomSgst + foodSgst + serviceSgst + barSgst),
+    totalTax: round2(roomCgst + foodCgst + serviceCgst + roomSgst + foodSgst + serviceSgst + barCgst + barSgst),
     roundOff: Number(row.round_off ?? 0),
     billedAmount: Number(row.total_amount ?? 0),
   };
@@ -262,6 +275,7 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
   const balances = await period(pool.request()).query(`
     SELECT i.id, i.balance_collected, i.balance_payment_method, ${stayPeriodCase},
            i.room_subtotal, i.food_subtotal, i.service_subtotal,
+           i.bar_subtotal, i.bar_food_subtotal, i.bar_tax_amount, i.bar_food_tax_amount,
            i.cgst_amount, i.sgst_amount, i.food_cgst_amount, i.food_sgst_amount,
            i.service_cgst_amount, i.service_sgst_amount, i.discount_amount,
            i.round_off, i.total_amount
@@ -361,7 +375,9 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
     const figures = billFigures(row);
     const foodBilled = round2(figures.foodTaxable + figures.foodCgst + figures.foodSgst);
     const foodPart = round2(Math.min(amount, foodBilled));
-    const roomPart = round2(amount - foodPart);
+    // Bar orders on the stay bill come next; they are reported under Bar, not as room money.
+    const barPart = round2(Math.min(amount - foodPart, figures.barBilled));
+    const roomPart = round2(amount - foodPart - barPart);
     balanceCollected = round2(balanceCollected + roomPart);
     foodBalanceCollected = round2(foodBalanceCollected + foodPart);
     for (const part of splitAcross(roomPart, balanceLines.get(String(row.id)), row.balance_payment_method)) {
@@ -598,6 +614,9 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
       foodTaxable: figures.foodTaxable,
       serviceCgst: figures.serviceCgst,
       serviceSgst: figures.serviceSgst,
+      barTaxable: figures.barTaxable,
+      barCgst: figures.barCgst,
+      barSgst: figures.barSgst,
       serviceTaxable: figures.serviceTaxable,
     };
   });
@@ -752,6 +771,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
              i.invoice_number, i.document_type, i.billing_side, i.created_at AS invoice_created_at,
              i.room_subtotal, i.food_subtotal,
              i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount,
+             i.bar_subtotal, i.bar_food_subtotal, i.bar_tax_amount, i.bar_food_tax_amount,
              i.cgst_amount, i.sgst_amount, i.food_cgst_amount, i.food_sgst_amount,
              i.late_checkout_charge, i.discount_amount,
              i.round_off, i.total_amount,
@@ -763,6 +783,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
         SELECT TOP 1 invoice_number, document_type, billing_side, created_at,
                room_subtotal, food_subtotal,
                service_subtotal, service_cgst_amount, service_sgst_amount,
+               bar_subtotal, bar_food_subtotal, bar_tax_amount, bar_food_tax_amount,
                cgst_amount, sgst_amount, food_cgst_amount, food_sgst_amount,
                late_checkout_charge, discount_amount, round_off,
                total_amount, advance_paid, balance_collected, balance_payment_method
@@ -795,7 +816,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
     };
     if (roomSide) {
       roomSide.net = round2(roomSide.taxable + roomSide.cgst + roomSide.sgst);
-      roomSide.billed = round2(figures.billedAmount - roomSide.foodBilled);
+      roomSide.billed = round2(figures.billedAmount - roomSide.foodBilled - figures.barBilled);
     }
     const advanceAmount = row.advance_amount != null ? Number(row.advance_amount) : 0;
     // The advance was always room money (taken before any room-service food
@@ -1419,6 +1440,7 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
       -- The bill whatever its state: a voided one must still be reported, as voided.
       LEFT JOIN dbo.invoices i ON i.id = o.invoice_id
       WHERE o.lodge_id = @lodgeId AND o.order_date BETWEEN @fromDate AND @toDate
+        AND o.bar_order_id IS NULL -- food ordered on a bar order is reported under Bar
       ORDER BY o.placed_at ASC
     `);
 
@@ -1887,7 +1909,7 @@ async function getAnalyticsOverview(lodgeId, fromDate, toDate, compareMode = 'pr
     .query(`
       SELECT DATEPART(HOUR, placed_at) AS hr, COUNT(*) AS cnt
       FROM dbo.food_orders
-      WHERE lodge_id = @lodgeId AND order_date BETWEEN @fromDate AND @toDate
+      WHERE lodge_id = @lodgeId AND order_date BETWEEN @fromDate AND @toDate AND bar_order_id IS NULL
       GROUP BY DATEPART(HOUR, placed_at)
     `);
   const ordersByHourMap = new Map(ordersByHourResult.recordset.map((row) => [row.hr, row.cnt]));
@@ -1908,7 +1930,7 @@ async function getAnalyticsOverview(lodgeId, fromDate, toDate, compareMode = 'pr
       FROM dbo.food_order_items foi
       JOIN dbo.food_orders fo ON fo.id = foi.order_id
       WHERE fo.lodge_id = @lodgeId AND fo.order_date BETWEEN @fromDate AND @toDate
-        AND fo.status <> 'CANCELLED'
+        AND fo.status <> 'CANCELLED' AND fo.bar_order_id IS NULL
       GROUP BY foi.item_name
       ORDER BY revenue DESC
     `);
@@ -2070,7 +2092,8 @@ async function getRevenueByStream(pool, lodgeId, fromDate, toDate) {
     .query(`
       SELECT i.room_subtotal, i.food_subtotal, i.cgst_amount, i.sgst_amount,
              i.food_cgst_amount, i.food_sgst_amount, i.discount_amount, i.event_booking_id,
-             i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount
+             i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount,
+             i.bar_subtotal, i.bar_food_subtotal, i.bar_tax_amount, i.bar_food_tax_amount
       FROM dbo.invoices i
       WHERE i.lodge_id = @lodgeId AND i.status = 'ISSUED'
         AND CAST(i.created_at AS DATE) BETWEEN @fromDate AND @toDate

@@ -110,6 +110,30 @@ const PERMISSIONS = [
     capability: 'hasLaundry',
   },
   {
+    key: 'bar.manage',
+    label: 'Bar menu & stock',
+    description: 'Build the bar menu, receive bottles, adjust stock and set low-stock limits.',
+    capability: 'hasBar',
+  },
+  {
+    key: 'bar.take',
+    label: 'Bar orders',
+    description: 'Take bar orders (drinks and restaurant food), see open orders and mark them delivered.',
+    capability: 'hasBar',
+  },
+  {
+    key: 'bar.bill',
+    label: 'Bar billing',
+    description: 'Bill bar orders and take payment.',
+    capability: 'hasBar',
+  },
+  {
+    key: 'bar.report',
+    label: 'Bar reports',
+    description: 'View bar sales and stock reports.',
+    capability: 'hasBar',
+  },
+  {
     key: 'profitLoss.view',
     label: 'Profit & Loss',
     description: 'View the combined revenue, expense, other-income and depreciation figures behind Profit & Loss.',
