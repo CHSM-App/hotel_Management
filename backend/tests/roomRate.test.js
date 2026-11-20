@@ -142,7 +142,7 @@ test('the quote refetches when the room rate changes', () => {
     'the quote is no longer priced at the rate in the form'
   );
   // The dependency array closing this effect, taken from the request onwards.
-  const deps = src.slice(call, src.indexOf(']);', call));
+  const deps = src.slice(call, src.indexOf(']);', src.indexOf('}, [', call)));
   assert.ok(
     deps.includes('bookingForm.basePriceOverride,'),
     'basePriceOverride is missing from the quote deps — the room rate would change the '

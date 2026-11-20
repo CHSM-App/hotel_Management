@@ -86,7 +86,7 @@ test('loading a tab\'s orders no longer excludes orders that belong to a booking
 for (const fn of ['listOpenFoodTabs', 'loadUnbilledTabOrders']) {
   test(`${fn} still bills only delivered, not-yet-billed orders`, () => {
     const body = bodyOf(fn);
-    assert.match(body, /o\.status = 'DELIVERED'/, `${fn} should only bill delivered food`);
+    assert.match(body, /o\.status IN \('READY', 'DELIVERED'\)/, `${fn} should only bill handed-over food`);
     assert.match(body, /o\.invoice_id IS NULL/, `${fn} should skip food already on a bill`);
   });
 
