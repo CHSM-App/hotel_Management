@@ -15,6 +15,7 @@ import '../../data/repositories/expenses_impl.dart';
 import '../../data/repositories/food_setup_impl.dart';
 import '../../data/repositories/housekeeping_impl.dart';
 import '../../data/repositories/income_impl.dart';
+import '../../data/repositories/bar_impl.dart';
 import '../../data/repositories/laundry_impl.dart';
 import '../../data/repositories/lodge_services_impl.dart';
 import '../../data/repositories/orders_impl.dart';
@@ -32,6 +33,7 @@ import '../../domain/repository/expenses_repo.dart';
 import '../../domain/repository/food_setup_repo.dart';
 import '../../domain/repository/housekeeping_repo.dart';
 import '../../domain/repository/income_repo.dart';
+import '../../domain/repository/bar_repo.dart';
 import '../../domain/repository/laundry_repo.dart';
 import '../../domain/repository/lodge_services_repo.dart';
 import '../../domain/repository/orders_repo.dart';
@@ -119,4 +121,8 @@ final housekeepingRepositoryProvider = Provider<HousekeepingRepository>(
 
 final lodgeServicesRepositoryProvider = Provider<LodgeServicesRepository>(
   (ref) => LodgeServicesImpl(ref.watch(apiServiceProvider)),
+);
+
+final barRepositoryProvider = Provider<BarRepository>(
+  (ref) => BarImpl(ref.watch(apiServiceProvider)),
 );

@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../models/booking.dart';
 import '../models/draft.dart';
 import '../models/guest_match.dart';
+import '../models/invoice_window.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
@@ -114,6 +115,18 @@ class BookingUsecase {
   /// Correct a booking already on file.
   Future<Booking> updateBooking(int id, FormData form) =>
       repository.updateBooking(id, form);
+
+  Future<BookingRevision> reviseBooking(int id, FormData form) =>
+      repository.reviseBooking(id, form);
+
+  Future<InvoiceEditWindow?> invoiceEditWindow(int id) =>
+      repository.invoiceEditWindow(id);
+
+  Future<PastWindow> pastWindow(String billingSide) =>
+      repository.pastWindow(billingSide);
+
+  Future<int> createPastBooking(FormData form) =>
+      repository.createPastBooking(form);
 
   /// How late the guest is, and what that is worth.
   Future<LateCheckout> lateCheckout(int id) => repository.lateCheckout(id);

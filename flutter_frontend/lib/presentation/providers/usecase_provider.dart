@@ -12,6 +12,7 @@ import '../../domain/usecase/food_setup_usecase.dart';
 import '../../domain/usecase/housekeeping_usecase.dart';
 import '../../domain/usecase/income_usecase.dart';
 import '../../domain/usecase/laundry_usecase.dart';
+import '../../domain/usecase/bar_usecase.dart';
 import '../../domain/usecase/lodge_services_usecase.dart';
 import '../../domain/usecase/orders_usecase.dart';
 import '../../domain/usecase/reports_usecase.dart';
@@ -86,4 +87,8 @@ final housekeepingUsecaseProvider = Provider<HousekeepingUsecase>(
 
 final lodgeServicesUsecaseProvider = Provider<LodgeServicesUsecase>(
   (ref) => LodgeServicesUsecase(ref.watch(lodgeServicesRepositoryProvider)),
+);
+
+final barUsecaseProvider = Provider<BarUsecase>(
+  (ref) => BarUsecase(ref.watch(barRepositoryProvider)),
 );

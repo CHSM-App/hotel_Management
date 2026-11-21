@@ -8,8 +8,10 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
   flutter_secure_storage_windows
   geolocator_windows
+  print_bluetooth_thermal
   printing
   share_plus
+  universal_ble
   url_launcher_windows
 )
 

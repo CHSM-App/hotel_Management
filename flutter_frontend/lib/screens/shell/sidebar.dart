@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constant.dart';
 import '../../domain/models/me.dart';
 import '../theme.dart';
 import 'feature.dart';
@@ -145,6 +146,7 @@ class _SidebarNav extends StatefulWidget {
   static const groupOrder = [
     'Rooms',
     'Restaurant',
+    'Bar',
     'Events',
     'Housekeeping',
     'Finance & Management',
@@ -330,24 +332,20 @@ class _SidebarHeader extends StatelessWidget {
     final initial = lodgeName.isNotEmpty ? lodgeName[0].toUpperCase() : '?';
     final user = me?.user;
 
-    final badge = Container(
+    // The property's own logo when it has one; the first letter on the brand
+    // gradient otherwise (and if the logo cannot be loaded).
+    final logoUrl = me?.lodge.logoUrl;
+    final hasLogo = logoUrl != null && logoUrl.trim().isNotEmpty;
+    final monogram = Container(
       width: 34,
       height: 34,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [AppTheme.sidebarBrand, AppTheme.sidebarBrandInk],
         ),
-        borderRadius: BorderRadius.circular(AppTheme.rSmall),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.sidebarBrand.withValues(alpha: 0.28),
-            offset: const Offset(0, 2),
-            blurRadius: 6,
-          ),
-        ],
       ),
       child: Text(
         initial,
@@ -357,6 +355,30 @@ class _SidebarHeader extends StatelessWidget {
           fontWeight: FontWeight.w700,
         ),
       ),
+    );
+    final badge = Container(
+      width: 34,
+      height: 34,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AppTheme.rSmall),
+        border: hasLogo ? Border.all(color: AppTheme.sidebarBorder) : null,
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.sidebarBrand.withValues(alpha: hasLogo ? 0.12 : 0.28),
+            offset: const Offset(0, 2),
+            blurRadius: 6,
+          ),
+        ],
+      ),
+      child: hasLogo
+          ? Image.network(
+              '$baseUrl$logoUrl',
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => monogram,
+            )
+          : monogram,
     );
 
     if (collapsed) {

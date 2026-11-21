@@ -1,3 +1,5 @@
+import 'bar_report_files.dart';
+import 'bar_report_panel.dart';
 import 'package:flutter/material.dart';
 import '../../widgets/compact_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -90,6 +92,7 @@ class _ReportTab {
     'hasExpenses' => lodge.hasExpenses,
     'hasOtherServices' => lodge.hasOtherServices,
     'hasLaundry' => lodge.hasLaundry,
+    'hasBar' => lodge.hasBar,
     _ => true,
   };
 }
@@ -100,7 +103,7 @@ class _ReportTab {
 /// tab strip at all when just one is left.
 const _kReportSections = <String, List<String>>{
   'overview': ['overview'],
-  'sales': ['bookings', 'events', 'food', 'services', 'laundry'],
+  'sales': ['bookings', 'events', 'food', 'bar', 'services', 'laundry'],
   'finance': ['bills', 'profitLoss', 'expenses', 'income', 'gst'],
   'assets': ['assets'],
 };
@@ -110,6 +113,7 @@ const _kAllReportTabs = <_ReportTab>[
   _ReportTab(key: 'bookings', label: 'Room Bookings', capability: 'hasRooms'),
   _ReportTab(key: 'events', label: 'Events & functions', capability: 'hasEvents'),
   _ReportTab(key: 'food', label: 'Restaurant', capability: 'servesFood'),
+  _ReportTab(key: 'bar', label: 'Bar', capability: 'hasBar', permission: 'bar.report'),
   _ReportTab(key: 'services', label: 'Other services', capability: 'hasOtherServices'),
   _ReportTab(key: 'laundry', label: 'Laundry', capability: 'hasLaundry'),
   _ReportTab(key: 'bills', label: 'Bills'),
@@ -162,13 +166,13 @@ const _kDateRangedTabs = {'overview', 'bookings', 'events', 'food', 'services', 
 /// still shown with the same From/To range picker above the tab strip as
 /// the server-ranged tabs, just wired to a locally held range instead of
 /// the shared [ReportsState].
-const _kLocalRangedTabs = {'expenses', 'income', 'assets', 'bills'};
+const _kLocalRangedTabs = {'expenses', 'income', 'assets', 'bills', 'bar'};
 
 /// Tabs with a matching PDF/Excel builder, same parity as the web's own
 /// preview/export buttons for Bookings/Events/Food/GST/Expenses/Other
 /// Income/Assets. Profit & Loss has no PDF/Excel on the website either, so it
 /// stays data-only.
-const _kDownloadableTabs = {'bookings', 'events', 'food', 'services', 'laundry', 'gst', 'expenses', 'income', 'assets'};
+const _kDownloadableTabs = {'bookings', 'events', 'food', 'bar', 'services', 'laundry', 'gst', 'expenses', 'income', 'assets'};
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _tab = 'overview';
@@ -191,6 +195,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   bool _canDownload(ReportsState state) => switch (_tab) {
     'events' => state.events is AsyncData,
     'food' => state.foodOrders is AsyncData,
+    'bar' => true,
     'services' => state.services is AsyncData,
     'laundry' => state.laundry is AsyncData,
     'gst' => state.gst is AsyncData,
@@ -218,6 +223,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           path = format == _ReportFormat.pdf
               ? await FoodOrderReportPdf.download(report)
               : await FoodOrderReportExcel.download(report);
+        case 'bar':
+          final report = await loadBarReport(ref, _localFromDate, _localToDate);
+          path = format == _ReportFormat.pdf
+              ? await BarReportPdf.download(report, lodgeName: lodge?.name)
+              : await BarReportExcel.download(report, lodgeName: lodge?.name);
         case 'services':
           final report = (state.services as AsyncData<ServicesReport>).value;
           path = format == _ReportFormat.pdf
@@ -383,6 +393,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     'bookings' => const BookingsReportPanel(),
                     'events' => const EventsReportPanel(),
                     'food' => const FoodOrdersReportPanel(),
+                    'bar' => BarReportPanel(fromDate: _localFromDate, toDate: _localToDate),
                     'services' => const ServicesReportPanel(),
                     'laundry' => const LaundryReportPanel(),
                     'gst' => const GstReportPanel(),

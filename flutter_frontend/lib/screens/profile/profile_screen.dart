@@ -11,6 +11,7 @@ import '../../domain/models/me.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../rooms/room_form_pieces.dart';
+import '../printing/printer_settings_screen.dart';
 import '../shell/sign_out_dialog.dart';
 import '../theme.dart';
 
@@ -210,6 +211,24 @@ class ProfileScreen extends ConsumerWidget {
                         const SizedBox(height: AppTheme.s16),
                         _PublicLinkCard(lodge: me.lodge),
                       ],
+                      const SizedBox(height: AppTheme.s24),
+                      const _SectionLabel('This device', icon: Icons.print_outlined),
+                      const SizedBox(height: AppTheme.s12),
+                      NeuCard(
+                        padding: EdgeInsets.zero,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const PrinterSettingsScreen()),
+                        ),
+                        child: _ActionRow(
+                          icon: Icons.receipt_long_rounded,
+                          iconColor: AppTheme.accent,
+                          label: 'Receipt printer',
+                          subtitle: ref.watch(printerViewModelProvider).isSet
+                              ? ref.watch(printerViewModelProvider).summary
+                              : 'Set up a thermal printer for bar and restaurant bills',
+                          forceChevron: true,
+                        ),
+                      ),
                       const SizedBox(height: AppTheme.s24),
                       const _SectionLabel('Security', icon: Icons.shield_outlined),
                       const SizedBox(height: AppTheme.s12),

@@ -63,6 +63,7 @@ class Feature {
     'hasAssets' => me.lodge.hasAssets,
     'hasExpenses' => me.lodge.hasExpenses,
     'hasLaundry' => me.lodge.hasLaundry,
+    'hasBar' => me.lodge.hasBar,
     'hasHousekeeping' => me.lodge.hasHousekeeping,
     'hasOtherServices' => me.lodge.hasOtherServices,
     _ => true,
@@ -155,6 +156,25 @@ const kFeatures = <Feature>[
     altPermissions: ['orders.take', 'billing.manage'],
     capability: 'servesFood',
     group: 'Restaurant',
+  ),
+  // Same web 'Bar' group: orders & billing for whoever takes or bills bar
+  // orders, menu & stock for whoever runs the bar.
+  Feature(
+    key: 'bar',
+    title: 'Bar orders & Billing',
+    icon: Icons.local_bar_rounded,
+    permission: 'bar.take',
+    altPermissions: ['bar.bill'],
+    capability: 'hasBar',
+    group: 'Bar',
+  ),
+  Feature(
+    key: 'barMenu',
+    title: 'Bar menu & Stock',
+    icon: Icons.liquor_rounded,
+    permission: 'bar.manage',
+    capability: 'hasBar',
+    group: 'Bar',
   ),
   // Same web sidebar group (propertyProfile.js's 'Events'): Event Chart,
   // Event billing, Event register and Event setup sit together under one
@@ -352,7 +372,8 @@ const kFeatures = <Feature>[
     title: 'Sales reports',
     icon: Icons.bar_chart_rounded,
     permission: 'reports.view',
-    anyCapabilities: ['hasRooms', 'servesFood', 'hasEvents'],
+    altPermissions: ['bar.report'],
+    anyCapabilities: ['hasRooms', 'servesFood', 'hasEvents', 'hasBar'],
     group: 'Reports & Analytics',
   ),
   // Tax & GST, Profit & Loss, Expenses and Other Income — no capability gate

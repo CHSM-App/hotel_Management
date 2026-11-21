@@ -48,6 +48,10 @@ class OfflineInterceptor extends Interceptor {
   // Paths whose whole value is being true right now.
   static const _neverCache = [
     '/orders/queue',
+    // Live bar queues: a cached ticket is an order nobody is serving.
+    '/bar/orders',
+    '/bar/tabs',
+    '/bar/targets',
     '/bookings/checkin-alerts',
     '/bookings/checkout-alerts',
     // Answered on the device when there is no network (lib/domain/pricing):
@@ -56,13 +60,16 @@ class OfflineInterceptor extends Interceptor {
     '/bookings/price-quote',
     '/bookings/available-rooms',
     '/bookings/available-beds',
+    // Invoice-numbering bounds: a stale copy would let a date through that
+    // the server then rejects (or worse, hide one it would accept).
+    '/bookings/past-window',
     // Kept in its own table (ref_store), not duplicated in the HTTP cache.
     '/sync/bootstrap',
   ];
 
   // Per-booking answers that depend on the moment or the parameters.
   static final _volatile = RegExp(
-    r'^/(bookings/\d+/(late-checkout|available-rooms)|bookings/\d+/rooms/\d+/late-checkout|billing/bookings/\d+/preview)',
+    r'^/(bookings/\d+/(late-checkout|available-rooms|edit-window)|bookings/\d+/rooms/\d+/late-checkout|billing/bookings/\d+/preview)',
   );
 
   bool _cacheable(RequestOptions o) =>

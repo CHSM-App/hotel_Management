@@ -26,6 +26,8 @@ class FoodBillingScreen extends ConsumerStatefulWidget {
 }
 
 class _FoodBillingScreenState extends ConsumerState<FoodBillingScreen> {
+  bool _showBills = false;
+
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(authViewModelProvider).me;
@@ -34,6 +36,8 @@ class _FoodBillingScreenState extends ConsumerState<FoodBillingScreen> {
         permissions.contains('orders.manage') ||
         permissions.contains('orders.take');
     final canBill = permissions.contains('billing.manage');
+    // Same gate as the backend's GET /billing/invoices.
+    final canSeeBills = canBill || permissions.contains('reports.view');
 
     final ordersState = ref.watch(ordersViewModelProvider);
     final ordersVm = ref.read(ordersViewModelProvider.notifier);
@@ -46,14 +50,26 @@ class _FoodBillingScreenState extends ConsumerState<FoodBillingScreen> {
           label: ordersState.needsAccepting > 0
               ? 'Kitchen (${ordersState.needsAccepting} new)'
               : 'Kitchen queue',
-          selected: ordersState.tab == OrdersTab.queue,
-          onTap: () => ordersVm.setTab(OrdersTab.queue),
+          selected: !_showBills && ordersState.tab == OrdersTab.queue,
+          onTap: () {
+            setState(() => _showBills = false);
+            ordersVm.setTab(OrdersTab.queue);
+          },
         ),
         _Segment(
           label: 'History',
-          selected: ordersState.tab == OrdersTab.history,
-          onTap: () => ordersVm.setTab(OrdersTab.history),
+          selected: !_showBills && ordersState.tab == OrdersTab.history,
+          onTap: () {
+            setState(() => _showBills = false);
+            ordersVm.setTab(OrdersTab.history);
+          },
         ),
+        if (canSeeBills)
+          _Segment(
+            label: 'Bills',
+            selected: _showBills,
+            onTap: () => setState(() => _showBills = true),
+          ),
       ] else if (canBill)
         _Segment(label: 'Billing', selected: true, onTap: () {}),
     ];
@@ -79,7 +95,9 @@ class _FoodBillingScreenState extends ConsumerState<FoodBillingScreen> {
           ),
         Expanded(
           child: canOrders
-              ? const OrdersScreen(hideTabs: true)
+              ? (_showBills && canSeeBills
+                    ? const BillingScreen(restaurantOnly: true, issuedOnly: true)
+                    : const OrdersScreen(hideTabs: true))
               : const BillingScreen(restaurantOnly: true),
         ),
       ],

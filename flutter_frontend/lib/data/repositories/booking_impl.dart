@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../../domain/models/booking.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/guest_match.dart';
+import '../../domain/models/invoice_window.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
@@ -243,6 +244,22 @@ class BookingImpl implements BookingRepository {
   @override
   Future<Booking> updateBooking(int id, FormData form) =>
       api.updateBooking(id, form);
+
+  // Money / invoice-numbering paths: online only, no offline fallback.
+  @override
+  Future<BookingRevision> reviseBooking(int id, FormData form) =>
+      api.reviseBooking(id, form);
+
+  @override
+  Future<InvoiceEditWindow?> invoiceEditWindow(int id) =>
+      api.invoiceEditWindow(id);
+
+  @override
+  Future<PastWindow> pastWindow(String billingSide) =>
+      api.pastWindow(billingSide);
+
+  @override
+  Future<int> createPastBooking(FormData form) => api.createPastBooking(form);
 
   @override
   Future<LateCheckout> lateCheckout(int id) => _orOffline(

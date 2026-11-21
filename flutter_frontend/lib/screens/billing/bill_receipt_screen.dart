@@ -8,6 +8,8 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../bookings/receipt_download.dart';
 import '../theme.dart';
+import '../printing/thermal_print_action.dart';
+import '../../domain/models/receipt_doc.dart';
 import 'bill_pdf.dart';
 
 /// The bill just issued, shown the way the desk actually hands it over: the
@@ -60,6 +62,27 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
       setState(() => _error = apiErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Roll-width receipt straight to the saved thermal printer.
+  Future<void> _thermalPrint() async {
+    final invoice = widget.invoice;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final msg = await runThermalPrint(
+      context,
+      ref,
+      ReceiptDocs.invoice(invoice, lodgeName: widget.lodgeName ?? ''),
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (msg != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: AppTheme.heading),
+      );
     }
   }
 
@@ -164,6 +187,13 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
                             ),
                           ),
                     icon: const Icon(Icons.print_rounded),
+                    color: AppTheme.text,
+                  ),
+                  const SizedBox(width: AppTheme.s16),
+                  IconButton(
+                    tooltip: 'Thermal print',
+                    onPressed: _busy ? null : _thermalPrint,
+                    icon: const Icon(Icons.receipt_long_rounded),
                     color: AppTheme.text,
                   ),
                   const SizedBox(width: AppTheme.s16),

@@ -136,11 +136,23 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     if (changed == true) await _load();
   }
 
+  /// A checked-out, billed stay can still have its dates corrected on a
+  /// property support has enabled that for (its invoice is restated).
+  bool _canReviseBilled(Booking booking) =>
+      booking.hasIssuedInvoice &&
+      booking.status == 'CHECKED_OUT' &&
+      (ref.read(authViewModelProvider).me?.lodge.canEditBilledStays ?? false);
+
   Future<void> _openEdit() async {
     final booking = _booking;
     if (booking == null) return;
     final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => TakeBookingScreen(editBooking: booking)),
+      MaterialPageRoute(
+        builder: (_) => TakeBookingScreen(
+          editBooking: booking,
+          revise: booking.hasIssuedInvoice,
+        ),
+      ),
     );
     if (saved == true) await _load();
   }
@@ -395,6 +407,31 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                             ),
                           ),
                         ],
+                        // A checked-out, billed stay has no other actions, but
+                        // its dates can still be corrected where the property
+                        // allows it (the invoice is restated in place).
+                        if (!widget.readOnly && _canReviseBilled(booking)) ...[
+                          const SizedBox(height: AppTheme.s12),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: split ? 320 : double.infinity,
+                              ),
+                              child: NeuButton(
+                                primary: true,
+                                color: AppTheme.sidebarBrand,
+                                expand: true,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppTheme.s12,
+                                  vertical: 13,
+                                ),
+                                onPressed: _openEdit,
+                                child: const Text('Edit billed stay'),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     );
                   },
@@ -458,14 +495,16 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       // in. Only offered on a stay that has not been billed: once it has,
       // there is no stay left to move or extend, only the register entry
       // for it.
-      if (!booking.hasIssuedInvoice)
+      if (!booking.hasIssuedInvoice || _canReviseBilled(booking))
         NeuButton(
           primary: true,
           color: AppTheme.sidebarBrand,
           expand: true,
           padding: pairedPadding,
           onPressed: _openEdit,
-          child: const Text('Edit booking'),
+          child: Text(
+            booking.hasIssuedInvoice ? 'Edit billed stay' : 'Edit booking',
+          ),
         ),
 
       if (reserved)

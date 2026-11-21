@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../../domain/models/asset.dart';
+import '../../domain/models/bar.dart';
 import '../../domain/models/booking.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/checkout_policy.dart';
@@ -18,6 +19,7 @@ import '../../domain/models/housekeeping.dart';
 import '../../domain/models/income.dart';
 import '../../domain/models/inventory.dart';
 import '../../domain/models/invoice.dart';
+import '../../domain/models/invoice_window.dart';
 import '../../domain/models/json.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/laundry.dart';
@@ -373,6 +375,33 @@ class ApiService {
   Future<Booking> updateBooking(int id, FormData form) async {
     final res = await _dio.patch('/bookings/$id', data: form);
     return Booking.fromJson(_map(res.data)['booking'] as Map<String, dynamic>);
+  }
+
+  /// [updateBooking] that also reports the invoice restatement (extra
+  /// collected / refund due) when the stay was billed.
+  Future<BookingRevision> reviseBooking(int id, FormData form) async {
+    final res = await _dio.patch('/bookings/$id', data: form);
+    return BookingRevision.fromJson(_map(res.data));
+  }
+
+  /// Dates a billed stay may move within; null if it has no issued invoice.
+  Future<InvoiceEditWindow?> invoiceEditWindow(int id) async {
+    final res = await _dio.get('/bookings/$id/edit-window');
+    return InvoiceEditWindow.fromResponse(_map(res.data));
+  }
+
+  Future<PastWindow> pastWindow(String billingSide) async {
+    final res = await _dio.get(
+      '/bookings/past-window',
+      queryParameters: {'billingSide': billingSide},
+    );
+    return PastWindow.fromResponse(_map(res.data));
+  }
+
+  /// Record a stay that already happened — saved checked out and billed.
+  Future<int> createPastBooking(FormData form) async {
+    final res = await _dio.post('/bookings/past', data: form);
+    return asInt(_map(res.data)['id']);
   }
 
   /// How late the guest is, and what the policy says that is worth. Asked
@@ -2639,6 +2668,145 @@ class ApiService {
   Future<LaundryOrder> setLaundryStatus(int id, Map<String, dynamic> body) async {
     final res = await _dio.post('/housekeeping/laundry/orders/$id/status', data: body);
     return LaundryOrder.fromJson(_map(res.data)['order'] as Map<String, dynamic>);
+  }
+
+  // ===== BAR (bar.take / bar.bill / bar.manage / bar.report) =====
+
+  Future<BarMenu> barMenu() async => BarMenu.fromJson(_map((await _dio.get('/bar/menu')).data));
+
+  Future<BarSettings> updateBarSettings(Map<String, dynamic> body) async =>
+      BarSettings.fromJson(_map((await _dio.patch('/bar/settings', data: body)).data));
+
+  Future<void> saveBarCategory(int? id, Map<String, dynamic> body) async {
+    if (id == null) {
+      await _dio.post('/bar/categories', data: body);
+    } else {
+      await _dio.patch('/bar/categories/$id', data: body);
+    }
+  }
+
+  Future<void> deleteBarCategory(int id) async {
+    await _dio.delete('/bar/categories/$id');
+  }
+
+  Future<void> createBarProduct(Map<String, dynamic> body) async {
+    await _dio.post('/bar/products', data: body);
+  }
+
+  Future<void> updateBarProduct(int id, Map<String, dynamic> body) async {
+    await _dio.patch('/bar/products/$id', data: body);
+  }
+
+  Future<void> addBarSize(int productId, Map<String, dynamic> body) async {
+    await _dio.post('/bar/products/$productId/sizes', data: body);
+  }
+
+  Future<void> updateBarSize(int sizeId, Map<String, dynamic> body) async {
+    await _dio.patch('/bar/sizes/$sizeId', data: body);
+  }
+
+  Future<void> adjustBarStock(int productId, Map<String, dynamic> body) async {
+    await _dio.post('/bar/stock/$productId/adjust', data: body);
+  }
+
+  Future<List<BarMovement>> barMovements(int productId) async {
+    final res = await _dio.get('/bar/stock/$productId/movements');
+    return (_map(res.data)['movements'] as List? ?? [])
+        .map((e) => BarMovement.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<List<BarOrder>> barOrders() async {
+    final res = await _dio.get('/bar/orders');
+    return _barOrders(res.data);
+  }
+
+  Future<List<BarOrder>> barHistory(String from, String to) async {
+    final res = await _dio.get('/bar/orders/history', queryParameters: {'from': from, 'to': to});
+    return _barOrders(res.data);
+  }
+
+  List<BarOrder> _barOrders(dynamic data) => (_map(data)['orders'] as List? ?? [])
+      .map((e) => BarOrder.fromJson(Map<String, dynamic>.from(e as Map)))
+      .toList();
+
+  Future<BarTargets> barTargets() async => BarTargets.fromJson(_map((await _dio.get('/bar/targets')).data));
+
+  /// The restaurant menu, for dishes added to a bar order.
+  Future<List<MenuSection>> barFoodMenu() async {
+    final res = await _dio.get('/bar/food-menu');
+    return (_map(res.data)['sections'] as List? ?? [])
+        .map((e) => MenuSection.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<void> createBarOrder(Map<String, dynamic> body) async {
+    await _dio.post('/bar/orders', data: body);
+  }
+
+  Future<void> addBarOrderItems(int id, Map<String, dynamic> body) async {
+    await _dio.post('/bar/orders/$id/items', data: body);
+  }
+
+  Future<void> setBarItemQty(int id, int itemId, int quantity) async {
+    await _dio.patch('/bar/orders/$id/items/$itemId', data: {'quantity': quantity});
+  }
+
+  Future<void> cancelBarItem(int id, int itemId) async {
+    await _dio.post('/bar/orders/$id/items/$itemId/cancel');
+  }
+
+  Future<void> cancelBarOrder(int id) async {
+    await _dio.post('/bar/orders/$id/cancel');
+  }
+
+  Future<void> deliverBarOrder(int id) async {
+    await _dio.post('/bar/orders/$id/deliver');
+  }
+
+  Future<void> deliverBarItem(int id, int itemId) async {
+    await _dio.post('/bar/orders/$id/items/$itemId/deliver');
+  }
+
+  Future<void> deliverBarFoodItem(int foodOrderId, int itemId) async {
+    await _dio.post('/bar/food-orders/$foodOrderId/items/$itemId/deliver');
+  }
+
+  Future<void> barReadyToBill(int id) async {
+    await _dio.post('/bar/orders/$id/ready-to-bill');
+  }
+
+  Future<void> barAddToRoom(int id, int bookingId, int roomId) async {
+    await _dio.post('/bar/orders/$id/add-to-room', data: {'bookingId': bookingId, 'roomId': roomId});
+  }
+
+  Future<List<BarTab>> barTabs() async {
+    final res = await _dio.get('/bar/tabs');
+    return (_map(res.data)['tabs'] as List? ?? [])
+        .map((e) => BarTab.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<BarBill> issueBarBill(Map<String, dynamic> body) async =>
+      BarBill.fromJson(_map((await _dio.post('/bar/bills', data: body)).data));
+
+  Future<BarBill> barBill(int id) async => BarBill.fromJson(_map((await _dio.get('/bar/bills/$id')).data));
+
+  Future<List<BarBillRow>> barBills(String from, String to) async {
+    final res = await _dio.get('/bar/bills', queryParameters: {'from': from, 'to': to});
+    return (_map(res.data)['bills'] as List? ?? [])
+        .map((e) => BarBillRow.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<BarSales> barSalesReport(String from, String to) async =>
+      BarSales.fromJson(_map((await _dio.get('/bar/reports/sales', queryParameters: {'from': from, 'to': to})).data));
+
+  Future<List<BarStockRow>> barStockReport(String from, String to) async {
+    final res = await _dio.get('/bar/reports/stock', queryParameters: {'from': from, 'to': to});
+    return (_map(res.data)['products'] as List? ?? [])
+        .map((e) => BarStockRow.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
   }
 
   /// Dio hands back `dynamic`; every one of these routes answers with an

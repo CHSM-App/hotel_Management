@@ -36,14 +36,24 @@ class BillingScreen extends ConsumerStatefulWidget {
   /// entirely rather than shown and empty.
   final bool restaurantOnly;
 
-  const BillingScreen({super.key, this.restaurantOnly = false});
+  /// Show only the issued Bills list (no inner tab strip) — used when the
+  /// Restaurant screen's own strip already carries a "Bills" tab.
+  final bool issuedOnly;
+
+  const BillingScreen({
+    super.key,
+    this.restaurantOnly = false,
+    this.issuedOnly = false,
+  });
 
   @override
   ConsumerState<BillingScreen> createState() => _BillingScreenState();
 }
 
 class _BillingScreenState extends ConsumerState<BillingScreen> {
-  late _BillingTab _tab = widget.restaurantOnly
+  late _BillingTab _tab = widget.issuedOnly
+      ? _BillingTab.issued
+      : widget.restaurantOnly
       ? _BillingTab.food
       : _BillingTab.toBill;
 
@@ -225,7 +235,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             AppTheme.s12,
             0,
           ),
-          child: toggle,
+          child: widget.issuedOnly ? const SizedBox.shrink() : toggle,
         ),
         Expanded(
           child: RefreshIndicator(

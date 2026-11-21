@@ -1,6 +1,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../../domain/models/charge_selections.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/extra_room.dart';
 import '../../domain/models/guest_match.dart';
+import '../../domain/models/invoice_window.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/multi_room_logic.dart';
 import '../../domain/models/quote.dart';
@@ -141,6 +143,13 @@ class BookingState {
   /// a brand new room being added to the party.
   final int? primaryBookingRoomId;
 
+  /// Non-null while correcting a billed (checked-out) stay: the dates its
+  /// invoice may move within. Its presence is what puts the form into
+  /// "revising" mode — the invoice is restated in place on save.
+  final InvoiceEditWindow? editWindow;
+
+  bool get revising => editBookingId != null && editWindow != null;
+
   BookingState({
     this.isLoading = false,
     this.error,
@@ -172,6 +181,7 @@ class BookingState {
     this.extraRooms = const [],
     this.multiQuote,
     this.primaryBookingRoomId,
+    this.editWindow,
   }) : chartFrom = chartFrom ?? _startOfMonth(_today()),
        chartTo = chartTo ?? _startOfNextMonth(_today());
 
@@ -226,6 +236,8 @@ class BookingState {
     bool clearMultiQuote = false,
     int? primaryBookingRoomId,
     bool clearPrimaryBookingRoomId = false,
+    InvoiceEditWindow? editWindow,
+    bool clearEditWindow = false,
   }) => BookingState(
     isLoading: isLoading ?? this.isLoading,
     error: clearError ? null : (error ?? this.error),
@@ -268,6 +280,7 @@ class BookingState {
     primaryBookingRoomId: clearPrimaryBookingRoomId
         ? null
         : (primaryBookingRoomId ?? this.primaryBookingRoomId),
+    editWindow: clearEditWindow ? null : (editWindow ?? this.editWindow),
   );
 
   int get nights => (checkIn != null && checkOut != null)
@@ -608,6 +621,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// (April through October, say) is a real desk question, so growth stops
   /// well past that rather than fetching an unbounded span.
   static const chartMaxSpanDays = 400;
+
+  /// What the last successful revising save restated on the invoice — read by
+  /// the screen for its "₹X more collected / ₹Y to refund" message.
+  BookingRevision? lastRevision;
 
   BookingViewModel(this.usecase) : super(BookingState());
 
@@ -998,6 +1015,35 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// changing them — a room free last week may not be free this one, and a
   /// quote for three nights means nothing once it is four.
   Future<void> setDates(DateTime checkIn, DateTime checkOut) async {
+    // A billed stay keeps its room: moving the dates re-checks that room for
+    // the new nights instead of sending the desk back to the picker.
+    final keep = state.revising ? state.room : null;
+    final keepBeds = state.bedIds;
+    final keepBuyout = state.buyout;
+    await _setDates(checkIn, checkOut);
+    if (keep == null) return;
+    final match = state.rooms?.valueOrNull
+        ?.where((r) => r.id == keep.id)
+        .firstOrNull;
+    if (match == null) {
+      state = state.copyWith(
+        error:
+            'Room ${keep.roomNumber} is no longer available for the selected '
+            'dates. Please choose another room.',
+      );
+      return;
+    }
+    await selectRoom(match);
+    if (match.isDormitory) {
+      state = state.copyWith(
+        bedIds: keepBeds,
+        clearBedIds: keepBeds.isEmpty,
+        buyout: keepBuyout,
+      );
+    }
+  }
+
+  Future<void> _setDates(DateTime checkIn, DateTime checkOut) async {
     state = state.copyWith(
       checkIn: checkIn,
       checkOut: checkOut,
@@ -1025,7 +1071,10 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// same fields [submit] already reads, because an edit is a booking whose
   /// questions have been answered once already; the only real difference is
   /// what happens at the end.
-  Future<void> startEdit(Booking booking) async {
+  ///
+  /// [revise] is for a checked-out, billed stay: the invoice's date window is
+  /// fetched first, and the save restates the invoice in place.
+  Future<void> startEdit(Booking booking, {bool revise = false}) async {
     final checkIn = DateTime.tryParse(booking.checkInDate ?? '');
     final checkOut = DateTime.tryParse(booking.checkOutDate ?? '');
     if (checkIn == null || checkOut == null) return;
@@ -1041,8 +1090,20 @@ class BookingViewModel extends StateNotifier<BookingState> {
     final isMulti = booking.isMultiRoom;
     final primaryRoom = isMulti ? booking.rooms.first : null;
 
+    InvoiceEditWindow? window;
+    if (revise) {
+      try {
+        window = await usecase.invoiceEditWindow(booking.id);
+      } catch (e) {
+        state = state.copyWith(error: messageFor(e), errorField: fieldFor(e));
+        return;
+      }
+    }
+
     state = state.copyWith(
       editBookingId: booking.id,
+      editWindow: window,
+      clearEditWindow: window == null,
       checkIn: checkIn,
       checkOut: checkOut,
       clearRoom: true,
@@ -1718,6 +1779,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
     List<PaymentDraft> advanceLines = const [],
     bool sendWhatsApp = false,
     int? enquiryId,
+    PastStay? past,
   }) async {
     if (state.submitting) return null;
     final room = state.room;
@@ -1788,9 +1850,20 @@ class BookingViewModel extends StateNotifier<BookingState> {
             'advanceLines': _jsonList(paid.map((l) => l.toJson())),
         },
         ..._idProofParts(idProofFile, guests),
+        if (past != null) ...past.toFormFields(),
       };
 
       final form = FormData.fromMap(formMap);
+
+      if (past != null) {
+        // Saved checked out and billed in one go — nothing to check in, and
+        // no draft stand-in to clean up.
+        final id = await usecase.createPastBooking(form);
+        final saved = await usecase.booking(id);
+        state = state.copyWith(submitting: false);
+        await loadChart();
+        return saved;
+      }
 
       final booking = await usecase.createBooking(form);
 
@@ -1866,11 +1939,16 @@ class BookingViewModel extends StateNotifier<BookingState> {
     XFile? idProofFile,
     List<GuestDraft> guests = const [],
     List<VehicleDraft> vehicles = const [],
+    String? revisionReason,
+    String? revisionPaymentMethod,
+    String? revisionPaymentReference,
+    bool refundAcknowledged = false,
   }) async {
     if (state.submitting) return null;
     final room = state.room;
     if (room == null || !state.datesChosen) return null;
 
+    lastRevision = null;
     state = state.copyWith(submitting: true, clearError: true);
     try {
       final rate = perNight(state.roomTotal, state.nights);
@@ -1911,11 +1989,28 @@ class BookingViewModel extends StateNotifier<BookingState> {
           vehicles.where((v) => !v.isEmpty).map((v) => v.toJson()),
         ),
         ..._idProofParts(idProofFile, guests),
+        if (state.revising) ...{
+          if (revisionReason != null && revisionReason.trim().isNotEmpty)
+            'revisionReason': revisionReason.trim(),
+          if (revisionPaymentMethod != null)
+            'revisionPaymentMethod': revisionPaymentMethod,
+          if (revisionPaymentReference != null &&
+              revisionPaymentReference.trim().isNotEmpty)
+            'revisionPaymentReference': revisionPaymentReference.trim(),
+          'refundAcknowledged': '$refundAcknowledged',
+        },
       };
 
       final form = FormData.fromMap(formMap);
 
-      final booking = await usecase.updateBooking(bookingId, form);
+      final Booking booking;
+      if (state.revising) {
+        final rev = await usecase.reviseBooking(bookingId, form);
+        lastRevision = rev;
+        booking = rev.booking;
+      } else {
+        booking = await usecase.updateBooking(bookingId, form);
+      }
       state = state.copyWith(submitting: false);
       await loadChart();
       return booking;
@@ -2008,4 +2103,33 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// Companion to [messageFor] — the backend's own field name for the error,
   /// when it is about one field.
   static String? fieldFor(Object e) => apiErrorField(e);
+}
+
+/// A stay that already happened, for POST /bookings/past: when each room was
+/// really occupied (IST, `YYYY-MM-DDTHH:mm`), what was paid at the end, and
+/// which numbering series the invoice goes in.
+class PastStay {
+  final String billingSide;
+  final String checkedInAt;
+  final String checkedOutAt;
+  final List<Map<String, dynamic>> roomTimes;
+  final List<PaymentDraft> finalLines;
+
+  const PastStay({
+    required this.billingSide,
+    required this.checkedInAt,
+    required this.checkedOutAt,
+    required this.roomTimes,
+    required this.finalLines,
+  });
+
+  Map<String, String> toFormFields() => {
+    'checkedInAt': checkedInAt,
+    'checkedOutAt': checkedOutAt,
+    'roomTimes': jsonEncode(roomTimes),
+    'paymentLines': jsonEncode(
+      finalLines.where((l) => l.value > 0).map((l) => l.toJson()).toList(),
+    ),
+    'billingSide': billingSide,
+  };
 }

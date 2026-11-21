@@ -12,6 +12,8 @@ import '../view_models/food_settings_viewmodel.dart';
 import '../view_models/housekeeping_viewmodel.dart';
 import '../view_models/income_viewmodel.dart';
 import '../view_models/inventory_viewmodel.dart';
+import '../view_models/bar_setup_viewmodel.dart';
+import '../view_models/bar_viewmodel.dart';
 import '../view_models/laundry_viewmodel.dart';
 import '../view_models/lodge_services_viewmodel.dart';
 import '../view_models/menu_viewmodel.dart';
@@ -20,6 +22,8 @@ import '../view_models/reports_viewmodel.dart';
 import '../view_models/rooms_viewmodel.dart';
 import '../view_models/staff_alerts_viewmodel.dart';
 import '../view_models/staff_viewmodel.dart';
+import '../../domain/models/printer_config.dart';
+import '../view_models/printer_viewmodel.dart';
 import '../view_models/tables_viewmodel.dart';
 import 'usecase_provider.dart';
 
@@ -35,6 +39,12 @@ final authViewModelProvider =
 final bookingViewModelProvider =
     StateNotifierProvider<BookingViewModel, BookingState>(
       (ref) => BookingViewModel(ref.watch(bookingUsecaseProvider)),
+    );
+
+/// The receipt printer this device prints to (per device, not per lodge).
+final printerViewModelProvider =
+    StateNotifierProvider<PrinterViewModel, PrinterConfig>(
+      (ref) => PrinterViewModel(),
     );
 
 final billingViewModelProvider =
@@ -184,4 +194,15 @@ final staffAlertsViewModelProvider =
         ref.watch(housekeepingUsecaseProvider),
         ref.watch(enquiriesUsecaseProvider),
       ),
+    );
+
+/// Bar orders and billing. autoDispose: a login without a bar never builds it.
+final barViewModelProvider = StateNotifierProvider.autoDispose<BarViewModel, BarState>(
+  (ref) => BarViewModel(ref.watch(barUsecaseProvider)),
+);
+
+/// Bar menu, stock and settings.
+final barSetupViewModelProvider =
+    StateNotifierProvider.autoDispose<BarSetupViewModel, BarSetupState>(
+      (ref) => BarSetupViewModel(ref.watch(barUsecaseProvider)),
     );

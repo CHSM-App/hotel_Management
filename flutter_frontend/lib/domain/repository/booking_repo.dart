@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../models/booking.dart';
 import '../models/draft.dart';
 import '../models/guest_match.dart';
+import '../models/invoice_window.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
@@ -81,6 +82,17 @@ abstract class BookingRepository {
 
   /// Correct a booking already on file.
   Future<Booking> updateBooking(int id, FormData form);
+
+  /// [updateBooking] that also reports the invoice restatement.
+  Future<BookingRevision> reviseBooking(int id, FormData form);
+
+  /// Dates a billed stay may move within; null if it has no issued invoice.
+  Future<InvoiceEditWindow?> invoiceEditWindow(int id);
+
+  Future<PastWindow> pastWindow(String billingSide);
+
+  /// Record a stay that already happened; returns the new booking id.
+  Future<int> createPastBooking(FormData form);
 
   Future<LateCheckout> lateCheckout(int id);
 

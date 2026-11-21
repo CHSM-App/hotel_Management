@@ -111,6 +111,15 @@ class Lodge {
   final bool hasOtherServices;
   final bool hasHousekeeping;
   final bool hasLaundry;
+  final bool hasBar;
+  final double? barTaxPercent;
+
+  /// Support-enabled: a checked-out, billed stay's dates may be corrected
+  /// (the invoice is restated in place).
+  final bool canEditBilledStays;
+
+  /// Support-enabled: a stay that already happened may be recorded and billed.
+  final bool canAddPastBookings;
 
   const Lodge({
     required this.id,
@@ -143,6 +152,10 @@ class Lodge {
     this.hasOtherServices = false,
     this.hasHousekeeping = false,
     this.hasLaundry = false,
+    this.hasBar = false,
+    this.barTaxPercent,
+    this.canEditBilledStays = false,
+    this.canAddPastBookings = false,
   });
 
   factory Lodge.fromJson(Map<String, dynamic> json) => Lodge(
@@ -176,6 +189,10 @@ class Lodge {
     hasOtherServices: asBool(json['hasOtherServices']),
     hasHousekeeping: asBool(json['hasHousekeeping']),
     hasLaundry: asBool(json['hasLaundry']),
+    hasBar: asBool(json['hasBar']),
+    barTaxPercent: _asDoubleOrNull(json['barTaxPercent']),
+    canEditBilledStays: asBool(json['canEditBilledStays']),
+    canAddPastBookings: asBool(json['canAddPastBookings']),
   );
 }
 

@@ -12,6 +12,8 @@ import '../../presentation/providers/network_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../assets/assets_screen.dart';
+import '../bar/bar_screen.dart';
+import '../bar/bar_setup_screen.dart';
 import '../billing/billing_screen.dart';
 import '../billing/event_billing_screen.dart';
 import '../billing/numbering_screen.dart';
@@ -507,6 +509,10 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
         return const RegisterScreen();
       case 'food':
         return const FoodBillingScreen();
+      case 'bar':
+        return const BarScreen();
+      case 'barMenu':
+        return const BarSetupScreen();
       case 'billing':
         return const BillingScreen();
       case 'customers':

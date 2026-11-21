@@ -11,6 +11,8 @@ import '../../domain/models/charge_selections.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/extra_room.dart';
 import '../../domain/models/guest_match.dart';
+import '../../domain/models/invoice_window.dart';
+import '../../domain/models/me.dart';
 import '../../domain/models/multi_room_logic.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
@@ -24,6 +26,7 @@ import '../../widgets/payment_row.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 import 'advance_receipt_screen.dart';
+import 'billed_edit_panels.dart';
 import 'booking_actions.dart';
 import 'check_in_room_status.dart';
 
@@ -69,6 +72,10 @@ class TakeBookingScreen extends ConsumerStatefulWidget {
   /// never auto-ticked (picking a room resets the extras checklist).
   final String? prefillExtrasNote;
 
+  /// [editBooking] is a checked-out, billed stay: the invoice's date window is
+  /// loaded and the save restates the invoice in place.
+  final bool revise;
+
   const TakeBookingScreen({
     super.key,
     this.presetRoomId,
@@ -77,6 +84,7 @@ class TakeBookingScreen extends ConsumerStatefulWidget {
     this.draft,
     this.prefillEnquiry,
     this.prefillExtrasNote,
+    this.revise = false,
   });
 
   @override
@@ -204,6 +212,145 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   final List<PaymentDraft> _advance = [PaymentDraft()];
 
   bool get _editing => widget.editBooking != null;
+
+  // -- Billed-stay revision / past booking ----------------------------------
+  final _reason = TextEditingController();
+  String _revMethod = 'CASH';
+  final _revRef = TextEditingController();
+  bool _refundAck = false;
+  final _revisionKey = GlobalKey();
+
+  final _pastKey = GlobalKey();
+  String _pastSide = 'NON_GST';
+  PastWindow? _pastWindow;
+  bool _pastLoading = false;
+  String? _pastWindowFor;
+  TimeOfDay _pastIn = const TimeOfDay(hour: 14, minute: 0);
+  TimeOfDay _pastOut = const TimeOfDay(hour: 11, minute: 0);
+  final List<PaymentDraft> _pastFinal = [PaymentDraft()];
+  String? _pastError;
+
+  Lodge? get _lodge => ref.read(authViewModelProvider).me?.lodge;
+  bool get _isGst => _lodge?.isGstRegistered ?? false;
+
+  static DateTime _today() {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
+
+  /// A new booking that ends today or earlier, on a property allowed to
+  /// record past stays - saved checked out and billed at once.
+  bool _pastRequested(BookingState s) =>
+      !_editing &&
+      (_lodge?.canAddPastBookings ?? false) &&
+      s.datesChosen &&
+      !s.checkOut!.isAfter(_today());
+
+  bool _pastClosed(BookingState s) {
+    final min = _pastWindow?.minDate;
+    return _pastRequested(s) && min != null && s.checkOut!.isBefore(min);
+  }
+
+  bool _pastMode(BookingState s) => _pastRequested(s) && !_pastClosed(s);
+
+  /// Fetch the invoice-numbering bound once per billing side, from build.
+  void _syncPastWindow(BookingState s) {
+    if (!_pastRequested(s) || _pastWindowFor == _pastSide) return;
+    _pastWindowFor = _pastSide;
+    Future.microtask(_loadPastWindow);
+  }
+
+  Future<void> _loadPastWindow() async {
+    if (!mounted) return;
+    setState(() => _pastLoading = true);
+    try {
+      final w = await ref.read(bookingUsecaseProvider).pastWindow(_pastSide);
+      if (mounted) setState(() => _pastWindow = w);
+    } catch (e) {
+      if (mounted) _say(BookingViewModel.messageFor(e));
+    } finally {
+      if (mounted) setState(() => _pastLoading = false);
+    }
+  }
+
+  /// Stay total less what was put down - what the final payment must be.
+  num? _pastDue(BookingState s) {
+    final total = s.quote?.totalPrice;
+    if (total == null) return null;
+    final adv = sumPayments(_advance.where((l) => l.value > 0).toList());
+    final due = total - adv;
+    return due < 0 ? 0 : (due * 100).round() / 100;
+  }
+
+  static bool _sameDay(DateTime? a, DateTime? b) =>
+      a != null &&
+      b != null &&
+      a.year == b.year &&
+      a.month == b.month &&
+      a.day == b.day;
+
+  /// Whether this save changes the invoice - the dates moved or the total
+  /// did. Only then is a reason required, as on the web.
+  bool _restates(BookingState s) {
+    final edit = widget.editBooking;
+    if (edit == null || !s.revising) return false;
+    final oldIn = DateTime.tryParse(edit.checkInDate ?? '');
+    final oldOut = DateTime.tryParse(edit.checkOutDate ?? '');
+    final newTotal = s.quote?.totalPrice;
+    return !_sameDay(oldIn, s.checkIn) ||
+        !_sameDay(oldOut, s.checkOut) ||
+        (newTotal != null &&
+            edit.totalPrice != null &&
+            newTotal != edit.totalPrice);
+  }
+
+  String? _reasonError(BookingState s) =>
+      _submitAttempted && _restates(s) && _reason.text.trim().isEmpty
+      ? 'Enter a reason for changing this invoice.'
+      : null;
+
+  String _ts(DateTime d, TimeOfDay t) =>
+      '${BookingViewModel.iso(d)}T'
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  PastStay _buildPastStay(BookingState s) {
+    // Each room on its own dates, all at the same clock times.
+    final dates = s.isMultiRoom
+        ? [
+            for (final r in MultiRoomLogic.roomsPayload(s))
+              (
+                r['roomId'],
+                DateTime.parse(r['checkInDate'] as String),
+                DateTime.parse(r['checkOutDate'] as String),
+              ),
+          ]
+        : [(s.room!.id, s.checkIn!, s.checkOut!)];
+    final times = [
+      for (final (id, i, o) in dates)
+        {
+          'roomId': id,
+          'checkedInAt': _ts(i, _pastIn),
+          'checkedOutAt': _ts(o, _pastOut),
+        },
+    ];
+    final ins = times.map((t) => t['checkedInAt'] as String).toList()..sort();
+    final outs = times.map((t) => t['checkedOutAt'] as String).toList()..sort();
+    return PastStay(
+      billingSide: _pastSide,
+      checkedInAt: ins.first,
+      checkedOutAt: outs.last,
+      roomTimes: times,
+      finalLines: _pastFinal.where((l) => l.value > 0).toList(),
+    );
+  }
+
+  Future<void> _pickTime(bool isIn) async {
+    final t = await showTimePicker(
+      context: context,
+      initialTime: isIn ? _pastIn : _pastOut,
+    );
+    if (t != null) setState(() => isIn ? _pastIn = t : _pastOut = t);
+  }
 
   /// Mirrors the web form's own `paidInFull`: no separate toggle, just
   /// whatever the desk has typed into the advance rows compared against the
@@ -402,7 +549,20 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       // details weren't taken are kept rather than silently dropped here.
       _childCount = edit.childCount;
       _adultCount = ((edit.numGuests ?? 1) - edit.childCount).clamp(1, 999);
-      await vm.startEdit(edit);
+      await vm.startEdit(edit, revise: widget.revise);
+      if (widget.revise &&
+          ref.read(bookingViewModelProvider).editWindow == null) {
+        // No issued invoice, or the property hasn't enabled this - say why
+        // and go back rather than leave a form that would only be refused.
+        if (mounted) {
+          _say(
+            ref.read(bookingViewModelProvider).error ??
+                "This stay's invoice can't be edited.",
+          );
+          Navigator.of(context).pop(false);
+        }
+        return;
+      }
       _confirmCapacityBaseline();
       return;
     }
@@ -437,6 +597,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     }
 
     vm.reset();
+    _pastSide = _isGst ? 'GST' : 'NON_GST';
     final now = DateTime.now();
     // Today and tomorrow, the same default the web form's own state opens
     // with — a fresh "New booking" is a walk-in for one night until the desk
@@ -447,10 +608,11 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     DateTime? day(String? iso) => iso == null || iso.length < 10
         ? null
         : DateTime.tryParse(iso.substring(0, 10));
+    final today = DateTime(now.year, now.month, now.day);
     final checkIn =
         widget.presetCheckIn ??
         day(enquiry?.checkInDate) ??
-        DateTime(now.year, now.month, now.day);
+        today;
     final enquiryOut = day(enquiry?.checkOutDate);
     final checkOut = enquiryOut != null && enquiryOut.isAfter(checkIn)
         ? enquiryOut
@@ -557,6 +719,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     _name.dispose();
     _phone.dispose();
     _idProofNumber.dispose();
+    _reason.dispose();
+    _revRef.dispose();
     super.dispose();
   }
 
@@ -678,6 +842,108 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       return;
     }
 
+    final state0 = ref.read(bookingViewModelProvider);
+    final revising = _editing && state0.revising;
+    if (revising && _reasonError(state0) != null) {
+      _scrollToError(_revisionKey);
+      return;
+    }
+
+    final pastMode = _pastMode(state0);
+    PastStay? past;
+    if (!_editing && (_lodge?.canAddPastBookings ?? false)) {
+      final today = _today();
+      if (state0.checkIn!.isBefore(today) && state0.checkOut!.isAfter(today)) {
+        return _say(
+          'A stay that began in the past must also have ended. Set the '
+          'check-out to today or earlier to record it as a past booking, or '
+          'start it today.',
+        );
+      }
+    }
+    if (_pastClosed(state0)) {
+      return _say(
+        'Those days are already invoiced. A past booking must end on or after '
+        '${formatDate(_pastWindow?.minDate)}.',
+      );
+    }
+    if (pastMode) {
+      past = _buildPastStay(state0);
+      String? problem;
+      if (DateTime.parse(past.checkedOutAt).isAfter(DateTime.now())) {
+        problem = "A past booking can't end in the future.";
+      } else {
+        final rows = _pastFinal.where((l) => l.value > 0).toList();
+        final due = _pastDue(state0);
+        problem =
+            paymentLinesError(rows) ??
+            ((due != null && (sumPayments(rows) - due).abs() > 0.005)
+                ? 'The final payment must be ${formatPrice(due)} (stay total '
+                      'less the advance); ${formatPrice(sumPayments(rows))} '
+                      'entered.'
+                : null);
+        if (rows.isEmpty && (due ?? 0) > 0) {
+          problem = 'Enter the final payment of ${formatPrice(due)}.';
+        }
+      }
+      if (problem != null) {
+        setState(() => _pastError = problem);
+        _scrollToError(_pastKey);
+        return;
+      }
+      setState(() => _pastError = null);
+    }
+
+    if (revising && _restates(state0)) {
+      final edit = widget.editBooking!;
+      final newTotal = state0.quote?.totalPrice;
+      final ok = await confirmMoneyChange(
+        context,
+        title: 'Update invoice #${state0.editWindow!.invoiceNumber}?',
+        confirmLabel: 'Update invoice',
+        rows: [
+          (
+            'Stay',
+            '${formatDate(DateTime.tryParse(edit.checkInDate ?? ''))} → '
+                '${formatDate(DateTime.tryParse(edit.checkOutDate ?? ''))}',
+          ),
+          (
+            'Moves to',
+            '${formatDate(state0.checkIn)} → ${formatDate(state0.checkOut)}',
+          ),
+          if (newTotal != null)
+            (
+              'Total',
+              '${formatPrice(edit.totalPrice)} → ${formatPrice(newTotal)}',
+            ),
+          ('Reason', _reason.text.trim()),
+        ],
+      );
+      if (!ok || !mounted) return;
+    } else if (pastMode) {
+      final ok = await confirmMoneyChange(
+        context,
+        title: 'Save past booking?',
+        confirmLabel: 'Save past booking',
+        rows: [
+          (
+            'Stay',
+            '${formatDate(state0.checkIn)} → ${formatDate(state0.checkOut)}',
+          ),
+          ('Total', formatPrice(state0.quote?.totalPrice)),
+          (
+            'Advance',
+            formatPrice(
+              sumPayments(_advance.where((l) => l.value > 0).toList()),
+            ),
+          ),
+          ('Final payment', formatPrice(sumPayments(past!.finalLines))),
+          if (_isGst) ('Invoice type', _pastSide == 'GST' ? 'GST' : 'Non-GST'),
+        ],
+      );
+      if (!ok || !mounted) return;
+    }
+
     final phone = _phone.text.trim();
 
     for (final g in _guests) {
@@ -705,6 +971,10 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         idProofFile: _idProofFile,
         guests: saveGuests,
         vehicles: _vehicles,
+        revisionReason: _reason.text,
+        revisionPaymentMethod: _revMethod,
+        revisionPaymentReference: _revMethod == 'CASH' ? null : _revRef.text,
+        refundAcknowledged: _refundAck,
       );
     } else {
       // Only rows with money on them count; an untouched row is not a
@@ -723,6 +993,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         vehicles: _vehicles,
         advanceLines: paid,
         enquiryId: widget.prefillEnquiry?.id,
+        past: past,
       );
     }
 
@@ -735,6 +1006,23 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     // The web form's own "Booking saved" card, offered on a fresh booking
     // only — an edit returns straight to the stay that was being corrected,
     // which already shows what the save produced.
+    if (past != null) {
+      _say(
+        'Past booking saved. Invoice ${booking.invoiceNumber ?? ''} issued.',
+      );
+      Navigator.of(context).pop(true);
+      return;
+    }
+    final rev = vm.lastRevision;
+    if (rev != null) {
+      _say(
+        rev.extra > 0
+            ? 'Invoice updated. ${formatPrice(rev.extra)} more was collected.'
+            : rev.refund > 0
+            ? 'Invoice updated. ${formatPrice(rev.refund)} is to be refunded to the guest.'
+            : 'Invoice updated.',
+      );
+    }
     if (!_editing) {
       final paid = _advance.where((l) => l.value > 0).toList();
       await _showBookingSaved(
@@ -848,6 +1136,15 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       Text(
         _datesError!,
         style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+      ),
+    ],
+
+    if (state.revising) ...[
+      const SizedBox(height: AppTheme.s4),
+      const Text(
+        'Moving either date re-prices the stay and re-checks the room for '
+        'those nights.',
+        style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
       ),
     ],
 
@@ -1051,6 +1348,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             // desk sees the quote change as they fill the form instead of
             // scrolling back to it.
             final split = constraints.maxWidth >= 1100;
+            _syncPastWindow(state);
             final desktop = AppTheme.isDesktop(context);
             // The two sections that share a row on a wide window.
             final paymentWidgets = <Widget>[
@@ -1260,18 +1558,19 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                                   ),
                                 ),
                               ),
-                            NeuButton(
-                              expand: true,
-                              soft: true,
-                              minHeight: 38,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: AppTheme.s8,
+                            if (!state.revising)
+                              NeuButton(
+                                expand: true,
+                                soft: true,
+                                minHeight: 38,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: AppTheme.s8,
+                                ),
+                                onPressed: () => ref
+                                    .read(bookingViewModelProvider.notifier)
+                                    .addExtraRoom(),
+                                child: const Text('+ Add another room'),
                               ),
-                              onPressed: () => ref
-                                  .read(bookingViewModelProvider.notifier)
-                                  .addExtraRoom(),
-                              child: const Text('+ Add another room'),
-                            ),
                           ],
                         ),
                       ),
@@ -1285,6 +1584,57 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                           ),
                         ),
                       ],
+                    ],
+
+                    if (_editing &&
+                        state.revising &&
+                        state.editWindow != null) ...[
+                      const SizedBox(height: AppTheme.s12),
+                      KeyedSubtree(
+                        key: _revisionKey,
+                        child: InvoiceRevisionPanel(
+                          window: state.editWindow!,
+                          reason: _reason,
+                          reasonError: _reasonError(state),
+                          method: _revMethod,
+                          onMethod: (m) => setState(() => _revMethod = m),
+                          reference: _revRef,
+                          refundAcknowledged: _refundAck,
+                          onRefundAcknowledged: (v) =>
+                              setState(() => _refundAck = v),
+                          oldTotal: widget.editBooking?.totalPrice,
+                          newTotal: state.quote?.totalPrice,
+                        ),
+                      ),
+                    ],
+                    if (_pastRequested(state)) ...[
+                      const SizedBox(height: AppTheme.s12),
+                      KeyedSubtree(
+                        key: _pastKey,
+                        child: PastBookingPanel(
+                          window: _pastWindow,
+                          loading: _pastLoading,
+                          closed: _pastClosed(state),
+                          showSide: _isGst,
+                          billingSide: _pastSide,
+                          onSide: (v) => setState(() {
+                            _pastSide = v;
+                            _pastWindow = null;
+                          }),
+                          inTime: _pastIn,
+                          outTime: _pastOut,
+                          onPickIn: () => _pickTime(true),
+                          onPickOut: () => _pickTime(false),
+                          finalLines: _pastFinal,
+                          onAddLine: () =>
+                              setState(() => _pastFinal.add(PaymentDraft())),
+                          onRemoveLine: (i) =>
+                              setState(() => _pastFinal.removeAt(i)),
+                          onChanged: () => setState(() {}),
+                          due: _pastDue(state),
+                          error: _pastError,
+                        ),
+                      ),
                     ],
 
                     // On a wide window the quote sits in its own column beside
@@ -1623,11 +1973,15 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
               loading: state.submitting,
               icon: _editing
                   ? Icons.save_rounded
+                  : _pastMode(state)
+                  ? Icons.history_rounded
                   : state.isWalkIn
                   ? Icons.how_to_reg_rounded
                   : Icons.event_available_rounded,
               label: _editing
-                  ? 'Save changes'
+                  ? (state.revising ? 'Update invoice' : 'Save changes')
+                  : _pastMode(state)
+                  ? 'Save past booking'
                   : state.isWalkIn
                   ? 'Add and check in'
                   : 'Create reservation',
@@ -2194,16 +2548,35 @@ class _DatesRow extends ConsumerWidget {
         : (state.checkOut ??
               (state.checkIn ?? today).add(const Duration(days: 1)));
 
+    // A billed stay can only move inside the days its neighbouring invoices
+    // leave it, and can't end in the future.
+    final window = state.revising ? state.editWindow : null;
+    var firstDate = isCheckIn
+        ? today.subtract(const Duration(days: 365))
+        : (state.checkIn ?? today).add(const Duration(days: 1));
+    var lastDate = today.add(const Duration(days: 365));
+    if (window != null) {
+      if (isCheckIn) {
+        lastDate = (state.checkOut ?? today).subtract(const Duration(days: 1));
+      } else {
+        final min = window.minDate;
+        if (min != null && min.isAfter(firstDate)) firstDate = min;
+        final max = window.maxDate;
+        lastDate = (max != null && max.isBefore(today)) ? max : today;
+        if (lastDate.isBefore(firstDate)) lastDate = firstDate;
+      }
+    }
+
     final picked = await showAppDatePicker(
       context: context,
       // A stay taken on paper over the weekend has to be enterable against
       // the nights it actually happened on, so the past is open for check-in.
       // Check-out can never precede check-in, so its calendar starts there.
-      firstDate: isCheckIn
-          ? today.subtract(const Duration(days: 365))
-          : (state.checkIn ?? today).add(const Duration(days: 1)),
-      lastDate: today.add(const Duration(days: 365)),
-      initialDate: initial,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      initialDate: initial.isBefore(firstDate)
+          ? firstDate
+          : (initial.isAfter(lastDate) ? lastDate : initial),
       helpText: isCheckIn ? 'Check-in' : 'Check-out',
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(

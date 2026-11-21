@@ -8,6 +8,8 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../bookings/receipt_download.dart';
 import '../theme.dart';
+import '../printing/thermal_print_action.dart';
+import '../../domain/models/receipt_doc.dart';
 import 'bill_pdf.dart';
 
 /// The bill itself, tapped open from its card in the queue — the page the
@@ -104,6 +106,15 @@ class InvoicePreviewScreen extends ConsumerWidget {
                             ),
                           ],
                         ),
+                        const SizedBox(height: AppTheme.s8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: _ActionButton(
+                            icon: Icons.receipt_long_rounded,
+                            label: 'Thermal print',
+                            onPressed: () => _thermalPrint(context, ref),
+                          ),
+                        ),
                         if (invoice.status == 'ISSUED') ...[
                           const SizedBox(height: AppTheme.s8),
                           // One press: the bill is sent to the guest's WhatsApp
@@ -166,6 +177,22 @@ class InvoicePreviewScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Roll-width receipt to the saved thermal printer.
+  Future<void> _thermalPrint(BuildContext context, WidgetRef ref) async {
+    final lodgeName = ref.read(authViewModelProvider).me?.lodge.name ?? '';
+    final messenger = ScaffoldMessenger.of(context);
+    final msg = await runThermalPrint(
+      context,
+      ref,
+      ReceiptDocs.invoice(invoice, lodgeName: lodgeName),
+    );
+    if (msg != null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: AppTheme.heading),
+      );
+    }
   }
 
   /// Save the file to the device itself, no share sheet involved.

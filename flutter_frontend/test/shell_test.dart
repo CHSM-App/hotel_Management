@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hotel_manager/domain/models/booking.dart';
 import 'package:hotel_manager/domain/models/draft.dart';
 import 'package:hotel_manager/domain/models/guest_match.dart';
+import 'package:hotel_manager/domain/models/invoice_window.dart';
 import 'package:hotel_manager/domain/models/late_checkout.dart';
 import 'package:hotel_manager/domain/models/me.dart';
 import 'package:hotel_manager/domain/models/quote.dart';
@@ -203,6 +204,21 @@ class _FakeBookings implements BookingRepository {
   @override
   Future<Booking> updateBooking(int id, FormData form) async =>
       Booking(id: id);
+
+  @override
+  Future<BookingRevision> reviseBooking(int id, FormData form) =>
+      throw UnimplementedError();
+
+  @override
+  Future<InvoiceEditWindow?> invoiceEditWindow(int id) =>
+      throw UnimplementedError();
+
+  @override
+  Future<PastWindow> pastWindow(String billingSide) =>
+      throw UnimplementedError();
+
+  @override
+  Future<int> createPastBooking(FormData form) => throw UnimplementedError();
 
   @override
   Future<LateCheckout> lateCheckout(int id) async =>
