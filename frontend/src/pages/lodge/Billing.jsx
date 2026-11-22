@@ -880,7 +880,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const documents =
     invoices || receipts
       ? [
-          ...[...(invoices ?? []), ...(restaurant ? [] : (receipts ?? []).map(asDocument))].filter(
+          ...[...(invoices ?? []), ...(restaurant || stream === 'room' ? [] : (receipts ?? []).map(asDocument))].filter(
             (d) => streamOf(d) === stream && !isLaundryInvoice(d)
           ),
         ].sort((a, b) =>

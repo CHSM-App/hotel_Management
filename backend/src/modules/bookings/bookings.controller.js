@@ -372,12 +372,15 @@ async function createBookingHandler(req, res, next) {
       throw new ApiError(IDENTIFY_MSG, 400);
     }
 
+    const warnings = [];
     const result = await bookingsService.createBooking(req.user.lodgeId, req.user.sub, {
       ...parsed.data,
       idProofDocument: primaryFile ? primaryFile.filename : carriedIdProof,
       guests: attachGuestFiles(parsed.data.guests, files),
+      offlineReplay: req.get('X-Offline-Replay') === '1',
+      warnings,
     });
-    res.status(201).json(result);
+    res.status(201).json(warnings.length ? { ...result, warnings } : result);
   } catch (err) {
     cleanupUploads();
     next(err);
@@ -461,13 +464,20 @@ async function checkInHandler(req, res, next) {
 
     // /:id/rooms/:roomId/check-in brings one room in; /:id/check-in every room
     // whose date has come.
+    // The desk app replaying something already done at the desk: the server
+    // records it and reports oddities as warnings rather than refusing it.
+    const warnings = [];
     const booking = await bookingsService.checkIn(req.user.lodgeId, Number(req.params.id), {
       ...parsed.data,
       checkedInAt,
       idProofDocument: primaryFile ? primaryFile.filename : null,
       guests: attachGuestFiles(parsed.data.guests, files),
-    }, req.user.sub, { roomId: req.params.roomId ? Number(req.params.roomId) : null });
-    res.json({ booking });
+    }, req.user.sub, {
+      roomId: req.params.roomId ? Number(req.params.roomId) : null,
+      offlineReplay: req.get('X-Offline-Replay') === '1',
+      warnings,
+    });
+    res.json({ booking, warnings });
   } catch (err) {
     cleanupUploads();
     next(err);

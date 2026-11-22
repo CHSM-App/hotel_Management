@@ -2002,7 +2002,8 @@ async function createBooking(lodgeId, userId, input) {
         bedIds: room.bedIds,
       })
     ) {
-      throw new ApiError(takenMessage(room), 409);
+      if (!input.offlineReplay) throw new ApiError(takenMessage(room), 409);
+      input.warnings?.push(`${takenMessage(room)} (booked offline — please review)`);
     }
   }
 
@@ -2034,7 +2035,7 @@ async function createBooking(lodgeId, userId, input) {
         undefined,
         { lock: true, bedIds: room.bedIds }
       );
-      if (conflict) {
+      if (conflict && !input.offlineReplay) {
         throw new ApiError(takenMessage(room), 409);
       }
     }
@@ -2251,7 +2252,7 @@ async function replaceBookingVehicles(transaction, bookingId, vehicles) {
 // Checks in every room of the booking whose date has come, or just `roomId`
 // when the desk is bringing rooms in one at a time. A room dated for later stays
 // BOOKED, so a party arriving in stages checks in stage by stage.
-async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null } = {}) {
+async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null, offlineReplay = false, warnings = [] } = {}) {
   const pool = await getPool();
 
   const bookingResult = await pool
@@ -2344,10 +2345,11 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
           AND (${bedClause})
       `);
     if (stillOccupiedResult.recordset.length > 0) {
-      throw new ApiError(
-        `Room ${room.room_number}’s current guest hasn’t checked out yet — check them out before checking in the next booking.`,
-        409
-      );
+      const msg = `Room ${room.room_number}’s current guest hasn’t checked out yet — check them out before checking in the next booking.`;
+      // Offline-first: the guest is already in the room, so record it and flag
+      // the previous occupant for the desk instead of refusing.
+      if (!offlineReplay) throw new ApiError(msg, 409);
+      warnings.push(`Room ${room.room_number} still shows the previous guest as checked in — check them out.`);
     }
   }
 
@@ -3186,9 +3188,6 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
   // Whether the invoice has to be restated: dates moved or the price changed.
   const restates =
     revising && (resolved.some((r) => r.moved) || round2(totalPrice) !== round2(Number(bookingRow.total_price)));
-  if (restates && !String(input.revisionReason ?? '').trim()) {
-    throw new ApiError('Enter a reason for changing this invoice.', 400);
-  }
 
   if (round2(requestedDiscount) > discountAmount) {
     throw new ApiError(`The concession can’t be more than the stay total of ₹${grossTotal}.`, 400);

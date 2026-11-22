@@ -5048,7 +5048,7 @@ export default function Bookings({
                         : 'No other invoices sit next to this one, so the dates are open.'}
                     </p>
                     <div className="field">
-                      <label htmlFor="revisionReason">Reason for the change<Req /></label>
+                      <label htmlFor="revisionReason">Reason for the change (optional)</label>
                       <input
                         id="revisionReason"
                         type="text"

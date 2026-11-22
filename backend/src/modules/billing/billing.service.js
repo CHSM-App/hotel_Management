@@ -1419,7 +1419,11 @@ async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null }
         409
       );
     }
-    if (collected !== due) {
+    if (collected !== due && input.offlineReplay) {
+      // Offline-first: the desk already took this money; record it and flag the
+      // difference (food/charges added elsewhere) instead of refusing the bill.
+      input.warnings?.push(`Bill differs from what was collected offline: due ₹${due}, collected ₹${collected}.`);
+    } else if (collected !== due) {
       throw new ApiError(
         collected < due
           ? `The full balance of ₹${due} must be collected — ₹${round2(due - collected)} is still unpaid.`
@@ -3215,7 +3219,7 @@ async function reviseInvoice(
   { reason, paymentLines = [], paymentMethod = null, paymentReference = null, refundAcknowledged = false }
 ) {
   const why = String(reason ?? '').trim();
-  if (!why) throw new ApiError('Enter a reason for changing this invoice.', 400);
+  // Optional; the column is NOT NULL, so a blank is stored as ''.
   if (why.length > 200) throw new ApiError('The reason is too long — keep it under 200 characters.', 400);
 
   const tx = () => new sql.Request(transaction);

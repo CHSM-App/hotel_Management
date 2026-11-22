@@ -180,6 +180,21 @@ class OfflineStore {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  // ── Notices: things the server accepted but wants the desk to look at ─────
+
+  Future<List<String>> notices() async {
+    final body = await refGet('notices');
+    return [for (final n in (body?['items'] as List? ?? const [])) '$n'];
+  }
+
+  Future<void> addNotices(Iterable<String> items) async {
+    if (items.isEmpty) return;
+    final all = [...await notices(), ...items];
+    await refPut('notices', {'items': all.length > 50 ? all.sublist(all.length - 50) : all});
+  }
+
+  Future<void> clearNotices() => refPut('notices', {'items': <String>[]});
+
   /// What the HTTP cache last saw for a GET — the raw JSON, for the engine to
   /// work from (a booking's nights and food, the lodge's own details).
   Future<dynamic> cachedGet(String url) async {

@@ -636,11 +636,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final allRows = [
       for (final inv in invoices ?? const <Invoice>[])
         BillDocument.ofInvoice(inv),
-      // A FOOD invoice has no receipt of its own (an advance is only ever
-      // taken against a stay or a function), so merging receipts in plainly
-      // never adds one to the restaurant stream below.
-      for (final r in receipts ?? const <AdvanceReceipt>[])
-        BillDocument.ofReceipt(r),
+      // Advance receipts are left out: the Bills tab lists final bills only,
+      // so an advance isn't counted again on top of the bill that adjusts it.
     ];
     // Same split as the web's own streamOf(): a FOOD-kind bill is a
     // restaurant document and an event bill (or a receipt taken against one)

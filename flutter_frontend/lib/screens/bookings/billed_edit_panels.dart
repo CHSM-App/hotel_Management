@@ -166,15 +166,14 @@ class InvoiceRevisionPanel extends StatelessWidget {
           icon: Icons.receipt_long_rounded,
           title: 'Invoice #${window.invoiceNumber} will be updated in place',
           body:
-              '$_windowText\nIt keeps its number and date; the change and your '
-              'reason are recorded.',
+              '$_windowText\nIt keeps its number and date; the change is '
+              'recorded.',
         ),
         const SizedBox(height: AppTheme.s12),
         NeuField(
           controller: reason,
-          label: 'Reason for the change',
+          label: 'Reason for the change (optional)',
           hint: 'e.g. Guest left a day early',
-          required: true,
           maxLength: 200,
           errorText: reasonError,
         ),

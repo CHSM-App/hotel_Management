@@ -100,7 +100,14 @@ async function settleCheckoutHandler(req, res, next) {
     const checkedOutAt = parseClientTime(parsed.data.checkedOutAt, 'The check-out time');
     let invoiceAt = parseClientTime(parsed.data.invoiceAt, 'The bill time') ?? checkedOutAt;
     if (checkedOutAt && invoiceAt && invoiceAt < checkedOutAt) invoiceAt = checkedOutAt;
-    const data = { ...parsed.data, checkedOutAt, invoiceAt };
+    const warnings = [];
+    const data = {
+      ...parsed.data,
+      checkedOutAt,
+      invoiceAt,
+      offlineReplay: req.get('X-Offline-Replay') === '1',
+      warnings,
+    };
 
     const result =
       roomId != null
@@ -111,7 +118,7 @@ async function settleCheckoutHandler(req, res, next) {
               settle: { lateCharge: data.lateCharge, checkedOutAt, invoiceAt },
             }),
           };
-    res.status(201).json(result);
+    res.status(201).json(warnings.length ? { ...result, warnings } : result);
   } catch (err) {
     next(err);
   }

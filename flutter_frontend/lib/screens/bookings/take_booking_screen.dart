@@ -316,10 +316,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             newTotal != edit.totalPrice);
   }
 
-  String? _reasonError(BookingState s) =>
-      _submitAttempted && _restates(s) && _reason.text.trim().isEmpty
-      ? 'Enter a reason for changing this invoice.'
-      : null;
+  // The reason is optional - nothing to validate.
+  String? _reasonError(BookingState s) => null;
 
   String _ts(DateTime d, TimeOfDay t) =>
       '${BookingViewModel.iso(d)}T'

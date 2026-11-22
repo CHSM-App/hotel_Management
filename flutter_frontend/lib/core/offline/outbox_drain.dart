@@ -81,7 +81,9 @@ class OutboxDrain {
       final res = await dio.request<dynamic>(
         path,
         data: data,
-        options: Options(method: op.method, headers: {'Idempotency-Key': op.clientUuid}),
+        // X-Offline-Replay: this already happened at the desk — the server
+        // records it and reports oddities as warnings instead of refusing.
+        options: Options(method: op.method, headers: {'Idempotency-Key': op.clientUuid, 'X-Offline-Replay': '1'}),
       );
       await _done(op, res.data);
       return _Outcome.next;
@@ -96,9 +98,15 @@ class OutboxDrain {
         await store.setStatus(op.id, 'pending');
         return _Outcome.stop;
       }
+      // Still being processed from an earlier send: not a conflict, just wait.
+      if (status == 409 && '${e.response?.data}'.contains('IN_PROGRESS')) {
+        await store.setStatus(op.id, 'pending');
+        return _Outcome.stop;
+      }
       if (status != null && status >= 500) {
         if (op.retryCount + 1 >= _maxRetries) {
           await store.setStatus(op.id, 'failed', error: apiErrorMessage(e), retry: true);
+          await _blockDependents(op);
           return _Outcome.next;
         }
         await store.setStatus(op.id, 'pending', retry: true);
@@ -179,6 +187,10 @@ class OutboxDrain {
 
   Future<void> _done(OutboxOp op, dynamic body, {bool alreadyDone = false}) async {
     final ref = op.bookingRef;
+    if (body is Map && body['warnings'] is List) {
+      final who = op.meta['guestName'];
+      await store.addNotices([for (final w in body['warnings'] as List) '${who ?? 'Booking'}: $w']);
+    }
     if (op.feature == 'booking.create' && ref != null && !alreadyDone) {
       final map = body is Map ? body : const {};
       final booking = map['booking'] is Map ? map['booking'] as Map : map;

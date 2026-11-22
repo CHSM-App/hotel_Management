@@ -20,7 +20,13 @@ class SyncCenterScreen extends ConsumerStatefulWidget {
 
 class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen> {
   List<OutboxOp> _ops = const [];
+  List<String> _notices = const [];
   bool _loaded = false;
+
+  Future<void> _clearNotices() async {
+    await ref.read(offlineDeskProvider).store.clearNotices();
+    await _refresh();
+  }
 
   @override
   void initState() {
@@ -29,10 +35,13 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen> {
   }
 
   Future<void> _refresh() async {
-    final ops = await ref.read(offlineDeskProvider).store.ops();
+    final store = ref.read(offlineDeskProvider).store;
+    final ops = await store.ops();
+    final notices = await store.notices();
     if (mounted) {
       setState(() {
         _ops = ops;
+        _notices = notices;
         _loaded = true;
       });
     }
@@ -104,7 +113,7 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen> {
       ),
       body: !_loaded
           ? const Center(child: CircularProgressIndicator())
-          : _ops.isEmpty
+          : _ops.isEmpty && _notices.isEmpty
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(AppTheme.s24),
@@ -119,10 +128,38 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen> {
               onRefresh: _refresh,
               child: ListView.separated(
                 padding: const EdgeInsets.all(AppTheme.s12),
-                itemCount: _ops.length,
+                itemCount: _ops.length + (_notices.isEmpty ? 0 : 1),
                 separatorBuilder: (_, _) => const SizedBox(height: AppTheme.s8),
                 itemBuilder: (context, i) {
-                  final op = _ops[i];
+                  if (_notices.isNotEmpty && i == 0) {
+                    return Container(
+                      padding: const EdgeInsets.all(AppTheme.s12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                        border: Border.all(color: const Color(0xFFEA580C).withValues(alpha: 0.35)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Saved — please review',
+                            style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.heading),
+                          ),
+                          for (final n in _notices)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(n, style: const TextStyle(fontSize: 12, color: Color(0xFFEA580C))),
+                            ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(onPressed: _clearNotices, child: const Text('Dismiss')),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  final op = _ops[_notices.isEmpty ? i : i - 1];
                   final (label, color) = _statusOf(op.status);
                   final held = op.status == 'conflict' || op.status == 'failed' || op.status == 'blocked';
                   return Container(
