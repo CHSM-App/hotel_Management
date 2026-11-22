@@ -72,6 +72,14 @@ class TakeBookingScreen extends ConsumerStatefulWidget {
   /// never auto-ticked (picking a room resets the extras checklist).
   final String? prefillExtrasNote;
 
+  /// A saved quotation the desk tapped "Convert to booking" on — opens a fresh
+  /// pre-reservation with its guest, first room and nights filled in. Once the
+  /// booking saves, the quotation is marked Booked.
+  final int? quotationId;
+  final String? prefillName;
+  final String? prefillPhone;
+  final DateTime? presetCheckOut;
+
   /// [editBooking] is a checked-out, billed stay: the invoice's date window is
   /// loaded and the save restates the invoice in place.
   final bool revise;
@@ -84,6 +92,10 @@ class TakeBookingScreen extends ConsumerStatefulWidget {
     this.draft,
     this.prefillEnquiry,
     this.prefillExtrasNote,
+    this.quotationId,
+    this.prefillName,
+    this.prefillPhone,
+    this.presetCheckOut,
     this.revise = false,
   });
 
@@ -613,11 +625,19 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         widget.presetCheckIn ??
         day(enquiry?.checkInDate) ??
         today;
-    final enquiryOut = day(enquiry?.checkOutDate);
+    final enquiryOut = widget.presetCheckOut ?? day(enquiry?.checkOutDate);
     final checkOut = enquiryOut != null && enquiryOut.isAfter(checkIn)
         ? enquiryOut
         : checkIn.add(const Duration(days: 1));
     final roomId = widget.presetRoomId;
+
+    final fromQuotation = widget.quotationId != null;
+    if (fromQuotation) {
+      setState(() {
+        _name.text = widget.prefillName ?? '';
+        _phone.text = widget.prefillPhone ?? '';
+      });
+    }
 
     if (enquiry != null) {
       setState(() {
@@ -632,7 +652,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     await vm.setDates(checkIn, checkOut);
     // Always a pre-reservation: the guest is being booked ahead from an
     // enquiry, not standing at the desk, even if the dates start today.
-    if (enquiry != null) vm.setBookingType('RESERVATION');
+    if (enquiry != null || fromQuotation) vm.setBookingType('RESERVATION');
     // A fresh booking starts with nobody over anything, so the baseline is
     // confirmed up front — any later crossing (including the preset room
     // just below) is a genuine one worth a toast.
@@ -1002,6 +1022,16 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       return _say(
         ref.read(bookingViewModelProvider).error ?? 'Could not save.',
       );
+    }
+    // Opened from a saved quotation: now that the stay exists, the quotation
+    // reads Booked instead of waiting to expire. Best-effort — the booking is
+    // already safe, so a failed tag must not block the confirmation below.
+    final quotationId = widget.quotationId;
+    if (quotationId != null) {
+      try {
+        await ref.read(roomsViewModelProvider.notifier).markQuotationBooked(quotationId, booking.id);
+      } catch (_) {}
+      if (!mounted) return;
     }
     // The web form's own "Booking saved" card, offered on a fresh booking
     // only — an edit returns straight to the stay that was being corrected,

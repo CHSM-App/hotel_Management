@@ -8,7 +8,6 @@ import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'checkout_policy_panel.dart';
 import 'price_chart_panel.dart';
-import 'price_simulator_panel.dart';
 import 'rooms_panel.dart';
 
 /// Rooms & rates: the same page the web dashboard puts under that name, with
@@ -76,7 +75,6 @@ class _RoomsRatesScreenState extends ConsumerState<RoomsRatesScreen> {
     return switch (_tab) {
       'rooms' => const RoomsPanel(),
       'chart' => const PriceChartPanel(),
-      'simulator' => const PriceSimulatorPanel(),
       _ => const CheckoutPolicyPanel(),
     };
   }
@@ -96,7 +94,6 @@ class _SubTabs extends StatelessWidget {
       tabs: const [
         PillTab('rooms', 'Rooms', Icons.bed_rounded),
         PillTab('chart', 'Price chart', Icons.price_change_rounded),
-        PillTab('simulator', 'Simulator', Icons.calculate_rounded),
         PillTab('checkout', 'Checkout policy', Icons.logout_rounded),
       ],
     );

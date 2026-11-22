@@ -8,6 +8,7 @@ import '../../domain/models/bar.dart';
 import '../../domain/models/booking.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/checkout_policy.dart';
+import '../../domain/models/saved_quotation.dart';
 import '../../domain/models/customer.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/enquiry.dart';
@@ -238,6 +239,50 @@ class ApiService {
       },
     );
     return PriceSimulation.fromJson(_map(res.data));
+  }
+
+  // ── Saved quotations (/quotations) ───────────────────────────────────────
+
+  /// Keeps a quotation. Sends only the choices (room, nights, extras) — the
+  /// server prices them again, so what is stored is the rate card's answer.
+  Future<SavedQuotation> saveQuotation({
+    String? guestName,
+    String? guestPhone,
+    required List<Map<String, dynamic>> rooms,
+  }) async {
+    final res = await _dio.post(
+      '/quotations',
+      data: {
+        if (guestName != null && guestName.trim().isNotEmpty) 'guestName': guestName.trim(),
+        if (guestPhone != null && guestPhone.isNotEmpty) 'guestPhone': guestPhone,
+        'rooms': rooms,
+      },
+    );
+    return SavedQuotation.fromJson(_map(res.data));
+  }
+
+  Future<List<SavedQuotation>> savedQuotations({String? state, String? q}) async {
+    final res = await _dio.get(
+      '/quotations',
+      queryParameters: {
+        if (state != null) 'state': state,
+        if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      },
+    );
+    return ((_map(res.data)['quotations'] as List?) ?? const [])
+        .map((e) => SavedQuotation.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<SavedQuotation> savedQuotation(int id) async =>
+      SavedQuotation.fromJson(_map((await _dio.get('/quotations/$id')).data));
+
+  Future<void> deleteSavedQuotation(int id) async {
+    await _dio.delete('/quotations/$id');
+  }
+
+  Future<void> markQuotationBooked(int id, int bookingId) async {
+    await _dio.patch('/quotations/$id', data: {'status': 'BOOKED', 'bookingId': bookingId});
   }
 
   /// The bed picker's own fetch, for a dormitory room and a chosen stay —
@@ -613,7 +658,7 @@ class ApiService {
   /// What a food bill will say. `tab` is the opaque id the queue row itself
   /// carries — "table-3", "room-12", "counter-88" — passed straight through.
   Future<FoodBillPreview> previewFoodBill(String tab) async {
-    final res = await _dio.get('/billing/food-tabs/$tab/preview');
+    final res = await _dio.get('/billing/food-tabs/${Uri.encodeComponent(tab)}/preview');
     return FoodBillPreview.fromJson(_map(res.data));
   }
 
@@ -631,7 +676,7 @@ class ApiService {
   /// `AddToRoomDialog.confirmAdd`.
   Future<void> addFoodTabToRoom(String tab, int bookingId) async {
     await _dio.post(
-      '/billing/food-tabs/$tab/add-to-room',
+      '/billing/food-tabs/${Uri.encodeComponent(tab)}/add-to-room',
       data: {'bookingId': bookingId},
     );
   }
@@ -641,7 +686,7 @@ class ApiService {
     String tab,
     Map<String, dynamic> body,
   ) async {
-    final res = await _dio.post('/billing/food-tabs/$tab/invoice', data: body);
+    final res = await _dio.post('/billing/food-tabs/${Uri.encodeComponent(tab)}/invoice', data: body);
     final map = _map(res.data);
     final invoice = map['invoice'];
     return Invoice.fromJson(
@@ -1146,15 +1191,15 @@ class ApiService {
 
   /// Every table, active or not — [tables] above only ever needs to offer an
   /// order the active ones, so this is the setup screen's own fuller list.
-  Future<List<DiningTable>> allTables() async {
-    final res = await _dio.get('/tables');
+  Future<List<DiningTable>> allTables({String area = 'RESTAURANT'}) async {
+    final res = await _dio.get('/tables', queryParameters: {'area': area});
     return (_map(res.data)['tables'] as List? ?? [])
         .map((e) => DiningTable.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
-  Future<void> createTable({required String label, int? seats}) async {
-    await _dio.post('/tables', data: {'label': label, 'seats': seats});
+  Future<void> createTable({required String label, int? seats, String area = 'RESTAURANT'}) async {
+    await _dio.post('/tables', queryParameters: {'area': area}, data: {'label': label, 'seats': seats});
   }
 
   Future<void> bulkCreateTables({
@@ -1162,9 +1207,11 @@ class ApiService {
     required int rangeStart,
     required int rangeEnd,
     int? seats,
+    String area = 'RESTAURANT',
   }) async {
     await _dio.post(
       '/tables/bulk',
+      queryParameters: {'area': area},
       data: {
         'prefix': prefix,
         'rangeStart': rangeStart,
@@ -2770,6 +2817,11 @@ class ApiService {
 
   Future<void> deliverBarFoodItem(int foodOrderId, int itemId) async {
     await _dio.post('/bar/food-orders/$foodOrderId/items/$itemId/deliver');
+  }
+
+  /// Move an open bar table order to another customer (or rename them).
+  Future<void> barSetCustomer(int id, String? tag) async {
+    await _dio.patch('/bar/orders/$id/customer', data: {'customerTag': tag});
   }
 
   Future<void> barReadyToBill(int id) async {

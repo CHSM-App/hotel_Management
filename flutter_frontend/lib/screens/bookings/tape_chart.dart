@@ -13,6 +13,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/booking_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../theme.dart';
+import '../rooms/quotation_screen.dart';
 import 'booking_detail_screen.dart';
 import 'tape_quick_peek_sheet.dart';
 import 'take_booking_screen.dart';
@@ -849,6 +850,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
           draftCount: _drafts.length,
           onNewBooking: () => _takeBooking(context),
           onDrafts: _showDrafts,
+          onQuotation: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QuotationScreen())),
           onPrev: () {
             _hSync.jumpAllTo(0);
             ref.read(bookingViewModelProvider.notifier).shiftChart(-1);
@@ -3147,6 +3149,7 @@ class _ChartToolbar extends StatelessWidget {
   final int draftCount;
   final VoidCallback onNewBooking;
   final VoidCallback onDrafts;
+  final VoidCallback onQuotation;
 
   const _ChartToolbar({
     required this.sections,
@@ -3157,6 +3160,7 @@ class _ChartToolbar extends StatelessWidget {
     required this.draftCount,
     required this.onNewBooking,
     required this.onDrafts,
+    required this.onQuotation,
     required this.onPrev,
     required this.onNext,
     required this.onToday,
@@ -3278,6 +3282,22 @@ class _ChartToolbar extends StatelessWidget {
                   shape: navButtonShape,
                   elevation: 3,
                   shadowColor: AppTheme.draft.withValues(alpha: 0.5),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s12),
+              // Quotation: price a stay for a guest, without leaving the register.
+              OutlinedButton.icon(
+                onPressed: onQuotation,
+                icon: const Icon(Icons.request_quote_rounded, size: 20),
+                label: const Text('Quotation'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.sidebarBrand,
+                  backgroundColor: AppTheme.card,
+                  side: const BorderSide(color: AppTheme.sidebarBrand, width: 1.4),
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                  shape: navButtonShape,
                 ),
               ),
               const SizedBox(width: AppTheme.s12),

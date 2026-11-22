@@ -76,8 +76,10 @@ class _BarOrdersPanelState extends ConsumerState<BarOrdersPanel> {
       floatingActionButton: canTake
           ? FloatingActionButton.extended(
               onPressed: _take,
+              backgroundColor: AppTheme.sidebarBrand,
+              foregroundColor: Colors.white,
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Take order'),
+              label: const Text('Take order', style: TextStyle(fontWeight: FontWeight.w600)),
             )
           : null,
       body: RefreshIndicator(
@@ -92,7 +94,11 @@ class _BarOrdersPanelState extends ConsumerState<BarOrdersPanel> {
                 padding: EdgeInsets.fromLTRB(AppTheme.gutter(context), AppTheme.s8, AppTheme.gutter(context), 96),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: cols,
-                  mainAxisExtent: 380,
+                  // Sized to the fullest card on screen rather than a fixed 380,
+                  // so short orders stop floating in a sea of white.
+                  mainAxisExtent: orders
+                      .map((o) => (150 + (o.items.length + o.foodItems.length) * 46 + (o.undelivered > 0 ? 56 : 0)).clamp(230, 440).toDouble())
+                      .reduce((a, b) => a > b ? a : b),
                   crossAxisSpacing: AppTheme.s12,
                   mainAxisSpacing: AppTheme.s12,
                 ),
@@ -136,29 +142,46 @@ class _OrderCard extends ConsumerWidget {
               const SizedBox(width: 8),
               BarChip(o.label),
               const Spacer(),
-              Text(formatPrice(o.subtotal), style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text(formatPrice(o.subtotal), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppTheme.heading)),
               if (canTake)
                 PopupMenuButton<String>(
                   onSelected: (v) async {
                     if (v == 'add') onAdd();
                     if (v == 'room') onToRoom();
+                    if (v == 'customer') {
+                      final c = TextEditingController(text: o.customerTag ?? '');
+                      final next = await showDialog<String>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: Text('Customer for order #${o.orderNumber}'),
+                          content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(hintText: 'Name (blank = shared table bill)')),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                            TextButton(onPressed: () => Navigator.pop(context, c.text.trim()), child: const Text('Save')),
+                          ],
+                        ),
+                      );
+                      if (!context.mounted) return;
+                      if (next != null) onAct(() => vm.setCustomer(o.id, next.isEmpty ? null : next), 'Customer updated.');
+                    }
                     if (v == 'cancel' && await barConfirm(context, title: 'Cancel order #${o.orderNumber}?', message: 'Stock is returned and the order is closed.', confirmLabel: 'Cancel order')) {
                       onAct(() => vm.cancelOrder(o.id), 'Order cancelled.');
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'add', child: Text('Add items')),
-                    PopupMenuItem(value: 'room', child: Text('Add to room bill')),
-                    PopupMenuItem(value: 'cancel', child: Text('Cancel order')),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'add', child: Text('Add items')),
+                    if (o.source == 'TABLE') const PopupMenuItem(value: 'customer', child: Text('Change customer')),
+                    const PopupMenuItem(value: 'room', child: Text('Add to room bill')),
+                    const PopupMenuItem(value: 'cancel', child: Text('Cancel order')),
                   ],
                 ),
             ],
           ),
-          if ((o.guestName ?? '').isNotEmpty || (o.guestPhone ?? '').isNotEmpty)
-            Text([o.guestName, o.guestPhone].where((e) => (e ?? '').isNotEmpty).join(' · '), style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
+          if ((o.customerTag ?? '').isNotEmpty || (o.guestName ?? '').isNotEmpty || (o.guestPhone ?? '').isNotEmpty)
+            Text([o.customerTag ?? o.guestName, o.guestPhone].where((e) => (e ?? '').isNotEmpty).join(' · '), style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
           const SizedBox(height: 4),
           BarChip(o.undelivered > 0 ? '${o.undelivered} to deliver' : 'All delivered', color: chipColor),
-          const Divider(height: 16),
+          const Divider(height: 20, thickness: 1, color: AppTheme.sidebarBorder),
           Expanded(
             child: ListView(
               children: [
@@ -186,27 +209,23 @@ class _OrderCard extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: AppTheme.s8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (canTake && o.undelivered > 0)
-                NeuButton(
-                  minHeight: 38,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  onPressed: busy ? null : () => onAct(() => vm.deliverOrder(o.id), 'Delivered.'),
-                  child: const Text('Deliver all'),
+          if (canTake && o.undelivered > 0) ...[
+            const SizedBox(height: AppTheme.s8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.sidebarBrand,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(42),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-              NeuButton(
-                primary: true,
-                minHeight: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                onPressed: busy || o.undelivered > 0 ? null : () => onAct(() => vm.readyToBill(o.id), 'Moved to Ready to bill.'),
-                child: const Text('Ready to bill'),
+                onPressed: busy ? null : () => onAct(() => vm.deliverOrder(o.id), 'Delivered.'),
+                icon: const Icon(Icons.room_service_rounded, size: 18),
+                label: const Text('Deliver all', style: TextStyle(fontWeight: FontWeight.w600)),
               ),
-            ],
-          ),
+            ),
+          ],
         ],
       ),
     );
@@ -224,15 +243,25 @@ class _Line extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
+    padding: const EdgeInsets.symmetric(vertical: 3),
     child: Row(
       children: [
         Icon(done ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded, size: 18, color: done ? AppTheme.vacant : AppTheme.muted),
-        const SizedBox(width: 6),
-        Expanded(child: Text(text, style: const TextStyle(fontSize: 13))),
-        Text(formatPrice(amount), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-        if (onDeliver != null) _LineAction(icon: Icons.room_service_rounded, tooltip: 'Mark delivered', color: AppTheme.accent, onTap: onDeliver!),
-        if (onRemove != null) _LineAction(icon: Icons.close_rounded, tooltip: 'Remove item', color: AppTheme.danger, onTap: onRemove!),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500, color: done ? AppTheme.muted : AppTheme.text),
+          ),
+        ),
+        // Fixed-width amount + action slots so prices line up down the card
+        // whether or not a row has buttons.
+        SizedBox(
+          width: 64,
+          child: Text(formatPrice(amount), textAlign: TextAlign.right, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppTheme.heading)),
+        ),
+        SizedBox(width: 40, child: onDeliver == null ? null : _LineAction(icon: Icons.room_service_rounded, tooltip: 'Mark delivered', color: AppTheme.sidebarBrand, onTap: onDeliver!)),
+        SizedBox(width: 40, child: onRemove == null ? null : _LineAction(icon: Icons.close_rounded, tooltip: 'Remove item', color: AppTheme.danger, onTap: onRemove!)),
       ],
     ),
   );

@@ -1,8 +1,5 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
-import { apiGet, ApiError } from '../../lib/api';
-import { getSession } from '../../lib/auth';
-import { readCache, writeCache } from '../../lib/dataCache';
-import { toQrDataUrl, tableOrderUrl, orderUrl } from '../../lib/qr';
+import { useEffect, useState } from 'react';
+import { toQrDataUrl, orderUrl } from '../../lib/qr';
 import './QrCodesPanel.css';
 
 // Table labels are free text — "Table 1", "Patio #2", "हॉल 3" — and go straight
@@ -107,36 +104,13 @@ function QrCard({ title, subtitle, url, dataUrl, large, filename }) {
 }
 
 export default function QrCodesPanel({ lodge }) {
-  const session = getSession();
-  const [tables, setTables] = useState(() => readCache('/tables:active'));
   const [codes, setCodes] = useState({});
   const [error, setError] = useState('');
 
   const propertyCopies = 1;
-  const tableCopies = 1;
   const printSize = 'card';
 
   const origin = window.location.origin;
-  const tableServiceOn = lodge?.foodTableService;
-
-  useEffect(() => {
-    if (!tableServiceOn) return;
-    apiGet('/tables', { token: session?.token })
-      .then((data) => {
-        setTables(writeCache('/tables:active', data.tables.filter((t) => t.isActive)));
-        setError('');
-      })
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load tables.'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableServiceOn]);
-
-  // Derived rather than stored: with table service off there is nothing to
-  // fetch, and writing [] into state from the effect above would be a render
-  // pass to say what the props already told us. Memoised because a fresh []
-  // each render is a new dependency for the effect below, which would redraw
-  // every QR code on every render.
-  const activeTables = useMemo(() => (tableServiceOn ? tables : []), [tableServiceOn, tables]);
-
   // Codes are rendered once per target and cached by URL, so re-rendering the
   // list (or printing it) doesn't regenerate every image.
   //
@@ -150,7 +124,6 @@ export default function QrCodesPanel({ lodge }) {
 
     const urls = [
       orderUrl(origin, lodge.slug),
-      ...(activeTables ?? []).map((t) => tableOrderUrl(origin, t.qrToken)),
     ];
 
     let cancelled = false;
@@ -173,7 +146,7 @@ export default function QrCodesPanel({ lodge }) {
     return () => {
       cancelled = true;
     };
-  }, [activeTables, lodge, origin]);
+  }, [lodge, origin]);
 
   if (!lodge?.servesFood) {
     return (
@@ -187,8 +160,6 @@ export default function QrCodesPanel({ lodge }) {
   }
 
   const propertyUrl = orderUrl(origin, lodge.slug);
-
-  const tableCount = tableServiceOn ? activeTables?.length ?? 0 : 0;
 
   // The screen always shows exactly one of each code — it is a preview, and
   // eight identical squares would say nothing the first one doesn't. The paper
@@ -221,7 +192,7 @@ export default function QrCodesPanel({ lodge }) {
         <p className="qr-group__hint">
           {lodge.foodRoomService
             ? 'Guests scan this, pick their items, then enter their room number and the PIN you give them at check-in. The same code works everywhere, so you never reprint it when rooms change.'
-            : 'Guests scan this to see the menu. Ordering happens at your dining tables — see below.'}
+            : 'Guests scan this to see the menu. Ordering happens at your dining tables — each table’s own code is on the Tables tab.'}
         </p>
         <div className={`qr-grid ${propertyCopies > 1 ? '' : 'qr-grid--single'}`}>
           <div className={originClass(propertyCopies)}>
@@ -255,51 +226,6 @@ export default function QrCodesPanel({ lodge }) {
           </p>
         )}
       </section>
-
-      {tableServiceOn && (
-        <section className="qr-group">
-          <header className="qr-group__head">
-            <h4 className="qr-group__title">Tables</h4>
-            {activeTables?.length > 0 && (
-              <span className="qr-group__badge">
-                {activeTables.length} code{activeTables.length === 1 ? '' : 's'}
-              </span>
-            )}
-          </header>
-          <p className="qr-group__hint">
-            One code per table. These need no PIN — orders wait in the queue until the kitchen
-            accepts them.
-          </p>
-          {activeTables?.length === 0 ? (
-            <p className="qr-group__hint">No active tables to make codes for.</p>
-          ) : (
-            <div className="qr-grid">
-              {activeTables?.map((table) => {
-                const url = tableOrderUrl(origin, table.qrToken);
-                const card = (
-                  <QrCard
-                    title={table.label}
-                    subtitle="Scan to order"
-                    url={url}
-                    dataUrl={codes[url]}
-                    filename={`${lodge.slug}-table-${table.label}`}
-                  />
-                );
-                return (
-                  <Fragment key={table.id}>
-                    <div className={originClass(tableCopies)}>{card}</div>
-                    {duplicatesOf(tableCopies).map((_, i) => (
-                      <div className="qr-dupe" key={`${table.id}-${i}`}>
-                        {card}
-                      </div>
-                    ))}
-                  </Fragment>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
     </div>
   );
 }

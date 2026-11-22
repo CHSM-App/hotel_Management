@@ -63,9 +63,12 @@ const orderSchema = z.object({
   restaurantOrderId: id.optional().nullable(),
   guestName: text(100).optional().nullable(),
   guestPhone: text(20).optional().nullable(),
+  customerTag: text(60).optional().nullable(),
   items: z.array(z.object({ menuItemId: id, quantity: z.coerce.number().int().min(1).max(100) })).default([]),
   foodItems: z.array(foodItemSchema).default([]),
 }).refine(hasLines, noLines);
+
+const customerSchema = z.object({ customerTag: z.string().trim().max(60).nullable() });
 
 const addItemsSchema = z.object({
   items: z.array(z.object({ menuItemId: id, quantity: z.coerce.number().int().min(1).max(100) })).default([]),
@@ -110,6 +113,7 @@ module.exports = {
   sizePatchSchema,
   stockSchema,
   orderSchema,
+  customerSchema,
   addItemsSchema,
   qtySchema,
   roomBillSchema,

@@ -500,6 +500,26 @@ function PaperSizeGrid({ invoice, billHeight, value, onChange, lang }) {
 // viewInvoiceId opens an already-issued bill's document straight away — a
 // settled function's "View bill" — rather than asking for a new preview the
 // server would rightly refuse.
+// A table with several customers lists them together, the first row carrying "Bill whole table".
+function foodTabsByTable(tabs) {
+  const counts = {};
+  for (const t of tabs) if (t.tab.startsWith('table-')) counts[t.tableId] = (counts[t.tableId] ?? 0) + 1;
+  const order = [];
+  const seen = new Set();
+  for (const t of tabs) {
+    const key = t.tab.startsWith('table-') ? `t${t.tableId}` : t.tab;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    order.push(...tabs.filter((x) => (x.tab.startsWith('table-') ? `t${x.tableId}` : x.tab) === key));
+  }
+  const firsts = new Set();
+  return order.map((t) => {
+    const first = t.tab.startsWith('table-') && !firsts.has(t.tableId);
+    if (first) firsts.add(t.tableId);
+    return { t, firstOfTable: first, tableTabs: counts[t.tableId] ?? 1 };
+  });
+}
+
 export default function Billing({ lodge, billNowBookingId = null, billNowEventId = null, billNowTab = null, viewInvoiceId = null, modalOnly = false, stream = 'room', hideTabs = false, forceTab = null, readOnly = false, settle = null, onClose }) {
   const session = getSession();
   const token = session?.token;
@@ -633,7 +653,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
     // A room-QR tab already belongs to one stay, so there is no guest to pick.
     const stay = /^room-booking-(\d+)$/.exec(tabKey);
     if (stay) {
-      apiPost(`/billing/food-tabs/${tabKey}/add-to-room`, { bookingId: Number(stay[1]) }, { token })
+      apiPost(`/billing/food-tabs/${encodeURIComponent(tabKey)}/add-to-room`, { bookingId: Number(stay[1]) }, { token })
         .then(loadFoodTabs)
         .catch((err) => setFoodTabsError(err instanceof ApiError ? err.message : 'Could not add to the room bill.'));
       return;
@@ -645,7 +665,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   };
   const addTabToRoom = async () => {
     try {
-      await apiPost(`/billing/food-tabs/${roomPick.tab}/add-to-room`, { bookingId: Number(roomPick.bookingId) }, { token });
+      await apiPost(`/billing/food-tabs/${encodeURIComponent(roomPick.tab)}/add-to-room`, { bookingId: Number(roomPick.bookingId) }, { token });
       setRoomPick(null);
       loadFoodTabs();
     } catch (err) {
@@ -933,7 +953,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           : null
   );
   // Set when the desk chooses to bill a tab that still has orders in the kitchen.
-  const [billAnyway, setBillAnyway] = useState(false);
+  const [billAnyway] = useState(false);
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
 
@@ -1109,7 +1129,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           }`
         : billTarget.kind === 'SERVICE'
           ? `/billing/services/preview?ids=${billTarget.usageIds.join(',')}`
-          : `/billing/food-tabs/${billTarget.tab}/preview`
+          : `/billing/food-tabs/${encodeURIComponent(billTarget.tab)}/preview`
     : null;
 
   useEffect(() => {
@@ -1269,7 +1289,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           ? `/billing/events/${billTarget.eventBookingId}/invoice`
           : billTarget.kind === 'SERVICE'
             ? '/billing/services/invoice'
-            : `/billing/food-tabs/${billTarget.tab}/invoice`;
+            : `/billing/food-tabs/${encodeURIComponent(billTarget.tab)}/invoice`;
 
     setSubmitting(true);
     try {
@@ -1650,8 +1670,9 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           <div className="chart-section__header">
             <h3>Food to bill</h3>
             <span className="chart-section__hint">
-              Delivered food nobody has paid for. A table keeps one running tab; each takeaway is
-              listed on its own, since the next one is a different customer. Every row bills on
+              Delivered food nobody has paid for. A table keeps one running tab per customer (the name
+              given when ordering); each takeaway is listed on its own, since the next one is a
+              different customer. Every row bills on
               its own document, sweeping in only what it names.
               {canAddToRoom && ' A room order, table or takeaway can be added to the guest’s room bill instead of being billed here.'}
             </span>
@@ -1664,14 +1685,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           )}
           {!foodTabsError && foodTabs && foodTabs.length > 0 && (
             <div className="chart-list">
-              {foodTabs.map((t) => (
+              {foodTabsByTable(foodTabs).map(({ t, firstOfTable, tableTabs }) => (
                 <div className="chart-row billing-panel__queue-row" key={t.tab}>
                   <span className="chart-row__name">
                     {/* A room or counter tab is running for whoever is actually
                         behind it — named alongside the table label rather than
                         replacing it, so the row still says which tab it is. */}
                     {t.guestName ? `${t.tableLabel} · ${t.guestName}` : t.tableLabel}
-                    {t.liveOrderCount > 0 && <span className="src-tag" style={{ marginLeft: 8 }}>{t.liveOrderCount} still in progress</span>}
                     <span className="chart-row__dates">
                       {/* "since" belongs to a tab that is still filling up. A
                           takeaway is one finished order, so it reads as the
@@ -1688,10 +1708,20 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                         Add to room bill
                       </button>
                     )}
+                    {firstOfTable && tableTabs > 1 && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        title={`Bill every customer on ${t.tableLabel} on one document`}
+                        onClick={() => openBilling({ kind: 'FOOD', tab: `table-${t.tableId}`, label: t.tableLabel })}
+                      >
+                        Bill whole table
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn-accent"
-                      onClick={() => openBilling({ kind: 'FOOD', tab: t.tab, label: t.tableLabel })}
+                      onClick={() => openBilling({ kind: 'FOOD', tab: t.tab, label: t.guestName && t.tab.startsWith('table-') ? `${t.tableLabel} · ${t.guestName}` : t.tableLabel })}
                     >
                       Bill
                     </button>
@@ -2818,15 +2848,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
 
             {!previewError && preview && (
               <form onSubmit={handleIssue} noValidate>
-                {preview.liveOrderCount > 0 && (
-                  <div className="form-banner form-banner--error">
-                    {preview.liveOrderCount} order{preview.liveOrderCount === 1 ? ' is' : 's are'} still in progress on this tab — that food is not on this bill.
-                    <label style={{ display: 'flex', gap: 8, marginTop: 6, fontWeight: 600 }}>
-                      <input type="checkbox" checked={billAnyway} onChange={(e) => setBillAnyway(e.target.checked)} />
-                      Bill what has been delivered anyway
-                    </label>
-                  </div>
-                )}
                 {preview.alreadyInvoiced && (
                   <div className="form-banner form-banner--info">
                     This booking already has an issued bill. Void it first to reissue.

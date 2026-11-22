@@ -4,6 +4,7 @@ import '../../domain/models/category.dart';
 import '../../domain/models/checkout_policy.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
+import '../../domain/models/saved_quotation.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/switchable_charge_listing.dart';
 import '../../domain/repository/rooms_repo.dart';
@@ -124,6 +125,22 @@ class RoomsImpl implements RoomsRepository {
     required String toDate,
     String? chargeIds,
   }) => api.simulatePrice(roomId: roomId, date: date, toDate: toDate, chargeIds: chargeIds);
+
+  @override
+  Future<SavedQuotation> saveQuotation({String? guestName, String? guestPhone, required List<Map<String, dynamic>> rooms}) =>
+      api.saveQuotation(guestName: guestName, guestPhone: guestPhone, rooms: rooms);
+
+  @override
+  Future<List<SavedQuotation>> savedQuotations({String? state, String? q}) => api.savedQuotations(state: state, q: q);
+
+  @override
+  Future<SavedQuotation> savedQuotation(int id) => api.savedQuotation(id);
+
+  @override
+  Future<void> deleteSavedQuotation(int id) => api.deleteSavedQuotation(id);
+
+  @override
+  Future<void> markQuotationBooked(int id, int bookingId) => api.markQuotationBooked(id, bookingId);
 
   @override
   Future<CheckoutPolicy> checkoutPolicy() => api.checkoutPolicy();

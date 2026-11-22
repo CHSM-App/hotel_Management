@@ -98,9 +98,10 @@ final inventoryViewModelProvider =
       (ref) => InventoryViewModel(ref.watch(foodSetupUsecaseProvider)),
     );
 
+/// Keyed by area: 'RESTAURANT' or 'BAR'.
 final tablesViewModelProvider =
-    StateNotifierProvider.autoDispose<TablesViewModel, TablesState>(
-      (ref) => TablesViewModel(ref.watch(foodSetupUsecaseProvider)),
+    StateNotifierProvider.autoDispose.family<TablesViewModel, TablesState, String>(
+      (ref, area) => TablesViewModel(ref.watch(foodSetupUsecaseProvider), area),
     );
 
 final foodSettingsViewModelProvider =

@@ -119,11 +119,11 @@ class FoodSetupImpl implements FoodSetupRepository {
       api.setItemRecipe(itemId, lines);
 
   @override
-  Future<List<DiningTable>> allTables() => api.allTables();
+  Future<List<DiningTable>> allTables({String area = 'RESTAURANT'}) => api.allTables(area: area);
 
   @override
-  Future<void> createTable({required String label, int? seats}) =>
-      api.createTable(label: label, seats: seats);
+  Future<void> createTable({required String label, int? seats, String area = 'RESTAURANT'}) =>
+      api.createTable(label: label, seats: seats, area: area);
 
   @override
   Future<void> bulkCreateTables({
@@ -131,7 +131,8 @@ class FoodSetupImpl implements FoodSetupRepository {
     required int rangeStart,
     required int rangeEnd,
     int? seats,
-  }) => api.bulkCreateTables(prefix: prefix, rangeStart: rangeStart, rangeEnd: rangeEnd, seats: seats);
+    String area = 'RESTAURANT',
+  }) => api.bulkCreateTables(prefix: prefix, rangeStart: rangeStart, rangeEnd: rangeEnd, seats: seats, area: area);
 
   @override
   Future<void> updateTable(int id, {required String label, int? seats}) =>

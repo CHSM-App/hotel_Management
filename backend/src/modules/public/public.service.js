@@ -5,6 +5,7 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const menuService = require('../menu/menu.service');
 const ordersService = require('../orders/orders.service');
+const barService = require('../bar/bar.service');
 
 async function getLodgeBySlug(slug) {
   const pool = await getPool();
@@ -223,6 +224,34 @@ async function getPublicMenu(lodgeId) {
     .filter((section) => section.items.length > 0);
 }
 
+// Drinks a guest may order right now, shaped like food sections so the one order
+// page renders them unchanged. An item is one bottle size; its id is the negative
+// of the bar size id so it can never collide with a food item id. Sizes the stock
+// can't cover are left off.
+async function getPublicBarSections(lodgeId) {
+  const menu = await barService.getMenu(lodgeId);
+  const byCat = new Map();
+  for (const p of menu.products) {
+    if (!p.isActive) continue;
+    for (const size of p.sizes) {
+      if (!size.isActive || !size.isAvailable || p.stockMl < size.ml) continue;
+      const cat = menu.categories.find((c) => c.id === p.categoryId && c.isActive);
+      const key = cat ? cat.id : 0;
+      if (!byCat.has(key)) byCat.set(key, { id: `bar-${key}`, name: cat ? cat.name : 'Other drinks', items: [] });
+      byCat.get(key).items.push({
+        id: -size.id,
+        name: `${p.name} ${size.label}`,
+        description: p.brand || '',
+        price: size.price,
+        foodType: 'DRINK',
+        image: null,
+        portions: [],
+      });
+    }
+  }
+  return [...byCat.values()];
+}
+
 // ---------------------------------------------------------------------------
 // Venues and add-ons on the public page
 // ---------------------------------------------------------------------------
@@ -379,7 +408,7 @@ async function getTableOrderingContext(token) {
     .request()
     .input('token', sql.NVarChar, token)
     .query(`
-      SELECT t.id, t.label, t.lodge_id
+      SELECT t.id, t.label, t.lodge_id, t.area
       FROM dbo.dining_tables t
       JOIN dbo.lodges l ON l.id = t.lodge_id
       WHERE t.qr_token = @token AND t.is_active = 1 AND l.is_active = 1
@@ -398,7 +427,8 @@ async function getTableOrderingContext(token) {
     `);
   const lodge = lodgeResult.recordset[0];
 
-  if (!lodge.serves_food || !lodge.food_table_service) {
+  const isBar = table.area === 'BAR';
+  if (isBar ? false : !lodge.serves_food || !lodge.food_table_service) {
     throw new ApiError('This property isn’t taking table orders.', 404);
   }
 
@@ -413,7 +443,14 @@ async function getTableOrderingContext(token) {
       logoUrl: lodge.logo_path ? `/hotel-logos/${lodge.logo_path}` : null,
     },
     target: { type: 'TABLE', label: table.label },
-    menu: await getPublicMenu(table.lodge_id),
+    // A bar table orders drinks, plus food when the property has a restaurant menu.
+    // Each section carries its area so the page can keep the two apart, bar first.
+    menu: isBar
+      ? [
+          ...(await getPublicBarSections(table.lodge_id)).map((sec) => ({ ...sec, area: 'BAR' })),
+          ...(lodge.serves_food ? await getPublicMenu(table.lodge_id) : []).map((sec) => ({ ...sec, area: 'FOOD' })),
+        ]
+      : await getPublicMenu(table.lodge_id),
   };
 }
 
@@ -799,7 +836,7 @@ async function placeTableOrder(token, { items, note, guestName, guestPhone }) {
     .request()
     .input('token', sql.NVarChar, token)
     .query(`
-      SELECT t.id, t.lodge_id, l.serves_food, l.food_table_service
+      SELECT t.id, t.lodge_id, t.area, l.serves_food, l.food_table_service
       FROM dbo.dining_tables t
       JOIN dbo.lodges l ON l.id = t.lodge_id
       WHERE t.qr_token = @token AND t.is_active = 1 AND l.is_active = 1
@@ -808,15 +845,19 @@ async function placeTableOrder(token, { items, note, guestName, guestPhone }) {
   if (!table) {
     throw new ApiError('This QR code isn’t in use.', 404);
   }
+  if (table.area === 'BAR') return placeBarTableOrder(table, { items, note, guestName, guestPhone });
   if (!table.serves_food || !table.food_table_service) {
     throw new ApiError('This property isn’t taking table orders.', 404);
   }
+  if (items.some((i) => i.itemId <= 0)) throw new ApiError('A selected item is no longer on the menu.', 400);
 
   const created = await ordersService.createOrder(table.lodge_id, {
     source: 'TABLE',
     tableId: table.id,
     guestName,
     guestPhone,
+    // The name a guest gives is also who at the table the order is for.
+    customerTag: guestName,
     note,
     items,
     status: 'PENDING',
@@ -828,6 +869,41 @@ async function placeTableOrder(token, { items, note, guestName, guestPhone }) {
     status: created.status,
     subtotal: created.subtotal,
     token: created.publicToken,
+  };
+}
+
+// A bar table's QR order: drinks become a bar order (stock is taken now, and staff
+// can cancel it to put it back), food becomes a PENDING kitchen order the kitchen
+// has to accept, same guard as a restaurant table.
+// ponytail: drinks are not held for approval; add a pending bar status if pranks happen.
+async function placeBarTableOrder(table, { items, note, guestName, guestPhone }) {
+  const drinks = items.filter((i) => i.itemId < 0).map((i) => ({ menuItemId: -i.itemId, quantity: i.quantity }));
+  const food = items.filter((i) => i.itemId > 0);
+  const created = await barService.createOrder(
+    table.lodge_id,
+    { source: 'TABLE', tableId: table.id, guestName, guestPhone, customerTag: guestName, note, foodStatus: 'PENDING', items: drinks, foodItems: food },
+    null
+  );
+  const o = (
+    await (await getPool())
+      .request()
+      .input('id', sql.BigInt, created.id)
+      .input('lodgeId', sql.BigInt, table.lodge_id)
+      .query('SELECT subtotal FROM dbo.bar_orders WHERE id = @id AND lodge_id = @lodgeId')
+  ).recordset[0];
+  const f = (
+    await (await getPool())
+      .request()
+      .input('id', sql.BigInt, created.id)
+      .input('lodgeId', sql.BigInt, table.lodge_id)
+      .query('SELECT TOP 1 status, public_token FROM dbo.food_orders WHERE bar_order_id = @id AND lodge_id = @lodgeId')
+  ).recordset[0];
+  return {
+    orderNumber: created.orderNumber,
+    // Drinks go straight to the bar; with food on it the kitchen's status is the one to follow.
+    status: f ? f.status : 'QUEUED',
+    subtotal: Number(o.subtotal),
+    token: f ? f.public_token : null,
   };
 }
 

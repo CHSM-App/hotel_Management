@@ -48,6 +48,7 @@ abstract class BarRepository {
   Future<void> deliverFoodItem(int foodOrderId, int itemId);
 
   Future<void> readyToBill(int id);
+  Future<void> setCustomer(int id, String? tag);
 
   Future<void> addToRoom(int id, int bookingId, int roomId);
 

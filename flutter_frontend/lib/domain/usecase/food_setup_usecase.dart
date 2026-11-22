@@ -78,15 +78,16 @@ class FoodSetupUsecase {
       repository.setItemRecipe(itemId, lines);
 
   // Tables
-  Future<List<DiningTable>> allTables() => repository.allTables();
-  Future<void> createTable({required String label, int? seats}) =>
-      repository.createTable(label: label, seats: seats);
+  Future<List<DiningTable>> allTables({String area = 'RESTAURANT'}) => repository.allTables(area: area);
+  Future<void> createTable({required String label, int? seats, String area = 'RESTAURANT'}) =>
+      repository.createTable(label: label, seats: seats, area: area);
   Future<void> bulkCreateTables({
     required String prefix,
     required int rangeStart,
     required int rangeEnd,
     int? seats,
-  }) => repository.bulkCreateTables(prefix: prefix, rangeStart: rangeStart, rangeEnd: rangeEnd, seats: seats);
+    String area = 'RESTAURANT',
+  }) => repository.bulkCreateTables(prefix: prefix, rangeStart: rangeStart, rangeEnd: rangeEnd, seats: seats, area: area);
   Future<void> updateTable(int id, {required String label, int? seats}) =>
       repository.updateTable(id, label: label, seats: seats);
   Future<void> setTableActive(int id, bool isActive) => repository.setTableActive(id, isActive);

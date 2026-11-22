@@ -243,6 +243,9 @@ class BarOrder {
   final String? guestName;
   final String? guestPhone;
 
+  /// Who at the table the order is for; each customer is billed separately.
+  final String? customerTag;
+
   /// OPEN | BILLED | CANCELLED
   final String status;
   final double subtotal;
@@ -267,6 +270,7 @@ class BarOrder {
     this.bookingId,
     this.guestName,
     this.guestPhone,
+    this.customerTag,
     required this.status,
     required this.subtotal,
     this.undelivered = 0,
@@ -299,6 +303,7 @@ class BarOrder {
     bookingId: asIntOrNull(j['bookingId']),
     guestName: asStringOrNull(j['guestName']),
     guestPhone: asStringOrNull(j['guestPhone']),
+    customerTag: asStringOrNull(j['customerTag']),
     status: j['status']?.toString() ?? 'OPEN',
     subtotal: asNum(j['subtotal']).toDouble(),
     undelivered: asInt(j['undelivered']),

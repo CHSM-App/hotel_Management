@@ -7,11 +7,11 @@ import QRCode from 'qrcode';
 // Error correction level M tolerates roughly 15% damage, which is what a
 // laminated card by a kitchen door needs; H would buy more at the cost of a
 // denser code that cheap printers smudge.
-export async function toQrDataUrl(text, { size = 240, margin = 1 } = {}) {
+export async function toQrDataUrl(text, { size = 240, margin = 1, level = 'M' } = {}) {
   return QRCode.toDataURL(text, {
     width: size,
     margin,
-    errorCorrectionLevel: 'M',
+    errorCorrectionLevel: level,
     color: { dark: '#000000', light: '#ffffff' },
   });
 }

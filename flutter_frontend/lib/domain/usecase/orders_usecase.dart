@@ -50,6 +50,7 @@ class OrdersUsecase {
     int? tableId,
     String guestName = '',
     String guestPhone = '',
+    String customerTag = '',
     String note = '',
     required List<OrderLineDraft> lines,
   }) => repository.createCounterOrder({
@@ -59,6 +60,7 @@ class OrdersUsecase {
     if (tableId != null && roomId == null) 'tableId': tableId,
     if (guestName.trim().isNotEmpty) 'guestName': guestName.trim(),
     if (guestPhone.trim().isNotEmpty) 'guestPhone': guestPhone.trim(),
+    if (tableId != null && roomId == null && customerTag.trim().isNotEmpty) 'customerTag': customerTag.trim(),
     if (note.trim().isNotEmpty) 'note': note.trim(),
     'items': lines.map((l) => l.toJson()).toList(),
   });

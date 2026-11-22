@@ -82,11 +82,11 @@ test('loading a tab\'s orders no longer excludes orders that belong to a booking
 });
 
 // The gates that must survive: an order is billed once, and only once it has
-// actually been handed over.
+// not cancelled — billing no longer waits on kitchen or delivery.
 for (const fn of ['listOpenFoodTabs', 'loadUnbilledTabOrders']) {
-  test(`${fn} still bills only delivered, not-yet-billed orders`, () => {
+  test(`${fn} bills any uncancelled, not-yet-billed order`, () => {
     const body = bodyOf(fn);
-    assert.match(body, /o\.status IN \('READY', 'DELIVERED'\)/, `${fn} should only bill handed-over food`);
+    assert.match(body, /o\.status <> 'CANCELLED'/, `${fn} must not wait on kitchen/delivery`);
     assert.match(body, /o\.invoice_id IS NULL/, `${fn} should skip food already on a bill`);
   });
 

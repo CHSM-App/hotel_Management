@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/category.dart';
+import '../../domain/models/saved_quotation.dart';
 import '../../domain/models/checkout_policy.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
@@ -108,6 +109,19 @@ class RoomsViewModel extends StateNotifier<RoomsState> {
     required String toDate,
     String? chargeIds,
   }) => usecase.simulatePrice(roomId: roomId, date: date, toDate: toDate, chargeIds: chargeIds);
+
+  // ── Saved quotations ─────────────────────────────────────────────────────
+  //
+  // Like the simulator, not on [state]: the Saved tab owns its own list and
+  // filter, so a quotation saved or deleted never rebuilds the rooms screens.
+  // Failures throw; the caller shows [messageFor] of whatever came back.
+
+  Future<SavedQuotation> saveQuotation({String? guestName, String? guestPhone, required List<Map<String, dynamic>> rooms}) =>
+      usecase.saveQuotation(guestName: guestName, guestPhone: guestPhone, rooms: rooms);
+  Future<List<SavedQuotation>> savedQuotations({String? state, String? q}) => usecase.savedQuotations(state: state, q: q);
+  Future<SavedQuotation> savedQuotation(int id) => usecase.savedQuotation(id);
+  Future<void> deleteSavedQuotation(int id) => usecase.deleteSavedQuotation(id);
+  Future<void> markQuotationBooked(int id, int bookingId) => usecase.markQuotationBooked(id, bookingId);
 
   // ── Rooms ─────────────────────────────────────────────────────────────────
 

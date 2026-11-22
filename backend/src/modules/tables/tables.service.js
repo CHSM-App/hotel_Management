@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
+const { customerKey } = require('../orders/customerTag');
 
 // The token goes in a QR that gets printed once and stuck to a table, so it
 // has to survive being scanned by anything and never be guessable by counting.
@@ -20,28 +21,52 @@ function mapTable(row) {
   };
 }
 
-async function listTables(lodgeId) {
+async function listTables(lodgeId, area = 'RESTAURANT') {
   const pool = await getPool();
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
+    .input('area', sql.NVarChar, area)
     .query(`
       SELECT id, label, seats, qr_token, is_active
       FROM dbo.dining_tables
-      WHERE lodge_id = @lodgeId
+      WHERE lodge_id = @lodgeId AND area = @area
       ORDER BY LEN(label) ASC, label ASC
     `);
   return result.recordset.map(mapTable);
 }
 
-async function createTable(lodgeId, input) {
+// Customers with an open (unbilled) order, per table: { [tableId]: ['Anil', 'Raj'] }.
+// Feeds the "Customer" pick on an order form; first spelling wins per customer.
+async function listOpenCustomers(lodgeId) {
+  const pool = await getPool();
+  const r = await pool.request().input('lodgeId', sql.BigInt, lodgeId).query(`
+    SELECT table_id, customer_tag FROM dbo.food_orders
+      WHERE lodge_id = @lodgeId AND source = 'TABLE' AND invoice_id IS NULL AND status <> 'CANCELLED' AND customer_tag IS NOT NULL
+    UNION ALL
+    SELECT table_id, customer_tag FROM dbo.bar_orders
+      WHERE lodge_id = @lodgeId AND source = 'TABLE' AND status = 'OPEN' AND customer_tag IS NOT NULL
+  `);
+  const out = {};
+  const seen = new Set();
+  for (const row of r.recordset) {
+    const k = `${row.table_id}|${customerKey(row.customer_tag)}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    (out[row.table_id] ||= []).push(row.customer_tag);
+  }
+  return out;
+}
+
+async function createTable(lodgeId, input, area = 'RESTAURANT') {
   const pool = await getPool();
 
   const existing = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('label', sql.NVarChar, input.label)
-    .query('SELECT id FROM dbo.dining_tables WHERE lodge_id = @lodgeId AND label = @label');
+    .input('area', sql.NVarChar, area)
+    .query('SELECT id FROM dbo.dining_tables WHERE lodge_id = @lodgeId AND area = @area AND label = @label');
   if (existing.recordset.length > 0) {
     throw new ApiError('A table with that name already exists.', 409, 'tableLabel');
   }
@@ -52,16 +77,17 @@ async function createTable(lodgeId, input) {
     .input('label', sql.NVarChar, input.label)
     .input('seats', sql.Int, input.seats ?? null)
     .input('qrToken', sql.NVarChar, newQrToken())
+    .input('area', sql.NVarChar, area)
     .query(`
-      INSERT INTO dbo.dining_tables (lodge_id, label, seats, qr_token)
+      INSERT INTO dbo.dining_tables (lodge_id, label, seats, qr_token, area)
       OUTPUT inserted.id
-      VALUES (@lodgeId, @label, @seats, @qrToken)
+      VALUES (@lodgeId, @label, @seats, @qrToken, @area)
     `);
 
   return { id: result.recordset[0].id };
 }
 
-async function bulkCreateTables(lodgeId, input) {
+async function bulkCreateTables(lodgeId, input, area = 'RESTAURANT') {
   if (input.rangeEnd < input.rangeStart) {
     throw new ApiError('The end number must be the same or higher than the start.', 400, 'tableTo');
   }
@@ -78,7 +104,8 @@ async function bulkCreateTables(lodgeId, input) {
   const existingResult = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
-    .query('SELECT label FROM dbo.dining_tables WHERE lodge_id = @lodgeId');
+    .input('area', sql.NVarChar, area)
+    .query('SELECT label FROM dbo.dining_tables WHERE lodge_id = @lodgeId AND area = @area');
   const taken = new Set(existingResult.recordset.map((r) => r.label));
   const toCreate = labels.filter((l) => !taken.has(l));
 
@@ -95,9 +122,10 @@ async function bulkCreateTables(lodgeId, input) {
         .input('label', sql.NVarChar, label)
         .input('seats', sql.Int, input.seats ?? null)
         .input('qrToken', sql.NVarChar, newQrToken())
+        .input('area', sql.NVarChar, area)
         .query(`
-          INSERT INTO dbo.dining_tables (lodge_id, label, seats, qr_token)
-          VALUES (@lodgeId, @label, @seats, @qrToken)
+          INSERT INTO dbo.dining_tables (lodge_id, label, seats, qr_token, area)
+          VALUES (@lodgeId, @label, @seats, @qrToken, @area)
         `);
     }
     await transaction.commit();
@@ -117,7 +145,8 @@ async function updateTable(lodgeId, tableId, input) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('tableId', sql.BigInt, tableId)
     .input('label', sql.NVarChar, input.label)
-    .query('SELECT id FROM dbo.dining_tables WHERE lodge_id = @lodgeId AND label = @label AND id <> @tableId');
+    .query(`SELECT id FROM dbo.dining_tables WHERE lodge_id = @lodgeId AND label = @label AND id <> @tableId
+            AND area = (SELECT area FROM dbo.dining_tables WHERE id = @tableId)`);
   if (conflict.recordset.length > 0) {
     throw new ApiError('A table with that name already exists.', 409, 'tableLabel');
   }
@@ -196,7 +225,8 @@ async function deleteTable(lodgeId, tableId) {
   const ordersResult = await pool
     .request()
     .input('tableId', sql.BigInt, tableId)
-    .query('SELECT TOP 1 id FROM dbo.food_orders WHERE table_id = @tableId');
+    .query(`SELECT TOP 1 id FROM dbo.food_orders WHERE table_id = @tableId
+            UNION ALL SELECT TOP 1 id FROM dbo.bar_orders WHERE table_id = @tableId`);
   if (ordersResult.recordset.length > 0) {
     throw new ApiError('This table has orders against it and can’t be deleted — deactivate it instead.', 409);
   }
@@ -209,6 +239,7 @@ async function deleteTable(lodgeId, tableId) {
 
 module.exports = {
   listTables,
+  listOpenCustomers,
   createTable,
   bulkCreateTables,
   updateTable,

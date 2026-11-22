@@ -4,6 +4,7 @@ import '../models/category.dart';
 import '../models/checkout_policy.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
+import '../models/saved_quotation.dart';
 import '../models/season.dart';
 import '../models/switchable_charge_listing.dart';
 import '../repository/rooms_repo.dart';
@@ -81,6 +82,13 @@ class RoomsUsecase {
     required String toDate,
     String? chargeIds,
   }) => repository.simulatePrice(roomId: roomId, date: date, toDate: toDate, chargeIds: chargeIds);
+
+  Future<SavedQuotation> saveQuotation({String? guestName, String? guestPhone, required List<Map<String, dynamic>> rooms}) =>
+      repository.saveQuotation(guestName: guestName, guestPhone: guestPhone, rooms: rooms);
+  Future<List<SavedQuotation>> savedQuotations({String? state, String? q}) => repository.savedQuotations(state: state, q: q);
+  Future<SavedQuotation> savedQuotation(int id) => repository.savedQuotation(id);
+  Future<void> deleteSavedQuotation(int id) => repository.deleteSavedQuotation(id);
+  Future<void> markQuotationBooked(int id, int bookingId) => repository.markQuotationBooked(id, bookingId);
 
   Future<CheckoutPolicy> checkoutPolicy() => repository.checkoutPolicy();
   Future<CheckoutPolicy> updateCheckoutPolicy({

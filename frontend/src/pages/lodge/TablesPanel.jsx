@@ -5,11 +5,92 @@ import { readCache, writeCache, invalidateCache } from '../../lib/dataCache';
 import IconButton from '../../components/IconButton';
 import { EditIcon, TrashIcon, RefreshIcon } from '../../components/ActionIcons';
 import Req from '../../components/RequiredMark';
+import { toQrDataUrl, tableOrderUrl } from '../../lib/qr';
 import './forms.css';
 import './MenuPanel.css';
 import './RoomsPanel.css';
 import './TablesPanel.css';
 import PageLoader from '../../components/PageLoader';
+
+const safeName = (v) => String(v).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'table';
+
+// Saves a table's code as a PNG with its name under the code, so the file can be
+// printed or sent on as it is. Drawn on a canvas; nothing leaves the browser.
+function downloadCard({ label, dataUrl }, filename) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const pad = 40;
+      const size = 480;
+      const c = document.createElement('canvas');
+      c.width = size + pad * 2;
+      c.height = size + pad * 2 + 90;
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, c.width, c.height);
+      g.imageSmoothingEnabled = false;
+      g.drawImage(img, pad, pad, size, size);
+      g.fillStyle = '#000';
+      g.textAlign = 'center';
+      g.font = '700 44px system-ui, sans-serif';
+      g.fillText(label, c.width / 2, size + pad * 2 + 30, size);
+      const a = document.createElement('a');
+      a.href = c.toDataURL('image/png');
+      a.download = `${filename}.png`;
+      a.click();
+      resolve();
+    };
+    img.onerror = resolve;
+    img.src = dataUrl;
+  });
+}
+
+function QrTile({ dataUrl, label, off }) {
+  return (
+    <div className={`tcard__qr${off ? ' tcard__qr--off' : ''}`}>
+      {dataUrl ? <img src={dataUrl} alt={`QR code for ${label}`} /> : <div className="tcard__qr-skel" />}
+      {off && <span className="tcard__qr-note">Inactive · code is off</span>}
+    </div>
+  );
+}
+
+// Draws "BAR" / "RESTAURANT" and the table name on a white badge in the middle of
+// the code. The code is made at error-correction level H, which survives the
+// roughly 9% of it the badge covers.
+function withCenterLabel(dataUrl, top, bottom) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext('2d');
+      g.imageSmoothingEnabled = false;
+      g.drawImage(img, 0, 0);
+      const w = c.width * 0.34;
+      const h = c.width * 0.2;
+      const x = (c.width - w) / 2;
+      const y = (c.height - h) / 2;
+      g.fillStyle = '#fff';
+      g.beginPath();
+      g.roundRect(x, y, w, h, h * 0.18);
+      g.fill();
+      g.strokeStyle = '#000';
+      g.lineWidth = Math.max(2, c.width * 0.006);
+      g.stroke();
+      g.fillStyle = '#000';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `700 ${h * 0.24}px system-ui, sans-serif`;
+      g.fillText(top, c.width / 2, y + h * 0.27, w * 0.9);
+      g.font = `800 ${h * 0.4}px system-ui, sans-serif`;
+      g.fillText(bottom, c.width / 2, y + h * 0.68, w * 0.9);
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
 const emptyForm = { mode: 'single', label: '', prefix: 'T', rangeStart: '', rangeEnd: '', seats: '' };
 
@@ -36,9 +117,12 @@ function SeatsIcon() {
   );
 }
 
-export default function TablesPanel() {
+// area='BAR' manages the bar's own tables (same API, ?area=BAR); no QR ordering there.
+export default function TablesPanel({ area = 'RESTAURANT' }) {
   const session = getSession();
-  const [tables, setTables] = useState(() => readCache('/tables'));
+  const isBar = area === 'BAR';
+  const q = isBar ? '?area=BAR' : '';
+  const [tables, setTables] = useState(() => readCache(`/tables${q}`));
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -65,12 +149,54 @@ export default function TablesPanel() {
   const invalid = (id) => Boolean(id) && fieldError?.id === id;
   const [deletingId, setDeletingId] = useState(null);
 
+  // Each table's code is drawn in the browser and shown on its own card.
+  const origin = window.location.origin;
+  const [codes, setCodes] = useState({});
+  const [copiedId, setCopiedId] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      (tables ?? []).map((t) => {
+        const u = tableOrderUrl(origin, t.qrToken);
+        return toQrDataUrl(u, { size: 480, level: 'H' })
+          .then((d) => withCenterLabel(d, isBar ? 'BAR' : 'RESTAURANT', t.label))
+          .then((d) => [u, d])
+          .catch(() => [u, null]);
+      }),
+    ).then((pairs) => {
+      if (!cancelled) setCodes(Object.fromEntries(pairs.filter(([, d]) => d)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tables, origin, isBar]);
+
+  // Browsers may ask once before allowing several downloads in a row.
+  const downloadAll = async () => {
+    for (const t of downloadable) {
+      await downloadCard({ label: t.label, dataUrl: codes[tableOrderUrl(origin, t.qrToken)] }, fileFor(t));
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  };
+  const fileFor = (t) => safeName(`${isBar ? 'bar-' : ''}${t.label}`);
+
+  const copyLink = async (table, url) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(table.id);
+      setTimeout(() => setCopiedId(null), 1600);
+    } catch {
+      window.prompt('Copy this link', url);
+    }
+  };
+  const downloadable = (tables ?? []).filter((t) => t.isActive && codes[tableOrderUrl(origin, t.qrToken)]);
+
   // Returns the promise so a delete can wait for the corrected list before it
   // lets go of the row it removed optimistically.
   const load = () =>
-    apiGet('/tables', { token: session?.token })
+    apiGet(`/tables${q}`, { token: session?.token })
       .then((data) => {
-        setTables(writeCache('/tables', data.tables));
+        setTables(writeCache(`/tables${q}`, data.tables));
         setError('');
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load tables.'));
@@ -123,7 +249,7 @@ export default function TablesPanel() {
         );
       } else if (form.mode === 'bulk') {
         await apiPost(
-          '/tables/bulk',
+          `/tables/bulk${q}`,
           {
             prefix: form.prefix,
             rangeStart: form.rangeStart,
@@ -134,7 +260,7 @@ export default function TablesPanel() {
         );
       } else {
         await apiPost(
-          '/tables',
+          `/tables${q}`,
           { label: form.label.trim(), seats: form.seats || null },
           { token: session?.token }
         );
@@ -224,9 +350,14 @@ export default function TablesPanel() {
         <span className="rooms-panel__count">
           {tables ? `${tables.length} table${tables.length === 1 ? '' : 's'}` : ' '}
         </span>
-        <button type="button" className="btn-accent" onClick={() => openForm(null)}>
-          + Add tables
-        </button>
+        <div className="tables-toolbar__actions">
+          <button type="button" className="btn-secondary" disabled={downloadable.length === 0} onClick={downloadAll}>
+            Download all codes
+          </button>
+          <button type="button" className="btn-accent" onClick={() => openForm(null)}>
+            + Add tables
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -244,62 +375,69 @@ export default function TablesPanel() {
       {!error && tables && tables.length === 0 && (
         <div className="dash-card">
           <div className="dash-state">
-            No tables yet. Add them here, then print each one&apos;s QR code from the QR codes tab.
+            {isBar ? 'No bar tables yet. Add them here — each gets its own QR code so guests can order drinks and food.' : 'No tables yet. Add them here — each gets its own QR code to print and stick on the table.'}
           </div>
         </div>
       )}
 
       {!error && tables && tables.length > 0 && (
-        <div className="table-grid">
-          {tables.map((table) => (
-            <div className={`table-card${table.isActive ? '' : ' table-card--off'}`} key={table.id}>
-              <div className="table-card__band">
-                <span className="table-card__label">{table.label}</span>
-                <button
-                  type="button"
-                  className={`table-card__status badge ${table.isActive ? 'badge--on' : 'badge--off'}`}
-                  onClick={() => toggleActive(table)}
-                  title={`Click to ${table.isActive ? 'deactivate' : 'activate'} ${table.label}`}
-                  aria-label={`${table.label} is ${table.isActive ? 'active' : 'inactive'}. Click to ${
-                    table.isActive ? 'deactivate' : 'activate'
-                  }.`}
-                >
-                  {table.isActive ? 'Active' : 'Inactive'}
-                </button>
-              </div>
+        <div className="tgrid">
+          {tables.map((table) => {
+            const url = tableOrderUrl(origin, table.qrToken);
+            const dataUrl = codes[url];
+            return (
+              <article className={`tcard${table.isActive ? '' : ' tcard--off'}`} key={table.id}>
+                <header className="tcard__head">
+                  <div className="tcard__title">
+                    <h3>{table.label}</h3>
+                    <span className="tcard__seats">
+                      <SeatsIcon />
+                      {table.seats ? `${table.seats} seat${table.seats === 1 ? '' : 's'}` : 'Seats not set'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={table.isActive}
+                    className={`tcard__switch${table.isActive ? ' is-on' : ''}`}
+                    onClick={() => toggleActive(table)}
+                    aria-label={`${table.label} is ${table.isActive ? 'active' : 'inactive'}. Click to ${table.isActive ? 'deactivate' : 'activate'}.`}
+                  >
+                    <span>{table.isActive ? 'Active' : 'Inactive'}</span>
+                  </button>
+                </header>
 
-              <div className="table-card__body">
-                {table.seats ? (
-                  <span className="table-card__chip">
-                    <SeatsIcon />
-                    {table.seats} seat{table.seats === 1 ? '' : 's'}
-                  </span>
-                ) : (
-                  <span className="table-card__chip table-card__chip--muted">Seats not set</span>
-                )}
-              </div>
+                <QrTile dataUrl={dataUrl} label={table.label} off={!table.isActive} />
+                <p className="tcard__hint">Scan to order {isBar ? 'drinks & food' : 'food'}</p>
 
-              <div className="table-card__actions">
-                <IconButton
-                  label={`Edit ${table.label}`}
-                  icon={<EditIcon />}
-                  onClick={() => openForm(table)}
-                />
-                <IconButton
-                  label={`New QR code for ${table.label}`}
-                  icon={<RefreshIcon />}
-                  onClick={() => regenerateQr(table)}
-                />
-                <IconButton
-                  label={`Delete ${table.label}`}
-                  icon={<TrashIcon />}
-                  tone="danger"
-                  disabled={deletingId != null}
-                  onClick={() => remove(table)}
-                />
-              </div>
-            </div>
-          ))}
+                <div className="tcard__tools">
+                  <button
+                    type="button"
+                    className="tcard__btn tcard__btn--primary"
+                    disabled={!dataUrl}
+                    onClick={() => downloadCard({ label: table.label, dataUrl }, fileFor(table))}
+                  >
+                    Download QR
+                  </button>
+                  <button type="button" className="tcard__btn" onClick={() => copyLink(table, url)}>
+                    {copiedId === table.id ? 'Copied' : 'Copy link'}
+                  </button>
+                </div>
+
+                <div className="tcard__actions">
+                  <IconButton label={`Edit ${table.label}`} icon={<EditIcon />} onClick={() => openForm(table)} />
+                  <IconButton label={`New QR code for ${table.label}`} icon={<RefreshIcon />} onClick={() => regenerateQr(table)} />
+                  <IconButton
+                    label={`Delete ${table.label}`}
+                    icon={<TrashIcon />}
+                    tone="danger"
+                    disabled={deletingId != null}
+                    onClick={() => remove(table)}
+                  />
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
 

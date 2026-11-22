@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'framer-motion';
 import { useParams } from 'react-router-dom';
 import { apiGet, apiPatch, apiPost, ApiError, API_BASE } from '../../lib/api';
@@ -39,6 +39,8 @@ const LIVE_STATUSES = ['PENDING', 'QUEUED', 'PREPARING', 'READY'];
 const FOOD_TYPES = [
   { key: 'VEG', label: 'Veg' },
   { key: 'NON_VEG', label: 'Non-veg' },
+  // Bar drinks, only on a bar table's menu.
+  { key: 'DRINK', label: 'Drinks' },
 ];
 
 // Plain strokes rather than the - and + characters, so both buttons are the same
@@ -115,6 +117,7 @@ function OrderSheet({
   onCancelAll,
   guestName,
   setGuestName,
+  isTable = false,
   note,
   setNote,
 }) {
@@ -307,8 +310,8 @@ function OrderSheet({
 
           <div className="osx-fields">
             <label className="osx-field" htmlFor="guestName">
-              <span>Your name <em>optional</em></span>
-              <input id="guestName" value={guestName} onChange={(e) => setGuestName(e.target.value)} autoComplete="name" />
+              <span>{isTable ? 'Who is this for?' : 'Your name'} <em>optional</em></span>
+              <input id="guestName" value={guestName} onChange={(e) => setGuestName(e.target.value)} autoComplete="name" placeholder={isTable ? 'Your name, so your bill is separate' : undefined} />
             </label>
             <label className="osx-field" htmlFor="note">
               <span>Note for the kitchen <em>optional</em></span>
@@ -330,6 +333,44 @@ function OrderSheet({
         </div>
       </motion.form>
     </motion.div>
+  );
+}
+
+// Area headers on a bar table's page. Icon plus words, never colour alone.
+const AREAS = {
+  BAR: {
+    title: 'Bar',
+    note: 'Drinks, served to your table',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M5 4h14l-7 8z" />
+        <path d="M12 12v8M8 20h8" />
+      </svg>
+    ),
+  },
+  FOOD: {
+    title: 'Restaurant',
+    note: 'Food from the kitchen, cooked fresh once accepted',
+    icon: (
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10" />
+        <path d="M17 21V3c-2.5 1.5-3.5 4.5-3.5 8H17" />
+      </svg>
+    ),
+  },
+};
+
+function AreaBanner({ area, count }) {
+  const a = AREAS[area];
+  return (
+    <div className={`order-area order-area--${area.toLowerCase()}`} id={`area-${area}`}>
+      <span className="order-area__icon">{a.icon}</span>
+      <div className="order-area__text">
+        <h2>{a.title}</h2>
+        <p>{a.note}</p>
+      </div>
+      <span className="order-area__count">{count} item{count === 1 ? '' : 's'}</span>
+    </div>
   );
 }
 
@@ -570,7 +611,17 @@ export default function OrderPage({ mode }) {
   const [error, setError] = useState('');
   const [cart, setCart] = useState({});
   const [note, setNote] = useState('');
-  const [guestName, setGuestName] = useState('');
+  // The name a guest gives is also who at the table the order is for; remembered per table so a
+  // second round from the same phone joins the same bill.
+  const customerStoreKey = `order-customer:${token}`;
+  const [guestName, setGuestName] = useState(() => {
+    if (mode !== 'table') return '';
+    try {
+      return window.localStorage.getItem(customerStoreKey) || '';
+    } catch {
+      return '';
+    }
+  });
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState('');
   const [placed, setPlaced] = useState(null);
@@ -837,9 +888,25 @@ export default function OrderPage({ mode }) {
       .filter((section) => section.items.length > 0);
   }, [menu, diet]);
 
+  // A bar table's menu has two areas (bar first). With only one, none of the
+  // area chrome appears.
+  const areaCounts = useMemo(() => {
+    const m = {};
+    for (const sec of menu) if (sec.area) m[sec.area] = (m[sec.area] ?? 0) + sec.items.length;
+    return m;
+  }, [menu]);
+  const areas = Object.keys(areaCounts);
+  const hasAreas = areas.length > 1;
+
   // Resolved at render, not corrected in an effect: there's no selection before
   // the menu loads, and the diet filter can retire the section being shown.
   const activeSection = dietMenu.find((s) => s.id === activeSectionId) ?? dietMenu[0] ?? null;
+
+  const activeArea = activeSection?.area ?? areas[0];
+  const goToArea = (area) => {
+    const first = dietMenu.find((sec) => sec.area === area);
+    if (first) goToSection(first.id);
+  };
 
   const needle = query.trim().toLowerCase();
   const searching = needle !== '';
@@ -1232,6 +1299,11 @@ export default function OrderPage({ mode }) {
         await loadOrders();
       } else if (isTable) {
         setPlaced(await apiPost(`/public/tables/${token}/orders`, body));
+        try {
+          window.localStorage.setItem(customerStoreKey, guestName.trim());
+        } catch {
+          /* private mode: the name just isn't remembered */
+        }
         setCart({});
         setCartOpen(false);
       } else {
@@ -1562,9 +1634,27 @@ export default function OrderPage({ mode }) {
                 to that section and leaves everything above and below it still
                 there to scroll back through. Hidden while searching, when the
                 results decide what's on screen. */}
+            {!searching && hasAreas && (
+              <div className="order-areas" role="group" aria-label="Bar or restaurant">
+                {areas.map((area) => (
+                  <button
+                    type="button"
+                    key={area}
+                    className="order-areas__btn"
+                    aria-pressed={area === activeArea}
+                    onClick={() => goToArea(area)}
+                  >
+                    {AREAS[area].icon}
+                    <span>{AREAS[area].title}</span>
+                    <span className="order-areas__n">{areaCounts[area]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {!searching && dietMenu.length > 1 && (
               <nav className="order-tabs" aria-label="Menu sections" ref={tabsRef}>
-                {dietMenu.map((section) => (
+                {dietMenu.filter((section) => !hasAreas || section.area === activeArea).map((section) => (
                   <button
                     type="button"
                     key={section.id}
@@ -1587,7 +1677,9 @@ export default function OrderPage({ mode }) {
               >
                 All
               </button>
-              {FOOD_TYPES.map((type) => (
+              {FOOD_TYPES.filter(
+                (type) => type.key !== 'DRINK' || menu.some((sec) => sec.items.some((i) => i.foodType === 'DRINK')),
+              ).map((type) => (
                 <button
                   type="button"
                   key={type.key}
@@ -1608,10 +1700,16 @@ export default function OrderPage({ mode }) {
             </div>
           )}
 
-          {shownSections.map((section) => (
+          {shownSections.map((section, idx) => (
+            <Fragment key={section.id}>
+            {hasAreas && section.area !== shownSections[idx - 1]?.area && (
+              <AreaBanner
+                area={section.area}
+                count={shownSections.filter((sec) => sec.area === section.area).reduce((n, sec) => n + sec.items.length, 0)}
+              />
+            )}
             <section
               className="order-section"
-              key={section.id}
               ref={(el) => {
                 if (el) sectionRefs.current[section.id] = el;
                 else delete sectionRefs.current[section.id];
@@ -1621,11 +1719,13 @@ export default function OrderPage({ mode }) {
 
               {groupByType(section.items).map((group) => (
                 <div className="order-group" key={group.key}>
-                  <div className="order-group__head">
-                    <FoodTypeMark type={group.key} />
-                    <span className="order-group__label">{group.label}</span>
-                    <span className="order-group__rule" aria-hidden="true" />
-                  </div>
+                  {group.key !== 'DRINK' && (
+                    <div className="order-group__head">
+                      <FoodTypeMark type={group.key} />
+                      <span className="order-group__label">{group.label}</span>
+                      <span className="order-group__rule" aria-hidden="true" />
+                    </div>
+                  )}
 
                   {/* Wrapped so the dishes can lay out as a grid without the group
                   heading above them becoming a cell in it. */}
@@ -1782,6 +1882,7 @@ export default function OrderPage({ mode }) {
                 </div>
               ))}
             </section>
+            </Fragment>
           ))}
         </div>
       )}
@@ -1836,6 +1937,7 @@ export default function OrderPage({ mode }) {
               setCancelToken(orderToken);
             }}
             guestName={guestName}
+            isTable={isTable}
             setGuestName={setGuestName}
             note={note}
             setNote={setNote}

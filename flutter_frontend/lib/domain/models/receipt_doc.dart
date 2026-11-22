@@ -286,4 +286,39 @@ class ReceiptDocs {
     const RRow('Payment:', 'CASH'),
     ..._footer,
   ]);
+
+  /// Kitchen order ticket: what to cook and for where. No prices or tax.
+  /// [title] is "KOT", or "KOT - ADD-ON" for items added to a running order.
+  static ReceiptDoc kot({
+    required String lodgeName,
+    required String where,
+    required List<({String name, int qty})> items,
+    int? orderNo,
+    String? guest,
+    String? note,
+    String title = 'KOT',
+    String? time,
+  }) {
+    final totalQty = items.fold<int>(0, (n, i) => n + i.qty);
+    return ReceiptDoc([
+      RText(lodgeName.toUpperCase(), bold: true),
+      const RRule(strong: true),
+      RText(title, bold: true, size: RSize.big),
+      const RRule(strong: true),
+      RText(where, bold: true, size: RSize.big),
+      if (orderNo != null) RRow('Order #$orderNo', _stamp(time ?? DateTime.now().toIso8601String()), bold: true),
+      if (orderNo == null) RRow('', _stamp(time ?? DateTime.now().toIso8601String())),
+      if ((guest ?? '').trim().isNotEmpty) RRow('Guest:', guest!.trim()),
+      const RRule(),
+      for (final i in items) RText('${i.qty} x  ${i.name}', center: false, bold: true),
+      const RRule(),
+      RRow('Items: ${items.length}', 'Total qty: $totalQty', bold: true),
+      if ((note ?? '').trim().isNotEmpty) ...[
+        const RRule(),
+        RText('NOTE: ${note!.trim()}', center: false, bold: true),
+      ],
+      const RRule(strong: true),
+      const RText('*** Kitchen copy ***', size: RSize.small),
+    ]);
+  }
 }

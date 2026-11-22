@@ -4,6 +4,6 @@ const { simulateHandler } = require('./pricing.controller');
 
 const router = Router();
 
-router.get('/simulate', authenticate, requirePermission('rooms.manage'), simulateHandler);
+router.get('/simulate', authenticate, requirePermission('rooms.manage', 'bookings.manage'), simulateHandler);
 
 module.exports = router;

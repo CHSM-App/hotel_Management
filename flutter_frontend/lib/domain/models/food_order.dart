@@ -222,8 +222,7 @@ class FoodOrder {
 
   /// A fully delivered, unbilled order the captain can send to Billing's
   /// "Food to bill" queue.
-  bool get canMarkReadyToBill =>
-      status == 'DELIVERED' && !billed && !readyToBill && !onRoomBill;
+  bool get canMarkReadyToBill => false; // billing no longer waits on a hand-off
 
   /// Delivered and not yet billed — the base condition both "Ready to bill"
   /// and "Issue bill" share. Unlike [canMarkReadyToBill] this stays true once
@@ -231,7 +230,7 @@ class FoodOrder {
   /// do so for an order a captain already sent to the queue. Same as
   /// OrdersPanel.jsx's own `canIssue`, this goes false once the order is
   /// already settled onto a room bill.
-  bool get isDeliveredUnbilled => status == 'DELIVERED' && !billed && !onRoomBill;
+  bool get isDeliveredUnbilled => status != 'CANCELLED' && !billed && !onRoomBill;
 
   /// The opaque key Billing's own food queue addresses this ticket's tab by
   /// — `table-5`, `counter-88`, `room-12`, `room-booking-7` — so "Issue bill"
@@ -247,7 +246,7 @@ class FoodOrder {
   /// Unbilled, not sent to billing, not called off — the same rule
   /// OrdersPanel.jsx's `canEdit`/`editable` checks. Its items can still be
   /// changed, whatever status it is otherwise sitting at.
-  bool get isEditable => !billed && !readyToBill && status != 'CANCELLED';
+  bool get isEditable => !billed && status != 'CANCELLED';
 
   String get statusLabel => kOrderStatusLabels[status] ?? status;
 

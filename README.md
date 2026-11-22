@@ -779,7 +779,7 @@ GET    /rooms?floor=&status=
 GET    /rooms/availability?from=&to=&categoryId=
 PATCH  /rooms/:id/housekeeping
 GET    /pricing/matrix?date=            whole studio payload in one call
-POST   /pricing/quote                   used by BOTH simulator and booking form
+POST   /pricing/quote                   used by BOTH quotation tool and booking form
 POST   /pricing/bulk-adjust             { scope, adjustType, value, dryRun }
 POST   /bookings                        Idempotency-Key required
 POST   /bookings/:id/check-in | check-out | cancel

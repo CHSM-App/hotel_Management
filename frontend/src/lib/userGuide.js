@@ -294,7 +294,7 @@ const SECTIONS = [
       },
       {
         heading: 'Check before you rely on it',
-        body: 'Use the price simulator to ask what a given date would quote. Cheaper to check here than to discover it at the desk with a guest waiting.',
+        body: 'Use Quotation on the Room Chart page to ask what a given date would quote. Cheaper to check here than to discover it at the desk with a guest waiting.',
       },
       {
         heading: 'Switchable charges',

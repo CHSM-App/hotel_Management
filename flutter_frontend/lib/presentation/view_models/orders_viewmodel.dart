@@ -511,6 +511,7 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     int? tableId,
     String guestName = '',
     String guestPhone = '',
+    String customerTag = '',
     String note = '',
     required List<OrderLineDraft> lines,
   }) async {
@@ -522,6 +523,7 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
         tableId: tableId,
         guestName: guestName,
         guestPhone: guestPhone,
+        customerTag: customerTag,
         note: note,
         lines: lines,
       );

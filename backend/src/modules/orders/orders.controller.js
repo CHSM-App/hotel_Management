@@ -1,4 +1,4 @@
-const { counterOrderSchema, updateStatusSchema, updateItemReadySchema, editOrderSchema, cancelItemsSchema } = require('./orders.schema');
+const { counterOrderSchema, customerSchema, updateStatusSchema, updateItemReadySchema, editOrderSchema, cancelItemsSchema } = require('./orders.schema');
 const ordersService = require('./orders.service');
 const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
@@ -217,6 +217,7 @@ async function createCounterOrderHandler(req, res, next) {
       guestName: input.guestName,
       guestPhone: input.guestPhone,
       note: input.note,
+      customerTag: input.customerTag,
       items: input.items,
       status: 'QUEUED',
       createdBy: req.user.sub,
@@ -321,6 +322,15 @@ async function returnItemsHandler(req, res, next) {
   }
 }
 
+async function setCustomerHandler(req, res, next) {
+  try {
+    const { customerTag } = parse(customerSchema, req.body);
+    res.json({ order: await ordersService.setOrderCustomer(req.user.lodgeId, Number(req.params.id), customerTag) });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function readyToBillHandler(req, res, next) {
   try {
     res.json({ order: await ordersService.markReadyToBill(req.user.lodgeId, Number(req.params.id)) });
@@ -407,6 +417,7 @@ module.exports = {
   cancelItemsHandler,
   returnItemsHandler,
   readyToBillHandler,
+  setCustomerHandler,
   listTabsHandler,
   updateItemDeliveredHandler,
   deliverAllHandler,

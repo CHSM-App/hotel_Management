@@ -53,13 +53,13 @@ class AppTheme {
   /// dashboard's OwnerDashboard.css / index.css (--brand, --brand-ink,
   /// --brand-wash, --brand-wash-edge) so the rail reads as the same surface
   /// on both clients rather than a phone-flavoured guess at it.
-  static const Color sidebarBrand = Color(0xFF1457AD);
-  static const Color sidebarBrandInk = Color(0xFF10499A);
+  static const Color sidebarBrand = Color(0xFF0B2E5C);
+  static const Color sidebarBrandInk = Color(0xFF071E3D);
   static const Color sidebarBrandWash = Color(0xFFEAF1FB);
   static const Color sidebarBrandWashEdge = Color(0xFFBBD2EC);
   static const Color sidebarText = Color(0xFF48566A);
   static const Color sidebarTextMuted = Color(0xFF78859A);
-  static const Color sidebarBorder = Color(0xFFE3E8F0);
+  static const Color sidebarBorder = Color(0xFFE5E7EB);
 
   /// The booking-detail action row's own "edit" and "checkout" fills — kept
   /// apart from [accent] and [danger] so all three action buttons read as
@@ -75,7 +75,7 @@ class AppTheme {
   static const Color checkedIn = Color(0xFF2F7FE4);
   static const Color stayed = Color(0xFF8695A3);
   static const Color draft = Color(0xFFF2C31D);
-  static const Color danger = Color(0xFFC62828);
+  static const Color danger = Color(0xFFEA4335);
 
   /// A problem worth flagging but not stopping the desk over — over
   /// capacity being the first use, where Save still has to work. Mirrors

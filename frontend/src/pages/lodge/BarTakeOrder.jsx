@@ -32,6 +32,11 @@ export default function BarTakeOrder({ hasFood, onBack, onPlaced, editOrder = nu
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [existing, setExisting] = useState(editOrder);
+  // Customers with an open order, per table, so a second round goes to the same person.
+  const [openCustomers, setOpenCustomers] = useState({});
+  useEffect(() => {
+    apiGet('/tables/customers', { token }).then((d) => setOpenCustomers(d.customers || {})).catch(() => {});
+  }, [token]);
 
   useEffect(() => {
     let live = true;
@@ -76,6 +81,11 @@ export default function BarTakeOrder({ hasFood, onBack, onPlaced, editOrder = nu
     }
   };
 
+  const kotOf = (where, title) => ({
+    title, where: `Bar - ${where}`, guest: guestName || null,
+    items: cart.map((l) => ({ name: `${l.name}${l.size ? ` ${l.size}` : ''}`, qty: Number(l.qty) || 1 })),
+  });
+
   const place = async () => {
     setError('');
     if (editOrder) {
@@ -89,7 +99,7 @@ export default function BarTakeOrder({ hasFood, onBack, onPlaced, editOrder = nu
           },
           { token }
         );
-        onPlaced({ id: editOrder.id, orderNumber: editOrder.orderNumber, updated: true });
+        onPlaced({ id: editOrder.id, orderNumber: editOrder.orderNumber, updated: true, kot: kotOf(editOrder.tableLabel ? `Table ${editOrder.tableLabel}` : editOrder.roomNumber ? `Room ${editOrder.roomNumber}` : 'Counter', 'KOT - ADD-ON') });
       } catch (e) {
         setError(errText(e, 'Could not update the order.'));
         setBusy(false);
@@ -113,12 +123,14 @@ export default function BarTakeOrder({ hasFood, onBack, onPlaced, editOrder = nu
           bookingId: guest ? guest.bookingId : null,
           guestName: guest ? guest.guestName : guestName || null,
           guestPhone: guest ? guest.guestPhone : phone || null,
+          customerTag: source === 'TABLE' ? guestName.trim() || null : null,
           items: cart.filter((l) => l.kind === 'DRINK').map((l) => ({ menuItemId: l.menuItemId, quantity: l.qty })),
           foodItems: cart.filter((l) => l.kind === 'FOOD').map((l) => ({ itemId: l.itemId, portionId: l.portionId, quantity: l.qty })),
         },
         { token }
       );
-      onPlaced(res);
+      const tl = source === 'TABLE' ? targets.tables.find((t) => String(t.id) === String(targetId))?.label : null;
+      onPlaced({ ...res, kot: kotOf(source === 'TABLE' ? `Table ${tl ?? ''}` : source === 'ROOM' ? `Room ${guest?.roomNumber ?? ''}` : 'Counter', 'KOT') });
     } catch (e) {
       setError(errText(e, 'Could not place the order.'));
       setBusy(false);
@@ -304,8 +316,18 @@ export default function BarTakeOrder({ hasFood, onBack, onPlaced, editOrder = nu
             {source !== 'ROOM' && (
               <>
                 <label className="bar-field">
-                  <span>Guest name</span>
-                  <input value={guestName} placeholder="Optional" onChange={(e) => setGuestName(e.target.value)} />
+                  <span>{source === 'TABLE' ? 'Customer' : 'Guest name'}</span>
+                  <input
+                    value={guestName}
+                    placeholder={source === 'TABLE' ? 'Who at the table? (billed separately)' : 'Optional'}
+                    list={source === 'TABLE' ? 'bar-open-customers' : undefined}
+                    onChange={(e) => setGuestName(e.target.value)}
+                  />
+                  {source === 'TABLE' && (
+                    <datalist id="bar-open-customers">
+                      {(openCustomers[targetId] || []).map((c) => <option key={c} value={c} />)}
+                    </datalist>
+                  )}
                 </label>
                 <label className="bar-field">
                   <span>Mobile number</span>

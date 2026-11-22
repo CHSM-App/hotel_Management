@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiGet, apiPost } from '../../lib/api';
+import { apiGet, apiPost, apiPatch } from '../../lib/api';
 import PageLoader from '../../components/PageLoader';
 import BarBilling from './BarBilling';
 import BarTakeOrder from './BarTakeOrder';
 import BarHistory from './BarHistory';
 import BarAddToRoom from './BarAddToRoom';
 import { Note } from './BarBits';
-import { barToken, errText, stockText } from './barFormat';
+import { barToken, errText, stockText, printKot } from './barFormat';
 import { formatPrice } from './priceFormat';
 import './Events.css';
 import './forms.css';
@@ -34,7 +34,7 @@ export default function BarSection({ lodge, permissions = [], onViewReport = nul
   };
   // "Issue bill" on an order card: jump to Bill with that order's tab selected.
   const issueBill = (o) => {
-    setPickKey(o.source === 'TABLE' ? `T${o.tableId}` : o.source === 'ROOM' ? `R${o.roomId}` : `C${o.id}`);
+    setPickKey(o.source === 'TABLE' ? `T${o.tableId}~${encodeURIComponent(String(o.customerTag ?? '').replace(/\s+/g, ' ').trim().toLowerCase())}` : o.source === 'ROOM' ? `R${o.roomId}` : `C${o.id}`);
     setTab('billing');
   };
 
@@ -57,7 +57,7 @@ export default function BarSection({ lodge, permissions = [], onViewReport = nul
           )}
         </div>
       </div>
-      {tab === 'orders' && <OpenOrders placed={placed} canTake={canTake} canRoom={canTake || canBill} onIssueBill={canBill ? issueBill : null} onEdit={canTake ? setEditing : null} />}
+      {tab === 'orders' && <OpenOrders lodgeName={lodge?.name || ""} placed={placed} canTake={canTake} canRoom={canTake || canBill} onIssueBill={canBill ? issueBill : null} onEdit={canTake ? setEditing : null} />}
       {tab === 'billing' && <BarBilling lodge={lodge} pickKey={pickKey} />}
       {tab === 'bills' && <BarHistory key="bills" mode="bills" lodge={lodge} canBill={canBill} />}
       {tab === 'history' && <BarHistory key="orders" mode="orders" lodge={lodge} canBill={canBill} />}
@@ -70,7 +70,7 @@ const sourceLabel = (o) =>
 
 const KITCHEN_LABEL = { QUEUED: 'In kitchen queue', PREPARING: 'Cooking', READY: 'Ready', DELIVERED: 'Delivered' };
 
-function OpenOrders({ placed, canTake, canRoom, onIssueBill, onEdit }) {
+function OpenOrders({ lodgeName, placed, canTake, canRoom, onIssueBill, onEdit }) {
   const token = barToken();
   const [orders, setOrders] = useState(null);
   const [error, setError] = useState('');
@@ -82,6 +82,17 @@ function OpenOrders({ placed, canTake, canRoom, onIssueBill, onEdit }) {
   const [version, setVersion] = useState(0);
   const [highlight, setHighlight] = useState(placed?.id ?? null);
   const reload = () => setVersion((v) => v + 1);
+  // Move an open table order to another customer (or rename them), then refresh.
+  const moveCustomer = async (o) => {
+    const next = window.prompt(`Customer for order #${o.orderNumber} (leave blank for the table's shared bill)`, o.customerTag || '');
+    if (next === null) return;
+    try {
+      await apiPatch(`/bar/orders/${o.id}/customer`, { customerTag: next.trim() || null }, { token: barToken() });
+      reload();
+    } catch (e) {
+      window.alert(errText(e, 'Could not move the order.'));
+    }
+  };
   const lowSeen = useRef(null); // ids already low, so only a sale that crosses the limit raises the alert
 
   // Poll: dishes move through the kitchen while the captain is looking at this page.
@@ -100,8 +111,7 @@ function OpenOrders({ placed, canTake, canRoom, onIssueBill, onEdit }) {
         const crossed = lowSeen.current ? low.filter((p) => !lowSeen.current.has(p.id)) : [];
         lowSeen.current = new Set(low.map((p) => p.id));
         if (crossed.length) setLowNotice(`Low stock: ${crossed.map((p) => `${p.name} (${stockText(p)})`).join(', ')}`);
-        // Orders marked ready to bill leave this list; they wait on the Ready to bill tab.
-        setOrders(o.orders.filter((x) => !x.readyToBill));
+        setOrders(o.orders);
       })
       .catch((e) => live && setError(errText(e, 'Could not load open orders.')));
     return () => {
@@ -145,7 +155,14 @@ function OpenOrders({ placed, canTake, canRoom, onIssueBill, onEdit }) {
 
   return (
     <>
-      {placed && <Note kind="ok">✓ Order #{placed.orderNumber} {placed.updated ? 'updated' : 'placed'}.</Note>}
+      {placed && (
+        <Note kind="ok">
+          ✓ Order #{placed.orderNumber} {placed.updated ? 'updated' : 'placed'}.
+          {placed.kot && canTake && (
+            <> <button type="button" className="bar-btn bar-btn--sm" onClick={() => printKot({ lodgeName, orderNo: placed.orderNumber, ...placed.kot }) || window.alert('Allow pop-ups to print the KOT.')}>Print KOT</button></>
+          )}
+        </Note>
+      )}
       {lowNotice && <Note kind="warn">⚠ {lowNotice}</Note>}
       {notice && <Note kind="ok">{notice}</Note>}
       {error && <Note kind="error">{error}</Note>}
@@ -157,7 +174,6 @@ function OpenOrders({ placed, canTake, canRoom, onIssueBill, onEdit }) {
           {orders.map((o) => {
             const orderPath = `/bar/orders/${o.id}/cancel`;
             const deliverAllPath = `/bar/orders/${o.id}/deliver`;
-            const readyPath = `/bar/orders/${o.id}/ready-to-bill`;
             const state = o.readyToBill ? ['ready', 'Ready to bill'] : o.undelivered === 0 ? ['done', 'All delivered'] : ['wait', `${o.undelivered} to deliver`];
             return (
               <article className={`bar-oc bar-oc--${state[0]}${highlight === o.id ? ' bar-oc--new' : ''}`} key={o.id}>
@@ -165,7 +181,12 @@ function OpenOrders({ placed, canTake, canRoom, onIssueBill, onEdit }) {
                   <div className="bar-oc__who">
                     <span className="bar-oc__no">#{o.orderNumber}</span>
                     <span className="bar-oc__src">{sourceLabel(o)}</span>
-                    {o.guestName && <span className="bar-oc__guest">{o.guestName}</span>}
+                    {(o.customerTag || o.guestName) && <span className="bar-oc__guest">{o.customerTag || o.guestName}</span>}
+                    {o.source === 'TABLE' && (
+                      <button type="button" className="bar-link" onClick={() => moveCustomer(o)} title="Move this order to another customer at the table">
+                        {o.customerTag ? 'Change' : 'Assign customer'}
+                      </button>
+                    )}
                   </div>
                   <div className="bar-oc__amt">
                     <b>{formatPrice(o.subtotal)}</b>
@@ -233,10 +254,7 @@ function OpenOrders({ placed, canTake, canRoom, onIssueBill, onEdit }) {
                   {canTake && o.undelivered > 0 && (
                     <button type="button" className="bar-btn bar-btn--sm" disabled={busy === deliverAllPath} onClick={() => act(deliverAllPath)}>Deliver all</button>
                   )}
-                  {o.undelivered === 0 && !o.readyToBill && (
-                    <button type="button" className="bar-btn bar-btn--sm bar-btn--brand" disabled={busy === readyPath} onClick={() => act(readyPath, `Order #${o.orderNumber} is ready to bill.`)}>Ready to bill</button>
-                  )}
-                  {onIssueBill && o.readyToBill && (
+                  {onIssueBill && (
                     <button type="button" className="bar-btn bar-btn--sm bar-btn--primary" onClick={() => onIssueBill(o)}>Issue bill</button>
                   )}
                   </div>

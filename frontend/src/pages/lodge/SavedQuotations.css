@@ -1,0 +1,208 @@
+/* Saved quotations — the Quotation modal's second tab. Uses the dashboard's
+   own tokens (--brand, --brand-wash, --border, --text-muted, --danger). */
+.saved-quotes__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.saved-quotes__bar input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.saved-quotes__filters {
+  display: flex;
+  gap: 6px;
+}
+
+.saved-quotes__filter {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.saved-quotes__filter--on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.saved-quotes__card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.saved-quotes__card--expired {
+  opacity: 0.72;
+}
+
+.saved-quotes__head {
+  display: grid;
+  grid-template-columns: 1.4fr 1.6fr 1.3fr auto auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.saved-quotes__head:hover {
+  background: var(--brand-wash);
+}
+
+.saved-quotes__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.saved-quotes__who small,
+.saved-quotes__room-title small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.saved-quotes__rooms {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.saved-quotes__dates {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.saved-quotes__total {
+  font-weight: 800;
+  text-align: right;
+}
+
+.saved-quotes__state {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.saved-quotes__state--active {
+  background: #e8f6ec;
+  color: #1c7a37;
+}
+
+.saved-quotes__state--booked {
+  background: var(--brand-wash);
+  color: var(--brand);
+}
+
+.saved-quotes__state--expired {
+  background: #eef0f3;
+  color: var(--text-muted);
+}
+
+.saved-quotes__body {
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.saved-quotes__note {
+  margin: 10px 0 0;
+  color: #b45309;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.saved-quotes__room {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--brand-wash-edge);
+  border-radius: 10px;
+  background: var(--brand-wash);
+}
+
+.saved-quotes__room-title {
+  display: flex;
+  flex-direction: column;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.saved-quotes__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+  font-size: 13px;
+}
+
+.saved-quotes__line--total {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--brand-wash-edge);
+  font-weight: 800;
+}
+
+.saved-quotes__grand {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 15px;
+}
+
+.saved-quotes__grand strong {
+  color: var(--brand);
+  font-size: 17px;
+}
+
+.saved-quotes__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.saved-quotes__delete {
+  margin-left: auto;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .saved-quotes__head {
+    grid-template-columns: 1fr auto;
+  }
+
+  .saved-quotes__rooms,
+  .saved-quotes__dates {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Header of the Quotations page: Back to the Room Chart, then the title. */
+.quotations-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.quotations-head h2 {
+  margin: 0;
+  font-size: 20px;
+}

@@ -31,6 +31,7 @@ const incomeRoutes = require('./modules/income/income.routes');
 const lodgeServicesRoutes = require('./modules/services/services.routes');
 const housekeepingRoutes = require('./modules/housekeeping/housekeeping.routes');
 const enquiriesRoutes = require('./modules/enquiries/enquiries.routes');
+const quotationsRoutes = require('./modules/quotations/quotations.routes');
 const syncRoutes = require('./modules/sync/sync.routes');
 const publicRoutes = require('./modules/public/public.routes');
 const billingIntegrationRoutes = require('./modules/billing/billingIntegration.routes');
@@ -289,6 +290,7 @@ const API_ROUTES = [
   ['/lodge-services', lodgeServicesRoutes],
   ['/housekeeping', housekeepingRoutes],
   ['/enquiries', enquiriesRoutes],
+  ['/quotations', quotationsRoutes],
   ['/sync', syncRoutes],
   ['/public', publicRoutes],
   ['/internal/billing', billingIntegrationRoutes],

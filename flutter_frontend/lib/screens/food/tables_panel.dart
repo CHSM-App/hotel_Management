@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'qr_codes_panel.dart';
 
 import '../../domain/models/menu.dart';
 import '../../presentation/providers/view_model_provider.dart';
@@ -11,7 +14,9 @@ import '../theme.dart';
 /// add, a seats chip, and "regenerate QR" behind a warning that every printed
 /// copy of the old code stops working.
 class TablesPanel extends ConsumerStatefulWidget {
-  const TablesPanel({super.key});
+  /// 'BAR' manages the bar's own tables; no QR codes there.
+  final String area;
+  const TablesPanel({super.key, this.area = 'RESTAURANT'});
 
   @override
   ConsumerState<TablesPanel> createState() => _TablesPanelState();
@@ -21,26 +26,42 @@ class _TablesPanelState extends ConsumerState<TablesPanel> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(tablesViewModelProvider.notifier).load());
+    Future.microtask(() => ref.read(tablesViewModelProvider(widget.area).notifier).load());
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(tablesViewModelProvider);
+    final state = ref.watch(tablesViewModelProvider(widget.area));
 
     return Stack(
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
-          onRefresh: () => ref.read(tablesViewModelProvider.notifier).load(),
+          onRefresh: () => ref.read(tablesViewModelProvider(widget.area).notifier).load(),
           color: AppTheme.accent,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s4, AppTheme.s12, 88),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              Text(
-                '${state.tables.length} table${state.tables.length == 1 ? '' : 's'}',
-                style: Theme.of(context).textTheme.bodySmall,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${state.tables.length} table${state.tables.length == 1 ? '' : 's'}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: state.tables.any((t) => t.isActive)
+                        ? () => downloadQrEntries([
+                              for (final t in state.tables.where((t) => t.isActive))
+                                QrPrintEntry(title: t.label, subtitle: widget.area == 'BAR' ? 'Bar table' : 'Table', url: tableOrderUrl(t.qrToken ?? ''), centerTop: widget.area == 'BAR' ? 'BAR' : 'RESTAURANT', centerBottom: t.label),
+                            ], widget.area == 'BAR' ? 'bar-table-qr-codes' : 'table-qr-codes')
+                        : null,
+                    icon: const Icon(Icons.download_rounded, size: 18),
+                    label: const Text('Download all codes'),
+                  ),
+                ],
               ),
               const SizedBox(height: AppTheme.s8),
               if (state.isLoading && state.tables.isEmpty)
@@ -48,10 +69,11 @@ class _TablesPanelState extends ConsumerState<TablesPanel> {
               else if (state.error != null && state.tables.isEmpty)
                 NeuNotice(icon: Icons.cloud_off_rounded, message: state.error!)
               else if (state.tables.isEmpty)
-                const NeuNotice(
+                NeuNotice(
                   icon: Icons.table_bar_rounded,
-                  message: 'No tables yet. Add them here, then print each '
-                      'one\'s QR code from the QR codes tab.',
+                  message: widget.area == 'BAR'
+                      ? 'No bar tables yet. Add them here — each gets its own QR code so guests can order drinks and food.'
+                      : 'No tables yet. Add them here — each gets its own QR code to print and stick on the table.',
                 )
               else
                 // A grid, not a single-width list — the same
@@ -60,14 +82,14 @@ class _TablesPanelState extends ConsumerState<TablesPanel> {
                 // scroll of nearly-empty rows.
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final columns = (constraints.maxWidth / 168).floor().clamp(2, 4);
+                    final columns = (constraints.maxWidth / 220).floor().clamp(1, 4);
                     final itemWidth = (constraints.maxWidth - AppTheme.s8 * (columns - 1)) / columns;
                     return Wrap(
                       spacing: AppTheme.s8,
                       runSpacing: AppTheme.s8,
                       children: [
                         for (final table in state.tables)
-                          SizedBox(width: itemWidth, child: _TableCard(table: table)),
+                          SizedBox(width: itemWidth, child: _TableCard(table: table, area: widget.area)),
                       ],
                     );
                   },
@@ -81,7 +103,7 @@ class _TablesPanelState extends ConsumerState<TablesPanel> {
           child: FloatingActionButton(
             backgroundColor: AppTheme.accent,
             foregroundColor: Colors.white,
-            onPressed: () => _showTableForm(context, ref),
+            onPressed: () => _showTableForm(context, ref, widget.area),
             child: const Icon(Icons.add_rounded),
           ),
         ),
@@ -92,101 +114,162 @@ class _TablesPanelState extends ConsumerState<TablesPanel> {
 
 class _TableCard extends ConsumerWidget {
   final DiningTable table;
+  final String area;
 
-  const _TableCard({required this.table});
+  const _TableCard({required this.table, required this.area});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Same card vocabulary as the web dashboard's own table grid: a violet
-    // gradient band carrying the name (a table has no photo, so the band
-    // carries its name the way an empty room's cover would), the status
-    // badge riding on the band's corner, then a seats chip and a row of
-    // plain icon actions below a hairline — edit, new QR code, delete.
+    final isBar = area == 'BAR';
+    final url = tableOrderUrl(table.qrToken ?? '');
     return NeuCard(
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.all(AppTheme.s12),
       radius: AppTheme.rMedium,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            height: 52,
-            width: double.infinity,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppTheme.rMedium)),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: table.isActive
-                    ? const [AppTheme.accent, Color(0xFF10499A)]
-                    : [AppTheme.muted, AppTheme.muted.withValues(alpha: 0.75)],
-              ),
-            ),
-            child: Stack(
-              children: [
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 56),
-                    child: Text(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
                       table.label,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17),
-                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 18),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: _StatusBadge(
-                    isActive: table.isActive,
-                    onTap: () => ref.read(tablesViewModelProvider.notifier).setActive(table.id, !table.isActive),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(AppTheme.s8, AppTheme.s8, AppTheme.s8, 2),
-            child: table.seats != null
-                ? Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(6)),
-                    child: Text(
-                      '${table.seats} seat${table.seats == 1 ? '' : 's'}',
-                      style: const TextStyle(color: AppTheme.text, fontWeight: FontWeight.w600, fontSize: 11),
+                    const SizedBox(height: 2),
+                    Text(
+                      table.seats != null ? '${table.seats} seat${table.seats == 1 ? '' : 's'}' : 'Seats not set',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
-                  )
-                : Text('Seats not set', style: Theme.of(context).textTheme.labelSmall),
+                  ],
+                ),
+              ),
+              _StatusBadge(
+                isActive: table.isActive,
+                onTap: () => ref.read(tablesViewModelProvider(area).notifier).setActive(table.id, !table.isActive),
+              ),
+            ],
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: AppTheme.s8),
-            child: Divider(height: 1, color: AppTheme.border),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                _RoundIconButton(
-                  icon: Icons.edit_outlined,
-                  tooltip: 'Edit',
-                  onTap: () => _showTableForm(context, ref, table: table),
-                ),
-                _RoundIconButton(
-                  icon: Icons.refresh_rounded,
-                  tooltip: 'New QR code',
-                  onTap: () => _confirmRegenerate(context, ref),
-                ),
-                _RoundIconButton(
-                  icon: Icons.delete_outline_rounded,
-                  tooltip: 'Delete',
-                  color: AppTheme.danger,
-                  onTap: () => _confirmDelete(context, ref),
-                ),
-              ],
+          const SizedBox(height: AppTheme.s8),
+          // A code needs a light quiet zone to scan, so the tile is white in every theme.
+          AspectRatio(
+            aspectRatio: 1,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Opacity(
+                    opacity: table.isActive ? 1 : 0.12,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        QrImageView(
+                          data: url,
+                          backgroundColor: Colors.white,
+                          padding: EdgeInsets.zero,
+                          errorCorrectionLevel: QrErrorCorrectLevel.H,
+                        ),
+                        // Names the code in its middle; level H survives the cover.
+                        Container(
+                          constraints: const BoxConstraints(maxWidth: 84),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: Colors.black, width: 1.2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(isBar ? 'BAR' : 'RESTAURANT', style: const TextStyle(color: Colors.black, fontSize: 8, fontWeight: FontWeight.w700), maxLines: 1),
+                              Text(table.label, style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.w800), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!table.isActive)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(color: AppTheme.danger.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(99)),
+                      child: const Text('Inactive · code is off', style: TextStyle(color: AppTheme.danger, fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                ],
+              ),
             ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Scan to order ${isBar ? 'drinks & food' : 'food'}',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: AppTheme.accent, minimumSize: const Size.fromHeight(44)),
+                  onPressed: () => downloadQrEntries(
+                    [QrPrintEntry(title: table.label, subtitle: isBar ? 'Bar table' : 'Table', url: url, centerTop: isBar ? 'BAR' : 'RESTAURANT', centerBottom: table.label)],
+                    '${isBar ? 'bar-' : ''}table-${table.label.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}',
+                  ),
+                  icon: const Icon(Icons.download_rounded, size: 18),
+                  label: const Text('Download QR'),
+                ),
+              ),
+              const SizedBox(width: AppTheme.s8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(44)),
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: url));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Link copied'), backgroundColor: AppTheme.heading),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('Copy link'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Divider(height: 1, color: AppTheme.border),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              _RoundIconButton(
+                icon: Icons.edit_outlined,
+                tooltip: 'Edit',
+                onTap: () => _showTableForm(context, ref, area, table: table),
+              ),
+              _RoundIconButton(
+                icon: Icons.refresh_rounded,
+                tooltip: 'New QR code',
+                onTap: () => _confirmRegenerate(context, ref),
+              ),
+              _RoundIconButton(
+                icon: Icons.delete_outline_rounded,
+                tooltip: 'Delete',
+                color: AppTheme.danger,
+                onTap: () => _confirmDelete(context, ref),
+              ),
+            ],
           ),
         ],
       ),
@@ -210,7 +293,7 @@ class _TableCard extends ConsumerWidget {
       ),
     );
     if (sure != true) return;
-    await ref.read(tablesViewModelProvider.notifier).regenerateQr(table.id);
+    await ref.read(tablesViewModelProvider(area).notifier).regenerateQr(table.id);
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
@@ -229,11 +312,11 @@ class _TableCard extends ConsumerWidget {
       ),
     );
     if (sure != true || !context.mounted) return;
-    final ok = await ref.read(tablesViewModelProvider.notifier).delete(table.id);
+    final ok = await ref.read(tablesViewModelProvider(area).notifier).delete(table.id);
     if (!ok && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ref.read(tablesViewModelProvider).error ?? 'Could not delete this table.'),
+          content: Text(ref.read(tablesViewModelProvider(area)).error ?? 'Could not delete this table.'),
           backgroundColor: AppTheme.heading,
         ),
       );
@@ -309,17 +392,18 @@ class _RoundIconButton extends StatelessWidget {
 
 // ── Add / edit page ──────────────────────────────────────────────────────
 
-Future<void> _showTableForm(BuildContext context, WidgetRef ref, {DiningTable? table}) {
+Future<void> _showTableForm(BuildContext context, WidgetRef ref, String area, {DiningTable? table}) {
   // A full page rather than a sheet, same as the dish and material forms —
   // this is a real form with its own validation, not a quick pick.
   return Navigator.of(context).push(
-    MaterialPageRoute(builder: (_) => _TableFormPage(table: table)),
+    MaterialPageRoute(builder: (_) => _TableFormPage(table: table, area: area)),
   );
 }
 
 class _TableFormPage extends ConsumerStatefulWidget {
   final DiningTable? table;
-  const _TableFormPage({this.table});
+  final String area;
+  const _TableFormPage({this.table, required this.area});
 
   @override
   ConsumerState<_TableFormPage> createState() => _TableFormPageState();
@@ -366,7 +450,7 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    final submitting = ref.watch(tablesViewModelProvider).submitting;
+    final submitting = ref.watch(tablesViewModelProvider(widget.area)).submitting;
 
     return Scaffold(
       appBar: AppBar(
@@ -525,7 +609,7 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
       _error = null;
       _submitAttempted = true;
     });
-    final vm = ref.read(tablesViewModelProvider.notifier);
+    final vm = ref.read(tablesViewModelProvider(widget.area).notifier);
     final seats = int.tryParse(_seats.text.trim());
 
     if (_editing) {
@@ -535,7 +619,7 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
       if (ok) {
         Navigator.pop(context);
       } else {
-        setState(() => _error = ref.read(tablesViewModelProvider).error ?? 'Could not save the table.');
+        setState(() => _error = ref.read(tablesViewModelProvider(widget.area)).error ?? 'Could not save the table.');
       }
       return;
     }
@@ -547,7 +631,7 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
       if (ok) {
         Navigator.pop(context);
       } else {
-        setState(() => _error = ref.read(tablesViewModelProvider).error ?? 'Could not save the table.');
+        setState(() => _error = ref.read(tablesViewModelProvider(widget.area)).error ?? 'Could not save the table.');
       }
       return;
     }
@@ -565,7 +649,7 @@ class _TableFormPageState extends ConsumerState<_TableFormPage> {
     if (ok) {
       Navigator.pop(context);
     } else {
-      setState(() => _error = ref.read(tablesViewModelProvider).error ?? 'Could not save the tables.');
+      setState(() => _error = ref.read(tablesViewModelProvider(widget.area)).error ?? 'Could not save the tables.');
     }
   }
 }

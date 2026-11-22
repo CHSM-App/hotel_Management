@@ -21,6 +21,7 @@ import { useFoodReadyAlerts } from './useFoodReadyAlerts';
 import { useReportsReminder } from './useReportsReminder';
 import StaffAlertsBell from '../../components/StaffAlertsBell';
 import Bookings from './Bookings';
+import Quotations from './Quotations';
 import Billing from './Billing';
 import GuestRegister from './GuestRegister';
 import Customers from './Customers';
@@ -338,6 +339,7 @@ export default function OwnerDashboard() {
   // below rather than through this setter.
   const [rawSection] = useUrlState('section');
   const [rawTab] = useUrlState('tab');
+  const [rawPage] = useUrlState('page');
   // The old Restaurant billing link now lands on the Billing tab of the merged section.
   // Old links to the single Reports section land on the matching report.
   const activeSection =
@@ -379,6 +381,9 @@ export default function OwnerDashboard() {
   // doesn't reopen the same form a second time.
   const [pendingBookingEnquiry, setPendingBookingEnquiry] = useState(null);
   const [pendingEventEnquiry, setPendingEventEnquiry] = useState(null);
+  // The saved quotation behind a "Convert to booking" click on the Quotations
+  // page, handed to Bookings the same way.
+  const [pendingBookingQuotation, setPendingBookingQuotation] = useState(null);
 
   // The tape chart's legend following a colour into the register's cut of it.
   //
@@ -394,6 +399,7 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'guests');
+        updated.delete('page');
         // 'today' opens the register on today alone instead of the month.
         if (range) updated.set('range', range);
         else updated.delete('range');
@@ -417,6 +423,7 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'billing');
+        updated.delete('page');
         updated.set('tab', 'tables');
         updated.delete('view');
         updated.delete('status');
@@ -426,6 +433,29 @@ export default function OwnerDashboard() {
     );
   };
 
+  // Quotations is a secondary page of the Room Chart, not a sidebar section:
+  // ?section=bookings&page=quotations keeps Room Chart highlighted, and Back
+  // drops the page. Written through setSearchParams in one go for the same
+  // reason as showRegisterWithStatus above.
+  const setQuotationsPage = (open) =>
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        if (open) updated.set('page', 'quotations');
+        else updated.delete('page');
+        updated.delete('tab');
+        return updated;
+      },
+      { replace: true }
+    );
+
+  const openQuotations = () => setQuotationsPage(true);
+
+  const convertQuotation = (quotation) => {
+    setPendingBookingQuotation(quotation);
+    setQuotationsPage(false);
+  };
+
   const openEnquiries = () => {
     setBillNowBookingId(null);
     setBillNowEventId(null);
@@ -433,6 +463,7 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'enquiries');
+        updated.delete('page');
         updated.delete('tab');
         updated.delete('view');
         updated.delete('status');
@@ -456,6 +487,7 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'bookings');
+        updated.delete('page');
         updated.delete('tab');
         updated.delete('status');
         return updated;
@@ -472,6 +504,7 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'events');
+        updated.delete('page');
         updated.delete('tab');
         updated.delete('status');
         return updated;
@@ -491,6 +524,7 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', 'bookings');
+        updated.delete('page');
         updated.set('draft', String(draftId));
         updated.delete('status');
         return updated;
@@ -509,6 +543,7 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', `report-${reportSectionOf(tabKey)}`);
+        updated.delete('page');
         updated.set('tab', tabKey);
         updated.delete('status');
         return updated;
@@ -540,6 +575,7 @@ export default function OwnerDashboard() {
       (prev) => {
         const updated = new URLSearchParams(prev);
         updated.set('section', key);
+        updated.delete('page');
         updated.delete('tab');
         updated.delete('view');
         updated.delete('status');
@@ -900,6 +936,7 @@ export default function OwnerDashboard() {
                             (prev) => {
                               const updated = new URLSearchParams(prev);
                               updated.set('section', feature.key);
+                              updated.delete('page');
                               updated.delete('tab');
                               updated.delete('view');
                               updated.delete('status');
@@ -988,7 +1025,11 @@ export default function OwnerDashboard() {
 
               {activeFeature && activeFeature.key === 'laundry' && <LaundryPanel lodge={me.lodge} />}
 
-              {activeFeature && activeFeature.key === 'bookings' && (
+              {activeFeature && activeFeature.key === 'bookings' && rawPage === 'quotations' && (
+                <Quotations onBack={() => setQuotationsPage(false)} onConvert={convertQuotation} />
+              )}
+
+              {activeFeature && activeFeature.key === 'bookings' && rawPage !== 'quotations' && (
                 <Bookings
                   // Opens billing OVER this tab instead of navigating to it.
                   // Checkout used to call setActiveSection('billing'), which
@@ -1000,6 +1041,9 @@ export default function OwnerDashboard() {
                   prefillEnquiry={pendingBookingEnquiry}
                   onPrefillConsumed={() => setPendingBookingEnquiry(null)}
                   onReturnToEnquiries={openEnquiries}
+                  prefillQuotation={pendingBookingQuotation}
+                  onPrefillQuotationConsumed={() => setPendingBookingQuotation(null)}
+                  onOpenQuotations={openQuotations}
                 />
               )}
 

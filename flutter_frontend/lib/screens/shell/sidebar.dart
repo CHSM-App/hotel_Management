@@ -73,7 +73,13 @@ class Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppTheme.card,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFF7FAFE), AppTheme.sidebarBrandWash],
+        ),
+      ),
       child: Column(
         children: [
           _SidebarHeader(
@@ -241,13 +247,13 @@ class _SidebarNavState extends State<_SidebarNav> {
         children: [
           if (ungrouped.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.s16 + 6),
+              padding: const EdgeInsets.only(bottom: AppTheme.s12),
               child: Column(children: [for (final f in ungrouped) _item(f)]),
             ),
           for (int i = 0; i < groups.length; i++)
             Padding(
               padding: EdgeInsets.only(
-                bottom: i == groups.length - 1 ? 0 : AppTheme.s16 + 6,
+                bottom: i == groups.length - 1 ? 0 : AppTheme.s8,
               ),
               child: Column(
                 children: [
@@ -422,12 +428,13 @@ class _SidebarHeader extends StatelessWidget {
               Expanded(
                 child: Text(
                   lodgeName,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: AppTheme.heading,
+                    height: 1.25,
                   ),
                 ),
               ),
@@ -439,42 +446,56 @@ class _SidebarHeader extends StatelessWidget {
           // rather than folded into the row above, so both read clearly at
           // a glance instead of competing for one line's width.
           if (user != null) ...[
-            const SizedBox(height: AppTheme.s8 + 2),
-            Padding(
-              padding: const EdgeInsets.only(left: 34 + AppTheme.s12 - 2),
+            const SizedBox(height: AppTheme.s12),
+            Container(
+              padding: const EdgeInsets.all(AppTheme.s8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                border: Border.all(color: AppTheme.sidebarBrandWashEdge),
+              ),
               child: Row(
                 children: [
-                  Expanded(
+                  CircleAvatar(
+                    radius: 15,
+                    backgroundColor: AppTheme.sidebarBrandWash,
                     child: Text(
-                      user.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
                       style: const TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.sidebarText,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.sidebarBrandInk,
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppTheme.s8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.s8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.sidebarBrandWash,
-                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
-                    ),
-                    child: Text(
-                      user.roleName ?? user.role,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.sidebarBrandInk,
-                      ),
+                  const SizedBox(width: AppTheme.s8 + 2),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.heading,
+                            height: 1.2,
+                          ),
+                        ),
+                        Text(
+                          user.roleName ?? user.role,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.sidebarTextMuted,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -554,14 +575,14 @@ class _SidebarFooter extends StatelessWidget {
               vertical: AppTheme.s12 - 2,
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                SizedBox(width: AppTheme.s8),
                 icon,
                 SizedBox(width: AppTheme.s12 - 2),
                 Text(
                   'Sign out',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.danger,
                   ),
@@ -611,7 +632,7 @@ class _SidebarItem extends StatelessWidget {
     final icon = Icon(
       feature.icon,
       size: collapsed ? 20 : 18,
-      color: selected ? AppTheme.sidebarBrandInk : AppTheme.sidebarTextMuted,
+      color: selected ? Colors.white : AppTheme.sidebarTextMuted,
     );
 
     final row = collapsed
@@ -645,7 +666,7 @@ class _SidebarItem extends StatelessWidget {
                 child: selected
                     ? DecoratedBox(
                         decoration: BoxDecoration(
-                          color: AppTheme.sidebarBrand,
+                          color: Colors.white,
                           borderRadius: const BorderRadius.horizontal(
                             right: Radius.circular(3),
                           ),
@@ -662,11 +683,9 @@ class _SidebarItem extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 13.5,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: selected
-                        ? AppTheme.sidebarBrandInk
-                        : AppTheme.sidebarText,
+                    color: selected ? Colors.white : AppTheme.sidebarText,
                   ),
                 ),
               ),
@@ -678,18 +697,17 @@ class _SidebarItem extends StatelessWidget {
           );
 
     final button = Material(
-      color: selected ? AppTheme.sidebarBrandWash : Colors.transparent,
+      color: selected ? AppTheme.sidebarBrand : Colors.transparent,
       borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
-        hoverColor: selected ? AppTheme.sidebarBrandWash : AppTheme.bg,
+        hoverColor: selected
+            ? AppTheme.sidebarBrand
+            : AppTheme.sidebarBrandWashEdge.withValues(alpha: 0.4),
         onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
-            border: selected
-                ? Border.all(color: AppTheme.sidebarBrandWashEdge)
-                : Border.all(color: Colors.transparent),
           ),
           padding: collapsed
               ? EdgeInsets.zero
@@ -781,10 +799,10 @@ class _SettingsNavRowState extends State<_SettingsNavRow> {
                     child: Text(
                       'SETTINGS',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: AppTheme.sidebarText,
-                        letterSpacing: 0.9,
+                        color: AppTheme.sidebarTextMuted,
+                        letterSpacing: 1.1,
                       ),
                     ),
                   ),
@@ -883,10 +901,10 @@ class _GroupHeader extends StatelessWidget {
                 child: Text(
                   title.toUpperCase(),
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.sidebarText,
-                    letterSpacing: 0.9,
+                    color: AppTheme.sidebarTextMuted,
+                    letterSpacing: 1.1,
                   ),
                 ),
               ),

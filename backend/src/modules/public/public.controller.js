@@ -34,7 +34,21 @@ const roomIdentitySchema = z.object(roomIdentity);
 
 const editOrderSchema = z.object({ ...guestFields, ...roomIdentity });
 
-const tableOrderSchema = z.object(guestFields);
+// A bar table's menu mixes in drinks, sent as the negative of the bar size id
+// (see getPublicBarSections), so ids here may be negative.
+const tableOrderSchema = z.object({
+  ...guestFields,
+  items: z
+    .array(
+      z.object({
+        itemId: z.coerce.number().int().refine((n) => n !== 0, 'Invalid menu item.'),
+        portionId: z.coerce.number().int().positive().optional().nullable(),
+        quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1.').max(99, 'Quantity is too large.'),
+      })
+    )
+    .min(1, 'Add at least one item to the order.')
+    .max(50, 'That’s too many lines for one order — split it.'),
+});
 
 function parse(schema, body) {
   const parsed = schema.safeParse(body);

@@ -1,0 +1,2 @@
+-dontwarn dev.fluttercommunity.plus.connectivity.**
+-dontwarn com.google.android.play.core.**

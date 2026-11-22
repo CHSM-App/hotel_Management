@@ -11,6 +11,7 @@ const {
   cancelItemsHandler,
   returnItemsHandler,
   readyToBillHandler,
+  setCustomerHandler,
   listTabsHandler,
   updateItemDeliveredHandler,
   deliverAllHandler,
@@ -57,6 +58,8 @@ router.post('/', authenticate, requirePermission('orders.take'), createCounterOr
 router.patch('/:id/status', authenticate, requirePermission('orders.manage', 'orders.take'), updateStatusHandler);
 router.patch('/:id/items', authenticate, requirePermission('orders.take'), editOrderHandler);
 router.post('/:id/ready-to-bill', authenticate, requirePermission('orders.take'), readyToBillHandler);
+// Move an unbilled table order to another customer (rename / merge / move).
+router.patch('/:id/customer', authenticate, requirePermission('orders.take', 'orders.manage'), setCustomerHandler);
 router.post('/:id/items/return', authenticate, requirePermission('orders.take'), returnItemsHandler);
 router.post('/:id/items/cancel', authenticate, requirePermission('orders.take'), cancelItemsHandler);
 router.post('/:id/deliver-all', authenticate, requirePermission('orders.take'), deliverAllHandler);

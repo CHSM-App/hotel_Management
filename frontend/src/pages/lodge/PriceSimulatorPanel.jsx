@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { apiGet, ApiError, API_BASE } from '../../lib/api';
+import { apiGet, apiPost, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
@@ -71,7 +71,9 @@ const newSim = (from, to) => ({
   error: '',
 });
 
-export default function PriceSimulatorPanel() {
+// onSaved: called after a quotation is kept — the Room Chart's Quotation modal
+// uses it to jump to the Saved tab.
+export default function PriceSimulatorPanel({ onSaved }) {
   const session = getSession();
   const [rooms, setRooms] = useState(() => readCache('/rooms'));
   const [charges, setCharges] = useState(() => readCache('/switchable-charges'));
@@ -94,6 +96,8 @@ export default function PriceSimulatorPanel() {
   const [quoteDoc, setQuoteDoc] = useState(null);
   const [preparingPdf, setPreparingPdf] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const quoteRef = useRef(null);
 
   const activeCharges = charges?.filter((c) => c.isActive) || [];
@@ -161,6 +165,45 @@ export default function PriceSimulatorPanel() {
     // Any answer still on its way for this room has nowhere to land.
     delete quoteSeq.current[key];
     setSims((list) => list.filter((s) => s.key !== key));
+  };
+
+  // Only the choices go up — the server prices every room again, so what is
+  // stored is the rate card's own answer, not the figure on this screen.
+  const saveQuotation = async (pricedSims) => {
+    setSaveError('');
+    if (phoneInvalid) {
+      setPhoneChecked(true);
+      document.getElementById('simGuestPhone')?.focus({ preventScroll: true });
+      return;
+    }
+    // Held until check-in, so one for today or earlier would be Expired the
+    // moment it was saved.
+    if (pricedSims.some((s) => s.from <= todayIso())) {
+      setSaveError('Choose a check-in date after today to save a quotation.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiPost(
+        '/quotations',
+        {
+          guestName: guestName.trim() || undefined,
+          guestPhone: guestPhone || undefined,
+          rooms: pricedSims.map((s) => ({
+            roomId: Number(s.roomId),
+            fromDate: s.from,
+            toDate: s.to,
+            chargeIds: chargesParam(s.charges) || undefined,
+          })),
+        },
+        { token: session?.token }
+      );
+      onSaved?.();
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : 'Could not save the quotation. Try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const downloadQuotation = async (quoteRooms, total) => {
@@ -253,8 +296,8 @@ export default function PriceSimulatorPanel() {
           several it would fill the screen, so it scrolls with the page. */}
       <div className={`dash-card chart-section price-sim__top${many ? '' : ' price-sim__top--pinned'}`}>
         <div className="chart-section__header">
-          <h3>Price simulator</h3>
-          <span className="chart-section__hint">Line-by-line breakdown for a room and a stay</span>
+          <h3>Quotation</h3>
+          <span className="chart-section__hint">Price a stay line by line and download a quotation</span>
         </div>
 
         {sims.map((sim, index) => {
@@ -553,7 +596,18 @@ export default function PriceSimulatorPanel() {
                   : 'Left empty, the quotation has no “Prepared for” block.'}
               </p>
               {pdfError && <div className="form-banner form-banner--error">{pdfError}</div>}
+              {saveError && <div className="form-banner form-banner--error">{saveError}</div>}
               <div className="sim-quote__actions">
+                {/* Keep it: stored on the server, active until the earliest
+                    check-in date, then it expires (see the Saved tab). */}
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={!canDownload || saving}
+                  onClick={() => saveQuotation(priced)}
+                >
+                  {saving ? 'Saving…' : 'Save quotation'}
+                </button>
                 <button
                   type="button"
                   className="btn-accent"

@@ -1,11 +1,21 @@
 name: Release apps
 
+# Tag push (v*) builds + publishes. Manual run = dry run by default (artifacts only).
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — build artifacts only, publish no release'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
+
+env:
+  FLUTTER_VERSION: '3.44.0'
 
 jobs:
   android:
@@ -16,8 +26,29 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - uses: subosito/flutter-action@v2
-        with: { channel: stable, cache: true }
+        with: { flutter-version: '${{ env.FLUTTER_VERSION }}', channel: stable, cache: true }
       - run: flutter pub get
+
+      # Signing is optional: without the secrets the APK falls back to the debug key.
+      - name: Signing (if secrets set)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STOREPASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEYPASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEYALIAS }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > android/app/upload-keystore.jks
+            {
+              printf 'storePassword=%s\n' "$STORE_PASSWORD"
+              printf 'keyPassword=%s\n'   "$KEY_PASSWORD"
+              printf 'keyAlias=%s\n'      "$KEY_ALIAS"
+              printf 'storeFile=app/upload-keystore.jks\n'
+            } > android/key.properties
+          else
+            echo "::warning::KEYSTORE_BASE64 not set — APK signed with debug key"
+          fi
+
       - run: flutter build apk --release
       - run: mv build/app/outputs/flutter-apk/app-release.apk hotel-manager-${{ github.ref_name }}.apk
       - uses: actions/upload-artifact@v4
@@ -26,24 +57,53 @@ jobs:
           path: flutter_frontend/hotel-manager-${{ github.ref_name }}.apk
 
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     defaults: { run: { working-directory: flutter_frontend } }
     steps:
       - uses: actions/checkout@v4
+      # cache: false — a cached CMakeCache pins a stale Visual Studio generator.
       - uses: subosito/flutter-action@v2
-        with: { channel: stable, cache: true }
+        with: { flutter-version: '${{ env.FLUTTER_VERSION }}', channel: stable, cache: false }
+      - run: flutter clean
       - run: flutter pub get
-      - run: flutter build windows --release
-      - name: Zip (exe needs its dlls/data folder)
+
+      # Tag must match pubspec version (v1.2.3 <-> version: 1.2.3+N), else the exe reports the wrong version.
+      - name: Check tag matches pubspec
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          v=$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)
+          [ "${GITHUB_REF_NAME#v}" = "$v" ] || { echo "::error::tag $GITHUB_REF_NAME != pubspec $v"; exit 1; }
+
+      - name: Build Windows release
+        env: { CMAKE_GENERATOR: 'Visual Studio 17 2022' }
+        run: flutter build windows --release
+
+      - name: Download VC++ Redistributable
         shell: pwsh
-        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath hotel-manager-${{ github.ref_name }}-windows.zip
+        run: Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile 'windows/vc_redist.x64.exe'
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([^+\s]+)').Matches[0].Groups[1].Value
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$v" windows\installer.iss
+
+      - name: Zip portable build
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath build/windows/dist/hotel-manager-${{ github.ref_name }}-windows.zip
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: flutter_frontend/hotel-manager-${{ github.ref_name }}-windows.zip
+          path: |
+            flutter_frontend/build/windows/dist/HotelManagerSetup.exe
+            flutter_frontend/build/windows/dist/hotel-manager-*-windows.zip
 
   release:
     needs: [android, windows]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

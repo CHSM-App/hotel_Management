@@ -7,7 +7,6 @@ import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/constant.dart';
-import '../../domain/models/menu.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
@@ -16,7 +15,7 @@ import '../theme.dart';
 /// the guest-facing ordering pages can't drift apart. `baseUrl` is the same
 /// host that serves both the API and those pages in production.
 String _orderUrl(String slug) => '$baseUrl/order/$slug';
-String _tableOrderUrl(String token) => '$baseUrl/order/t/$token';
+String tableOrderUrl(String token) => '$baseUrl/order/t/$token';
 
 const _kPrintSizes = [('small', 'Small', '8 per sheet', 8), ('card', 'Card', '4 per sheet', 4), ('large', 'Large', '2 per sheet', 2)];
 
@@ -34,13 +33,11 @@ class QrCodesPanel extends ConsumerStatefulWidget {
 
 class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
   int _propertyCopies = 1;
-  int _tableCopies = 1;
   String _printSize = 'card';
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(tablesViewModelProvider.notifier).load());
   }
 
   @override
@@ -57,12 +54,8 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
       );
     }
 
-    final tablesState = ref.watch(tablesViewModelProvider);
-    final activeTables = lodge.foodTableService
-        ? tablesState.tables.where((t) => t.isActive).toList()
-        : const <DiningTable>[];
     final propertyUrl = _orderUrl(lodge.slug ?? '');
-    final totalCards = _propertyCopies + activeTables.length * _tableCopies;
+    final totalCards = _propertyCopies;
     final perSheet = _kPrintSizes.firstWhere((s) => s.$1 == _printSize).$4;
     final sheets = totalCards == 0 ? 0 : (totalCards / perSheet).ceil();
 
@@ -83,10 +76,6 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _copiesField(context, 'Copies of the property code', _propertyCopies, (v) => setState(() => _propertyCopies = v)),
-              if (activeTables.isNotEmpty) ...[
-                const SizedBox(height: AppTheme.s8),
-                _copiesField(context, 'Copies of each table code (${activeTables.length} tables)', _tableCopies, (v) => setState(() => _tableCopies = v)),
-              ],
               const SizedBox(height: AppTheme.s8),
               Text('Size on the page', style: AppTheme.fieldLabel(context)),
               const SizedBox(height: 4),
@@ -132,7 +121,7 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
                     primary: true,
                     onPressed: totalCards == 0
                         ? null
-                        : () => _printAll(lodge.name, propertyUrl, activeTables),
+                        : () => _printAll(lodge.name, propertyUrl),
                     child: const Text('Print'),
                   ),
                 ],
@@ -157,43 +146,6 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
-        if (lodge.foodTableService) ...[
-          const SizedBox(height: AppTheme.s12),
-          Row(
-            children: [
-              Expanded(child: Text('Tables', style: Theme.of(context).textTheme.titleMedium, overflow: TextOverflow.ellipsis)),
-              if (activeTables.isNotEmpty) Text('${activeTables.length} codes', style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'One code per table. These need no PIN — orders wait in the queue until the kitchen accepts them.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: AppTheme.s8),
-          if (activeTables.isEmpty)
-            Text('No active tables to make codes for.', style: Theme.of(context).textTheme.bodySmall)
-          else
-            // A grid, not one full-width card per table — the QR itself is
-            // small enough now that two fit side by side on a phone.
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final columns = (constraints.maxWidth / 200).floor().clamp(2, 4);
-                final itemWidth = (constraints.maxWidth - AppTheme.s8 * (columns - 1)) / columns;
-                return Wrap(
-                  spacing: AppTheme.s8,
-                  runSpacing: AppTheme.s8,
-                  children: [
-                    for (final t in activeTables)
-                      SizedBox(
-                        width: itemWidth,
-                        child: _QrCard(title: t.label, subtitle: 'Scan to order', url: _tableOrderUrl(t.qrToken ?? '')),
-                      ),
-                  ],
-                );
-              },
-            ),
-        ],
       ],
     );
   }
@@ -222,28 +174,34 @@ class _QrCodesPanelState extends ConsumerState<QrCodesPanel> {
     );
   }
 
-  Future<void> _printAll(String lodgeName, String propertyUrl, List<DiningTable> tables) async {
+  Future<void> _printAll(String lodgeName, String propertyUrl) async {
     final perSheet = _kPrintSizes.firstWhere((s) => s.$1 == _printSize).$4;
-    final entries = <_QrPrintEntry>[
+    final entries = <QrPrintEntry>[
       for (var i = 0; i < _propertyCopies; i++)
-        _QrPrintEntry(title: lodgeName, subtitle: 'Scan to order', url: propertyUrl),
-      for (final t in tables)
-        for (var i = 0; i < _tableCopies; i++)
-          _QrPrintEntry(title: t.label, subtitle: 'Scan to order', url: _tableOrderUrl(t.qrToken ?? '')),
+        QrPrintEntry(title: lodgeName, subtitle: 'Scan to order', url: propertyUrl),
     ];
-    final bytes = await _buildQrPdf(entries, perSheet: perSheet);
+    final bytes = await buildQrPdf(entries, perSheet: perSheet);
     await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 }
 
-class _QrPrintEntry {
+/// Saves a set of codes as a PDF (4 per sheet) through the OS save/share sheet.
+Future<void> downloadQrEntries(List<QrPrintEntry> entries, String filename) async {
+  final bytes = await buildQrPdf(entries, perSheet: 4);
+  await Printing.sharePdf(bytes: bytes, filename: '$filename.pdf');
+}
+
+class QrPrintEntry {
   final String title;
   final String subtitle;
   final String url;
-  const _QrPrintEntry({required this.title, required this.subtitle, required this.url});
+  /// Shown on a badge in the middle of the code (e.g. 'BAR' over the table name).
+  final String? centerTop;
+  final String? centerBottom;
+  const QrPrintEntry({required this.title, required this.subtitle, required this.url, this.centerTop, this.centerBottom});
 }
 
-Future<Uint8List> _buildQrPdf(List<_QrPrintEntry> entries, {required int perSheet}) async {
+Future<Uint8List> buildQrPdf(List<QrPrintEntry> entries, {required int perSheet}) async {
   final doc = pw.Document();
   final columns = perSheet == 2 ? 1 : 2;
   final rows = (perSheet / columns).ceil();
@@ -264,11 +222,33 @@ Future<Uint8List> _buildQrPdf(List<_QrPrintEntry> entries, {required int perShee
                 child: pw.Column(
                   mainAxisAlignment: pw.MainAxisAlignment.center,
                   children: [
-                    pw.BarcodeWidget(
-                      barcode: pw.Barcode.qrCode(),
-                      data: e.url,
-                      width: 140,
-                      height: 140,
+                    pw.Stack(
+                      alignment: pw.Alignment.center,
+                      children: [
+                        pw.BarcodeWidget(
+                          barcode: pw.Barcode.qrCode(errorCorrectLevel: pw.BarcodeQRCorrectionLevel.high),
+                          data: e.url,
+                          width: 140,
+                          height: 140,
+                        ),
+                        if (e.centerBottom != null)
+                          pw.Container(
+                            width: 56,
+                            padding: const pw.EdgeInsets.symmetric(vertical: 3),
+                            decoration: pw.BoxDecoration(
+                              color: PdfColors.white,
+                              border: pw.Border.all(width: 0.8),
+                              borderRadius: pw.BorderRadius.circular(4),
+                            ),
+                            child: pw.Column(
+                              mainAxisSize: pw.MainAxisSize.min,
+                              children: [
+                                if (e.centerTop != null) pw.Text(e.centerTop!, style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)),
+                                pw.Text(e.centerBottom!, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold), maxLines: 1),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                     pw.SizedBox(height: 6),
                     pw.Text(e.title, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),

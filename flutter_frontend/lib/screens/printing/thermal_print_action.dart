@@ -55,3 +55,28 @@ Future<String?> runThermalPrint(
     return e.message;
   }
 }
+
+/// After an order is taken: "Order sent" with an optional **Print KOT** for
+/// whoever took it. Resolves when the dialog is dismissed.
+Future<void> offerKot(BuildContext context, WidgetRef ref, ReceiptDoc kot, {required String message}) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Order sent'),
+      content: Text(message),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+        FilledButton.icon(
+          icon: const Icon(Icons.print_rounded, size: 18),
+          label: const Text('Print KOT'),
+          onPressed: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            final result = await runThermalPrint(ctx, ref, kot);
+            if (ctx.mounted) Navigator.pop(ctx);
+            if (result != null) messenger.showSnackBar(SnackBar(content: Text(result)));
+          },
+        ),
+      ],
+    ),
+  );
+}

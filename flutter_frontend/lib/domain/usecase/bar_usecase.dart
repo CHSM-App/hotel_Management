@@ -52,6 +52,7 @@ class BarUsecase {
   Future<void> deliverFoodItem(int foodOrderId, int itemId) => repository.deliverFoodItem(foodOrderId, itemId);
 
   Future<void> readyToBill(int id) => repository.readyToBill(id);
+  Future<void> setCustomer(int id, String? tag) => repository.setCustomer(id, tag);
 
   Future<void> addToRoom(int id, int bookingId, int roomId) => repository.addToRoom(id, bookingId, roomId);
 

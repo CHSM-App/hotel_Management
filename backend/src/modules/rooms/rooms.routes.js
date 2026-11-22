@@ -21,7 +21,7 @@ const router = Router();
 
 // Rooms & rates, plus orders.take — a captain placing a room order needs the
 // room list to populate the picker, same as the counter-order form's table list.
-router.get('/', authenticate, requirePermission('rooms.manage', 'orders.take'), listRoomsHandler);
+router.get('/', authenticate, requirePermission('rooms.manage', 'orders.take', 'bookings.manage'), listRoomsHandler);
 
 // Declared before /:id so "checkout-policy" isn't swallowed as a room id.
 // Readable by anyone who works the desk, because the checkout dialog quotes the

@@ -56,13 +56,14 @@ abstract class FoodSetupRepository {
   Future<ItemRecipe> setItemRecipe(int itemId, List<Map<String, dynamic>> lines);
 
   // Tables
-  Future<List<DiningTable>> allTables();
-  Future<void> createTable({required String label, int? seats});
+  Future<List<DiningTable>> allTables({String area = 'RESTAURANT'});
+  Future<void> createTable({required String label, int? seats, String area = 'RESTAURANT'});
   Future<void> bulkCreateTables({
     required String prefix,
     required int rangeStart,
     required int rangeEnd,
     int? seats,
+    String area = 'RESTAURANT',
   });
   Future<void> updateTable(int id, {required String label, int? seats});
   Future<void> setTableActive(int id, bool isActive);

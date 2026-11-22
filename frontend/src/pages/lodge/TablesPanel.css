@@ -1,162 +1,209 @@
-/* Tables panel — same card-grid vocabulary as RoomsPanel.css (.room-card):
-   violet band, tinted status chip, muted fact chips, trailing icon actions.
-   A table has no photo, so the band carries its name instead of a cover
-   image, at the same height and gradient treatment as an empty room band. */
+/* Tables panel. Every card carries its own QR code, so the owner prints from the
+   same place they add tables. The QR sits on a white tile at all times (a code
+   needs a light quiet zone to scan, even in dark themes). */
 
-.table-grid {
+.tables-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tgrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
 }
 
-.table-card {
+.tcard {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  padding: 16px;
   background: var(--surface);
-  border: none;
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  transition: box-shadow 260ms cubic-bezier(0.2, 0.7, 0.3, 1),
-    transform 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  transition: box-shadow 200ms ease;
 }
 
-.table-card:hover {
+.tcard:hover {
   box-shadow: 0 2px 6px rgba(7, 39, 72, 0.08), 0 14px 30px -12px rgba(7, 39, 72, 0.22);
-  transform: translateY(-2px);
 }
 
-.table-card__band {
-  position: relative;
+.tcard__head {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 78px;
-  border-radius: var(--radius-card) var(--radius-card) 0 0;
-  background: linear-gradient(135deg, var(--brand), var(--brand-ink));
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-/* Same offset radial highlight as the room cover fill — what keeps a flat
-   slab of brand violet from reading as printed card stock. */
-.table-card__band::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(120px 70px at 18% 0%, rgba(255, 255, 255, 0.16), transparent 70%);
-}
-
-.table-card__label {
-  position: relative;
+.tcard__title h3 {
+  margin: 0;
   font-family: var(--serif);
-  font-size: 24px;
-  font-weight: 600;
-  color: #fff;
-  letter-spacing: -0.005em;
-  line-height: 1;
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
-.table-card__status {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+.tcard__seats {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border-radius: 999px;
-  border: 1px solid;
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 3px 9px 3px 8px;
-  cursor: pointer;
-  font-family: inherit;
-  box-shadow: 0 1px 3px rgba(22, 33, 46, 0.12);
-  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
-.table-card__status::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
+/* The status control is a switch, not a badge: it changes something. */
+.tcard__switch {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tcard__switch::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   background: currentColor;
 }
 
-.table-card__status.badge--on {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #fff;
+.tcard__switch.is-on {
+  color: var(--color-success);
+  border-color: currentColor;
+  background: transparent;
 }
 
-.table-card__status.badge--off {
-  background: var(--danger-bg);
-  border-color: rgba(192, 57, 43, 0.22);
-  color: var(--danger);
-}
-
-.table-card__status:hover {
-  filter: brightness(1.06);
-  transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(22, 33, 46, 0.2);
-}
-
-.table-card__status:active {
-  transform: translateY(0);
-}
-
-.table-card__status:focus-visible {
+.tcard__switch:focus-visible,
+.tcard__btn:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-/* An inactive table's band drops to a neutral fill so the grid reads its
-   state at a glance, the way an inactive room's dot does — without needing
-   a second look at the chip in the corner. */
-.table-card--off .table-card__band {
-  background: linear-gradient(135deg, #9aa1ac, #767d88);
+.tcard__qr {
+  position: relative;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
 }
 
-.table-card__body {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  padding: 13px 14px 4px;
+.tcard__qr img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
-.table-card__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: var(--paper);
-  color: var(--text);
-  font-size: 11.5px;
+.tcard__qr--off img {
+  opacity: 0.12;
+}
+
+.tcard__qr-note {
+  position: absolute;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 12px;
   font-weight: 600;
-  padding: 4.5px 10px;
-  border-radius: 7px;
-  white-space: nowrap;
 }
 
-.table-card__chip svg {
-  flex-shrink: 0;
-  opacity: 0.75;
+.tcard__qr-skel {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #eef0f3, #f7f8fa, #eef0f3);
+  background-size: 200% 100%;
+  animation: tcard-shimmer 1.2s linear infinite;
 }
 
-.table-card__chip--muted {
+@keyframes tcard-shimmer {
+  to { background-position: -200% 0; }
+}
+
+.tcard__hint {
+  margin: -4px 0 0;
+  text-align: center;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
-.table-card__actions {
-  display: flex;
+.tcard__tools {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 8px;
+}
+
+.tcard__btn {
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.tcard__btn:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--paper);
+}
+
+.tcard__btn--primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.tcard__btn--primary:hover:not(:disabled) {
+  background: var(--brand-ink);
+}
+
+.tcard__btn:disabled,
+.tcard__btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tcard__actions {
+  display: flex;
   justify-content: flex-end;
   gap: 6px;
-  padding: 9px 12px 10px;
-  background:
-    linear-gradient(var(--border), var(--border)) no-repeat 14px 0 / calc(100% - 28px) 1px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
 @media (max-width: 640px) {
-  .table-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  .tgrid {
+    grid-template-columns: 1fr;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tcard,
+  .tcard__btn { transition: none; }
+  .tcard__qr-skel { animation: none; }
 }

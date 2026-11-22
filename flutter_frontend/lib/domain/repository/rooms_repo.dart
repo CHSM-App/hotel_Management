@@ -4,6 +4,7 @@ import '../models/category.dart';
 import '../models/checkout_policy.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
+import '../models/saved_quotation.dart';
 import '../models/season.dart';
 import '../models/switchable_charge_listing.dart';
 
@@ -63,6 +64,13 @@ abstract class RoomsRepository {
     required String toDate,
     String? chargeIds,
   });
+
+  // Saved quotations
+  Future<SavedQuotation> saveQuotation({String? guestName, String? guestPhone, required List<Map<String, dynamic>> rooms});
+  Future<List<SavedQuotation>> savedQuotations({String? state, String? q});
+  Future<SavedQuotation> savedQuotation(int id);
+  Future<void> deleteSavedQuotation(int id);
+  Future<void> markQuotationBooked(int id, int bookingId);
 
   // Checkout policy
   Future<CheckoutPolicy> checkoutPolicy();

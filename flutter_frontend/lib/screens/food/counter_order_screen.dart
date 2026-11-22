@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/food_order.dart';
 import '../../domain/models/menu.dart';
+import '../../domain/models/receipt_doc.dart';
 import '../../domain/models/room.dart';
+import '../printing/thermal_print_action.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/orders_viewmodel.dart';
 import '../../widgets/format.dart';
@@ -42,6 +44,8 @@ class CounterOrderScreen extends ConsumerStatefulWidget {
 
 class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   final _guestName = TextEditingController();
+  // Who at the table this order is for; each customer is billed separately.
+  final _customerTag = TextEditingController();
   final _guestPhone = TextEditingController();
   final _note = TextEditingController();
   final _search = TextEditingController();
@@ -121,6 +125,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _guestName.dispose();
+    _customerTag.dispose();
     _guestPhone.dispose();
     _note.dispose();
     _search.dispose();
@@ -600,6 +605,16 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                     // be a second, weaker record of something already
                     // known; a walk-in has nothing else, so it's required
                     // rather than optional, same as the web counter form.
+                    if (_table != null) ...[
+                      const SizedBox(height: AppTheme.s8),
+                      NeuField(
+                        controller: _customerTag,
+                        label: 'Customer',
+                        hint: 'Who at the table? Billed separately',
+                        maxLength: 60,
+                        forceCapitalizeWords: true,
+                      ),
+                    ],
                     if (_isCounter) ...[
                       const SizedBox(height: AppTheme.s8),
                       Row(
@@ -1046,6 +1061,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       tableId: _table?.id,
       guestName: _guestName.text,
       guestPhone: _guestPhone.text,
+      customerTag: _customerTag.text,
       note: _note.text,
       lines: _lines,
     );
@@ -1062,8 +1078,26 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       );
       return;
     }
-    Navigator.of(context).pop(true);
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    {
+      await offerKot(
+        context,
+        ref,
+        ReceiptDocs.kot(
+          lodgeName: ref.read(authViewModelProvider).me?.lodge.name ?? '',
+          where: order.target,
+          orderNo: order.orderNumber,
+          guest: order.guestName,
+          note: order.note,
+          items: [for (final i in order.items) (name: i.name, qty: i.quantity)],
+        ),
+        message: 'Order #${order.orderNumber} is with the kitchen.',
+      );
+      if (!mounted) return;
+    }
+    navigator.pop(true);
+    messenger.showSnackBar(
       SnackBar(
         content: Text('Order #${order.orderNumber} is with the kitchen.'),
         backgroundColor: AppTheme.heading,

@@ -671,6 +671,12 @@ export default function Bookings({
   // Where closing a prefilled-from-enquiry form without saving should send
   // the desk back to — see openFromEnquiry/returnToEnquiriesIfCame below.
   onReturnToEnquiries,
+  // The Quotations page's "Convert to booking" hands its quotation here via
+  // OwnerDashboard (same lifted-state shape as prefillEnquiry), and the toolbar's
+  // Quotation button goes the other way.
+  prefillQuotation = null,
+  onPrefillQuotationConsumed,
+  onOpenQuotations,
 }) {
   const session = getSession();
   const token = session?.token;
@@ -1651,6 +1657,38 @@ export default function Bookings({
       enquiryId: enquiry.id,
     });
   };
+
+  // "Convert to booking" on a saved quotation — a fresh pre-reservation with its
+  // guest, first room and nights filled in. A multi-room quotation prefills its
+  // first room only. quotationId rides on the form so the save can mark the
+  // quotation Booked once the stay exists.
+  const openFromQuotation = (quotation) => {
+    const first = quotation.rooms[0];
+    setEditTarget(null);
+    setDraftId(null);
+    setDraftNote('');
+    setExtrasReminder(
+      quotation.rooms.length > 1
+        ? `This quotation covers ${quotation.rooms.length} rooms — only Room ${first.roomNumber} is filled in; add the others below.`
+        : ''
+    );
+    beginForm('CREATE', {
+      ...initialBookingForm,
+      checkInDate: first.fromDate,
+      checkOutDate: first.toDate,
+      roomId: String(first.roomId),
+      bookingType: 'RESERVATION',
+      adults: [{ ...emptyGuest, name: quotation.guestName || '', phone: quotation.guestPhone || '' }],
+      quotationId: quotation.id,
+    });
+  };
+
+  useEffect(() => {
+    if (!prefillQuotation) return;
+    openFromQuotation(prefillQuotation);
+    onPrefillQuotationConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillQuotation]);
 
   // Fires once per enquiry handed over this way — not on every render, or
   // closing the form the prefill opened would reopen it straight away.
@@ -2777,6 +2815,16 @@ export default function Bookings({
         if (draftId) {
           await apiDelete(`/bookings/drafts/${draftId}`, { token }).catch(() => {});
           loadDrafts();
+        }
+        // Opened from a saved quotation: the stay exists now, so the quotation
+        // reads Booked rather than waiting to expire. Best-effort — the booking
+        // is already safe.
+        if (bookingForm.quotationId) {
+          await apiPatch(
+            `/quotations/${bookingForm.quotationId}`,
+            { status: 'BOOKED', bookingId: created.id },
+            { token }
+          ).catch(() => {});
         }
 
         if (pastMode) {
@@ -4180,6 +4228,9 @@ export default function Bookings({
             {drafts.length === 0
               ? 'No Drafts'
               : `${drafts.length} Draft${drafts.length === 1 ? '' : 's'}`}
+          </button>
+          <button type="button" className="btn-secondary" onClick={onOpenQuotations}>
+            Quotation
           </button>
           <button type="button" className="btn-accent" onClick={() => openNewBooking()}>
             + New booking

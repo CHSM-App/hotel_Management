@@ -15,10 +15,21 @@ function parse(schema, body) {
   return parsed.data;
 }
 
+// Bar tables live in the same store, told apart by ?area=BAR (restaurant is the default).
+const areaOf = (req) => (req.query.area === 'BAR' ? 'BAR' : 'RESTAURANT');
+
 async function listTablesHandler(req, res, next) {
   try {
-    const tables = await tablesService.listTables(req.user.lodgeId);
+    const tables = await tablesService.listTables(req.user.lodgeId, areaOf(req));
     res.json({ tables });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listCustomersHandler(req, res, next) {
+  try {
+    res.json({ customers: await tablesService.listOpenCustomers(req.user.lodgeId) });
   } catch (err) {
     next(err);
   }
@@ -26,7 +37,7 @@ async function listTablesHandler(req, res, next) {
 
 async function createTableHandler(req, res, next) {
   try {
-    const result = await tablesService.createTable(req.user.lodgeId, parse(createTableSchema, req.body));
+    const result = await tablesService.createTable(req.user.lodgeId, parse(createTableSchema, req.body), areaOf(req));
     res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -35,7 +46,7 @@ async function createTableHandler(req, res, next) {
 
 async function bulkCreateTablesHandler(req, res, next) {
   try {
-    const result = await tablesService.bulkCreateTables(req.user.lodgeId, parse(bulkCreateTableSchema, req.body));
+    const result = await tablesService.bulkCreateTables(req.user.lodgeId, parse(bulkCreateTableSchema, req.body), areaOf(req));
     res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -84,6 +95,7 @@ async function deleteTableHandler(req, res, next) {
 }
 
 module.exports = {
+  listCustomersHandler,
   listTablesHandler,
   createTableHandler,
   bulkCreateTablesHandler,

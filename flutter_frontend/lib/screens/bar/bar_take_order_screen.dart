@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/bar.dart';
 import '../../domain/models/menu.dart';
+import '../../domain/models/receipt_doc.dart';
+import '../printing/thermal_print_action.dart';
 import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/bar_viewmodel.dart';
@@ -129,12 +131,47 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
             if (_source == 'TABLE') 'tableId': _tableId,
             if (_source == 'ROOM') ...{'roomId': _guest!.roomId, 'bookingId': _guest!.bookingId},
             if (_name.text.trim().isNotEmpty) 'guestName': _name.text.trim(),
+            if (_source == 'TABLE' && _name.text.trim().isNotEmpty) 'customerTag': _name.text.trim(),
             if (phone.isNotEmpty) 'guestPhone': phone,
             'items': items,
             'foodItems': foodItems,
           });
     if (!mounted) return;
     if (ok) {
+      {
+        final bar = ref.read(barViewModelProvider);
+        final setup = ref.read(barSetupViewModelProvider);
+        final idx = _sizeIndex(setup.menu);
+        final names = <({String name, int qty})>[
+          for (final e in _drinkQty.entries)
+            if (e.value > 0 && idx[e.key] != null) (name: '${idx[e.key]!.$1.name} ${idx[e.key]!.$2.label}', qty: e.value),
+          for (final sec in _sections)
+            for (final i in sec.items)
+              for (final p in (i.hasPortions ? i.portions : <MenuPortion?>[null]))
+                if ((_foodQty['${i.id}:${p?.id ?? 0}'] ?? 0) > 0)
+                  (name: '${i.name}${p == null ? '' : ' ${p.label}'}', qty: _foodQty['${i.id}:${p?.id ?? 0}']!),
+        ];
+        final where = _adding
+            ? 'Bar - ${widget.existing!.tableLabel != null ? 'Table ${widget.existing!.tableLabel}' : widget.existing!.roomNumber != null ? 'Room ${widget.existing!.roomNumber}' : 'Counter'}'
+            : _source == 'TABLE'
+                ? 'Bar - ${bar.targets.tables.where((t) => t.id == _tableId).map((t) => t.label).firstOrNull ?? 'Table'}'
+                : _source == 'ROOM'
+                    ? 'Bar - Room ${_guest?.roomNumber ?? ''}'
+                    : 'Bar - Counter';
+        await offerKot(
+          context,
+          ref,
+          ReceiptDocs.kot(
+            lodgeName: ref.read(authViewModelProvider).me?.lodge.name ?? '',
+            where: where,
+            items: names,
+            guest: _name.text,
+            title: _adding ? 'KOT - ADD-ON' : 'KOT',
+          ),
+          message: _adding ? 'Items added.' : 'Bar order placed.',
+        );
+        if (!mounted) return;
+      }
       Navigator.pop(context, true);
     } else {
       setState(() {
@@ -187,7 +224,7 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
             const SizedBox(height: AppTheme.s12),
             Row(
               children: [
-                Expanded(child: NeuField(controller: _name, label: 'Name (optional)', dense: true)),
+                Expanded(child: NeuField(controller: _name, label: _source == 'TABLE' ? 'Customer (billed separately)' : 'Name (optional)', dense: true)),
                 const SizedBox(width: AppTheme.s8),
                 Expanded(
                   child: NeuField(

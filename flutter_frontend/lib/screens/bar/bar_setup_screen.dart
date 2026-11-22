@@ -7,6 +7,7 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
+import '../food/tables_panel.dart';
 import 'bar_common.dart';
 
 /// "Bar menu & Stock": Stock / Menu / Settings (mirrors BarSetup.jsx).
@@ -43,6 +44,7 @@ class _BarSetupScreenState extends ConsumerState<BarSetupScreen> {
                 tabs: [
                   PillTab('stock', 'Stock', Icons.inventory_2_rounded, count: s.lowCount == 0 ? null : s.lowCount, countColor: AppTheme.danger),
                   const PillTab('menu', 'Menu', Icons.menu_book_rounded),
+                  const PillTab('tables', 'Tables', Icons.table_bar_rounded),
                   const PillTab('settings', 'Settings', Icons.tune_rounded),
                 ],
               ),
@@ -56,6 +58,7 @@ class _BarSetupScreenState extends ConsumerState<BarSetupScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : switch (_tab) {
                     'menu' => _MenuTab(menu: s.menu),
+                    'tables' => const TablesPanel(area: 'BAR'),
                     'settings' => _SettingsTab(settings: s.menu.settings),
                     _ => _StockTab(menu: s.menu),
                   },

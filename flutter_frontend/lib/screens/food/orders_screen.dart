@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/food_order.dart';
 import '../../domain/models/invoice.dart';
+import '../../domain/models/receipt_doc.dart';
+import '../printing/thermal_print_action.dart';
 import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/orders_viewmodel.dart';
@@ -1608,19 +1610,32 @@ class _OrderCard extends ConsumerWidget {
                         style: TextStyle(fontSize: 13),
                       ),
                     ),
-                  ] else if (canBillFood && order.canMarkReadyToBill) ...[
+                  ],
+
+                  if (canBillFood && order.status != 'CANCELLED') ...[
                     const SizedBox(height: AppTheme.s8),
                     NeuButton(
-                      primary: true,
                       expand: true,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.s8 + 2,
-                      ),
-                      onPressed: () => _markReadyToBill(context, ref),
-                      child: const Text(
-                        'Ready to bill',
-                        style: TextStyle(fontSize: 13),
-                      ),
+                      padding: const EdgeInsets.symmetric(vertical: AppTheme.s8 + 2),
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        final r = await runThermalPrint(
+                          context,
+                          ref,
+                          ReceiptDocs.kot(
+                            lodgeName: ref.read(authViewModelProvider).me?.lodge.name ?? '',
+                            where: order.target,
+                            orderNo: order.orderNumber,
+                            guest: order.guestName,
+                            note: order.note,
+                            time: order.placedAt,
+                            title: 'KOT (REPRINT)',
+                            items: [for (final i in order.items) (name: i.name, qty: i.quantity)],
+                          ),
+                        );
+                        if (r != null) messenger.showSnackBar(SnackBar(content: Text(r)));
+                      },
+                      child: const Text('Reprint KOT', style: TextStyle(fontSize: 13)),
                     ),
                   ],
 
@@ -1700,23 +1715,6 @@ class _OrderCard extends ConsumerWidget {
         builder: (_) => CounterOrderScreen(editingOrder: order),
       ),
     );
-  }
-
-  Future<void> _markReadyToBill(BuildContext context, WidgetRef ref) async {
-    final vm = ref.read(ordersViewModelProvider.notifier);
-    final ok = await vm.markReadyToBill(order.id);
-    if (!context.mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            ref.read(ordersViewModelProvider).error ??
-                'Could not send that order to billing.',
-          ),
-          backgroundColor: AppTheme.heading,
-        ),
-      );
-    }
   }
 
   Future<String?> _askReason(BuildContext context) {

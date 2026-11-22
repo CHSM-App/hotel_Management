@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../presentation/providers/view_model_provider.dart';
+import '../rooms/quotation_screen.dart';
 import '../theme.dart';
 import 'take_booking_screen.dart';
 import 'tape_chart.dart';
@@ -58,6 +59,20 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
           // being squeezed to make room for a button they don't sit near.
           padding: EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 0),
           child: TapeChart(),
+        ),
+        Positioned(
+          right: AppTheme.s16 + 4,
+          bottom: AppTheme.s16 + 68,
+          child: FloatingActionButton.small(
+            heroTag: 'quotation',
+            tooltip: 'Quotation',
+            backgroundColor: AppTheme.card,
+            foregroundColor: AppTheme.sidebarBrand,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const QuotationScreen()),
+            ),
+            child: const Icon(Icons.request_quote_rounded),
+          ),
         ),
         Positioned(
           right: AppTheme.s16,

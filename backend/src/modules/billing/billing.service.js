@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../../config/connection');
+const { customerKey, customerKeySql } = require('../orders/customerTag');
 const seriesService = require('./series.service');
 const { ApiError } = require('../../middleware/errorHandler');
 const { toClockTime } = require('../rooms/checkoutPolicy.service');
@@ -991,7 +992,7 @@ async function loadStayFoodOrders(request, lodgeId, bookingId, roomId = null) {
       FROM dbo.food_orders
       WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND on_room_bill = 1
         AND (@roomId IS NULL OR room_id = @roomId)
-        AND status IN ('READY', 'DELIVERED') AND invoice_id IS NULL AND bar_order_id IS NULL
+        AND status <> 'CANCELLED' AND invoice_id IS NULL AND bar_order_id IS NULL
       ORDER BY placed_at ASC
     `);
   return result.recordset.map((row) => ({
@@ -2334,6 +2335,9 @@ async function countLiveOrdersOnTab(request, lodgeId, tab) {
   return result.recordset[0].n;
 }
 
+// The grouping column for a table's customers; other sources have no customers.
+const CUSTOMER_KEY = customerKeySql('o.customer_tag');
+
 async function listOpenFoodTabs(lodgeId) {
   const pool = await getPool();
   const result = await pool
@@ -2345,6 +2349,8 @@ async function listOpenFoodTabs(lodgeId) {
              -- part of its key, and null for the two tabs that do accumulate.
              CASE WHEN o.source = 'COUNTER' THEN o.id END AS order_id,
              CASE WHEN o.source = 'ROOM' THEN o.booking_id END AS booking_id,
+             CASE WHEN o.source = 'TABLE' THEN ${CUSTOMER_KEY} END AS customer_key,
+             MAX(CASE WHEN o.source = 'TABLE' THEN o.customer_tag END) AS customer_label,
              MAX(o.order_number) AS order_number,
              COUNT(*) AS order_count, SUM(o.subtotal) AS subtotal,
              MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at,
@@ -2369,7 +2375,7 @@ async function listOpenFoodTabs(lodgeId) {
         FROM dbo.bookings b
         WHERE o.source = 'ROOM' AND b.id = o.booking_id
       ) rb
-      WHERE o.lodge_id = @lodgeId AND o.status IN ('READY', 'DELIVERED') AND o.invoice_id IS NULL
+      WHERE o.lodge_id = @lodgeId AND o.status <> 'CANCELLED' AND o.invoice_id IS NULL
         AND ${NOT_ON_STAY_BILL}
         -- booking_id is grouped for room orders so two stays in the same room —
         -- one already billed with an unpaid order, one just checked in and
@@ -2377,6 +2383,7 @@ async function listOpenFoodTabs(lodgeId) {
       GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
                CASE WHEN o.source = 'ROOM' THEN o.booking_id END,
                CASE WHEN o.source = 'COUNTER' THEN o.id END,
+               CASE WHEN o.source = 'TABLE' THEN ${CUSTOMER_KEY} END,
                rb.guest_name, rb.guest_phone
       -- Newest activity first: a fresh order on a table that already has an
       -- open tab is what the desk needs to see next, so the row has to jump
@@ -2393,6 +2400,7 @@ async function listOpenFoodTabs(lodgeId) {
       SELECT o.source, o.table_id, o.room_id, t.label AS table_label, r.room_number,
              CASE WHEN o.source = 'COUNTER' THEN o.id END AS order_id,
              CASE WHEN o.source = 'ROOM' THEN o.booking_id END AS booking_id,
+             CASE WHEN o.source = 'TABLE' THEN ${CUSTOMER_KEY} END AS customer_key,
              MAX(o.order_number) AS order_number, COUNT(*) AS live_count
       FROM dbo.food_orders o
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
@@ -2400,20 +2408,23 @@ async function listOpenFoodTabs(lodgeId) {
       WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') AND o.invoice_id IS NULL AND o.bar_order_id IS NULL
       GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
                CASE WHEN o.source = 'ROOM' THEN o.booking_id END,
-               CASE WHEN o.source = 'COUNTER' THEN o.id END
+               CASE WHEN o.source = 'COUNTER' THEN o.id END,
+               CASE WHEN o.source = 'TABLE' THEN ${CUSTOMER_KEY} END
     `);
   const liveByTab = new Map(liveResult.recordset.map((row) => [tabIdentity(row).tab, row.live_count]));
 
   return result.recordset.map((row) => ({
     ...tabIdentity(row),
     liveOrderCount: liveByTab.get(tabIdentity(row).tab) ?? 0,
-    guestName: row.guest_name ?? null,
+    // A table tab is one customer's: named by their tag when they have one.
+    guestName: row.source === 'TABLE' ? row.customer_label ?? null : row.guest_name ?? null,
     guestPhone: row.guest_phone ?? null,
+    customerLabel: row.source === 'TABLE' ? row.customer_label ?? null : null,
     orderCount: row.order_count,
     subtotal: Number(row.subtotal),
     openedAt: row.opened_at,
     lastDeliveredAt: row.last_delivered_at,
-    customerName: row.source === 'COUNTER' ? row.guest_name : null,
+    customerName: row.source === 'COUNTER' ? row.guest_name : row.source === 'TABLE' ? row.customer_label ?? null : null,
     customerPhone: row.source === 'COUNTER' ? row.guest_phone : null,
   }));
 }
@@ -2451,7 +2462,10 @@ async function loadLodgeForBilling(pool, lodgeId) {
 // tab and the first person to be billed pays for all of them.
 function tabIdentity(row) {
   if (row.source === 'TABLE') {
-    return { tab: `table-${row.table_id}`, tableId: row.table_id, roomId: null, tableLabel: row.table_label };
+    // With a customer_key (the tab list) a table is one tab per customer, '~' alone being
+    // the untagged group. Without one (a single order row) it stays the bare table tab.
+    const suffix = row.customer_key === undefined || row.customer_key === null ? '' : `~${encodeURIComponent(row.customer_key)}`;
+    return { tab: `table-${row.table_id}${suffix}`, tableId: row.table_id, roomId: null, tableLabel: row.table_label };
   }
   if (row.source === 'ROOM') {
     // Keyed on the stay, not the room. A room is reused by every guest who
@@ -2486,15 +2500,23 @@ function tabIdentity(row) {
 // server fault — rejected here rather than reaching the driver as a NaN bound
 // to a BigInt, which is what surfaced as a 500.
 function tabScope(request, tab) {
-  const match = /^(table|room|room-booking|counter)-(\d+)$/.exec(String(tab ?? ''));
+  const match = /^(table|room|room-booking|counter)-(\d+)(?:~(.*))?$/.exec(String(tab ?? ''));
   const id = match ? Number(match[2]) : NaN;
-  if (!match || !Number.isSafeInteger(id) || id <= 0) {
+  if (!match || !Number.isSafeInteger(id) || id <= 0 || (match[3] !== undefined && match[1] !== 'table')) {
     throw new ApiError('Unknown tab.', 400);
   }
 
   if (match[1] === 'table') {
     request.input('tableId', sql.BigInt, id);
-    return "AND o.source = 'TABLE' AND o.table_id = @tableId";
+    if (match[3] === undefined) return "AND o.source = 'TABLE' AND o.table_id = @tableId"; // the whole table
+    let key;
+    try {
+      key = customerKey(decodeURIComponent(match[3]));
+    } catch {
+      throw new ApiError('Unknown tab.', 400);
+    }
+    request.input('customerKey', sql.NVarChar, key);
+    return `AND o.source = 'TABLE' AND o.table_id = @tableId AND ${CUSTOMER_KEY} = @customerKey`;
   }
   if (match[1] === 'room-booking') {
     // One stay, one tab — see tabIdentity. Pinned to the booking rather than
@@ -2525,11 +2547,11 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
   const result = await request.query(`
     SELECT o.id, o.order_number, o.subtotal, o.placed_at, o.source,
            o.table_id, o.room_id, t.label AS table_label, r.room_number,
-           o.guest_name, o.guest_phone
+           o.guest_name, o.guest_phone, o.customer_tag
     FROM dbo.food_orders o
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
-    WHERE o.lodge_id = @lodgeId AND o.status IN ('READY', 'DELIVERED') AND o.invoice_id IS NULL
+    WHERE o.lodge_id = @lodgeId AND o.status <> 'CANCELLED' AND o.invoice_id IS NULL
       AND ${NOT_ON_STAY_BILL}
       ${scope}
     ORDER BY o.placed_at ASC
@@ -2555,7 +2577,7 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
     // room tab (from its booking), but the invoice's customer_name column is
     // specifically "who this takeaway was for" -- a room bill already reads its
     // name through the booking, so only a COUNTER order fills these.
-    customerName: row.source === 'COUNTER' ? row.guest_name : null,
+    customerName: row.source === 'COUNTER' ? row.guest_name : row.source === 'TABLE' ? row.customer_tag ?? null : null,
     customerPhone: row.source === 'COUNTER' ? row.guest_phone : null,
   }));
 }
@@ -2601,7 +2623,7 @@ async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal =
   const orders = await loadUnbilledTabOrders(pool.request(), lodgeId, tab);
 
   if (orders.length === 0) {
-    throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
+    throw new ApiError('Nothing to bill here — no orders are waiting.', 409);
   }
 
   // A room tab is food charged to whoever ran it up — the same guest the
@@ -2721,16 +2743,7 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
     // must not produce two bills for the same food.
     const orders = await loadUnbilledTabOrders(new sql.Request(transaction), lodgeId, tab);
     if (orders.length === 0) {
-      throw new ApiError('Nothing to bill here — no delivered orders are waiting.', 409);
-    }
-
-    // Food still in the kitchen would be left off this bill.
-    const stillLive = await countLiveOrdersOnTab(new sql.Request(transaction), lodgeId, tab);
-    if (stillLive > 0 && !input.billAnyway) {
-      throw new ApiError(
-        `${stillLive} order${stillLive === 1 ? ' is' : 's are'} still in progress on this tab. Wait until ${stillLive === 1 ? 'it is' : 'they are'} delivered, or choose to bill anyway.`,
-        409
-      );
+      throw new ApiError('Nothing to bill here — no orders are waiting.', 409);
     }
 
     // Which of the three the tab is, so the document can name it. Read off
@@ -2883,11 +2896,11 @@ async function addTabToRoomBill(lodgeId, tab, bookingId) {
     UPDATE o SET o.booking_id = @stayId, o.on_room_bill = 1,
                  o.ready_to_bill_at = COALESCE(o.ready_to_bill_at, SYSDATETIMEOFFSET())
     FROM dbo.food_orders o
-    WHERE o.lodge_id = @lodgeId AND o.status IN ('READY', 'DELIVERED') AND o.invoice_id IS NULL
+    WHERE o.lodge_id = @lodgeId AND o.status <> 'CANCELLED' AND o.invoice_id IS NULL
       AND o.on_room_bill = 0 AND o.bar_order_id IS NULL ${scope}
   `);
   if (result.rowsAffected[0] === 0) {
-    throw new ApiError('Nothing to add — no delivered orders are waiting on this tab.', 409);
+    throw new ApiError('Nothing to add — no orders are waiting on this tab.', 409);
   }
   return { added: result.rowsAffected[0] };
 }

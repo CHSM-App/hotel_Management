@@ -3734,3 +3734,60 @@ GO
 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_invoices_lodge_number' AND object_id = OBJECT_ID('dbo.invoices'))
     DROP INDEX uq_invoices_lodge_number ON dbo.invoices;
 GO
+
+-- Separate table setup for the bar (170). dining_tables gets an area: 'RESTAURANT' for every
+-- existing row, 'BAR' for tables set up under Bar. A label is unique per area, so the bar can
+-- have its own "T1". Remember: the same change must also land in src/config/schema.sql.
+IF COL_LENGTH('dbo.dining_tables', 'area') IS NULL
+    EXEC('ALTER TABLE dbo.dining_tables ADD area NVARCHAR(10) NOT NULL CONSTRAINT df_dining_tables_area DEFAULT ''RESTAURANT'' CONSTRAINT ck_dining_tables_area CHECK (area IN (''RESTAURANT'',''BAR''))');
+GO
+
+IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = 'uq_dining_tables_lodge_label' AND parent_object_id = OBJECT_ID('dbo.dining_tables'))
+    ALTER TABLE dbo.dining_tables DROP CONSTRAINT uq_dining_tables_lodge_label;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_dining_tables_lodge_area_label' AND object_id = OBJECT_ID('dbo.dining_tables'))
+    CREATE UNIQUE INDEX uq_dining_tables_lodge_area_label ON dbo.dining_tables(lodge_id, area, label);
+GO
+
+-- Customer tags (171). A table can hold several customers, each billed on their own. Every
+-- food and bar order may carry a short customer tag ("Anil", "Customer 2"); open orders on
+-- a table are grouped by it. Untagged orders stay one group, so nothing changes until a tag
+-- is used. Remember: the same change must also land in src/config/schema.sql.
+IF COL_LENGTH('dbo.food_orders', 'customer_tag') IS NULL
+    EXEC('ALTER TABLE dbo.food_orders ADD customer_tag NVARCHAR(60) NULL');
+GO
+
+IF COL_LENGTH('dbo.bar_orders', 'customer_tag') IS NULL
+    EXEC('ALTER TABLE dbo.bar_orders ADD customer_tag NVARCHAR(60) NULL');
+GO
+
+-- lodge_quotations (172): saved quotations; see migrations/172_lodge_quotations.sql.
+IF OBJECT_ID('dbo.lodge_quotations', 'U') IS NULL
+CREATE TABLE dbo.lodge_quotations (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    lodge_id            BIGINT NOT NULL REFERENCES dbo.lodges(id),
+    reference_code      NVARCHAR(16) NOT NULL,
+    guest_name          NVARCHAR(120) NULL,
+    guest_phone         NVARCHAR(20) NULL,
+    check_in_date       DATE NOT NULL,
+    last_check_out_date DATE NOT NULL,
+    total               DECIMAL(12,2) NOT NULL,
+    room_summary        NVARCHAR(300) NOT NULL,
+    payload             NVARCHAR(MAX) NOT NULL,
+    status              NVARCHAR(10) NOT NULL CONSTRAINT df_lodge_quotations_status DEFAULT 'ACTIVE'
+                        CONSTRAINT ck_lodge_quotations_status CHECK (status IN ('ACTIVE', 'BOOKED')),
+    booked_booking_id   BIGINT NULL,
+    created_by          BIGINT NULL,
+    created_at          DATETIMEOFFSET NOT NULL CONSTRAINT df_lodge_quotations_created DEFAULT SYSDATETIMEOFFSET(),
+    deleted_at          DATETIMEOFFSET NULL
+);
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'uq_lodge_quotations_ref' AND object_id = OBJECT_ID('dbo.lodge_quotations'))
+CREATE UNIQUE INDEX uq_lodge_quotations_ref ON dbo.lodge_quotations(reference_code);
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_lodge_quotations_lodge_status' AND object_id = OBJECT_ID('dbo.lodge_quotations'))
+CREATE INDEX ix_lodge_quotations_lodge_status ON dbo.lodge_quotations(lodge_id, status, check_in_date);
+GO

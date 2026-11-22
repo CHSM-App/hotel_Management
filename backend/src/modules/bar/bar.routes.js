@@ -67,6 +67,7 @@ router.post('/orders', ...take, h((req) => svc.createOrder(lodge(req), parse(s.o
 router.post('/orders/:id/items', ...take, h((req) => svc.addItems(lodge(req), id(req), parse(s.addItemsSchema, req.body), user(req))));
 router.patch('/orders/:id/items/:itemId', ...take, h((req) => svc.updateItemQty(lodge(req), id(req), id(req, 'itemId'), parse(s.qtySchema, req.body).quantity, user(req))));
 router.post('/orders/:id/items/:itemId/cancel', ...take, h((req) => svc.cancelItem(lodge(req), id(req), id(req, 'itemId'), user(req))));
+router.patch('/orders/:id/customer', ...take, h((req) => svc.setOrderCustomer(lodge(req), id(req), parse(s.customerSchema, req.body).customerTag)));
 router.post('/orders/:id/cancel', ...take, h((req) => svc.cancelOrder(lodge(req), id(req), user(req))));
 
 router.get('/targets', ...take, h((req) => svc.listTargets(lodge(req))));

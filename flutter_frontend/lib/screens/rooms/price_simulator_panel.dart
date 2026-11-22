@@ -5,6 +5,7 @@ import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
 import '../../domain/models/switchable_charge_listing.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../presentation/view_models/rooms_viewmodel.dart';
 import '../../widgets/compact_date_picker.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
@@ -83,7 +84,11 @@ class _SimRoom {
 /// out on the phone, the same rule the booking form prices on. Several rooms
 /// can be added at once, their totals added up into one PDF.
 class PriceSimulatorPanel extends ConsumerStatefulWidget {
-  const PriceSimulatorPanel({super.key});
+  /// Called after a quotation is saved — the Quotation screen uses it to jump
+  /// to the Saved tab.
+  final VoidCallback? onSaved;
+
+  const PriceSimulatorPanel({super.key, this.onSaved});
 
   @override
   ConsumerState<PriceSimulatorPanel> createState() => _PriceSimulatorPanelState();
@@ -99,6 +104,8 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
   final _guestPhoneFocus = FocusNode();
   bool _preparingPdf = false;
   String? _pdfError;
+  bool _saving = false;
+  String? _saveError;
   // The phone's message waits until the box has been left or Download
   // pressed: "not a valid number" under every keystroke of a number being
   // typed is noise.
@@ -248,6 +255,47 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
     _runQuote(sim);
   }
 
+  /// Keeps the quotation on the server. Only the choices go up — the server
+  /// prices every room again, so the stored figure is the rate card's own.
+  Future<void> _saveQuotation(List<_SimRoom> priced) async {
+    if (_phoneInvalid) {
+      setState(() => _phoneChecked = true);
+      _guestPhoneFocus.requestFocus();
+      return;
+    }
+    // Held until check-in, so one for today or earlier would be Expired the
+    // moment it was saved — say so up front rather than after a round trip.
+    final today = DateUtils.dateOnly(DateTime.now());
+    if (priced.any((s) => !s.fromDate.isAfter(today))) {
+      setState(() => _saveError = 'Choose a check-in date after today to save a quotation.');
+      return;
+    }
+    setState(() {
+      _saveError = null;
+      _saving = true;
+    });
+    try {
+      await ref.read(roomsViewModelProvider.notifier).saveQuotation(
+        guestName: _guestNameController.text,
+        guestPhone: _guestPhoneController.text,
+        rooms: [
+          for (final s in priced)
+            {'roomId': s.roomId, 'fromDate': _iso(s.fromDate), 'toDate': _iso(s.toDate), 'chargeIds': _chargesParam(s.charges)},
+        ],
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Quotation saved.'), backgroundColor: AppTheme.heading),
+      );
+      widget.onSaved?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saveError = RoomsViewModel.messageFor(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _downloadQuotation(List<QuotedRoom> rooms, num total) async {
     // Optional, but a number on the quotation has to be one the guest can
     // be rung on.
@@ -336,11 +384,11 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Price simulator',
+                              'Quotation',
                               style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700, fontSize: 14),
                             ),
                             Text(
-                              'Line-by-line breakdown for a room and a stay',
+                              'Price a stay line by line and download a quotation',
                               style: TextStyle(color: AppTheme.muted, fontSize: 10.5),
                             ),
                           ],
@@ -732,7 +780,31 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
             const SizedBox(height: AppTheme.s8),
             Text(_pdfError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
           ],
+          if (_saveError != null) ...[
+            const SizedBox(height: AppTheme.s8),
+            Text(_saveError!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+          ],
           const SizedBox(height: AppTheme.s12),
+          // Keep it: stored on the server and active until the earliest
+          // check-in date, then it expires (see the Saved tab).
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.sidebarBrand,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                elevation: 0,
+                textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+              onPressed: !canDownload || _saving ? null : () => _saveQuotation(priced),
+              icon: _saving
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.bookmark_add_rounded, size: 18),
+              label: Text(_saving ? 'Saving…' : 'Save quotation'),
+            ),
+          ),
+          const SizedBox(height: AppTheme.s8),
           SizedBox(
             width: double.infinity,
             height: 44,

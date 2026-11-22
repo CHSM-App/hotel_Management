@@ -61,8 +61,8 @@ class BarState {
     taxPercent: taxPercent ?? this.taxPercent,
   );
 
-  /// Open orders still on the floor: ready-to-bill ones have moved to Bills.
-  List<BarOrder> get openOrders => orders.where((o) => !o.readyToBill).toList();
+  /// Open orders; billing doesn't wait on a ready-to-bill hand-off.
+  List<BarOrder> get openOrders => orders;
 }
 
 class BarViewModel extends StateNotifier<BarState> {
@@ -152,6 +152,9 @@ class BarViewModel extends StateNotifier<BarState> {
       _run(() => usecase.deliverFoodItem(foodOrderId, itemId));
 
   Future<bool> readyToBill(int id) => _run(() => usecase.readyToBill(id));
+
+  /// Move an open table order to another customer; blank = the table's shared bill.
+  Future<bool> setCustomer(int id, String? tag) => _run(() => usecase.setCustomer(id, tag));
 
   Future<bool> addToRoom(List<int> orderIds, int bookingId, int roomId) => _run(() async {
     for (final id in orderIds) {

@@ -1288,6 +1288,14 @@
   background: var(--danger);
 }
 
+.food-mark--drink {
+  border-color: var(--accent, #7c3aed);
+}
+
+.food-mark--drink::after {
+  background: var(--accent, #7c3aed);
+}
+
 /* ------------------------------------------------------------- sign-in gate */
 
 /* The gate gets the whole viewport and centres one short form. It is the first
@@ -3403,4 +3411,125 @@
 .guest-login .order-page__logo--letter {
   font-size: 44px;
   padding: 0;
+}
+
+/* ------------------------------------------------- bar / restaurant areas
+   A bar table's menu is two menus. Each gets a full-width header with an icon
+   and words (never colour alone), and a switcher in the sticky bar jumps
+   between them. Bar comes first. */
+.order-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 28px 0 14px;
+  padding: 14px 16px;
+  background: var(--board-panel, var(--surface));
+  border: 1px solid var(--board-line, var(--border));
+  border-left: 5px solid var(--board-amber, var(--brand));
+  border-radius: 14px;
+  scroll-margin-top: 112px;
+}
+
+.order-area--food {
+  border-left-color: var(--board-muted, var(--text-muted));
+}
+
+.order-area__icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--board-amber, var(--brand));
+  color: var(--board-amber-ink, #fff);
+}
+
+.order-area--food .order-area__icon {
+  background: var(--board-panel-hi, var(--paper));
+  color: var(--board-ink, var(--text));
+}
+
+.order-area__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.order-area__text h2 {
+  margin: 0;
+  font-family: var(--board-head, var(--serif));
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--board-ink, var(--ink));
+}
+
+.order-area__text p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--board-muted, var(--text-muted));
+}
+
+.order-area__count {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--board-line, var(--border));
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--board-muted, var(--text-muted));
+}
+
+.order-areas {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+  padding: 10px var(--order-gutter) 0;
+}
+
+.order-areas__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid var(--board-line, var(--border));
+  border-radius: 12px;
+  background: var(--board-panel, var(--surface));
+  color: var(--board-ink, var(--text));
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.order-areas__btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.order-areas__n {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.2);
+  font-size: 12px;
+  text-align: center;
+}
+
+.order-areas__btn[aria-pressed='true'] {
+  background: var(--board-amber, var(--brand));
+  border-color: var(--board-amber, var(--brand));
+  color: var(--board-amber-ink, #fff);
+}
+
+.order-areas__btn:focus-visible {
+  outline: 2px solid var(--board-amber, var(--focus));
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .order-areas__btn { transition: none; }
 }

@@ -48,12 +48,15 @@ class TablesState {
 class TablesViewModel extends StateNotifier<TablesState> {
   final FoodSetupUsecase usecase;
 
-  TablesViewModel(this.usecase) : super(const TablesState());
+  /// 'RESTAURANT' or 'BAR' - the bar keeps its own tables (same API, ?area=).
+  final String area;
+
+  TablesViewModel(this.usecase, [this.area = 'RESTAURANT']) : super(const TablesState());
 
   Future<void> load() async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final tables = await usecase.allTables();
+      final tables = await usecase.allTables(area: area);
       state = state.copyWith(isLoading: false, tables: tables);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: apiErrorMessage(e), errorField: apiErrorField(e));
@@ -67,7 +70,7 @@ class TablesViewModel extends StateNotifier<TablesState> {
       if (id != null) {
         await usecase.updateTable(id, label: label, seats: seats);
       } else {
-        await usecase.createTable(label: label, seats: seats);
+        await usecase.createTable(label: label, seats: seats, area: area);
       }
       state = state.copyWith(submitting: false);
       await load();
@@ -92,6 +95,7 @@ class TablesViewModel extends StateNotifier<TablesState> {
         rangeStart: rangeStart,
         rangeEnd: rangeEnd,
         seats: seats,
+        area: area,
       );
       state = state.copyWith(submitting: false);
       await load();

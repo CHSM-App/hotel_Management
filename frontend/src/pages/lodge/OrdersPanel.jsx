@@ -5,6 +5,7 @@ import { apiGet, apiPost, apiPatch, ApiError, API_BASE } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { readCache, writeCache } from '../../lib/dataCache';
 import { formatPrice } from './priceFormat';
+import { printKot, kotPaperMm, setKotPaperMm } from './barFormat';
 import Req from '../../components/RequiredMark';
 import './forms.css';
 import './MenuPanel.css';
@@ -200,15 +201,39 @@ function billedLabel(order) {
   return 'Billed';
 }
 
+// The tab key for billing one customer's share of a table.
+const customerTabKey = (o) => `table-${o.tableId}~${encodeURIComponent(String(o.customerTag ?? '').replace(/\s+/g, ' ').trim().toLowerCase())}`;
+
 // Who the food is for: the name (and number) typed at the counter, or the guest
 // staying in the room. A table order has neither until someone adds one.
 function Customer({ order }) {
-  if (!order.guestName && !order.guestPhone) return null;
+  // A table order is for one customer among several at the table; it can be moved to another
+  // (or renamed) until it is billed. The list refreshes itself shortly after.
+  const [moved, setMoved] = useState(undefined);
+  const tag = moved !== undefined ? moved : order.customerTag;
+  const name = order.guestName || tag;
+  const canMove = order.source === 'TABLE' && !order.billed && order.status !== 'CANCELLED';
+  const move = async () => {
+    const next = window.prompt(`Customer for order #${order.orderNumber} (leave blank for the table's shared bill)`, tag || '');
+    if (next === null) return;
+    try {
+      const res = await apiPatch(`/orders/${order.id}/customer`, { customerTag: next.trim() || null }, { token: getSession()?.token });
+      setMoved(res.order?.customerTag ?? null);
+    } catch (err) {
+      window.alert(err instanceof ApiError ? err.message : 'Could not move the order.');
+    }
+  };
+  if (!name && !order.guestPhone && !canMove) return null;
   return (
     <span className="order-customer">
-      {order.guestName}
-      {order.guestName && order.guestPhone ? ' · ' : ''}
+      {name}
+      {name && order.guestPhone ? ' · ' : ''}
       {order.guestPhone}
+      {canMove && (
+        <button type="button" className="btn-link" style={{ marginLeft: 6 }} onClick={move} title="Move this order to another customer at the table">
+          {name ? 'Change' : 'Assign customer'}
+        </button>
+      )}
     </span>
   );
 }
@@ -280,6 +305,13 @@ function ViewToggle({ view, onChange }) {
 
 // `view` / `onViewChange` / `hideTabs` let a parent (FoodSection) own the tab
 // strip so orders and billing share one; on its own the panel keeps its tabs.
+const kotWhere = (o) => (o.roomNumber ? `Room ${o.roomNumber}` : o.tableLabel || 'Counter');
+const printOrderKot = (lodge, o, title = 'KOT') =>
+  printKot({
+    lodgeName: lodge?.name || '', title, where: kotWhere(o), orderNo: o.orderNumber, guest: o.guestName,
+    note: o.note, time: o.placedAt, items: (o.items || []).map((i) => ({ name: i.name, qty: i.quantity })),
+  }) || window.alert('Allow pop-ups to print the KOT.');
+
 export default function OrdersPanel({ lodge, permissions = [], view: viewProp = null, onViewChange = null, hideTabs = false, onPendingChange = null, toolsHost = null }) {
   const session = getSession();
   // Which half of this screen a role actually gets: orders.manage is view,
@@ -301,16 +333,16 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
   const [billTab, setBillTab] = useState(null);
   const [roomOrder, setRoomOrder] = useState(null);
   // A table or takeaway can also go on a staying guest's room bill (rooms only).
-  const canIssue = (o) => canBillHere && ['READY', 'DELIVERED'].includes(o.status) && !o.onRoomBill && !o.voided && !o.barOrderId;
+  const canIssue = (o) => canBillHere && o.status !== 'CANCELLED' && !o.onRoomBill && !o.voided && !o.barOrderId;
   // A room order can go on its own guest's room bill; the room is already known.
   const canRoom = (o) => canIssue(o) && lodge?.hasRooms !== false && (o.source !== 'ROOM' || Boolean(o.bookingId));
   const issueBill = async (o) => {
     setBusyId(o.id);
     try {
-      if (!o.readyToBill && o.status === 'DELIVERED') await apiPost(`/orders/${o.id}/ready-to-bill`, {}, { token: session?.token });
+      if (!o.readyToBill && o.status !== 'CANCELLED') await apiPost(`/orders/${o.id}/ready-to-bill`, {}, { token: session?.token });
       setBillTab(
         o.source === 'TABLE'
-          ? { tab: `table-${o.tableId}`, label: o.tableLabel }
+          ? { tab: customerTabKey(o), label: o.customerTag ? `${o.tableLabel} · ${o.customerTag}` : o.tableLabel }
           : o.source === 'COUNTER'
             ? { tab: `counter-${o.id}`, label: `Takeaway #${o.orderNumber}` }
             : o.bookingId
@@ -349,6 +381,8 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
   // one-line confirmation a captain has no other way to see.
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [placedNotice, setPlacedNotice] = useState('');
+  const [placedOrder, setPlacedOrder] = useState(null);
+  const [paperMm, setPaperMm] = useState(kotPaperMm());
   // Guest QR orders waiting for a captain — the badge on their Orders tab.
   const [guestPending, setGuestPending] = useState(0);
   // No queue screen for a captain, so the History list is what tells them a
@@ -840,6 +874,7 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
           // The only confirmation a captain gets that the order actually went
           // in — the page just leaves otherwise, and silence reads as failure
           // when you can't see the kitchen queue to check.
+          setPlacedOrder(wasEdit ? null : order);
           setPlacedNotice(wasEdit ? `Order #${order.orderNumber} updated.` : `Order #${order.orderNumber} sent to the kitchen.`);
           setHistoryRefresh((n) => n + 1);
           // Anyone with the queue stays on it; a captain lands on their live
@@ -920,7 +955,20 @@ export default function OrdersPanel({ lodge, permissions = [], view: viewProp = 
       </div>
 
       {placedNotice && (
-        <div className="form-banner form-banner--info form-banner--flash">{placedNotice}</div>
+        <div className="form-banner form-banner--info form-banner--flash">
+          {placedNotice}
+          {placedOrder && canTakeOrders && (
+            <>
+              {' '}
+              <button type="button" className="order-btn" onClick={() => printOrderKot(lodge, placedOrder)}>Print KOT</button>
+              {' '}
+              <select value={paperMm} onChange={(e) => { setKotPaperMm(e.target.value); setPaperMm(Number(e.target.value)); }} aria-label="Paper width">
+                <option value={80}>80 mm</option>
+                <option value={58}>58 mm</option>
+              </select>
+            </>
+          )}
+        </div>
       )}
 
       {(view === 'HISTORY' || (view === 'ACTIVE' && !canWorkQueue)) && (canWorkQueue || canTakeOrders) && (
@@ -1403,10 +1451,10 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
           async (o) => {
             setBusyId(o.id);
             try {
-              if (!o.readyToBill && o.status === 'DELIVERED') await apiPost(`/orders/${o.id}/ready-to-bill`, {}, { token: session?.token });
+              if (!o.readyToBill && o.status !== 'CANCELLED') await apiPost(`/orders/${o.id}/ready-to-bill`, {}, { token: session?.token });
               setBillTab(
                 o.source === 'TABLE'
-                  ? { tab: `table-${o.tableId}`, label: o.tableLabel }
+                  ? { tab: customerTabKey(o), label: o.customerTag ? `${o.tableLabel} · ${o.customerTag}` : o.tableLabel }
                   : o.source === 'COUNTER'
                     ? { tab: `counter-${o.id}`, label: `Takeaway #${o.orderNumber}` }
                     : o.bookingId
@@ -1424,6 +1472,7 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
         )
       : null;
   const readyToBill = issueBill || markReadyToBill;
+  const kot = onEdit ? (o) => printOrderKot(lodge, o, 'KOT (REPRINT)') : null;
 
   // A captain taking a guest's QR order in — the first to press it owns it;
   // a second captain a moment behind gets the server's "someone else just
@@ -1566,8 +1615,8 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
       (canHandOver() && canDeliver && o.status === 'PENDING') ||
       (canHandOver() && ['PREPARING', 'READY'].includes(o.status) && o.items.length > 0 && o.items.every((i) => i.readyAt)) ||
       (viewBill && o.invoiceId != null) ||
-      (onEdit && !o.billed && !o.readyToBill && o.status !== 'CANCELLED') ||
-      (readyToBill && !o.barOrderId && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && (o.status === 'DELIVERED' || (readyToBill.issues && o.status === 'READY'))) ||
+      (onEdit && !o.billed && o.status !== 'CANCELLED') ||
+      (readyToBill && !o.barOrderId && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && o.status !== 'CANCELLED') ||
       (canDeliver && !o.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(o.status) && o.items.some((i) => !i.readyAt))
   );
 
@@ -1733,11 +1782,11 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
             <>
               {view === 'cards' && (mine ? (
               <div className="orders-grid">
-                {shown.map((o) => renderCaptainCard(o, { canDeliver, showPrices, onEdit, deliver, deliverItem, cancel, accept, viewBill, readyToBill, busy: busyId === o.id }))}
+                {shown.map((o) => renderCaptainCard(o, { canDeliver, showPrices, onEdit, deliver, deliverItem, cancel, accept, viewBill, readyToBill, kot, busy: busyId === o.id }))}
               </div>
             ) : (
               <div className="history-list">
-                {shown.map((o) => renderHistoryRow(o, { canDeliver, showPrices, onEdit, deliver, cancel, accept, viewBill, readyToBill, busy: busyId === o.id }))}
+                {shown.map((o) => renderHistoryRow(o, { canDeliver, showPrices, onEdit, deliver, cancel, accept, viewBill, readyToBill, kot, busy: busyId === o.id }))}
               </div>
             ))}
               {view === 'sheet' && (
@@ -1787,7 +1836,7 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
                         !o.billed &&
                         ['PENDING', 'QUEUED', 'PREPARING'].includes(o.status) &&
                         o.items.some((i) => !i.readyAt);
-                      const editable = onEdit && !o.billed && !o.readyToBill && o.status !== 'CANCELLED';
+                      const editable = onEdit && !o.billed && o.status !== 'CANCELLED';
                       const rowBusy = busyId === o.id;
                       return (
                         <tr key={o.id} className={`history-table__row history-table__row--${o.status.toLowerCase()}`}>
@@ -1871,12 +1920,12 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
                                 Edit
                               </button>
                             )}
-                            {readyToBill && !o.barOrderId && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && (o.status === 'DELIVERED' || (readyToBill.issues && o.status === 'READY')) && (
+                            {readyToBill && !o.barOrderId && !o.billed && !o.onRoomBill && !o.voided && (readyToBill.issues || !o.readyToBill) && o.status !== 'CANCELLED' && (
                               <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => readyToBill(o)}>
                                 {readyToBill.issues ? 'Issue bill' : 'Ready to bill'}
                               </button>
                             )}
-                            {readyToBill && readyToBill.addToRoom && !o.barOrderId && !o.billed && !o.onRoomBill && !o.voided && o.status === 'DELIVERED' && (o.source !== 'ROOM' || o.bookingId) && (
+                            {readyToBill && readyToBill.addToRoom && !o.barOrderId && !o.billed && !o.onRoomBill && !o.voided && o.status !== 'CANCELLED' && (o.source !== 'ROOM' || o.bookingId) && (
                               <button type="button" className="history-table__btn" disabled={rowBusy} onClick={() => readyToBill.addToRoom(o)}>
                                 Add to room bill
                               </button>
@@ -1907,16 +1956,16 @@ function OrderHistory({ scope = 'all', view, lodge = null, canViewBill = false, 
 
 // The kitchen's order card, read-only: the captain sees which dishes are ready
 // to serve, and can deliver or edit — the kitchen's tick boxes are not here.
-function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, deliverItem, cancel, accept, viewBill, readyToBill, busy }) {
+function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, deliverItem, cancel, accept, viewBill, readyToBill, kot, busy }) {
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const readyCount = order.items.filter((i) => i.readyAt).length;
   const settledAt = order.deliveredAt || order.cancelledAt;
-  const canEdit = onEdit && !order.billed && !order.readyToBill && order.status !== 'CANCELLED';
+  const canEdit = onEdit && !order.billed && order.status !== 'CANCELLED';
   const canCancel =
     canDeliver && !order.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(order.status) &&
     order.items.some((i) => !i.readyAt);
   // Every dish handed over and not yet billed: the captain can send it to billing.
-  const canBillNow = Boolean(readyToBill) && !order.barOrderId && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && (order.status === 'DELIVERED' || (readyToBill.issues && order.status === 'READY'));
+  const canBillNow = Boolean(readyToBill) && !order.barOrderId && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && order.status !== 'CANCELLED';
 
   return (
     <div className={`order-card order-card--${order.status.toLowerCase()}${order.items.length > 10 ? ' order-card--full' : order.items.length > 6 ? ' order-card--wide' : ''}`} key={order.id}>
@@ -2002,6 +2051,11 @@ function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, del
               Edit order
             </button>
           )}
+          {canEdit && kot && (
+            <button type="button" className="order-btn" disabled={busy} onClick={() => kot(order)}>
+              Reprint KOT
+            </button>
+          )}
           {viewBill && order.invoiceId != null && (
             <button type="button" className="order-btn" disabled={busy} onClick={() => viewBill(order)}>
               View bill
@@ -2028,11 +2082,11 @@ function renderCaptainCard(order, { canDeliver, showPrices, onEdit, deliver, del
   );
 }
 
-function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, cancel, accept, viewBill, readyToBill, busy }) {
+function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, cancel, accept, viewBill, readyToBill, kot, busy }) {
   const canCancel = canDeliver && !order.billed && ['PENDING', 'QUEUED', 'PREPARING'].includes(order.status) &&
     order.items.some((i) => !i.readyAt);
   // Every dish handed over and not yet billed: the captain can send it to billing.
-  const canBillNow = Boolean(readyToBill) && !order.barOrderId && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && (order.status === 'DELIVERED' || (readyToBill.issues && order.status === 'READY'));
+  const canBillNow = Boolean(readyToBill) && !order.barOrderId && !order.billed && !order.onRoomBill && !order.voided && (readyToBill.issues || !order.readyToBill) && order.status !== 'CANCELLED';
   // How long the kitchen actually had it. Only honest once the order has
   // landed somewhere — a live one is still running.
   const settledAt = order.deliveredAt || order.cancelledAt;
@@ -2088,7 +2142,7 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
         (viewBill && order.invoiceId != null) ||
         canCancel ||
         canBillNow ||
-        (onEdit && !order.billed && !order.readyToBill && order.status !== 'CANCELLED')) && (
+        (onEdit && !order.billed && order.status !== 'CANCELLED')) && (
         <div className="history-row__actions">
           {canHandOver() && canDeliver && order.status === 'PENDING' && (
             <button type="button" className="order-btn" disabled={busy} onClick={() => accept(order)}>
@@ -2100,9 +2154,14 @@ function renderHistoryRow(order, { canDeliver, showPrices, onEdit, deliver, canc
               Deliver all
             </button>
           )}
-          {onEdit && !order.billed && !order.readyToBill && order.status !== 'CANCELLED' && (
+          {onEdit && !order.billed && order.status !== 'CANCELLED' && (
             <button type="button" className="order-btn" disabled={busy} onClick={() => onEdit(order)}>
               Edit order
+            </button>
+          )}
+          {onEdit && kot && !order.billed && order.status !== 'CANCELLED' && (
+            <button type="button" className="order-btn" disabled={busy} onClick={() => kot(order)}>
+              Reprint KOT
             </button>
           )}
           {viewBill && order.invoiceId != null && (
@@ -2184,6 +2243,13 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
   const [note, setNote] = useState(editOrder?.note ?? '');
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+  // Who at the table the order is for, and who already has an open order there.
+  const [customerTag, setCustomerTag] = useState('');
+  const [openCustomers, setOpenCustomers] = useState({});
+  useEffect(() => {
+    apiGet('/tables/customers', { token: session?.token }).then((d) => setOpenCustomers(d.customers || {})).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [query, setQuery] = useState('');
   const [activeSectionId, setActiveSectionId] = useState(null);
   // Every section's own heading, so the jump dropdown can scroll straight to
@@ -2544,6 +2610,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
           // otherwise ride along on an order whose payer is the booking.
           guestName: target.kind === 'COUNTER' ? guestName : '',
           guestPhone: target.kind === 'COUNTER' ? guestPhone : '',
+          customerTag: target.kind === 'TABLE' ? customerTag.trim() || null : null,
           note,
           items: lines.map((l) => ({
             itemId: l.itemId,
@@ -2677,6 +2744,24 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
               second, weaker record of something the register already knows.
               A takeaway has neither: this is the only trace of who the food
               is for, so it is required rather than optional. */}
+          {!editOrder && target.kind === 'TABLE' && (
+            <div className="field">
+              <label htmlFor="orderCustomer">Customer</label>
+              <div className="counter-field-icon">
+                <PersonIcon />
+                <input
+                  id="orderCustomer"
+                  value={customerTag}
+                  list="order-open-customers"
+                  onChange={(e) => setCustomerTag(capitalizeName(e.target.value))}
+                  placeholder="Who at the table? Billed separately"
+                />
+                <datalist id="order-open-customers">
+                  {(openCustomers[target.id] || []).map((c) => <option key={c} value={c} />)}
+                </datalist>
+              </div>
+            </div>
+          )}
           {!editOrder && target.kind === 'COUNTER' && (
             <div className="field-row">
               <div className="field">

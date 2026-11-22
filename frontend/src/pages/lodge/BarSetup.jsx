@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api';
 import PageLoader from '../../components/PageLoader';
 import { Modal } from './HousekeepingParts';
+import TablesPanel from './TablesPanel';
 import { Field, Note, Seg } from './BarBits';
 import { barToken, errText, stockText } from './barFormat';
 import { formatPrice } from './priceFormat';
@@ -51,13 +52,14 @@ export default function BarSetup({ onViewReport = null }) {
   return (
     <div className="bar">
       <div className="bar-toolbar">
-        <Seg value={view} onChange={(v) => { setView(v); setMsg(''); setError(''); }} options={[['stock', 'Stock'], ['menu', 'Menu'], ['settings', 'Settings']]} />
+        <Seg value={view} onChange={(v) => { setView(v); setMsg(''); setError(''); }} options={[['stock', 'Stock'], ['menu', 'Menu'], ['tables', 'Tables'], ['settings', 'Settings']]} />
         {onViewReport && <button type="button" className="bar-link" onClick={onViewReport}>Bar report →</button>}
       </div>
       {error && <Note kind="error">{error}</Note>}
       {msg && <Note kind="ok">✓ {msg}</Note>}
       {view === 'stock' && <StockView menu={menu} token={token} run={run} />}
       {view === 'menu' && <MenuView menu={menu} token={token} run={run} />}
+      {view === 'tables' && <TablesPanel area="BAR" />}
       {view === 'settings' && <SettingsView menu={menu} token={token} run={run} />}
     </div>
   );

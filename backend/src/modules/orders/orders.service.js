@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { getPool, sql } = require('../../config/connection');
+const { cleanTag } = require('./customerTag');
 const { ApiError } = require('../../middleware/errorHandler');
 const inventoryService = require('../inventory/inventory.service');
 
@@ -165,7 +166,7 @@ async function resolveOrderLines(pool, lodgeId, requestedItems) {
 // recipe stock all work as usual), tagged with the bar order it belongs to.
 // The bar passes its own transaction so the two orders are created atomically;
 // the caller then owns commit and rollback.
-async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestName, guestPhone, note, items, status, createdBy, barOrderId = null, transaction: outerTransaction = null }) {
+async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestName, guestPhone, note, items, status, createdBy, barOrderId = null, customerTag = null, transaction: outerTransaction = null }) {
   if (items.length === 0) {
     throw new ApiError('Add at least one item to the order.', 400);
   }
@@ -199,15 +200,16 @@ async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestN
       .input('subtotal', sql.Decimal(10, 2), subtotal)
       .input('createdBy', sql.BigInt, createdBy ?? null)
       .input('barOrderId', sql.BigInt, barOrderId)
+      .input('customerTag', sql.NVarChar, source === 'TABLE' ? cleanTag(customerTag) : null)
       .query(`
         INSERT INTO dbo.food_orders
           (lodge_id, order_date, order_number, source, room_id, booking_id, table_id,
-           guest_name, guest_phone, note, status, subtotal, accepted_at, created_by, public_token, bar_order_id)
+           guest_name, guest_phone, note, status, subtotal, accepted_at, created_by, public_token, bar_order_id, customer_tag)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @orderDate, @orderNumber, @source, @roomId, @bookingId, @tableId,
            @guestName, @guestPhone, @note, @status, @subtotal,
-           CASE WHEN @status = 'QUEUED' THEN SYSDATETIMEOFFSET() ELSE NULL END, @createdBy, @publicToken, @barOrderId)
+           CASE WHEN @status = 'QUEUED' THEN SYSDATETIMEOFFSET() ELSE NULL END, @createdBy, @publicToken, @barOrderId, @customerTag)
       `);
 
     const orderId = orderResult.recordset[0].id;
@@ -354,6 +356,7 @@ function mapOrder(row, items) {
     bookingId: row.booking_id,
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
+    customerTag: row.customer_tag ?? null,
     note: row.note,
     status: row.status,
     subtotal: Number(row.subtotal),
@@ -449,7 +452,7 @@ async function listOrders(lodgeId, { status, date, from, to, live, awaitingBill 
            COALESCE(o.guest_name, bk.guest_name) AS guest_name, COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
            o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
            o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.on_room_bill, o.created_by, uh.name AS handler_name,
-           o.table_id, o.room_id, o.bar_order_id,
+           o.table_id, o.room_id, o.bar_order_id, o.customer_tag,
            (SELECT status FROM dbo.bar_orders WHERE id = o.bar_order_id) AS bar_status,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
            (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,
@@ -509,7 +512,7 @@ async function getOrder(lodgeId, orderId) {
            COALESCE(o.guest_name, bk.guest_name) AS guest_name, COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
              o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
              o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.on_room_bill, o.created_by, uh.name AS handler_name,
-           o.table_id, o.room_id, o.bar_order_id,
+           o.table_id, o.room_id, o.bar_order_id, o.customer_tag,
            (SELECT status FROM dbo.bar_orders WHERE id = o.bar_order_id) AS bar_status,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
            (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,
@@ -750,10 +753,37 @@ async function markReadyToBill(lodgeId, orderId) {
     .input('orderId', sql.BigInt, orderId)
     .query(`
       UPDATE dbo.food_orders SET ready_to_bill_at = COALESCE(ready_to_bill_at, SYSDATETIMEOFFSET())
-      WHERE id = @orderId AND lodge_id = @lodgeId AND status = 'DELIVERED' AND invoice_id IS NULL AND bar_order_id IS NULL
+      WHERE id = @orderId AND lodge_id = @lodgeId AND status <> 'CANCELLED' AND invoice_id IS NULL AND bar_order_id IS NULL
     `);
   if (result.rowsAffected[0] === 0) {
-    throw new ApiError('Only a fully delivered, unbilled order can be marked ready to bill.', 409);
+    throw new ApiError('Only an unbilled, uncancelled order can be marked ready to bill.', 409);
+  }
+  return getOrder(lodgeId, orderId);
+}
+
+// Moves a table order to another customer (or renames one: move every order of the
+// old tag). Also covers merging two customers. Only while unbilled; an order that
+// belongs to a bar order carries the bar order's tag with it, so both stay together.
+async function setOrderCustomer(lodgeId, orderId, tag) {
+  const pool = await getPool();
+  const t = cleanTag(tag);
+  const r = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('id', sql.BigInt, orderId)
+    .input('t', sql.NVarChar, t)
+    .query(`
+      UPDATE dbo.food_orders SET customer_tag = @t
+      OUTPUT inserted.bar_order_id
+      WHERE id = @id AND lodge_id = @lodgeId AND source = 'TABLE' AND invoice_id IS NULL AND status <> 'CANCELLED'
+    `);
+  if (!r.recordset.length) throw new ApiError('Only an unbilled table order can be moved to another customer.', 409);
+  const barId = r.recordset[0].bar_order_id;
+  if (barId) {
+    await pool.request().input('lodgeId', sql.BigInt, lodgeId).input('b', sql.BigInt, barId).input('t', sql.NVarChar, t)
+      .query("UPDATE dbo.bar_orders SET customer_tag = @t WHERE id = @b AND lodge_id = @lodgeId AND status = 'OPEN'");
+    await pool.request().input('lodgeId', sql.BigInt, lodgeId).input('b', sql.BigInt, barId).input('t', sql.NVarChar, t)
+      .query("UPDATE dbo.food_orders SET customer_tag = @t WHERE bar_order_id = @b AND lodge_id = @lodgeId AND invoice_id IS NULL");
   }
   return getOrder(lodgeId, orderId);
 }
@@ -985,4 +1015,5 @@ module.exports = {
   deliverAllItems,
   listRunningTabs,
   markReadyToBill,
+  setOrderCustomer,
 };

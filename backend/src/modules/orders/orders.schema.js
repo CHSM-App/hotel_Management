@@ -28,6 +28,8 @@ const counterOrderSchema = z
     guestName: z.string().trim().max(200).optional().default(''),
     guestPhone: z.string().trim().max(20).optional().default(''),
     note: z.string().trim().max(300).optional().default(''),
+    // Who at the table this is for; only meaningful with a tableId.
+    customerTag: z.string().trim().max(60).optional().nullable(),
     items: orderItemsSchema,
   })
   .refine((data) => !(data.tableId && data.roomId), {
@@ -46,6 +48,8 @@ const counterOrderSchema = z
     message: 'Add a phone number for a counter order.',
     path: ['guestPhone'],
   });
+
+const customerSchema = z.object({ customerTag: z.string().trim().max(60).nullable() });
 
 const updateStatusSchema = z.object({
   status: z.enum(ORDER_STATUSES, { error: 'Unknown order status.' }),
@@ -79,6 +83,7 @@ module.exports = {
   ORDER_STATUSES,
   orderItemsSchema,
   counterOrderSchema,
+  customerSchema,
   updateStatusSchema,
   updateItemReadySchema,
 };

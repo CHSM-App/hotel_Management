@@ -76,6 +76,9 @@ class BarImpl implements BarRepository {
   Future<void> deliverFoodItem(int foodOrderId, int itemId) => api.deliverBarFoodItem(foodOrderId, itemId);
 
   @override
+  Future<void> setCustomer(int id, String? tag) => api.barSetCustomer(id, tag);
+
+  @override
   Future<void> readyToBill(int id) => api.barReadyToBill(id);
 
   @override

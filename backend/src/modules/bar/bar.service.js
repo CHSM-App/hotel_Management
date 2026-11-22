@@ -2,6 +2,7 @@ const { getPool, sql } = require('../../config/connection');
 const { ApiError } = require('../../middleware/errorHandler');
 const ordersService = require('../orders/orders.service');
 const billing = require('../billing/billing.service');
+const { cleanTag, customerKey } = require('../orders/customerTag');
 
 // Bar module. Everything lives in bar_* tables so no restaurant report can pick
 // a bar sale up. Stock is a single number per product, in ml; bottles are
@@ -390,7 +391,9 @@ async function addFoodOrder(tx, lodgeId, barOrderId, ctx, foodItems, userId) {
     guestName: ctx.guestName ?? null,
     guestPhone: ctx.guestPhone ?? null,
     items: foodItems.map((f) => ({ itemId: f.itemId, portionId: f.portionId ?? null, quantity: f.quantity })),
-    status: 'QUEUED',
+    status: ctx.foodStatus || 'QUEUED',
+    note: ctx.note ?? null,
+    customerTag: ctx.customerTag ?? null,
     createdBy: userId ?? null,
     barOrderId,
     transaction: tx,
@@ -426,11 +429,12 @@ async function createOrder(lodgeId, input, userId) {
       .input('gn', sql.NVarChar, input.guestName ?? null)
       .input('gp', sql.NVarChar, input.guestPhone ?? null)
       .input('u', sql.BigInt, userId ?? null)
+      .input('ct', sql.NVarChar, input.source === 'TABLE' ? cleanTag(input.customerTag) : null)
       .query(
         `INSERT INTO dbo.bar_orders (lodge_id, order_date, order_number, source, table_id, room_id, booking_id,
-           restaurant_order_id, guest_name, guest_phone, created_by)
+           restaurant_order_id, guest_name, guest_phone, created_by, customer_tag)
          OUTPUT inserted.id
-         VALUES (@lodgeId, @d, @n, @src, @t, @r, @b, @ro, @gn, @gp, @u)`
+         VALUES (@lodgeId, @d, @n, @src, @t, @r, @b, @ro, @gn, @gp, @u, @ct)`
       );
     const orderId = r.recordset[0].id;
     await insertLines(tx, lodgeId, orderId, lines, userId);
@@ -451,7 +455,7 @@ async function lockOpenOrder(tx, lodgeId, orderId, { allowRoomBill = false } = {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('id', sql.BigInt, orderId)
     .query(
-      `SELECT id, status, source, table_id, room_id, booking_id, guest_name, guest_phone, on_room_bill
+      `SELECT id, status, source, table_id, room_id, booking_id, guest_name, guest_phone, on_room_bill, customer_tag
        FROM dbo.bar_orders WITH (UPDLOCK) WHERE id=@id AND lodge_id=@lodgeId`
     );
   const o = r.recordset[0];
@@ -465,6 +469,7 @@ async function lockOpenOrder(tx, lodgeId, orderId, { allowRoomBill = false } = {
     bookingId: o.booking_id,
     guestName: o.guest_name,
     guestPhone: o.guest_phone,
+    customerTag: o.customer_tag,
   };
 }
 
@@ -740,7 +745,6 @@ async function addToRoomBill(lodgeId, orderId, { bookingId, roomId }) {
 async function markReadyToBill(lodgeId, orderId) {
   const orders = (await listOrders(lodgeId, { status: 'OPEN' })).filter((o) => String(o.id) === String(orderId));
   if (!orders.length) throw new ApiError('Order not found, or already billed.', 404);
-  if (orders[0].undelivered > 0) throw new ApiError('Deliver everything on this order first.', 409);
   await (await getPool())
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -765,7 +769,7 @@ async function listOrders(lodgeId, { status = 'OPEN', from = null, to = null } =
     await bind(pool.request())
       .query(
         `SELECT o.id, o.order_date, o.order_number, o.source, o.table_id, o.room_id, o.booking_id, o.restaurant_order_id,
-                o.guest_name, o.guest_phone, o.status, o.bill_id, o.created_at, o.ready_to_bill_at,
+                o.guest_name, o.guest_phone, o.customer_tag, o.status, o.bill_id, o.created_at, o.ready_to_bill_at,
                 t.label AS table_label, r.room_number, bb.bill_seq, inv.invoice_number AS room_invoice_number
          FROM dbo.bar_orders o
          LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
@@ -813,6 +817,7 @@ async function listOrders(lodgeId, { status = 'OPEN', from = null, to = null } =
       restaurantOrderId: o.restaurant_order_id,
       guestName: o.guest_name,
       guestPhone: o.guest_phone,
+      customerTag: o.customer_tag ?? null,
       status: o.status,
       // Worked out from the lines, so a dish the restaurant side later returns is already out of it.
       subtotal: round2(drinks.reduce((s, d) => s + d.lineTotal, 0) + foodItems.reduce((s, f) => s + f.lineTotal, 0)),
@@ -835,7 +840,7 @@ async function listTargets(lodgeId) {
   const pool = await getPool();
   const [tables, guests] = await Promise.all([
     pool.request().input('lodgeId', sql.BigInt, lodgeId).query(
-      'SELECT id, label FROM dbo.dining_tables WHERE lodge_id = @lodgeId AND is_active = 1 ORDER BY LEN(label), label'
+      "SELECT id, label FROM dbo.dining_tables WHERE lodge_id = @lodgeId AND area = 'BAR' AND is_active = 1 ORDER BY LEN(label), label"
     ),
     pool.request().input('lodgeId', sql.BigInt, lodgeId).query(
       `SELECT DISTINCT br.room_id, r.room_number, b.id AS booking_id, b.guest_name, b.guest_phone
@@ -858,21 +863,41 @@ async function listTargets(lodgeId) {
   };
 }
 
+// Moves an open bar order (and the restaurant food on it) to another customer. Also the
+// way to rename or merge customers at a table.
+async function setOrderCustomer(lodgeId, orderId, tag) {
+  const t = cleanTag(tag);
+  const pool = await getPool();
+  const r = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('id', sql.BigInt, orderId)
+    .input('t', sql.NVarChar, t)
+    .query("UPDATE dbo.bar_orders SET customer_tag = @t WHERE id = @id AND lodge_id = @lodgeId AND source = 'TABLE' AND status = 'OPEN' AND on_room_bill = 0");
+  if (!r.rowsAffected[0]) throw new ApiError('Only an open table order can be moved to another customer.', 409);
+  await pool.request().input('lodgeId', sql.BigInt, lodgeId).input('id', sql.BigInt, orderId).input('t', sql.NVarChar, t)
+    .query('UPDATE dbo.food_orders SET customer_tag = @t WHERE bar_order_id = @id AND lodge_id = @lodgeId AND invoice_id IS NULL');
+  return { id: orderId, customerTag: t };
+}
+
 // ----------------------------------------------------------------- billing
 
 // Open orders grouped the way the restaurant tab list is: by table, room or counter order.
 async function listTabs(lodgeId) {
-  // Only orders marked ready to bill reach the cashier's list.
-  const orders = (await listOrders(lodgeId, { status: 'OPEN' })).filter((o) => o.readyToBill);
+  // Every open order is billable; kitchen/delivery status doesn't gate billing.
+  const orders = (await listOrders(lodgeId, { status: 'OPEN' }));
   const tabs = new Map();
   for (const o of orders) {
-    const key = o.source === 'TABLE' ? `T${o.tableId}` : o.source === 'ROOM' ? `R${o.roomId}` : `C${o.id}`;
+    // A table splits into one tab per customer; '~' alone is the untagged group.
+    const key = o.source === 'TABLE' ? `T${o.tableId}~${encodeURIComponent(customerKey(o.customerTag))}` : o.source === 'ROOM' ? `R${o.roomId}` : `C${o.id}`;
     if (!tabs.has(key)) {
       tabs.set(key, {
         key,
         source: o.source,
+        tableId: o.tableId,
+        customerTag: o.customerTag ?? null,
         label: o.source === 'TABLE' ? `Table ${o.tableLabel ?? o.tableId}` : o.source === 'ROOM' ? `Room ${o.roomNumber ?? o.roomId}` : `Counter #${o.orderNumber}`,
-        guestName: o.guestName,
+        guestName: o.source === 'TABLE' && o.customerTag ? o.customerTag : o.guestName,
         guestPhone: o.guestPhone,
         roomId: o.roomId,
         bookingId: o.bookingId,
@@ -917,7 +942,7 @@ async function issueBill(lodgeId, input, userId) {
     const list = idList(q, ids);
     const orders = (
       await q.query(
-        `SELECT id, status, guest_name, guest_phone, on_room_bill FROM dbo.bar_orders WITH (UPDLOCK)
+        `SELECT id, status, guest_name, guest_phone, customer_tag, on_room_bill FROM dbo.bar_orders WITH (UPDLOCK)
          WHERE lodge_id=@lodgeId AND id IN (${list})`
       )
     ).recordset;
@@ -947,10 +972,6 @@ async function issueBill(lodgeId, input, userId) {
     const subtotal = round2(drinks + food);
     if (subtotal <= 0) throw new ApiError('Nothing to bill.', 400);
 
-    const pending = drinkRow.undelivered + foodRow.undelivered;
-    if (pending > 0 && !input.billAnyway) {
-      throw new ApiError(`${pending} item${pending === 1 ? ' is' : 's are'} still to deliver. Deliver ${pending === 1 ? 'it' : 'them'}, or bill anyway.`, 409, 'pending');
-    }
     const paid = round2(input.payments.reduce((s, p) => s + p.amount, 0));
     if (Math.abs(paid - subtotal) > 0.009) throw new ApiError(`Payments (${paid}) must equal the bill total (${subtotal}).`, 400, 'payments');
 
@@ -985,7 +1006,7 @@ async function issueBill(lodgeId, input, userId) {
       .input('fs', sql.Decimal(10, 2), food)
       .input('ftp', sql.Decimal(5, 2), foodRate)
       .input('fta', sql.Decimal(10, 2), foodTax)
-      .input('cn', sql.NVarChar, input.customerName ?? orders[0].guest_name ?? null)
+      .input('cn', sql.NVarChar, input.customerName ?? orders[0].customer_tag ?? orders[0].guest_name ?? null)
       .input('cp', sql.NVarChar, input.customerPhone ?? orders[0].guest_phone ?? null)
       .input('u', sql.BigInt, userId ?? null)
       .query(
@@ -1004,7 +1025,7 @@ async function issueBill(lodgeId, input, userId) {
         .query('INSERT INTO dbo.bar_bill_payments (bill_id, method, amount, reference) VALUES (@b, @m, @a, @r)');
     }
     const u = new sql.Request(tx).input('lodgeId', sql.BigInt, lodgeId).input('b', sql.BigInt, billId);
-    await u.query(`UPDATE dbo.bar_orders SET status='BILLED', bill_id=@b, subtotal=${subtotal} WHERE lodge_id=@lodgeId AND id IN (${idList(u, ids)})`);
+    await u.query(`UPDATE dbo.bar_orders SET status='BILLED', bill_id=@b WHERE lodge_id=@lodgeId AND id IN (${idList(u, ids)})`);
     await tx.commit();
     return getBill(lodgeId, billId);
   } catch (err) {
