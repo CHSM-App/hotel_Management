@@ -479,10 +479,29 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       return NeuNotice(
         message: error ?? 'Could not load your lodge.',
         icon: Icons.cloud_off_rounded,
-        action: NeuButton(
-          onPressed: () =>
-              ref.read(authViewModelProvider.notifier).loadMe(),
-          child: const Text('Try again'),
+        // No rail on this page, so Sign out has to be offered here: a saved
+        // login whose account the server no longer knows ("Account not
+        // found") can never load, and would otherwise be a dead end.
+        action: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              NeuButton(
+                primary: true,
+                onPressed: () =>
+                    ref.read(authViewModelProvider.notifier).loadMe(),
+                child: const Text('Try again'),
+              ),
+              const SizedBox(height: AppTheme.s8),
+              NeuButton(
+                onPressed: () =>
+                    ref.read(authViewModelProvider.notifier).signOut(),
+                child: const Text('Sign out'),
+              ),
+            ],
+          ),
         ),
       );
     }
