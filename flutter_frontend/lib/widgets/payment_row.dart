@@ -42,6 +42,12 @@ class _PaymentRowState extends State<PaymentRow> {
   late final _reference = TextEditingController(text: widget.line.reference);
 
   @override
+  void didUpdateWidget(covariant PaymentRow old) {
+    super.didUpdateWidget(old);
+    if (_amount.text != widget.line.amount) _amount.text = widget.line.amount;
+  }
+
+  @override
   void dispose() {
     _amount.dispose();
     _reference.dispose();

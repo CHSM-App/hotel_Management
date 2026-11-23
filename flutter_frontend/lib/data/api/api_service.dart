@@ -132,6 +132,18 @@ class ApiService {
     return Me.fromJson(_map(res.data));
   }
 
+  /// Per-property switches (owner-only): which WhatsApp messages go out by
+  /// themselves (`waAuto*` = true) and which the desk sends by hand.
+  Future<Map<String, dynamic>> mySettings() async {
+    final res = await _dio.get('/me/settings');
+    return _map(res.data);
+  }
+
+  Future<Map<String, dynamic>> updateMySettings(Map<String, bool> body) async {
+    final res = await _dio.patch('/me/settings', data: body);
+    return _map(res.data);
+  }
+
   /// Upload or replace the property's logo — [form] carries one file under
   /// the field name 'logo', the shape `logoUpload` middleware expects.
   Future<Me> updateMyLodgeLogo(FormData form) async {
@@ -743,8 +755,9 @@ class ApiService {
   Future<Map<String, BillSeries>> billingSeries() async {
     final map = _map((await _dio.get('/billing/series')).data);
     return {
-      for (final key in ['final', 'advance'])
-        key: BillSeries.fromJson(map[key] as Map<String, dynamic>),
+      for (final key in ['final', 'food', 'advance'])
+        if (map[key] != null)
+          key: BillSeries.fromJson(map[key] as Map<String, dynamic>),
     };
   }
 

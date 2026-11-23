@@ -112,6 +112,22 @@ class _NumberingScreenState extends ConsumerState<NumberingScreen> {
                     .updateBillingSeries('FINAL', next),
               ),
               const SizedBox(height: AppTheme.s12),
+              if (series['food'] != null) ...[
+                _SeriesCard(
+                  key: ValueKey('food-${series['food']!.nextNumber}'),
+                  icon: Icons.restaurant_rounded,
+                  title: 'Restaurant bills',
+                  note:
+                      'Restaurant bills run their own numbers, starting at 1, apart from room bills.',
+                  series: series['food']!,
+                  onSaved: (updated) =>
+                      setState(() => _series = {...series, 'food': updated}),
+                  save: (next) => ref
+                      .read(billingUsecaseProvider)
+                      .updateBillingSeries('FOOD', next),
+                ),
+                const SizedBox(height: AppTheme.s12),
+              ],
               _SeriesCard(
                 key: ValueKey('advance-${series['advance']!.nextNumber}'),
                 icon: Icons.payments_rounded,

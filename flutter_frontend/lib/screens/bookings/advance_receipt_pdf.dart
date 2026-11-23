@@ -326,6 +326,7 @@ class AdvanceReceiptPdf {
                 2: pw.FixedColumnWidth(26),
               },
               children: [
+                for (final c in _chargeRows(r)) _moneyRow(c.$1, c.$2),
                 if (r.roundOff != 0)
                   _moneyRow('Sub Total', _round2(r.stayTotal - r.roundOff)),
                 if (r.roundOff != 0) _moneyRow('Round off', r.roundOff),
@@ -442,6 +443,34 @@ class AdvanceReceiptPdf {
       style: pw.TextStyle(fontSize: fine ? 6.5 : 8, fontWeight: pw.FontWeight.bold),
     ),
   );
+
+  /// What the stay total is made of — room rent, then each extra — as the web
+  /// receipt prints it, plus a remainder line for discounts and the like.
+  static List<(String, num)> _chargeRows(AdvanceReceipt r) {
+    if (r.roomCharges.isEmpty) return const [];
+    final sections = roomBillSections(r.roomCharges) ??
+        [
+          RoomBillSection(
+            room: '',
+            base: r.roomCharges.first,
+            extras: r.roomCharges.skip(1).toList(),
+          ),
+        ];
+    final rows = <(String, num)>[];
+    for (final s in sections) {
+      final prefix = s.room.isEmpty ? '' : 'Room ${s.room} - ';
+      final n = s.base.nights;
+      final rate = _round2(s.base.amount / (n < 1 ? 1 : n));
+      final rateText = rate % 1 == 0 ? rate.toInt().toString() : rate.toStringAsFixed(2);
+      rows.add(('${prefix}Room rent Rs.$rateText x $n ${n == 1 ? 'day' : 'days'}', s.base.amount));
+      for (final e in s.extras) {
+        rows.add(('$prefix${e.label}', e.amount));
+      }
+    }
+    final rest = _round2(r.stayTotal - r.roundOff - rows.fold<num>(0, (t, e) => t + e.$2));
+    if (rest.abs() > 0.005) rows.add(('Discount / adjustment', rest));
+    return rows;
+  }
 
   static (String, String) _split(num value) {
     final sign = value < 0 ? '-' : '';

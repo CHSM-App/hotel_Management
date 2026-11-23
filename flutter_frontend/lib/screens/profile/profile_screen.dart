@@ -13,6 +13,7 @@ import '../../widgets/neu.dart';
 import '../rooms/room_form_pieces.dart';
 import '../printing/printer_settings_screen.dart';
 import '../shell/sign_out_dialog.dart';
+import 'whatsapp_settings_screen.dart';
 import '../theme.dart';
 
 /// The account screen — who is signed in, what property they're on, and the
@@ -210,6 +211,22 @@ class ProfileScreen extends ConsumerWidget {
                       if (_hasText(me.lodge.slug)) ...[
                         const SizedBox(height: AppTheme.s16),
                         _PublicLinkCard(lodge: me.lodge),
+                      ],
+                      if (me.user.role == 'OWNER') ...[
+                        const SizedBox(height: AppTheme.s16),
+                        NeuCard(
+                          padding: EdgeInsets.zero,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const WhatsAppSettingsScreen()),
+                          ),
+                          child: const _ActionRow(
+                            icon: Icons.chat_bubble_rounded,
+                            iconColor: AppTheme.vacant,
+                            label: 'WhatsApp messages',
+                            subtitle: 'Choose which messages send automatically',
+                            forceChevron: true,
+                          ),
+                        ),
                       ],
                       const SizedBox(height: AppTheme.s24),
                       const _SectionLabel('This device', icon: Icons.print_outlined),

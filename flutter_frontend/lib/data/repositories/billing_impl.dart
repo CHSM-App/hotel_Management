@@ -31,11 +31,35 @@ class BillingImpl implements BillingRepository {
     return b is Map ? b.cast<String, dynamic>() : null;
   }
 
-  @override
-  Future<List<BillableStay>> queue() => api.billingQueue();
+  /// Offline with nothing saved for a list: show it empty rather than failing
+  /// the whole billing screen.
+  Future<List<T>> _orEmpty<T>(Future<List<T>> Function() online) async {
+    try {
+      return await online();
+    } on OfflineUnavailable {
+      if (desk == null) rethrow;
+      return const [];
+    }
+  }
 
   @override
-  Future<List<EventBooking>> queueEvents() => api.eventBillingQueue();
+  Future<List<BillableStay>> queue() async {
+    final rows = await _orEmpty(api.billingQueue);
+    final d = desk;
+    if (d == null) return rows;
+    // Billed on this device and waiting to sync: no longer waiting for a bill.
+    final billed = {
+      for (final s in await d.store.staysAll())
+        if (s['status'] == 'CHECKED_OUT') int.parse('${s['id']}'),
+    };
+    return [
+      for (final r in rows)
+        if (!billed.contains(r.id)) r,
+    ];
+  }
+
+  @override
+  Future<List<EventBooking>> queueEvents() => _orEmpty(api.eventBillingQueue);
 
   @override
   Future<BillPreview> preview(
@@ -95,7 +119,7 @@ class BillingImpl implements BillingRepository {
   }
 
   @override
-  Future<List<FoodTab>> foodTabs() => api.foodTabs();
+  Future<List<FoodTab>> foodTabs() => _orEmpty(api.foodTabs);
 
   @override
   Future<FoodBillPreview> previewFoodBill(String tab) =>
@@ -113,7 +137,7 @@ class BillingImpl implements BillingRepository {
       api.addFoodTabToRoom(tab, bookingId);
 
   @override
-  Future<List<Invoice>> invoices() => api.invoices();
+  Future<List<Invoice>> invoices() => _orEmpty(api.invoices);
 
   @override
   Future<Invoice> voidInvoice(int id, String reason) =>
@@ -134,7 +158,7 @@ class BillingImpl implements BillingRepository {
   }
 
   @override
-  Future<List<AdvanceReceipt>> allAdvanceReceipts() => api.allAdvanceReceipts();
+  Future<List<AdvanceReceipt>> allAdvanceReceipts() => _orEmpty(api.allAdvanceReceipts);
 
   @override
   Future<AdvanceReceipt> issueAdvanceReceipt(
@@ -173,7 +197,7 @@ class BillingImpl implements BillingRepository {
 
   @override
   Future<List<ServiceUsage>> billableServiceUsages() =>
-      api.serviceUsages(status: 'tobill');
+      _orEmpty(() => api.serviceUsages(status: 'tobill'));
 
   @override
   Future<ServiceBillPreview> previewServiceBill(List<int> usageIds) =>

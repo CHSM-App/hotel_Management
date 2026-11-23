@@ -1267,6 +1267,10 @@ class AdvanceReceipt {
   final num stayTotal;
   final num roundOff;
   final num balanceDue;
+
+  /// The priced lines the stay total is made of (room rent, extras) — empty
+  /// for an event receipt or one from before the server sent them.
+  final List<BillLine> roomCharges;
   final String? paymentMethod;
   final String? paymentReference;
   final List<PaymentLine> paymentLines;
@@ -1331,6 +1335,7 @@ class AdvanceReceipt {
     this.stayTotal = 0,
     this.roundOff = 0,
     this.balanceDue = 0,
+    this.roomCharges = const [],
     this.paymentMethod,
     this.paymentReference,
     this.paymentLines = const [],
@@ -1378,6 +1383,11 @@ class AdvanceReceipt {
     stayTotal: asNum(json['stayTotal']),
     roundOff: asNum(json['roundOff']),
     balanceDue: asNum(json['balanceDue']),
+    roomCharges:
+        (json['roomCharges'] as List?)
+            ?.map((e) => BillLine.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
     paymentMethod: asStringOrNull(json['paymentMethod']),
     paymentReference: asStringOrNull(json['paymentReference']),
     paymentLines:

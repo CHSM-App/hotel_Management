@@ -53,6 +53,20 @@ class Prefetcher {
         await api.me();
       } catch (_) {}
 
+      // The billing screen's lists, so it opens offline with what was last seen.
+      for (final warm in <Future<dynamic> Function()>[
+        api.billingQueue,
+        api.eventBillingQueue,
+        api.foodTabs,
+        api.invoices,
+        api.allAdvanceReceipts,
+        () => api.serviceUsages(status: 'tobill'),
+      ]) {
+        try {
+          await warm();
+        } catch (_) {}
+      }
+
       final today = boot['today'] as String? ?? DateTime.now().toIso8601String().substring(0, 10);
       final soon = DateTime.parse(today).add(const Duration(days: 3)).toIso8601String().substring(0, 10);
       final chart = (boot['tapeChart'] as Map?) ?? const {};

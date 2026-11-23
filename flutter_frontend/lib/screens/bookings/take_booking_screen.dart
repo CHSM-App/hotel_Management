@@ -223,6 +223,10 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   /// does not take money — that is what the advance-receipt screen is for.
   final List<PaymentDraft> _advance = [PaymentDraft()];
 
+  /// The single advance row follows the stay total (like the web form) until
+  /// the desk types their own amount, adds a row, or a draft supplies one.
+  bool _advanceAuto = true;
+
   bool get _editing => widget.editBooking != null;
 
   // -- Billed-stay revision / past booking ----------------------------------
@@ -600,6 +604,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         _advance
           ..clear()
           ..addAll(form.advanceLines);
+        _advanceAuto = false;
       }
       await vm.beginFromDraft(draft);
       _confirmCapacityBaseline();
@@ -1378,6 +1383,15 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
             final split = constraints.maxWidth >= 1100;
             _syncPastWindow(state);
             final desktop = AppTheme.isDesktop(context);
+            final autoTotal = state.quote?.totalPrice;
+            if (_advanceAuto &&
+                !_editing &&
+                !_pastMode(state) &&
+                _advance.length == 1 &&
+                autoTotal != null &&
+                autoTotal > 0) {
+              _advance[0].amount = '$autoTotal';
+            }
             // The two sections that share a row on a wide window.
             final paymentWidgets = <Widget>[
                       Builder(
@@ -1410,10 +1424,19 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                           hintText: _paidInFull && state.quote != null
                               ? 'Full payment of ${formatPrice(state.quote!.totalPrice)} is being collected at booking.'
                               : null,
-                          onAdd: () =>
-                              setState(() => _advance.add(PaymentDraft())),
-                          onRemove: (i) => setState(() => _advance.removeAt(i)),
-                          onChanged: () => setState(() {}),
+                          onAdd: () => setState(() {
+                            _advanceAuto = false;
+                            _advance.add(PaymentDraft());
+                          }),
+                          onRemove: (i) => setState(() {
+                            _advanceAuto = false;
+                            _advance.removeAt(i);
+                          }),
+                          onChanged: () => setState(() {
+                            if (_advance[0].amount != '$autoTotal') {
+                              _advanceAuto = false;
+                            }
+                          }),
                         ),
                       ),
             ];
