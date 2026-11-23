@@ -86,7 +86,9 @@ Future<void> _install(String url, void Function(double) onProgress) async {
 /// Shows the update dialog. [manual] = user pressed "Check for updates", so
 /// say so when there is nothing new.
 Future<void> promptForUpdate({bool manual = false}) async {
-  final ctx = navigatorKey.currentContext;
+  // The overlay's context sits BELOW the Navigator. navigatorKey.currentContext
+  // is the Navigator itself, and showDialog looks for one above it and throws.
+  final ctx = navigatorKey.currentState?.overlay?.context;
   if (ctx == null) return;
   final info = await checkForUpdate();
   if (!ctx.mounted) return;
