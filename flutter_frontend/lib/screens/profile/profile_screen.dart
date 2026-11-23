@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart' as dio;
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constant.dart';
+import '../../core/update/updater.dart';
 import '../../domain/models/me.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/neu.dart';
@@ -260,6 +263,20 @@ class ProfileScreen extends ConsumerWidget {
                           forceChevron: true,
                         ),
                       ),
+                      if (Platform.isWindows) ...[
+                        const SizedBox(height: AppTheme.s24),
+                        NeuCard(
+                          padding: EdgeInsets.zero,
+                          onTap: () => promptForUpdate(manual: true),
+                          child: const _ActionRow(
+                            icon: Icons.system_update_alt_rounded,
+                            iconColor: Color(0xFF7C5CFF),
+                            label: 'Check for updates',
+                            subtitle: 'Install the latest version of this app',
+                            forceChevron: true,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: AppTheme.s32),
                       Material(
                         color: AppTheme.danger.withValues(alpha: 0.08),

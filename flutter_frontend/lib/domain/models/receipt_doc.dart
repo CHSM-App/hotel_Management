@@ -226,6 +226,7 @@ class ReceiptDocs {
 
   static ReceiptDoc invoice(Invoice inv, {required String lodgeName}) {
     final isFood = inv.kind == 'FOOD';
+    final stay = !inv.isFoodBill && !inv.isEventBill;
     final label = isFood ? 'Restaurant bill' : (kDocumentLabels[inv.documentType] ?? 'Bill');
     final cgst = inv.cgstAmount + inv.foodCgstAmount + inv.serviceCgstAmount;
     final sgst = inv.sgstAmount + inv.foodSgstAmount + inv.serviceSgstAmount;
@@ -251,6 +252,11 @@ class ReceiptDocs {
       if (inv.status == 'VOID') const RText('*** VOID ***', bold: true),
       RText('Bill#: ${inv.invoiceNumber ?? inv.id}', center: false),
       RText('Date: ${_stamp(inv.createdAt)}', center: false),
+      if (stay && inv.bookingCreatedAt != null) RText('Booked: ${_stamp(inv.bookingCreatedAt)}', center: false),
+      if (stay && (inv.actualCheckInAt ?? inv.checkInDate) != null)
+        RText('Check-in: ${_stamp(inv.actualCheckInAt ?? inv.checkInDate)}', center: false),
+      if (stay && (inv.actualCheckOutAt ?? inv.checkOutDate) != null)
+        RText('Check-out: ${_stamp(inv.actualCheckOutAt ?? inv.checkOutDate)}', center: false),
       if (who.isNotEmpty) RText('For: $who', center: false),
       if ((inv.guestName ?? '').isNotEmpty) RText('Guest: ${inv.guestName}', center: false),
       const RRule(),

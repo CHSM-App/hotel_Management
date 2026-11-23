@@ -64,8 +64,8 @@ class _IncomeRecurringTemplateHistoryScreenState extends ConsumerState<IncomeRec
       ),
       floatingActionButton: template.isActive
           ? FloatingActionButton.extended(
-              backgroundColor: AppTheme.accent,
-              foregroundColor: Colors.white,
+              backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
+              foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
               icon: const Icon(Icons.add_rounded),
               label: const Text('Log this month'),
               onPressed: () async {

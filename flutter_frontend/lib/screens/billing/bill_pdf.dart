@@ -678,6 +678,7 @@ class BillPdf {
     final to = _splitDateTime(inv.actualCheckOutAt ?? inv.checkOutDate);
     final eventFrom = _splitDateTime(inv.eventStartAt);
     final eventTo = _splitDateTime(inv.eventEndAt);
+    final booked = _splitDateTime(inv.bookingCreatedAt);
 
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 3, horizontal: 2),
@@ -746,6 +747,13 @@ class BillPdf {
           if (!inv.isFoodBill &&
               !inv.isEventBill &&
               !_chargeBlocksDatesDiffer(inv)) ...[
+            if (inv.bookingCreatedAt != null)
+              _strip([
+                _label('Booked on'),
+                _filled(booked.$1, width: 76),
+                _label('at'),
+                _filled(booked.$2, width: 60),
+              ]),
             _strip([
               _label('For'),
               _filled('${inv.nights}', width: 30),

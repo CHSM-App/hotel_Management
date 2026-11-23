@@ -13,6 +13,37 @@ import 'package:flutter/material.dart';
 /// Window-width tiers; see [AppTheme.screenSize].
 enum ScreenSize { mobile, tablet, desktop, large }
 
+/// Desktop page transition that also keeps every pushed (non-first) screen to
+/// the web's 1360px content width on the web's page background — one place
+/// instead of a cap on each of the screens that never had one.
+class DeskPageTransitions extends PageTransitionsBuilder {
+  const DeskPageTransitions();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final wrapped = (!route.isFirst && AppTheme.isDesktop(context))
+        ? ColoredBox(
+            color: AppTheme.paper,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: AppTheme.dashMaxWidth),
+                child: child,
+              ),
+            ),
+          )
+        : child;
+    return const FadeForwardsPageTransitionsBuilder()
+        .buildTransitions(route, context, animation, secondaryAnimation, wrapped);
+  }
+}
+
 class AppTheme {
   // ── Surface ───────────────────────────────────────────────────────────────
   static const Color bg = Color(0xFFF4F6FA);
@@ -25,7 +56,55 @@ class AppTheme {
   /// inside the "Stay & room" card, say), mirroring the web form's own
   /// `--border` (#E3E8F0), which is this same step darker than its page
   /// background for the same reason.
-  static const Color border2 = Color(0xFFE3E8F0);
+  static const Color border2 = Color(0xFFDDE3EC);
+
+  // ── Web dashboard tokens (index.css) — used by the desktop (>=800) layout
+  // only, so the Windows app reads as the same product as the website while
+  // the phone keeps its own look.
+  /// Page background on desktop (`--paper`).
+  static const Color paper = Color(0xFFF3F4F6);
+
+  /// Primary call-to-action: the web's amber (`--accent`, `--color-cta-*`).
+  static const Color cta = Color(0xFFFFC107);
+  static const Color ctaFrom = Color(0xFFFFCD3C);
+  static const Color ctaInk = Color(0xFF16212E);
+  static const Color accentInk = Color(0xFF8A5B00);
+  static const Gradient ctaGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [ctaFrom, cta],
+  );
+
+  /// Focus / selected state (`--focus`, `--focus-wash`, `--link`).
+  static const Color focus = Color(0xFF00B0FF);
+  static const Color focusWash = Color(0xFFE3F6FD);
+  static const Color focusWashEdge = Color(0xFFB8E6FA);
+  static const Color link = Color(0xFF0077B6);
+
+  /// Form field outline (`--field-border`, `--field-border-hover`).
+  static const Color fieldBorder = Color(0xFFDDE3EC);
+  static const Color fieldBorderHover = Color(0xFFB6BFD0);
+
+  /// `--shadow-raised` / `--shadow-card` for web-style cards.
+  static const List<BoxShadow> raised = [
+    BoxShadow(color: Color(0x0D16212E), offset: Offset(0, 1), blurRadius: 2),
+    BoxShadow(color: Color(0x0F16212E), offset: Offset(0, 4), blurRadius: 10, spreadRadius: -2),
+  ];
+  static const List<BoxShadow> cardShadow = [
+    BoxShadow(color: Color(0x0D16212E), offset: Offset(0, 1), blurRadius: 2),
+    BoxShadow(color: Color(0x2116212E), offset: Offset(0, 10), blurRadius: 28, spreadRadius: -8),
+  ];
+
+  /// Search box shape: the web's 10px field with `--field-border` on desktop,
+  /// the phone's pill elsewhere. Shared by every list toolbar's search box.
+  static BorderRadius searchRadius(BuildContext context) =>
+      BorderRadius.circular(isDesktop(context) ? 10 : 999);
+  static Border searchBorder(BuildContext context) => isDesktop(context)
+      ? Border.all(color: fieldBorder)
+      : Border.all(color: shadowDark, width: 1.3);
+
+  /// `.dash-main` on the web: content capped at 1360 with 22/32/32 padding.
+  static const double dashMaxWidth = 1360;
 
   /// Aliases for the old neumorphic tokens — still referenced by shadow
   /// lists and a handful of screens' `Border.all(color: ...)` calls.
@@ -254,9 +333,9 @@ class AppTheme {
         builders: {
           TargetPlatform.android: ZoomPageTransitionsBuilder(),
           TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
-          TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
-          TargetPlatform.macOS: FadeForwardsPageTransitionsBuilder(),
+          TargetPlatform.windows: DeskPageTransitions(),
+          TargetPlatform.linux: DeskPageTransitions(),
+          TargetPlatform.macOS: DeskPageTransitions(),
         },
       ),
       // Keyboard focus and mouse hover are visible, as the web's 2px focus

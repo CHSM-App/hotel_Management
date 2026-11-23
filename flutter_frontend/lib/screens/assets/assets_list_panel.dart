@@ -115,8 +115,8 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                       decoration: BoxDecoration(
                         color: AppTheme.card,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppTheme.shadowDark, width: 1.3),
+                        borderRadius: AppTheme.searchRadius(context),
+                        border: AppTheme.searchBorder(context),
                         boxShadow: AppTheme.subtle,
                       ),
                       child: Row(
@@ -276,8 +276,8 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.accent,
-            foregroundColor: Colors.white,
+            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
+            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
             elevation: 2,
             onPressed: () async {
               await showAssetFormSheet(context);

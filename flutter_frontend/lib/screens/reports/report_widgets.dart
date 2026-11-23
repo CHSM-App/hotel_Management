@@ -91,26 +91,35 @@ class StatGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rows = <Widget>[];
-    for (var i = 0; i < items.length; i += columns) {
-      rows.add(
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var c = 0; c < columns; c++) ...[
-                if (c > 0) const SizedBox(width: AppTheme.s8),
-                Expanded(
-                  child: i + c < items.length ? _buildCard(context, items[i + c]) : const SizedBox.shrink(),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-      if (i + columns < items.length) rows.add(const SizedBox(height: AppTheme.s8));
-    }
-    return Column(children: rows);
+    final desktop = AppTheme.isDesktop(context);
+    return LayoutBuilder(
+      builder: (context, box) {
+        // Desktop: web `auto-fit minmax(170px, 1fr)` — as many columns as fit.
+        final cols = desktop && box.maxWidth.isFinite
+            ? ((box.maxWidth + AppTheme.s8) / (170 + AppTheme.s8)).floor().clamp(2, 6)
+            : columns;
+        final rows = <Widget>[];
+        for (var i = 0; i < items.length; i += cols) {
+          rows.add(
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var c = 0; c < cols; c++) ...[
+                    if (c > 0) const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: i + c < items.length ? _buildCard(context, items[i + c]) : const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+          if (i + cols < items.length) rows.add(const SizedBox(height: AppTheme.s8));
+        }
+        return Column(children: rows);
+      },
+    );
   }
 }
 
@@ -508,26 +517,33 @@ class KpiRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rows = <Widget>[];
-    for (var i = 0; i < items.length; i += 2) {
-      final hasSecond = i + 1 < items.length;
-      rows.add(
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: _buildCard(items[i])),
-              if (hasSecond) ...[
-                const SizedBox(width: AppTheme.s8),
-                Expanded(child: _buildCard(items[i + 1])),
-              ],
-            ],
-          ),
-        ),
-      );
-      if (i + 2 < items.length) rows.add(const SizedBox(height: AppTheme.s8));
-    }
-    return Column(children: rows);
+    final desktop = AppTheme.isDesktop(context);
+    return LayoutBuilder(
+      builder: (context, box) {
+        // Web `.kpi-row`: 4 across on a wide page, 2 below ~640px.
+        final cols = desktop && box.maxWidth >= 640 ? 4 : 2;
+        final rows = <Widget>[];
+        for (var i = 0; i < items.length; i += cols) {
+          rows.add(
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var c = 0; c < cols; c++) ...[
+                    if (c > 0) const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      child: i + c < items.length ? _buildCard(items[i + c]) : const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+          if (i + cols < items.length) rows.add(const SizedBox(height: AppTheme.s8));
+        }
+        return Column(children: rows);
+      },
+    );
   }
 }
 

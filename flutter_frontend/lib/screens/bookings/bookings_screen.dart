@@ -35,7 +35,10 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
       builder: (context, constraints) {
         // A desktop window: the chart takes the whole page; New booking and
         // Drafts are buttons in the chart's own top row.
-        if (constraints.maxWidth >= 1100) {
+        // Same window-width test TapeChart uses for its own toolbar — judging
+        // on this pane's width instead showed the toolbar AND the floating
+        // buttons together between 1100 and ~1340 px windows.
+        if (MediaQuery.sizeOf(context).width >= 1100) {
           return const Padding(
             padding: EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 0),
             child: TapeChart(),

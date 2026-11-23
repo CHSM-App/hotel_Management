@@ -121,8 +121,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
                       decoration: BoxDecoration(
                         color: AppTheme.card,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppTheme.shadowDark, width: 1.3),
+                        borderRadius: AppTheme.searchRadius(context),
+                        border: AppTheme.searchBorder(context),
                         boxShadow: AppTheme.subtle,
                       ),
                       child: Row(
@@ -231,8 +231,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.accent,
-            foregroundColor: Colors.white,
+            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
+            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
             elevation: 2,
             tooltip: 'Add customer',
             onPressed: () => showCustomerFormScreen(context),
@@ -283,11 +283,11 @@ class _StatsRow extends StatelessWidget {
         Expanded(
           child: _StatTile(icon: Icons.groups_rounded, color: AppTheme.accent, value: '${stats.total}', label: 'Total'),
         ),
-        const SizedBox(width: AppTheme.s8),
+        SizedBox(width: AppTheme.isDesktop(context) ? AppTheme.s12 : AppTheme.s8),
         Expanded(
           child: _StatTile(icon: Icons.campaign_rounded, color: AppTheme.checkout, value: '${stats.optedIn}', label: 'Opted in'),
         ),
-        const SizedBox(width: AppTheme.s8),
+        SizedBox(width: AppTheme.isDesktop(context) ? AppTheme.s12 : AppTheme.s8),
         Expanded(
           child: _StatTile(icon: Icons.filter_alt_rounded, color: AppTheme.edit, value: '$inView', label: 'In view'),
         ),
@@ -306,25 +306,27 @@ class _StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Desktop = the web's `.kpi-row` card: bigger value, caps label.
+    final web = AppTheme.isDesktop(context);
     return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8),
+      height: web ? 72 : 52,
+      padding: EdgeInsets.symmetric(horizontal: web ? AppTheme.s16 : AppTheme.s8),
       decoration: BoxDecoration(
         color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        borderRadius: BorderRadius.circular(web ? 14 : AppTheme.rMedium),
         border: Border.all(color: AppTheme.border),
-        boxShadow: AppTheme.subtle,
+        boxShadow: web ? AppTheme.raised : AppTheme.subtle,
       ),
       child: Row(
         children: [
           Container(
-            width: 24,
-            height: 24,
+            width: web ? 36 : 24,
+            height: web ? 36 : 24,
             alignment: Alignment.center,
             decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
-            child: Icon(icon, size: 13, color: color),
+            child: Icon(icon, size: web ? 18 : 13, color: color),
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: web ? 12 : 6),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -334,13 +336,18 @@ class _StatTile extends StatelessWidget {
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 15, fontWeight: FontWeight.w800),
+                  style: TextStyle(color: AppTheme.heading, fontSize: web ? 22 : 15, fontWeight: web ? FontWeight.w700 : FontWeight.w800),
                 ),
                 Text(
-                  label,
+                  web ? label.toUpperCase() : label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 10, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: web ? 10.5 : 10,
+                    fontWeight: web ? FontWeight.w600 : FontWeight.w500,
+                    letterSpacing: web ? 0.4 : 0,
+                  ),
                 ),
               ],
             ),

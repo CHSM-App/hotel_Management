@@ -87,8 +87,8 @@ class _IncomeInterestPanelState extends ConsumerState<IncomeInterestPanel> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.accent,
-            foregroundColor: Colors.white,
+            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
+            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
             onPressed: _addVoucher,
             child: const Icon(Icons.add_rounded),
           ),

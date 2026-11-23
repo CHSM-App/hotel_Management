@@ -1800,6 +1800,7 @@ function mapInvoice(row) {
     bedLabel: row.bed_labels ?? row.bed_label ?? null,
     checkInDate: isoDate(row.check_in_date),
     checkOutDate: isoDate(row.check_out_date),
+    bookingCreatedAt: row.booking_created_at ?? null,
     actualCheckInAt: row.actual_check_in_at,
     actualCheckOutAt: row.actual_check_out_at,
     documentType: row.document_type,
@@ -1966,6 +1967,7 @@ function buildPreviewDocument({
     bedLabel: row.bed_labels ?? row.bed_label ?? null,
     checkInDate: isoDate(row.check_in_date),
     checkOutDate: isoDate(row.check_out_date),
+    bookingCreatedAt: row.booking_created_at ?? null,
     actualCheckInAt: row.actual_check_in_at ?? null,
     actualCheckOutAt: row.actual_check_out_at ?? null,
     lateCheckoutMinutes: row.late_checkout_minutes ?? null,
@@ -2040,7 +2042,7 @@ async function getInvoice(lodgeId, invoiceId) {
              b.check_in_date, b.check_out_date,
              eb.title AS event_title, eb.event_type, ev.name AS venue_name,
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
-             b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
+             b.created_at AS booking_created_at, b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
                        FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id
@@ -2158,7 +2160,7 @@ async function listInvoices(lodgeId, { stream = null } = {}) {
              b.check_in_date, b.check_out_date,
              eb.title AS event_title, eb.event_type, ev.name AS venue_name,
              eb.start_at AS event_start_at, eb.end_at AS event_end_at, eb.pricing_breakdown AS event_breakdown,
-             b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
+             b.created_at AS booking_created_at, b.actual_check_in_at, b.actual_check_out_at, b.late_checkout_minutes,
              b.nightly_breakdown,
              COALESCE((SELECT STRING_AGG(rr.room_number, ', ') WITHIN GROUP (ORDER BY brm.id)
                        FROM dbo.booking_rooms brm JOIN dbo.rooms rr ON rr.id = brm.room_id

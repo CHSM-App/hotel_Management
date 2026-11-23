@@ -189,6 +189,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           label: 'Phone or email',
           hint: '9876543210',
           keyboardType: TextInputType.emailAddress,
+          suffix: _eyeHeightSpacer,
         ),
         const SizedBox(height: AppTheme.s16),
         NeuField(
@@ -287,6 +288,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             label: 'Phone or email',
             hint: '9876543210',
             keyboardType: TextInputType.emailAddress,
+            suffix: _eyeHeightSpacer,
           ),
           const SizedBox(height: AppTheme.s16),
           NeuField(
@@ -399,6 +401,11 @@ class _Blob extends StatelessWidget {
 /// The eye/eye-off toggle living inside the field's own well, the same spot
 /// the web login's `field__input-wrap` puts it — not a separate button
 /// underneath the field.
+/// The eye button's 48px tap target makes a password field taller than a plain
+/// one on desktop; this zero-width spacer gives the phone/email field the same
+/// height so the two line up.
+const _eyeHeightSpacer = SizedBox(width: 0, height: kMinInteractiveDimension);
+
 class _EyeToggle extends StatelessWidget {
   final bool shown;
   final VoidCallback onTap;

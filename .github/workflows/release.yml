@@ -10,6 +10,10 @@ on:
         description: 'Dry run — build artifacts only, publish no release'
         type: boolean
         default: true
+      force:
+        description: 'Force the update — clients cannot dismiss the prompt'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -89,6 +93,21 @@ jobs:
           $v = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([^+\s]+)').Matches[0].Groups[1].Value
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$v" windows\installer.iss
 
+      # What installed apps poll (lib/core/update/updater.dart). releases/latest
+      # skips pre-releases, so a pre-release never reaches installed desks.
+      - name: Write update manifest
+        shell: bash
+        run: |
+          mkdir -p build/windows/dist
+          cat > build/windows/dist/windows-latest.json <<JSON
+          {
+            "version": "$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)",
+            "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/HotelManagerSetup.exe",
+            "force": ${{ inputs.force || false }}
+          }
+          JSON
+          cat build/windows/dist/windows-latest.json
+
       - name: Zip portable build
         shell: pwsh
         run: |
@@ -100,6 +119,7 @@ jobs:
           path: |
             flutter_frontend/build/windows/dist/HotelManagerSetup.exe
             flutter_frontend/build/windows/dist/hotel-manager-*-windows.zip
+            flutter_frontend/build/windows/dist/windows-latest.json
 
   release:
     needs: [android, windows]

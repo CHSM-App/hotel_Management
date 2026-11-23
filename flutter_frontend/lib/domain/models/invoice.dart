@@ -895,6 +895,7 @@ class Invoice {
 
   /// Of [numGuests], how many are children — stays only; null elsewhere.
   final int? childCount;
+  final String? bookingCreatedAt;
   final String? actualCheckInAt;
   final String? actualCheckOutAt;
   final String? checkOutTime;
@@ -991,6 +992,7 @@ class Invoice {
     this.categoryName,
     this.numGuests,
     this.childCount,
+    this.bookingCreatedAt,
     this.actualCheckInAt,
     this.actualCheckOutAt,
     this.checkOutTime,
@@ -1071,6 +1073,7 @@ class Invoice {
     categoryName: asStringOrNull(json['categoryName']),
     numGuests: asIntOrNull(json['numGuests']),
     childCount: asIntOrNull(json['childCount']),
+    bookingCreatedAt: asStringOrNull(json['bookingCreatedAt']),
     actualCheckInAt: asStringOrNull(json['actualCheckInAt']),
     actualCheckOutAt: asStringOrNull(json['actualCheckOutAt']),
     checkOutTime: asStringOrNull(json['checkOutTime']),

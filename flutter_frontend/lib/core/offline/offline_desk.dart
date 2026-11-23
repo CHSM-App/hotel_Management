@@ -232,6 +232,21 @@ class OfflineDesk {
     ];
   }
 
+  /// The little the downloaded chart knows about one stay (guest, room, dates,
+  /// status) — shown when its full record was never saved on this device.
+  Future<Booking?> bookingFromReference(int id) async {
+    final ref = await _need();
+    final numbers = {
+      for (final r in (ref.chart['rooms'] as List? ?? const [])) '${(r as Map)['id']}': r['roomNumber'],
+    };
+    for (final b in (ref.chart['bookings'] as List? ?? const [])) {
+      if ((b as Map)['id'].toString() == '$id') {
+        return Booking.fromJson({...b.cast<String, dynamic>(), 'roomNumber': numbers['${b['roomId']}']});
+      }
+    }
+    return null;
+  }
+
   static bool _overlaps(Map b, String? from, String? to) {
     final inDate = '${b['checkInDate']}'.substring(0, 10);
     final outDate = '${b['checkOutDate']}'.substring(0, 10);

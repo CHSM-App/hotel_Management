@@ -157,7 +157,14 @@ class BookingImpl implements BookingRepository {
     // reach the server — it is newer than anything the server could say.
     final local = await d?.localBooking(id);
     if (local != null) return local;
-    return api.booking(id);
+    try {
+      return await api.booking(id);
+    } on OfflineUnavailable {
+      // Never opened while online: show what the downloaded chart has.
+      final basic = await d?.bookingFromReference(id);
+      if (basic == null) rethrow;
+      return basic;
+    }
   }
 
   @override

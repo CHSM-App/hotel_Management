@@ -541,8 +541,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // Event billing has the same first tab room billing has: what is waiting.
   const billsEvents = stream === 'event';
 
+  const [queue, setQueue] = useState(() => readCache('/billing/queue'));
+  // Check-out and payment happen together now, so this only ever holds voided
+  // stays waiting to be reissued — hidden while empty (shown while loading).
+  const showReady = billsStays && !(queue && queue.length === 0);
+
   const tabs = [
-    ...(billsStays ? [{ key: 'ready', label: 'Ready to bill' }] : []),
+    ...(showReady ? [{ key: 'ready', label: 'Ready to bill' }] : []),
     ...(billsEvents ? [{ key: 'functions', label: 'Ready to bill' }] : []),
     ...(billsServices ? [{ key: 'services', label: 'Services to bill' }] : []),
     ...(billsTables ? [{ key: 'tables', label: 'Food to bill' }] : []),
@@ -552,7 +557,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   // The landing tab depends on what this login can bill, so it is worked out
   // first and handed to the hook as the fallback — a URL with no tab lands
   // exactly where it did before.
-  const defaultTab = billsTables ? 'tables' : billsStays ? 'ready' : billsEvents ? 'functions' : 'bills';
+  const defaultTab = billsTables ? 'tables' : showReady ? 'ready' : billsServices ? 'services' : billsEvents ? 'functions' : 'bills';
   const [tab, setTab] = useUrlState('tab', defaultTab);
   // A ?tab= this screen doesn't own falls back to the landing tab rather than
   // matching nothing and rendering an empty page under an unselected strip.
@@ -563,7 +568,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const [listView, setListView] = useState('sheet');
   const [billSort, setBillSort] = useState({ key: null, dir: 1 });
   const toggleBillSort = (key) => setBillSort((cur) => (cur.key === key ? { key, dir: -cur.dir } : { key, dir: 1 }));
-  const [queue, setQueue] = useState(() => readCache('/billing/queue'));
   // A column only earns its place when some stay has something in it.
   const hasLate = Boolean(queue?.some((b) => b.lateCheckoutCharge > 0));
   const [queueError, setQueueError] = useState('');

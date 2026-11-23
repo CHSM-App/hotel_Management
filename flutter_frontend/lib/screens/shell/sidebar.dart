@@ -72,13 +72,22 @@ class Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Desktop = the web's plain white rail with a soft right-edge shadow;
+    // the phone drawer keeps its own wash gradient.
+    final web = AppTheme.isDesktop(context);
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFF7FAFE), AppTheme.sidebarBrandWash],
-        ),
+      decoration: BoxDecoration(
+        color: web ? Colors.white : null,
+        gradient: web
+            ? null
+            : const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFF7FAFE), AppTheme.sidebarBrandWash],
+              ),
+        boxShadow: web
+            ? const [BoxShadow(color: Color(0x0F16212E), offset: Offset(1, 0), blurRadius: 8)]
+            : null,
       ),
       child: Column(
         children: [
@@ -629,10 +638,15 @@ class _SidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Web look on desktop: selected row = light-blue wash, blue text and a
+    // 3px blue bar (OwnerDashboard.css aria-current). Phone keeps navy fill.
+    final web = AppTheme.isDesktop(context);
+    final radius = BorderRadius.circular(web ? AppTheme.rSmall : AppTheme.rLarge - 6);
+    final selFg = web ? AppTheme.link : Colors.white;
     final icon = Icon(
       feature.icon,
       size: collapsed ? 20 : 18,
-      color: selected ? Colors.white : AppTheme.sidebarTextMuted,
+      color: selected ? selFg : AppTheme.sidebarTextMuted,
     );
 
     final row = collapsed
@@ -666,7 +680,7 @@ class _SidebarItem extends StatelessWidget {
                 child: selected
                     ? DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: web ? AppTheme.focus : Colors.white,
                           borderRadius: const BorderRadius.horizontal(
                             right: Radius.circular(3),
                           ),
@@ -685,7 +699,7 @@ class _SidebarItem extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13.5,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: selected ? Colors.white : AppTheme.sidebarText,
+                    color: selected ? selFg : AppTheme.sidebarText,
                   ),
                 ),
               ),
@@ -696,18 +710,22 @@ class _SidebarItem extends StatelessWidget {
             ],
           );
 
+    final selBg = web ? AppTheme.focusWash : AppTheme.sidebarBrand;
     final button = Material(
-      color: selected ? AppTheme.sidebarBrand : Colors.transparent,
-      borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
+      color: selected ? selBg : Colors.transparent,
+      borderRadius: radius,
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
+        borderRadius: radius,
         hoverColor: selected
-            ? AppTheme.sidebarBrand
-            : AppTheme.sidebarBrandWashEdge.withValues(alpha: 0.4),
+            ? selBg
+            : (web
+                ? const Color(0x0A000000)
+                : AppTheme.sidebarBrandWashEdge.withValues(alpha: 0.4)),
         onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppTheme.rLarge - 6),
+            borderRadius: radius,
+            border: selected && web ? Border.all(color: AppTheme.focusWashEdge) : null,
           ),
           padding: collapsed
               ? EdgeInsets.zero
@@ -900,10 +918,13 @@ class _GroupHeader extends StatelessWidget {
               Expanded(
                 child: Text(
                   title.toUpperCase(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.sidebarTextMuted,
+                    fontWeight: AppTheme.isDesktop(context) ? FontWeight.w800 : FontWeight.w700,
+                    // Web group labels are brand navy, not muted grey.
+                    color: AppTheme.isDesktop(context)
+                        ? AppTheme.sidebarBrand
+                        : AppTheme.sidebarTextMuted,
                     letterSpacing: 1.1,
                   ),
                 ),

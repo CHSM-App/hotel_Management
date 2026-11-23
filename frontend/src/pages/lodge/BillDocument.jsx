@@ -501,6 +501,13 @@ const BillDocument = forwardRef(function BillDocument({ invoice }, ref) {
                 <Cell head="Persons">{invoice.numGuests}</Cell>
               </tr>
               <tr>
+                {invoice.bookingCreatedAt && (
+                  <Cell head="Booked on" span={4}>
+                    {[formatDate(invoice.bookingCreatedAt), formatTime(invoice.bookingCreatedAt)].filter(Boolean).join(', ')}
+                  </Cell>
+                )}
+              </tr>
+              <tr>
                 <Cell head="Room No.">
                   {invoice.roomNumber
                     ? `${invoice.roomNumber}${invoice.categoryName ? ` (${invoice.categoryName})` : ''}`

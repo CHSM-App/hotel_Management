@@ -111,8 +111,8 @@ class _EventsSetupPanelState extends ConsumerState<EventsSetupPanel> {
                 right: AppTheme.s16,
                 bottom: AppTheme.s16,
                 child: FloatingActionButton(
-                  backgroundColor: AppTheme.accent,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
+                  foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
                   tooltip: _tab == 'venues' ? 'Add a venue' : 'Add an add-on',
                   onPressed: () => _tab == 'venues' ? _editVenue(context, ref) : _editAddon(context, ref),
                   child: const Icon(Icons.add_rounded),

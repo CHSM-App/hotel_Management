@@ -128,8 +128,8 @@ class _StaffTab extends ConsumerWidget {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.accent,
-            foregroundColor: Colors.white,
+            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
+            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
             tooltip: 'Add staff',
             onPressed: () => showStaffFormScreen(context),
             child: const Icon(Icons.add_rounded),
@@ -380,8 +380,8 @@ class _RolesTab extends ConsumerWidget {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.accent,
-            foregroundColor: Colors.white,
+            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
+            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
             tooltip: 'Add role',
             onPressed: () => showRoleFormScreen(context),
             child: const Icon(Icons.add_rounded),

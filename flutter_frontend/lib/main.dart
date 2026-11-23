@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/network/token_provider.dart';
 import 'core/offline/offline_controllers.dart';
+import 'core/update/updater.dart';
 import 'data/db/app_database.dart';
 import 'screens/login_screen.dart';
 import 'screens/shell/dashboard_shell.dart';
@@ -40,6 +41,10 @@ Future<void> main() async {
       child: const FrontDeskApp(),
     ),
   );
+
+  // After the first frame so a navigator exists to show the dialog on.
+  // Windows only; silent on any failure (see checkForUpdate).
+  WidgetsBinding.instance.addPostFrameCallback((_) => promptForUpdate());
 }
 
 class FrontDeskApp extends StatelessWidget {
@@ -53,6 +58,7 @@ class FrontDeskApp extends StatelessWidget {
       theme: AppTheme.light,
       themeMode: ThemeMode.light,
       scrollBehavior: _AppScrollBehavior(),
+      navigatorKey: navigatorKey,
       navigatorObservers: [routeObserver],
       // Layouts are tuned against the platform's default text scale. Left
       // unclamped, a desk's own accessibility font-size setting can grow

@@ -82,7 +82,10 @@ class NeuCard extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: borderColor),
-        boxShadow: shadow,
+        // Desktop cards use the web's `--shadow-raised` (.dash-card).
+        boxShadow: identical(shadow, AppTheme.extruded) && AppTheme.isDesktop(context)
+            ? AppTheme.raised
+            : shadow,
       ),
       child: child,
     );
@@ -833,6 +836,12 @@ class _NeuButtonState extends State<NeuButton> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onPressed != null;
+    // Desktop primary = the web's amber CTA (dark ink text); a caller-chosen
+    // [color] (checkout orange, edit teal…) keeps its own white-on-colour look.
+    final amber = widget.primary &&
+        !widget.soft &&
+        widget.color == null &&
+        AppTheme.isDesktop(context);
     // 44px is the floor for a touch target; the padding above clears it, and
     // this keeps it cleared if a caller passes something tighter.
     final label = DefaultTextStyle(
@@ -840,7 +849,7 @@ class _NeuButtonState extends State<NeuButton> {
         color: widget.soft
             ? (widget.softTextColor ?? AppTheme.sidebarBrandInk)
             : widget.primary
-            ? Colors.white
+            ? (amber ? AppTheme.ctaInk : Colors.white)
             : (widget.outlineColor != null
                   ? (widget.outlineTextColor ?? widget.outlineColor!)
                   : AppTheme.heading),
@@ -875,7 +884,10 @@ class _NeuButtonState extends State<NeuButton> {
           ),
           padding: AppTheme.compactPadding(context, widget.padding, 0.5),
           decoration: BoxDecoration(
-            color: widget.soft
+            gradient: amber ? AppTheme.ctaGradient : null,
+            color: amber
+                ? null
+                : widget.soft
                 ? (widget.softColor ?? AppTheme.sidebarBrandWash)
                 : widget.primary
                 ? (widget.color ?? AppTheme.accent)

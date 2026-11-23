@@ -613,18 +613,23 @@ class _ResponsiveBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (AppTheme.isCompact(context)) return child;
-    return Align(
+    final desktop = AppTheme.isDesktop(context);
+    final body = Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          // A desktop window is all the section's: each screen fills it with
-          // tables, card grids or a centered form. Only a narrow tablet
-          // (600-800 px wide) keeps the phone column.
-          maxWidth: AppTheme.pageMaxWidth(context),
+          // Desktop mirrors the web's `.dash-main` (max 1360, centred on very
+          // wide windows). A narrow tablet (600-800 px) keeps the phone column.
+          maxWidth: desktop ? AppTheme.dashMaxWidth : AppTheme.pageMaxWidth(context),
         ),
-        child: child,
+        // Pages carry their own 12-16px gutter; +16 lands near the web's 32.
+        child: desktop
+            ? Padding(padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16), child: child)
+            : child,
       ),
     );
+    // The web page background (`--paper`) behind the content on desktop.
+    return desktop ? ColoredBox(color: AppTheme.paper, child: body) : body;
   }
 }
 
@@ -792,7 +797,8 @@ class _TopBar extends StatelessWidget {
         boxShadow: AppTheme.elevated,
       ),
       child: SizedBox(
-        height: 56,
+        // Web topbar is 64px on desktop (--dash-topbar-h).
+        height: AppTheme.isDesktop(context) ? 64 : 56,
         child: Row(
           children: [
             if (onMenuTap != null)

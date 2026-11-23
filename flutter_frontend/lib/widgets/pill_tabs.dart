@@ -33,6 +33,11 @@ class PillTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Desktop: the web's underline `.subtabs` — content-width, left-aligned,
+    // never a full-width segmented bar.
+    if (AppTheme.isDesktop(context)) {
+      return _UnderlineTabs(tabs: tabs, selected: selected, onSelect: onSelect);
+    }
     if (tabs.length > 2) return _ScrollTabs(tabs: tabs, selected: selected, onSelect: onSelect);
     final selectedIndex = tabs.indexWhere((t) => t.key == selected).clamp(0, tabs.length - 1);
 
@@ -131,6 +136,89 @@ class PillTabs extends StatelessWidget {
           ),
           Row(children: [for (final t in tabs) segment(t)]),
         ],
+      ),
+    );
+  }
+}
+
+/// Web `.subtabs`: 13.5/600 labels on a hairline, 2px brand underline under the
+/// active one. Scrolls sideways if a narrow window cannot hold every tab.
+class _UnderlineTabs extends StatelessWidget {
+  final List<PillTab> tabs;
+  final String selected;
+  final ValueChanged<String> onSelect;
+
+  const _UnderlineTabs({required this.tabs, required this.selected, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppTheme.border)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final tab in tabs)
+              InkWell(
+                onTap: () => onSelect(tab.key),
+                hoverColor: const Color(0x0A000000),
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: tab.key == selected ? AppTheme.sidebarBrand : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        tab.icon,
+                        size: 16,
+                        color: tab.key == selected ? AppTheme.sidebarBrand : AppTheme.muted,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        tab.label,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          color: tab.key == selected ? AppTheme.sidebarBrand : AppTheme.muted,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      if (tab.count != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: tab.countColor ?? PillTab.countBg,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${tab.count}',
+                            style: TextStyle(
+                              color: tab.countColor != null ? Colors.white : PillTab.countInk,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

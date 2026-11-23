@@ -116,17 +116,27 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     // the web makes between its plain Billing (stream="room", no tables tab
     // at all) and its stream="restaurant" page, which is the only one that
     // ever renders one.
-    final tab = widget.restaurantOnly
+    // Check-out and payment happen together now, so "Ready to bill" only ever
+    // holds voided stays waiting to be reissued — hide it while it is empty.
+    // (Still shown while loading or if the queue failed to load.)
+    final showRoom =
+        !widget.restaurantOnly &&
+        (state.queue.valueOrNull?.isNotEmpty ?? true);
+    final roomFallback = showServices ? _BillingTab.services : _BillingTab.issued;
+    var tab = widget.restaurantOnly
         ? (_tab == _BillingTab.issued ? _BillingTab.issued : _BillingTab.food)
         : (_tab == _BillingTab.food
               ? _BillingTab.toBill
               : (_tab == _BillingTab.services && !showServices
                     ? _BillingTab.toBill
                     : _tab));
+    if (!showRoom && tab == _BillingTab.toBill && !widget.restaurantOnly) {
+      tab = roomFallback;
+    }
 
     final toggle = _Toggle(
       tab: tab,
-      showRoom: !widget.restaurantOnly,
+      showRoom: showRoom,
       showFood: widget.restaurantOnly,
       showServices: showServices,
       toBillCount: state.queue.valueOrNull?.length,
@@ -1993,8 +2003,8 @@ class _BillingSearchAndViewToggleState
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s4),
       decoration: BoxDecoration(
         color: AppTheme.card,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.shadowDark, width: 1.3),
+        borderRadius: AppTheme.searchRadius(context),
+        border: AppTheme.searchBorder(context),
         boxShadow: AppTheme.subtle,
       ),
       child: Row(

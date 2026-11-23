@@ -72,7 +72,7 @@ class Prefetcher {
       final chart = (boot['tapeChart'] as Map?) ?? const {};
       var fetched = 0;
       for (final b in (chart['bookings'] as List? ?? const [])) {
-        if (fetched >= 80) break;
+        if (fetched >= 200) break;
         final m = b as Map;
         final status = '${m['status']}';
         final checkIn = '${m['checkInDate']}'.substring(0, 10);

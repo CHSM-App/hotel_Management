@@ -543,9 +543,9 @@ class _TapeChartState extends ConsumerState<TapeChart>
   /// so the loaded range is extended (once per shortfall) until the nights
   /// fill it and then some — otherwise the grid would stop short and leave an
   /// empty strip, with nothing to scroll.
-  void _fillWindow(int days, double tile) {
+  void _fillWindow(int days, double tile, [double lead = 0]) {
     if (_growingFuture || _viewportW <= 0) return;
-    if (days * tile >= _viewportW + 4 * tile) return;
+    if (days * tile >= lead + _viewportW + 4 * tile) return;
     _growingFuture = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -618,7 +618,9 @@ class _TapeChartState extends ConsumerState<TapeChart>
         // A desktop window fits the whole month across the screen, the way the
         // web chart does, with compact rows — no sideways scrolling to see a
         // month, and every category on screen at once.
-        final desktop = constraints.maxWidth >= 1100;
+        // Judged on the window, not the chart's own width, so opening the side
+        // panel doesn't flip it into the roomier tablet sizing.
+        final desktop = MediaQuery.sizeOf(context).width >= 1100;
         _desktop = desktop;
         final rowHeight = desktop ? 30.0 : (wide ? 41.6 : 32.0);
         final roomCol = desktop ? 112.0 : (wide ? 96.0 : 44.0);
@@ -685,16 +687,23 @@ class _TapeChartState extends ConsumerState<TapeChart>
             d.month == todayDate.month &&
             d.day == todayDate.day,
       );
-      if (todayIndex != -1) {
+      final offset = (todayIndex - 1).clamp(0, dates.length - 1) * tile;
+      // On desktop, wait until the loaded window is long enough that today can
+      // sit at the left edge (the web's behaviour) instead of being clamped
+      // short; _fillWindow below keeps growing it until then.
+      if (todayIndex != -1 &&
+          (!_desktop || dates.length * tile >= offset + _viewportW)) {
         _scrolledToToday = true;
-        final offset = (todayIndex - 1).clamp(0, dates.length - 1) * tile;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _jumpToToday(offset);
         });
       }
     }
 
-    if (_desktop) _fillWindow(dates.length, tile);
+    if (_desktop) {
+      final lead = todayDate.difference(dates.first).inDays - 1;
+      _fillWindow(dates.length, tile, lead > 0 ? lead * tile : 0);
+    }
 
     final hitIds = state.chartSearchHits.map((b) => b.id).toSet();
     final activeHitId = state.chartActiveHit?.id;
@@ -3231,7 +3240,8 @@ class _ChartToolbar extends StatelessWidget {
                       onPressed: onPrev,
                     ),
                     SizedBox(
-                      width: 250,
+                      // Narrower on a 1100-1300 px window (rail takes 240).
+                      width: MediaQuery.sizeOf(context).width < 1300 ? 190 : 250,
                       child: ValueListenableBuilder<(DateTime, DateTime)?>(
                         valueListenable: visibleRange,
                         builder: (_, range, __) => Text(
@@ -3306,15 +3316,16 @@ class _ChartToolbar extends StatelessWidget {
                 onPressed: onNewBooking,
                 icon: const Icon(Icons.add_rounded, size: 20),
                 label: const Text('New booking'),
+                // The web's amber `btn-accent`.
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppTheme.accent,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppTheme.cta,
+                  foregroundColor: AppTheme.ctaInk,
                   minimumSize: const Size(0, 44),
                   padding: const EdgeInsets.symmetric(horizontal: 22),
                   textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                   shape: navButtonShape,
                   elevation: 3,
-                  shadowColor: AppTheme.accent.withValues(alpha: 0.5),
+                  shadowColor: AppTheme.cta.withValues(alpha: 0.5),
                 ),
               ),
             ],
