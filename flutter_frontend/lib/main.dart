@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import 'core/update/updater.dart';
 import 'data/db/app_database.dart';
 import 'screens/login_screen.dart';
 import 'screens/shell/dashboard_shell.dart';
+import 'screens/splash_screen.dart';
 import 'screens/theme.dart';
 
 /// Lets a screen know when it's been covered by a pushed route and later
@@ -42,9 +45,9 @@ Future<void> main() async {
     ),
   );
 
-  // After the first frame so a navigator exists to show the dialog on.
-  // Windows only; silent on any failure (see checkForUpdate).
-  WidgetsBinding.instance.addPostFrameCallback((_) => promptForUpdate());
+  // The launch check lives on the splash screen. This only covers a desk left
+  // open for days. Windows only; silent on any failure (see checkForUpdate).
+  if (Platform.isWindows) startPeriodicUpdateCheck();
 }
 
 class FrontDeskApp extends StatelessWidget {
@@ -84,7 +87,9 @@ class FrontDeskApp extends StatelessWidget {
                 child: child!,
               ),
       ),
-      home: const AuthGate(),
+      home: Platform.isWindows
+          ? SplashScreen(next: (_) => const AuthGate())
+          : const AuthGate(),
     );
   }
 }

@@ -14,6 +14,10 @@ on:
         description: 'Force the update — clients cannot dismiss the prompt'
         type: boolean
         default: false
+      message:
+        description: 'Optional note shown in the update dialog'
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -103,7 +107,8 @@ jobs:
           {
             "version": "$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)",
             "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/HotelManagerSetup.exe",
-            "force": ${{ inputs.force || false }}
+            "force": ${{ inputs.force || false }},
+            "message": "${{ inputs.message }}"
           }
           JSON
           cat build/windows/dist/windows-latest.json
