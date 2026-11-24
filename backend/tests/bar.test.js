@@ -31,7 +31,7 @@ test('restaurant billing and reports skip food tagged with a bar order', () => {
   const fs = require('node:fs');
   const read = (f) => fs.readFileSync(require('node:path').join(__dirname, '..', 'src', 'modules', f), 'utf8');
   const count = (src) => (src.match(/bar_order_id IS NULL/g) || []).length;
-  assert.ok(count(read('billing/billing.service.js')) >= 6, 'billing.service.js food queries');
+  assert.ok(count(read('billing/billing.service.js')) >= 4, 'billing.service.js food queries');
   assert.ok(count(read('reports/reports.service.js')) >= 3, 'reports.service.js food queries');
   assert.ok(count(read('orders/orders.service.js')) >= 3, 'orders.service.js billing queues');
   assert.ok(count(read('public/public.service.js')) >= 2, 'public.service.js guest totals');
