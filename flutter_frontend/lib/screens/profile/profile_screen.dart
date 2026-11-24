@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constant.dart';
@@ -310,6 +311,15 @@ class ProfileScreen extends ConsumerWidget {
                               ],
                             ),
                           ),
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.s16),
+                      FutureBuilder<PackageInfo>(
+                        future: PackageInfo.fromPlatform(),
+                        builder: (context, snap) => Text(
+                          snap.hasData ? 'Version ${snap.data!.version}' : '',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                     ])),

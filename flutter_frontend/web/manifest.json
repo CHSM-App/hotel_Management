@@ -1,6 +1,6 @@
 {
-    "name": "hotel_manager",
-    "short_name": "hotel_manager",
+    "name": "Checkin Karo",
+    "short_name": "Checkin Karo",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

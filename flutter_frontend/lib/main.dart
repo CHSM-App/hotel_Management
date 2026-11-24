@@ -56,7 +56,7 @@ class FrontDeskApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Front desk',
+      title: 'Checkin Karo',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       themeMode: ThemeMode.light,
@@ -87,9 +87,7 @@ class FrontDeskApp extends StatelessWidget {
                 child: child!,
               ),
       ),
-      home: Platform.isWindows
-          ? SplashScreen(next: (_) => const AuthGate())
-          : const AuthGate(),
+      home: SplashScreen(next: (_) => const AuthGate()),
     );
   }
 }
