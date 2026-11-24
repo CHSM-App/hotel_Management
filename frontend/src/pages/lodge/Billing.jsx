@@ -956,8 +956,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           ? { kind: 'FOOD', tab: billNowTab.tab, label: billNowTab.label }
           : null
   );
-  // Set when the desk chooses to bill a tab that still has orders in the kitchen.
-  const [billAnyway] = useState(false);
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState('');
 
@@ -1314,7 +1312,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           // What the screen showed, so the server can refuse a bill that moved
           // (an order added) rather than settle it for the wrong amount.
           ...(settleReq ? { lateCharge: settleReq.lateCharge || 0, expectedDue: Math.max(0, balanceDue) } : {}),
-          ...(billTarget.kind === 'FOOD' && billAnyway ? { billAnyway: true } : {}),
           ...(billTarget.kind === 'SERVICE' ? { usageIds: billTarget.usageIds } : {}),
           collectedAmount: collected,
           ...(collected > 0 ? { paymentMethod } : {}),
@@ -3642,7 +3639,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                   <button
                     className="btn-accent"
                     type="submit"
-                    disabled={submitting || preview.alreadyInvoiced || Boolean(collectedProblem) || (preview.liveOrderCount > 0 && !billAnyway)}
+                    disabled={submitting || preview.alreadyInvoiced || Boolean(collectedProblem)}
                   >
                     {submitting
                       ? billTarget?.settle

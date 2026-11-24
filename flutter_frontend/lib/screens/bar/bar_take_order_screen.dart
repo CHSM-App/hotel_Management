@@ -127,7 +127,8 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
     final ok = _adding
         ? await vm.addItems(widget.existing!.id, {'items': items, 'foodItems': foodItems})
         : await vm.placeOrder({
-            'source': _source,
+            'source': _source == 'PARCEL' ? 'COUNTER' : _source,
+            if (_source == 'PARCEL') 'isParcel': true,
             if (_source == 'TABLE') 'tableId': _tableId,
             if (_source == 'ROOM') ...{'roomId': _guest!.roomId, 'bookingId': _guest!.bookingId},
             if (_name.text.trim().isNotEmpty) 'guestName': _name.text.trim(),
@@ -157,7 +158,9 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
                 ? 'Bar - ${bar.targets.tables.where((t) => t.id == _tableId).map((t) => t.label).firstOrNull ?? 'Table'}'
                 : _source == 'ROOM'
                     ? 'Bar - Room ${_guest?.roomNumber ?? ''}'
-                    : 'Bar - Counter';
+                    : _source == 'PARCEL'
+                        ? 'Bar - Parcel'
+                        : 'Bar - Counter';
         await offerKot(
           context,
           ref,
@@ -195,6 +198,7 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
             onChanged: (v) => setState(() => _source = v),
             items: const [
               ('COUNTER', 'Counter', Icons.storefront_rounded),
+              ('PARCEL', 'Parcel', Icons.takeout_dining_rounded),
               ('TABLE', 'Table', Icons.table_restaurant_rounded),
               ('ROOM', 'Room', Icons.bed_rounded),
             ],

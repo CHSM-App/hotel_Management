@@ -92,8 +92,8 @@ class _IncomeRecurringPanelState extends ConsumerState<IncomeRecurringPanel> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             onPressed: () => showIncomeRecurringTemplateFormScreen(context),
             child: const Icon(Icons.add_rounded),
           ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/laundry.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/form_grid.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'laundry_parts.dart';
@@ -68,7 +69,11 @@ class _LinenItemFormScreenState extends ConsumerState<LinenItemFormScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(_isEdit ? 'Edit linen item' : 'Add linen item')),
       body: SafeArea(
-        child: ListView(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
+            child: ListView(
           padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
           children: [
             NeuCard(
@@ -122,15 +127,15 @@ class _LinenItemFormScreenState extends ConsumerState<LinenItemFormScreen> {
               ),
             ),
             const SizedBox(height: AppTheme.s24),
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: state.submitting ? null : _submit,
-              child: state.submitting
+            FormActions(
+              onSave: state.submitting ? null : _submit,
+              saveChild: state.submitting
                   ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : const Text('Save'),
             ),
           ],
+        ),
+          ),
         ),
       ),
     );

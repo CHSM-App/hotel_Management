@@ -87,7 +87,7 @@ class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
     };
     final shown = _filter == 'ALL' ? searched : searched.where((u) => u.status == _filter).toList();
 
-    if (AppTheme.isDesktop(context)) return _desktop(state, shown);
+    if (!AppTheme.isPhone(context)) return _desktop(state, shown);
 
     return Stack(
       children: [
@@ -141,8 +141,8 @@ class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             elevation: 2,
             onPressed: () => showStartUsageScreen(context),
             child: const Icon(Icons.add_rounded),
@@ -168,16 +168,25 @@ class _ServiceUsagePanelState extends ConsumerState<ServiceUsagePanel> {
         ],
         Row(
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
-              child: SizedBox(
-                width: 460,
-                child: _SearchField(controller: _search, hint: 'Search by service, guest or room…', onChanged: (_) => setState(() {})),
+            // Search + filter take up to ~510, shrinking with a narrow pane.
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _SearchField(controller: _search, hint: 'Search by service, guest or room…', onChanged: (_) => setState(() {})),
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                      _FilterButton(on: _filter != 'ALL', open: false, onTap: _openFilter),
+                    ],
+                  ),
+                ),
               ),
             ),
-            const SizedBox(width: AppTheme.s8),
-            _FilterButton(on: _filter != 'ALL', open: false, onTap: _openFilter),
-            const Spacer(),
+            const SizedBox(width: AppTheme.s12),
             NeuButton(
               primary: true,
               onPressed: () => showStartUsageScreen(context),

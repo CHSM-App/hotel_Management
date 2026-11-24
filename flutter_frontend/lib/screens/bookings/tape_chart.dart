@@ -620,7 +620,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
         // month, and every category on screen at once.
         // Judged on the window, not the chart's own width, so opening the side
         // panel doesn't flip it into the roomier tablet sizing.
-        final desktop = MediaQuery.sizeOf(context).width >= 1100;
+        final desktop = MediaQuery.sizeOf(context).width >= AppTheme.bpChartMonth;
         _desktop = desktop;
         final rowHeight = desktop ? 30.0 : (wide ? 41.6 : 32.0);
         final roomCol = desktop ? 112.0 : (wide ? 96.0 : 44.0);
@@ -2232,7 +2232,10 @@ class _DateHeaderState extends State<_DateHeader> {
                               ? AppTheme.muted.withValues(alpha: 0.06)
                               : AppTheme.card,
                           alignment: Alignment.center,
-                          child: Column(
+                          child: // Scales down rather than overflowing the 44px cell at large text.
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Text(
@@ -2276,6 +2279,7 @@ class _DateHeaderState extends State<_DateHeader> {
                                       ),
                                     ),
                             ],
+                          ),
                           ),
                         ),
                     ],
@@ -3241,7 +3245,7 @@ class _ChartToolbar extends StatelessWidget {
                     ),
                     SizedBox(
                       // Narrower on a 1100-1300 px window (rail takes 240).
-                      width: MediaQuery.sizeOf(context).width < 1300 ? 190 : 250,
+                      width: MediaQuery.sizeOf(context).width < AppTheme.bpChartRoomy ? 190 : 250,
                       child: ValueListenableBuilder<(DateTime, DateTime)?>(
                         valueListenable: visibleRange,
                         builder: (_, range, __) => Text(
@@ -3277,7 +3281,16 @@ class _ChartToolbar extends StatelessWidget {
                   ),
                 ),
               ),
-              const Spacer(),
+              // The three actions right-aligned; they scale down together rather
+              // than overflow when large text or a narrow pane leaves no room.
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
               // Drafts: the amber button, with the count when there is one.
               FilledButton.icon(
                 onPressed: onDrafts,
@@ -3326,6 +3339,11 @@ class _ChartToolbar extends StatelessWidget {
                   shape: navButtonShape,
                   elevation: 3,
                   shadowColor: AppTheme.cta.withValues(alpha: 0.5),
+                ),
+              ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],

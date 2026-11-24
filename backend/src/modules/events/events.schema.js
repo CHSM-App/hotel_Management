@@ -43,15 +43,73 @@ const paxField = (message) =>
     z.coerce.number({ error: message }).int(message).min(0, message).max(100000, 'That count looks wrong — check it.').optional()
   );
 
-const venueSchema = z.object({
-  name: z.string({ error: 'Enter a name for the venue.' }).trim().min(1, 'Enter a name for the venue.').max(100),
-  capacityPax: paxField('Enter the capacity as a whole number.'),
-  baseCharge: moneyField('Enter the hire charge as a number.').default(0),
-});
+const RATE_TYPES = ['HOUR', 'DAY', 'BLOCK'];
 
-const updateVenueSchema = venueSchema.partial().extend({
-  isActive: z.boolean().optional(),
-});
+// One line of a venue's rate card. block_hours only means something on a BLOCK
+// and is required there; it is dropped from the other types.
+const venueRateSchema = z
+  .object({
+    id: z.coerce.number().int().positive().optional(),
+    label: z.string({ error: 'Name each rate.' }).trim().min(1, 'Name each rate.').max(60),
+    rateType: z.enum(RATE_TYPES, { error: 'Choose per hour, per day or a fixed block.' }),
+    amount: z.coerce.number({ error: 'Enter each rate as a number.' }).min(0, 'Enter each rate as a number.').max(9999999, 'That amount looks wrong — check it.'),
+    blockHours: z.preprocess(
+      (v) => (v === '' || v == null ? undefined : v),
+      z.coerce.number({ error: 'Enter the block length in hours.' }).positive('Enter the block length in hours.').max(168, 'A block can’t be longer than a week.').optional()
+    ),
+  })
+  .refine((r) => r.rateType !== 'BLOCK' || r.blockHours != null, {
+    message: 'Enter how many hours the block covers.',
+    path: ['blockHours'],
+  })
+  .transform((r) => ({ ...r, blockHours: r.rateType === 'BLOCK' ? r.blockHours : undefined }));
+
+// The venue form is multipart (photos), so the rate card arrives as one JSON
+// string; a JSON body may send the array itself. Absent leaves the card as it
+// is; a list replaces it.
+const ratesField = z.preprocess(
+  (value) => {
+    if (value == null || value === '') return undefined;
+    if (typeof value !== 'string') return value;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  },
+  z.array(venueRateSchema, { error: 'The rates could not be read.' }).max(20, 'That is too many rates for one venue.').optional()
+);
+
+const duplicateLabels = (rates) => {
+  const seen = new Set();
+  return !(rates ?? []).some((r) => {
+    const key = r.label.toLowerCase();
+    if (seen.has(key)) return true;
+    seen.add(key);
+    return false;
+  });
+};
+
+const venueSchema = z
+  .object({
+    name: z.string({ error: 'Enter a name for the venue.' }).trim().min(1, 'Enter a name for the venue.').max(100),
+    capacityPax: paxField('Enter the capacity as a whole number.'),
+    baseCharge: moneyField('Enter the hire charge as a number.').default(0),
+    rates: ratesField,
+  })
+  .refine((v) => duplicateLabels(v.rates), { message: 'Two rates have the same name.', path: ['rates'] });
+
+// venueSchema is refined (ZodEffects in older zod, a plain object in v4); take
+// the object shape either way.
+const updateVenueSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Enter a name for the venue.').max(100).optional(),
+    capacityPax: paxField('Enter the capacity as a whole number.'),
+    baseCharge: moneyField('Enter the hire charge as a number.'),
+    rates: ratesField,
+    isActive: z.boolean().optional(),
+  })
+  .refine((v) => duplicateLabels(v.rates), { message: 'Two rates have the same name.', path: ['rates'] });
 
 const addonSchema = z.object({
   name: z.string({ error: 'Enter a name for the add-on.' }).trim().min(1, 'Enter a name for the add-on.').max(100),
@@ -98,7 +156,15 @@ const pricingFields = {
   expectedPax: paxField('Enter the expected number of guests.'),
   guaranteedPax: paxField('Enter the guaranteed minimum as a whole number.'),
   finalPax: paxField('Enter the final head count as a whole number.'),
-  // Absent means "the venue's own charge".
+  // Which line of the venue's rate card prices the hire. Absent keeps what the
+  // booking already has (or the venue's per-day charge for a new one).
+  rateId: z.preprocess(
+    (v) => (v === '' || v == null ? undefined : v),
+    z.coerce.number().int().positive().optional()
+  ),
+  // The rate amount for this booking, overriding the card's — for a block that
+  // is the whole price, which is how an overrun is charged. Absent means the
+  // card's (or the venue's own) charge.
   venueCharge: moneyField('Enter the venue charge as a number.'),
   perPlateRate: moneyField('Enter the per-plate rate as a number.'),
   addons: z.array(addonLineSchema).max(50, 'That is too many add-ons for one function.').optional().default([]),

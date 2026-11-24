@@ -9,6 +9,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/page_kit.dart';
 import '../bookings/id_proof_viewer_screen.dart';
 import '../theme.dart';
 import 'income_form_screen.dart';
@@ -26,6 +27,7 @@ class IncomeListPanel extends ConsumerStatefulWidget {
 
 class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
 
   // 'table' is the landing view — the sheet-style view for scanning every
   // entry's amount/category/status at once, mirroring the asset register's
@@ -82,6 +84,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -135,7 +138,9 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
 
     final shownTotal = shown.fold<double>(0, (sum, e) => sum + e.amount);
 
-    return Stack(
+    return SearchShortcut(
+      focusNode: _searchFocus,
+      child: Stack(
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
@@ -177,6 +182,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
                           Expanded(
                             child: TextField(
                               controller: _search,
+                              focusNode: _searchFocus,
                               onChanged: (_) => setState(() {}),
                               style: const TextStyle(color: AppTheme.heading, fontSize: 14),
                               decoration: const InputDecoration(
@@ -271,8 +277,8 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             elevation: 2,
             onPressed: () async {
               await showIncomeFormSheet(context);
@@ -282,6 +288,7 @@ class _IncomeListPanelState extends ConsumerState<IncomeListPanel> {
           ),
         ),
       ],
+      ),
     );
   }
 
@@ -534,17 +541,24 @@ class _IncomeTableColumn {
   final String label;
   final double width;
   final TextAlign align;
+  final bool lowPriority;
 
-  const _IncomeTableColumn(this.key, this.label, {this.width = 100, this.align = TextAlign.left});
+  const _IncomeTableColumn(
+    this.key,
+    this.label, {
+    this.width = 100,
+    this.align = TextAlign.left,
+    this.lowPriority = false,
+  });
 }
 
 const _kIncomeTableColumns = [
   _IncomeTableColumn('date', 'Date', width: 90),
   _IncomeTableColumn('title', 'Title', width: 150),
   _IncomeTableColumn('category', 'Category', width: 110),
-  _IncomeTableColumn('payer', 'Payer', width: 110),
+  _IncomeTableColumn('payer', 'Payer', width: 110, lowPriority: true),
   _IncomeTableColumn('amount', 'Amount', width: 90, align: TextAlign.right),
-  _IncomeTableColumn('received', 'Received', width: 90, align: TextAlign.right),
+  _IncomeTableColumn('received', 'Received', width: 90, align: TextAlign.right, lowPriority: true),
   _IncomeTableColumn('status', 'Status', width: 90),
 ];
 
@@ -567,6 +581,16 @@ class _IncomeTable extends StatefulWidget {
 
   @override
   State<_IncomeTable> createState() => _IncomeTableState();
+
+  /// Columns this window has room for; header and rows share the list so they
+  /// stay aligned.
+  static List<_IncomeTableColumn> visibleColumns(BuildContext context) {
+    final all = AppTheme.showLowPriorityColumns(context);
+    return [
+      for (final c in _kIncomeTableColumns)
+        if (all || !c.lowPriority) c,
+    ];
+  }
 }
 
 class _IncomeTableState extends State<_IncomeTable> {
@@ -620,7 +644,8 @@ class _IncomeTableState extends State<_IncomeTable> {
   @override
   Widget build(BuildContext context) {
     final rows = _sorted;
-    final width = _kIncomeTableColumns.fold<double>(0, (sum, c) => sum + c.width) + 36;
+    final cols = _IncomeTable.visibleColumns(context);
+    final width = cols.fold<double>(0, (sum, c) => sum + c.width) + 36;
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -640,7 +665,7 @@ class _IncomeTableState extends State<_IncomeTable> {
                   ),
                   child: Row(
                     children: [
-                      for (final c in _kIncomeTableColumns)
+                      for (final c in cols)
                         TableCol(
                           width: c.width,
                           child: GestureDetector(
@@ -718,7 +743,7 @@ class _IncomeTableRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            for (final c in _kIncomeTableColumns)
+            for (final c in _IncomeTable.visibleColumns(context))
               TableCol(
                 width: c.width,
                 child: Padding(

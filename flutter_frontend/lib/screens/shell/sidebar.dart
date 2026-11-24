@@ -454,7 +454,8 @@ class _SidebarHeader extends StatelessWidget {
           // Who is logged in, right below the property name — its own line
           // rather than folded into the row above, so both read clearly at
           // a glance instead of competing for one line's width.
-          if (user != null) ...[
+          // Desktop's top bar chip already names the signed-in user.
+          if (user != null && !AppTheme.isDesktop(context)) ...[
             const SizedBox(height: AppTheme.s12),
             Container(
               padding: const EdgeInsets.all(AppTheme.s8),

@@ -53,7 +53,18 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   late final _organiserPhone = TextEditingController(text: widget.event?.organiserPhone ?? widget.prefillEnquiry?.phone ?? '');
   late final _organiserAltPhone = TextEditingController(text: widget.event?.organiserAltPhone ?? '');
   late final _expectedPax = TextEditingController(text: widget.event == null ? (widget.prefillEnquiry?.guests?.toString() ?? '') : (widget.event!.expectedPax == 0 ? '' : widget.event!.expectedPax.toString()));
-  late final _venueCharge = TextEditingController(text: widget.event?.venueCharge == null ? '' : widget.event!.venueCharge.toString());
+  // The amount for the chosen rate (or the venue's per-day charge when it has
+  // no rate card). A saved function shows its rate's amount; one booked before
+  // rate cards stored only a total, so its per-day amount is worked back out.
+  late final _venueCharge = TextEditingController(
+    text: widget.event == null
+        ? ''
+        : _numText(widget.event!.rate?.amount ?? widget.event!.venueCharge / (widget.event!.pricing?.numberOfDays ?? 1)),
+  );
+  // The rate card line picked for a new booking, or matched back for a saved
+  // one. Null on an edit it can't match keeps the rate the function was saved
+  // with — the server does that when no rateId is sent.
+  int? _rateId;
   late bool _catering = (widget.event?.perPlateRate ?? 0) > 0;
   late final _perPlateRate = TextEditingController(text: (widget.event?.perPlateRate ?? 0) > 0 ? widget.event!.perPlateRate.toString() : '');
   late final _guaranteedPax = TextEditingController(text: widget.event?.guaranteedPax == null || widget.event!.guaranteedPax == 0 ? '' : widget.event!.guaranteedPax.toString());
@@ -129,6 +140,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
       final state = ref.read(eventsViewModelProvider);
       setState(() {
         _venueId ??= state.pickableVenues().firstOrNull?.id;
+        final saved = widget.event?.rate;
+        if (!_isEdit) {
+          _applyVenueRates(_venue);
+        } else if (saved != null) {
+          _rateId = _venue?.rates.firstWhereOrNull((r) => r.label == saved.label && r.type == saved.type)?.id;
+        }
         _lines = _initialLines(state.addons);
         _catalogueReady = true;
       });
@@ -227,6 +244,34 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     return venues.firstWhereOrNull((v) => v.id == id);
   }
 
+  static String _numText(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+
+  /// The rate the hire is priced on right now: the picked card line, else the
+  /// one a saved function was booked with.
+  VenueRate? get _currentRate => _venue?.rates.firstWhereOrNull((r) => r.id == _rateId) ?? (_rateId == null ? widget.event?.rate : null);
+
+  /// A venue with a rate card starts on its first line; one without, on its
+  /// per-day charge as before.
+  void _applyVenueRates(EventVenue? v) {
+    final first = v?.rates.firstOrNull;
+    _rateId = first?.id;
+    _venueCharge.text = _numText(first?.amount ?? v?.baseCharge ?? 0);
+  }
+
+  /// "Rs 2,000 × 4 hours = Rs 8,000" under the rate box. Nothing for a block
+  /// (its price is the whole line) or for a single hour or day.
+  String? _venueNote(EventQuoteResult q) {
+    final note = q.pricing.lines.firstOrNull?.note;
+    if (note == null || note.startsWith('1 ') || _currentRate?.type == VenueRateType.block) return null;
+    return '${formatPrice(num.tryParse(_venueCharge.text.trim()) ?? 0)} × $note = ${formatPrice(q.pricing.venueCharge)}';
+  }
+
+  String get _venueChargeLabel => switch (_currentRate?.type) {
+    VenueRateType.hour => 'Venue rate (per hour)',
+    VenueRateType.block => 'Block price (whole function)',
+    _ => 'Venue hire charge (per day)',
+  };
+
   DateTime get _startAt => DateTime(_startDate.year, _startDate.month, _startDate.day, _startTime.hour, _startTime.minute);
   DateTime get _endAt => DateTime(_endDate.year, _endDate.month, _endDate.day, _endTime.hour, _endTime.minute);
 
@@ -264,7 +309,11 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
       'expectedPax': pax,
       'guaranteedPax': _catering ? (num.tryParse(_guaranteedPax.text.trim()) ?? pax) : pax,
       if (widget.event?.finalPax != null) 'finalPax': widget.event!.finalPax,
+      if (_rateId != null) 'rateId': _rateId,
       if (_venueCharge.text.trim().isNotEmpty) 'venueCharge': num.tryParse(_venueCharge.text.trim()),
+      // Hours and days come from the times, so the quote needs them.
+      'startAt': _startAt.toIso8601String(),
+      'endAt': _endAt.toIso8601String(),
       'perPlateRate': _catering ? (num.tryParse(_perPlateRate.text.trim()) ?? 0) : 0,
       'addons': _addonPayload,
       if (_discountAmount.text.trim().isNotEmpty) 'discountAmount': num.tryParse(_discountAmount.text.trim()),
@@ -465,6 +514,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
       'expectedPax': pax,
       'guaranteedPax': _catering ? (num.tryParse(_guaranteedPax.text.trim()) ?? pax) : pax,
       'perPlateRate': _catering ? (num.tryParse(_perPlateRate.text.trim()) ?? 0) : 0,
+      if (_rateId != null) 'rateId': _rateId,
       if (_venueCharge.text.trim().isNotEmpty) 'venueCharge': num.tryParse(_venueCharge.text.trim()),
       'addons': _addonPayload,
       'discountAmount': num.tryParse(_discountAmount.text.trim()) ?? 0,
@@ -557,7 +607,11 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
       body: !_catalogueReady
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
-              child: ListView(
+              child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
+            child: ListView(
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
                 children: [
@@ -622,8 +676,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                             onChanged: (v) {
                               setState(() {
                                 _venueId = v;
-                                final picked = venues.firstWhereOrNull((x) => x.id == v);
-                                if (picked != null) _venueCharge.text = picked.baseCharge.toString();
+                                _applyVenueRates(venues.firstWhereOrNull((x) => x.id == v));
                               });
                               _checkAvailability();
                               _refreshQuote();
@@ -702,14 +755,40 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                           dense: true,
                         ),
                         const SizedBox(height: AppTheme.s8),
-                        NeuField(controller: _venueCharge, label: 'Venue hire charge (per day)', keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote(), dense: true),
-                        if (_quote != null && _quote!.pricing.numberOfDays > 1)
+                        // The venue's rate card: per hour, per day, or a fixed block.
+                        // A saved function whose rate is no longer on the card
+                        // still shows (and keeps) the rate it was booked with.
+                        if (venue != null && (venue.rates.isNotEmpty || (_isEdit && _currentRate != null))) ...[
+                          const Text('Rate', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                          const SizedBox(height: 4),
+                          _Dropdown<int?>(
+                            value: _rateId,
+                            items: {
+                              if (_rateId == null && _currentRate != null) null: '${_currentRate!.label} (as booked)',
+                              for (final r in venue.rates) r.id: '${r.label} · ${r.summary(formatPrice)}',
+                            },
+                            onChanged: (id) {
+                              final picked = venue.rates.firstWhereOrNull((r) => r.id == id);
+                              if (picked == null) return;
+                              setState(() {
+                                _rateId = id;
+                                _venueCharge.text = _numText(picked.amount);
+                              });
+                              _refreshQuote();
+                            },
+                          ),
+                          const SizedBox(height: AppTheme.s8),
+                        ],
+                        NeuField(controller: _venueCharge, label: _venueChargeLabel, keyboardType: TextInputType.number, onChanged: (_) => _scheduleQuote(), dense: true),
+                        if (_quote != null && _venueNote(_quote!) != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              '${formatPrice(num.tryParse(_venueCharge.text.trim()) ?? 0)} × ${_quote!.pricing.numberOfDays} days = ${formatPrice(_quote!.pricing.venueCharge)}',
-                              style: const TextStyle(color: AppTheme.muted, fontSize: 11),
-                            ),
+                            child: Text(_venueNote(_quote!)!, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+                          ),
+                        if (_quote?.overBlock != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(_quote!.overBlock!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
                           ),
                         if (canCater || canRooms) ...[
                           const SizedBox(height: AppTheme.s8),
@@ -893,6 +972,8 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                     ),
                 ],
               ),
+          ),
+        ),
             ),
     );
   }

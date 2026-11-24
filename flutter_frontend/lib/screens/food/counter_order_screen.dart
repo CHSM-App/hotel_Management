@@ -476,6 +476,9 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   /// web's COUNTER target.
   bool get _isCounter => _table == null && _room == null;
 
+  /// A counter order packed to go; only meaningful while [_isCounter].
+  bool _parcel = false;
+
   num get _total => _lines.fold<num>(0, (sum, l) => sum + l.lineTotal);
 
   List<MenuSection> get _activeSections =>
@@ -575,15 +578,19 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                       rooms: _rooms,
                       selectedTable: _table,
                       selectedRoom: _room,
+                      parcel: _parcel,
+                      onSelectParcel: (p) => setState(() => _parcel = p),
                       onSelectTable: (t) => setState(() {
                         _table = t;
                         _room = null;
+                        _parcel = false;
                         _clearOccupancy();
                       }),
                       onSelectRoom: (r) {
                         setState(() {
                           _room = r;
                           _table = null;
+                          _parcel = false;
                           _clearOccupancy();
                         });
                         if (r != null) _loadOccupancy(r.id);
@@ -713,10 +720,11 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     _headerHasSectionTabs = showSectionTabs;
     _headerHasDietTabs = showDietTabs;
 
-    return Column(
-      children: [
-        Expanded(
-          child: CustomScrollView(
+    // Laptop and up: menu on the left, the ticket pinned on the right, so the
+    // desk sees what's been added without scrolling past the whole menu.
+    final desk = AppTheme.atLeast(context, Tier.laptop);
+
+    final scroll = CustomScrollView(
             key: _scrollViewportKey,
             controller: _scrollController,
             // Flutter's default cache extent (250px) only mounts widgets
@@ -842,7 +850,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (_lines.isNotEmpty) ...[
+                      if (_lines.isNotEmpty && !desk) ...[
                         const SectionDivider(),
                         SectionLabel(
                           'Order (${_lines.length})',
@@ -873,19 +881,46 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
                 ),
               ),
             ],
+          );
+
+    final cancelLabel = _editing ? 'Cancel' : 'Back';
+    final onCancel = working
+        ? null
+        : (_editing ? () => Navigator.of(context).pop() : _goBack);
+    final VoidCallback? onPlace = (working || _lines.isEmpty) ? null : _place;
+
+    if (desk) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: scroll),
+          _OrderPanel(
+            note: _note,
+            lines: _lines,
+            total: _total,
+            working: working,
+            editing: _editing,
+            cancelLabel: cancelLabel,
+            onCancel: onCancel,
+            onPlace: onPlace,
+            onRemove: (l) => _setQty(l.item, l.portion, 0),
           ),
-        ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(child: scroll),
         _OrderBar(
           note: _note,
           lines: _lines,
           total: _total,
           working: working,
           editing: _editing,
-          cancelLabel: _editing ? 'Cancel' : 'Back',
-          onCancel: working
-              ? null
-              : (_editing ? () => Navigator.of(context).pop() : _goBack),
-          onPlace: (working || _lines.isEmpty) ? null : _place,
+          cancelLabel: cancelLabel,
+          onCancel: onCancel,
+          onPlace: onPlace,
         ),
       ],
     );
@@ -1062,6 +1097,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       guestName: _guestName.text,
       guestPhone: _guestPhone.text,
       customerTag: _customerTag.text,
+      isParcel: _isCounter && _parcel,
       note: _note.text,
       lines: _lines,
     );
@@ -1138,7 +1174,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
 /// for a room or table, which one. Resolved against the live [rooms] /
 /// [tables] lists by [_TargetField._open] rather than carrying the object
 /// itself, so the sheet only ever needs an id.
-enum _TargetKind { counter, room, table }
+enum _TargetKind { counter, parcel, room, table }
 
 class _TargetChoice {
   final _TargetKind kind;
@@ -1157,6 +1193,8 @@ class _TargetField extends StatelessWidget {
   final List<RoomListing> rooms;
   final DiningTable? selectedTable;
   final RoomListing? selectedRoom;
+  final bool parcel;
+  final ValueChanged<bool> onSelectParcel;
   final ValueChanged<DiningTable?> onSelectTable;
   final ValueChanged<RoomListing?> onSelectRoom;
 
@@ -1165,6 +1203,8 @@ class _TargetField extends StatelessWidget {
     required this.rooms,
     required this.selectedTable,
     required this.selectedRoom,
+    required this.parcel,
+    required this.onSelectParcel,
     required this.onSelectTable,
     required this.onSelectRoom,
   });
@@ -1181,7 +1221,9 @@ class _TargetField extends StatelessWidget {
       ? 'Room ${selectedRoom!.roomNumber}'
       : selectedTable != null
       ? selectedTable!.label
-      : 'Counter / takeaway';
+      : parcel
+      ? 'Parcel'
+      : 'Counter';
 
   PopupMenuEntry<_TargetChoice> _groupLabel(String label) {
     return PopupMenuItem<_TargetChoice>(
@@ -1292,8 +1334,14 @@ class _TargetField extends StatelessWidget {
         _row(
           choice: const _TargetChoice(_TargetKind.counter, null),
           icon: Icons.point_of_sale_rounded,
-          label: 'Counter / takeaway',
-          selected: _isCounter,
+          label: 'Counter',
+          selected: _isCounter && !parcel,
+        ),
+        _row(
+          choice: const _TargetChoice(_TargetKind.parcel, null),
+          icon: Icons.takeout_dining_rounded,
+          label: 'Parcel',
+          selected: _isCounter && parcel,
         ),
         if (rooms.isNotEmpty) ...[
           _groupLabel('ROOMS'),
@@ -1320,8 +1368,10 @@ class _TargetField extends StatelessWidget {
     if (choice == null) return;
     switch (choice.kind) {
       case _TargetKind.counter:
+      case _TargetKind.parcel:
         onSelectRoom(null);
         onSelectTable(null);
+        onSelectParcel(choice.kind == _TargetKind.parcel);
         break;
       case _TargetKind.room:
         onSelectTable(null);
@@ -2366,6 +2416,152 @@ class _OrderBar extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Desktop: the ticket as a pinned right-hand panel ────────────────────────
+
+class _OrderPanel extends StatelessWidget {
+  final TextEditingController note;
+  final List<OrderLineDraft> lines;
+  final num total;
+  final bool working;
+  final bool editing;
+  final String cancelLabel;
+  final VoidCallback? onCancel;
+  final VoidCallback? onPlace;
+  final void Function(OrderLineDraft) onRemove;
+
+  const _OrderPanel({
+    required this.note,
+    required this.lines,
+    required this.total,
+    required this.working,
+    required this.editing,
+    required this.cancelLabel,
+    required this.onCancel,
+    required this.onPlace,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final count = lines.fold<int>(0, (n, l) => n + l.quantity);
+    return Container(
+      width: AppTheme.atLeast(context, Tier.desktop) ? 420 : 360,
+      decoration: const BoxDecoration(
+        color: AppTheme.card,
+        border: Border(left: BorderSide(color: AppTheme.border)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s16, AppTheme.s16, AppTheme.s8),
+            child: Row(
+              children: [
+                const Icon(Icons.shopping_cart_rounded, size: 18, color: AppTheme.accent),
+                const SizedBox(width: AppTheme.s8),
+                const Expanded(
+                  child: Text(
+                    'Current order',
+                    style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
+                ),
+                Text(
+                  '$count item${count == 1 ? '' : 's'}',
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppTheme.border),
+          Expanded(
+            child: lines.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(AppTheme.s24),
+                      child: Text(
+                        'Tap + on a dish to add it here.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppTheme.muted, fontSize: 13),
+                      ),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(AppTheme.s16),
+                    children: [for (final l in lines) _CartLine(line: l, onRemove: () => onRemove(l))],
+                  ),
+          ),
+          const Divider(height: 1, color: AppTheme.border),
+          Padding(
+            padding: const EdgeInsets.all(AppTheme.s16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: note,
+                  minLines: 2,
+                  maxLines: 3,
+                  style: const TextStyle(color: AppTheme.heading, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Add a note for the kitchen (optional)',
+                    hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppTheme.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppTheme.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppTheme.accent, width: 1.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppTheme.s12),
+                Row(
+                  children: [
+                    const Text('Total', style: TextStyle(color: AppTheme.muted, fontSize: 14)),
+                    const Spacer(),
+                    Text(
+                      formatPrice(total),
+                      style: const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w800, fontSize: 22),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.s12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: NeuButton(onPressed: onCancel, child: Text(cancelLabel)),
+                    ),
+                    const SizedBox(width: AppTheme.s8),
+                    Expanded(
+                      flex: 2,
+                      child: NeuButton(
+                        primary: true,
+                        onPressed: onPlace,
+                        child: working
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : Text(editing ? 'Save changes' : 'Place order'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),

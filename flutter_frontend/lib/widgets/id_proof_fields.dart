@@ -93,15 +93,38 @@ class IdProofFields extends StatelessWidget {
     this.onFile,
   });
 
+  /// One label style for all three columns, so their boxes start on one line
+  /// (the type label used a smaller size than NeuField's, which pushed the
+  /// ID number box a couple of pixels lower).
+  Widget _label(BuildContext context, String text, {bool star = false}) =>
+      Text.rich(
+        TextSpan(
+          text: text,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: AppTheme.heading,
+            fontWeight: FontWeight.w700,
+            fontSize: RoomyForm.on(context) ? 13.5 : null,
+          ),
+          children: star
+              ? const [
+                  TextSpan(
+                    text: ' *',
+                    style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w700),
+                  ),
+                ]
+              : null,
+        ),
+      );
+
+  static const _docWidth = 150.0;
+
   Widget _typePart(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-        required
-            ? const RequiredLabel('ID proof')
-            : Text('ID proof', style: AppTheme.fieldLabel(context)),
-        const SizedBox(height: AppTheme.s4),
+        _label(context, 'ID proof', star: required),
+        SizedBox(height: RoomyForm.on(context) ? 6 : AppTheme.s4),
         SizedBox(
-          height: 40,
+          height: RoomyForm.height(context, 40),
           child: NeuPressed(
             padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
             child: DropdownButtonHideUnderline(
@@ -120,7 +143,7 @@ class IdProofFields extends StatelessWidget {
                     const SizedBox(width: AppTheme.s8),
                     Text(
                       required ? 'Choose one' : 'Not recorded',
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 14),
+                      style: TextStyle(color: AppTheme.muted, fontSize: RoomyForm.fs(context, 14)),
                     ),
                   ],
                 ),
@@ -143,9 +166,9 @@ class IdProofFields extends StatelessWidget {
                         const SizedBox(width: AppTheme.s8),
                         Text(
                           e.value,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppTheme.heading,
-                            fontSize: 14,
+                            fontSize: RoomyForm.fs(context, 14),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -200,15 +223,47 @@ class IdProofFields extends StatelessWidget {
     ],
   );
 
-  Widget _docPart(BuildContext context) => Column(
+  Widget _docPart(BuildContext context, {bool wide = false}) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-            Text('Document photo (optional)', style: AppTheme.fieldLabel(context)),
-            const SizedBox(height: AppTheme.s4),
+            _label(context, 'Document photo (optional)'),
+            SizedBox(height: RoomyForm.on(context) ? 6 : AppTheme.s4),
             if (file != null)
               PhotoThumb(
                 imageProvider: FileImage(File(file!.path)),
                 onRemove: () => onFile!(null),
+              )
+            else if (wide)
+              // A button the height of the fields beside it, not a 72px tile.
+              GestureDetector(
+                onTap: () async {
+                  final picked = await pickIdProofPhoto(context);
+                  if (picked != null) onFile!(picked);
+                },
+                child: Container(
+                  height: RoomyForm.height(context, 40),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                    border: Border.all(color: AppTheme.accent.withValues(alpha: 0.55)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.add_a_photo_outlined, color: AppTheme.accent, size: 18),
+                      const SizedBox(width: AppTheme.s8),
+                      Text(
+                        'Add photo',
+                        style: TextStyle(
+                          color: AppTheme.accent,
+                          fontWeight: FontWeight.w700,
+                          fontSize: RoomyForm.fs(context, 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               )
             else
               AddPhotoTile(
@@ -232,13 +287,18 @@ class IdProofFields extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(child: _typePart(context)),
-              if (type != null) ...[
+              const SizedBox(width: AppTheme.s12),
+              // Number and photo keep their slots before a type is picked, so
+              // the dropdown doesn't change width the moment one is chosen.
+              Expanded(
+                child: type != null ? _numberPart(context) : const SizedBox(),
+              ),
+              if (onFile != null) ...[
                 const SizedBox(width: AppTheme.s12),
-                Expanded(child: _numberPart(context)),
-                if (onFile != null) ...[
-                  const SizedBox(width: AppTheme.s12),
-                  _docPart(context),
-                ],
+                SizedBox(
+                  width: _docWidth,
+                  child: type != null ? _docPart(context, wide: true) : null,
+                ),
               ],
             ],
           );

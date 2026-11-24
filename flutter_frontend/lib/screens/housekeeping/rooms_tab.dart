@@ -448,13 +448,14 @@ class _RoomsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showNotes = AppTheme.showLowPriorityColumns(context);
     final columns = [
       (label: hasVenues ? 'Room / venue' : 'Room', width: 120.0),
       (label: 'Type', width: 180.0),
       (label: 'Status', width: 150.0),
       (label: hasVenues ? 'Guest / function' : 'Guest', width: 190.0),
       (label: 'Last cleaned', width: 130.0),
-      (label: 'Notes', width: 240.0),
+      if (showNotes) (label: 'Notes', width: 240.0),
     ];
     final width = columns.fold<double>(0, (sum, c) => sum + c.width) + _actionsWidth;
 
@@ -484,6 +485,7 @@ class _RoomsTable extends StatelessWidget {
               rows: [
                       for (var i = 0; i < rooms.length; i++)
                         _RoomTableRow(
+                          showNotes: showNotes,
                           room: rooms[i],
                           now: now,
                           shaded: i.isOdd,
@@ -512,7 +514,11 @@ class _RoomTableRow extends StatelessWidget {
   final VoidCallback onBackInService;
   final List<(String, VoidCallback)> menu;
 
+  /// Low-priority Notes column, dropped on a tablet/laptop (see the header).
+  final bool showNotes;
+
   const _RoomTableRow({
+    required this.showNotes,
     required this.room,
     required this.now,
     required this.shaded,
@@ -548,7 +554,7 @@ class _RoomTableRow extends StatelessWidget {
           cell(150, Align(alignment: Alignment.centerLeft, child: StatusPill(label: _statusLabelOf(room), color: tone))),
           cell(190, text(guest)),
           cell(130, text(room.status == 'READY' ? cleaned : '—')),
-          cell(240, text(notes)),
+          if (showNotes) cell(240, text(notes)),
           SizedBox(
             width: _RoomsTable._actionsWidth,
             child: Padding(

@@ -191,40 +191,6 @@ class _Body extends ConsumerWidget {
           BillPanel(child: _PaymentRows(state: state)),
         ],
 
-        if (preview.liveOrderCount > 0) ...[
-          const SizedBox(height: AppTheme.s16),
-          NeuCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${preview.liveOrderCount} order'
-                  '${preview.liveOrderCount == 1 ? ' is' : 's are'} still in '
-                  'progress on this tab — that food is not on this bill.',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: AppTheme.danger),
-                ),
-                const SizedBox(height: AppTheme.s8),
-                InkWell(
-                  onTap: () => vm.setBillAnyway(!state.billAnyway),
-                  child: Row(
-                    children: [
-                      Checkbox(
-                        value: state.billAnyway,
-                        onChanged: (v) => vm.setBillAnyway(v ?? false),
-                      ),
-                      const Expanded(
-                        child: Text('Bill what has been delivered anyway'),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-
         const SizedBox(height: AppTheme.s16),
         if (state.error != null) ...[
           Text(
@@ -240,8 +206,7 @@ class _Body extends ConsumerWidget {
           expand: true,
           onPressed:
               (state.issuing ||
-                  state.settlementProblem != null ||
-                  (preview.liveOrderCount > 0 && !state.billAnyway))
+                  state.settlementProblem != null)
               ? null
               : () async {
                   final navigator = Navigator.of(context);

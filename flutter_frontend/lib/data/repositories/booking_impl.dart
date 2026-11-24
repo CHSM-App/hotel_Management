@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../domain/models/booking.dart';
+import '../../domain/models/booking_edit.dart';
 import '../../domain/models/draft.dart';
 import '../../domain/models/guest_match.dart';
 import '../../domain/models/invoice_window.dart';
@@ -256,6 +257,9 @@ class BookingImpl implements BookingRepository {
   @override
   Future<BookingRevision> reviseBooking(int id, FormData form) =>
       api.reviseBooking(id, form);
+
+  @override
+  Future<List<BookingEdit>> bookingEdits(int id) => api.bookingEdits(id);
 
   @override
   Future<InvoiceEditWindow?> invoiceEditWindow(int id) =>

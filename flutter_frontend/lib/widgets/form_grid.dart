@@ -80,7 +80,7 @@ class FormActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = AppTheme.screenSize(context) != ScreenSize.mobile;
+    final wide = !AppTheme.isPhone(context);
     final save = NeuButton(primary: true, expand: !wide, onPressed: onSave, child: saveChild);
     if (!wide) return save;
     return Row(

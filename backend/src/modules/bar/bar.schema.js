@@ -64,6 +64,7 @@ const orderSchema = z.object({
   guestName: text(100).optional().nullable(),
   guestPhone: text(20).optional().nullable(),
   customerTag: text(60).optional().nullable(),
+  isParcel: z.boolean().optional().default(false),
   items: z.array(z.object({ menuItemId: id, quantity: z.coerce.number().int().min(1).max(100) })).default([]),
   foodItems: z.array(foodItemSchema).default([]),
 }).refine(hasLines, noLines);
@@ -83,8 +84,6 @@ const billSchema = z.object({
   orderIds: z.array(id).min(1, 'Pick at least one order.'),
   customerName: text(100).optional().nullable(),
   customerPhone: text(20).optional().nullable(),
-  // Bill even though some items have not been delivered yet.
-  billAnyway: z.boolean().optional(),
   payments: z
     .array(
       z.object({

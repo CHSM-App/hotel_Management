@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiGet, apiPost, ApiError } from '../../lib/api';
+import { apiGet, apiPost } from '../../lib/api';
 import PageLoader from '../../components/PageLoader';
 import PaymentLines from './PaymentLines';
 import BarAddToRoom from './BarAddToRoom';
@@ -23,7 +23,6 @@ export default function BarBilling({ lodge, pickKey = null }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [bill, setBill] = useState(null);
-  const [pendingMsg, setPendingMsg] = useState('');
   const [toRoom, setToRoom] = useState(false);
   const [note, setNote] = useState('');
   const [version, setVersion] = useState(0);
@@ -35,7 +34,6 @@ export default function BarBilling({ lodge, pickKey = null }) {
     setCustomer(tab.guestName || '');
     setLines([{ ...emptyPaymentLine(), amount: String(tab.subtotal) }]);
     setError('');
-    setPendingMsg('');
     setToRoom(false);
     setBill(null);
   };
@@ -67,9 +65,8 @@ export default function BarBilling({ lodge, pickKey = null }) {
   const tax = Math.round((drinksTotal - drinksTotal / (1 + taxPercent / 100)) * 100) / 100;
   const diff = picked ? Math.round((picked.subtotal - paid) * 100) / 100 : 0;
 
-  const issue = async (billAnyway = false) => {
+  const issue = async () => {
     setError('');
-    setPendingMsg('');
     if (lines.some((l) => !l.method || !(Number(l.amount) > 0))) return setError('Choose a payment type and amount for every row.');
     if (Math.abs(diff) > 0.009) return setError(`Payments add up to ${formatPrice(paid)}, but the bill is ${formatPrice(picked.subtotal)}.`);
     setBusy(true);
@@ -79,7 +76,6 @@ export default function BarBilling({ lodge, pickKey = null }) {
         {
           orderIds: picked.orderIds,
           customerName: customer || null,
-          billAnyway,
           payments: lines.map((l) => ({ method: l.method, amount: Number(l.amount), reference: l.reference || null })),
         },
         { token }
@@ -88,12 +84,8 @@ export default function BarBilling({ lodge, pickKey = null }) {
       setPicked(null);
       reload();
     } catch (e) {
-      // Undelivered items: offer to bill anyway rather than a dead-end error.
-      if (e instanceof ApiError && e.field === 'pending') setPendingMsg(e.message);
-      else {
-        setError(errText(e, 'Could not issue the bill.'));
-        reload();
-      }
+      setError(errText(e, 'Could not issue the bill.'));
+      reload();
     } finally {
       setBusy(false);
     }
@@ -178,12 +170,6 @@ export default function BarBilling({ lodge, pickKey = null }) {
               </>
             )}
             {error && <Note kind="error">{error}</Note>}
-            {!toRoom && pendingMsg && (
-              <Note kind="warn">
-                <span>{pendingMsg}</span>
-                <button type="button" className="bar-btn bar-btn--sm" disabled={busy} onClick={() => issue(true)}>Bill anyway</button>
-              </Note>
-            )}
             {toRoom ? (
               // Posting to a room instead of billing here: no payment, no Issue bill.
               <BarAddToRoom
@@ -196,7 +182,7 @@ export default function BarBilling({ lodge, pickKey = null }) {
             ) : (
               <>
                 <button type="button" className="bar-btn bar-btn--block" onClick={() => setToRoom(true)}>Add to room bill instead</button>
-                <button type="button" className="bar-btn bar-btn--primary bar-btn--block" disabled={busy} onClick={() => issue(false)}>
+                <button type="button" className="bar-btn bar-btn--primary bar-btn--block" disabled={busy} onClick={issue}>
                   {busy ? 'Issuing bill…' : `Issue bill · ${formatPrice(picked.subtotal)}`}
                 </button>
               </>

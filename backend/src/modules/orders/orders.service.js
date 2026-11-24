@@ -166,7 +166,7 @@ async function resolveOrderLines(pool, lodgeId, requestedItems) {
 // recipe stock all work as usual), tagged with the bar order it belongs to.
 // The bar passes its own transaction so the two orders are created atomically;
 // the caller then owns commit and rollback.
-async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestName, guestPhone, note, items, status, createdBy, barOrderId = null, customerTag = null, transaction: outerTransaction = null }) {
+async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestName, guestPhone, note, items, status, createdBy, barOrderId = null, customerTag = null, isParcel = false, transaction: outerTransaction = null }) {
   if (items.length === 0) {
     throw new ApiError('Add at least one item to the order.', 400);
   }
@@ -201,15 +201,16 @@ async function createOrder(lodgeId, { source, roomId, bookingId, tableId, guestN
       .input('createdBy', sql.BigInt, createdBy ?? null)
       .input('barOrderId', sql.BigInt, barOrderId)
       .input('customerTag', sql.NVarChar, source === 'TABLE' ? cleanTag(customerTag) : null)
+      .input('isParcel', sql.Bit, source === 'COUNTER' && !!isParcel)
       .query(`
         INSERT INTO dbo.food_orders
           (lodge_id, order_date, order_number, source, room_id, booking_id, table_id,
-           guest_name, guest_phone, note, status, subtotal, accepted_at, created_by, public_token, bar_order_id, customer_tag)
+           guest_name, guest_phone, note, status, subtotal, accepted_at, created_by, public_token, bar_order_id, customer_tag, is_parcel)
         OUTPUT inserted.id
         VALUES
           (@lodgeId, @orderDate, @orderNumber, @source, @roomId, @bookingId, @tableId,
            @guestName, @guestPhone, @note, @status, @subtotal,
-           CASE WHEN @status = 'QUEUED' THEN SYSDATETIMEOFFSET() ELSE NULL END, @createdBy, @publicToken, @barOrderId, @customerTag)
+           CASE WHEN @status = 'QUEUED' THEN SYSDATETIMEOFFSET() ELSE NULL END, @createdBy, @publicToken, @barOrderId, @customerTag, @isParcel)
       `);
 
     const orderId = orderResult.recordset[0].id;
@@ -357,6 +358,7 @@ function mapOrder(row, items) {
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
     customerTag: row.customer_tag ?? null,
+    isParcel: !!row.is_parcel,
     note: row.note,
     status: row.status,
     subtotal: Number(row.subtotal),
@@ -452,7 +454,7 @@ async function listOrders(lodgeId, { status, date, from, to, live, awaitingBill 
            COALESCE(o.guest_name, bk.guest_name) AS guest_name, COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
            o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
            o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.on_room_bill, o.created_by, uh.name AS handler_name,
-           o.table_id, o.room_id, o.bar_order_id, o.customer_tag,
+           o.table_id, o.room_id, o.bar_order_id, o.customer_tag, o.is_parcel,
            (SELECT status FROM dbo.bar_orders WHERE id = o.bar_order_id) AS bar_status,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
            (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,
@@ -512,7 +514,7 @@ async function getOrder(lodgeId, orderId) {
            COALESCE(o.guest_name, bk.guest_name) AS guest_name, COALESCE(o.guest_phone, bk.guest_phone) AS guest_phone,
              o.note, o.status, o.subtotal, o.placed_at, o.accepted_at, o.ready_at, o.delivered_at,
              o.cancelled_at, o.cancel_reason, o.invoice_id, o.ready_to_bill_at, o.on_room_bill, o.created_by, uh.name AS handler_name,
-           o.table_id, o.room_id, o.bar_order_id, o.customer_tag,
+           o.table_id, o.room_id, o.bar_order_id, o.customer_tag, o.is_parcel,
            (SELECT status FROM dbo.bar_orders WHERE id = o.bar_order_id) AS bar_status,
            (SELECT total_amount FROM dbo.invoices WHERE id = o.invoice_id) AS inv_total,
            (SELECT invoice_number FROM dbo.invoices WHERE id = o.invoice_id) AS inv_number,

@@ -68,9 +68,21 @@ class FrontDeskApp extends StatelessWidget {
         data: MediaQuery.of(context).copyWith(
           textScaler: MediaQuery.textScalerOf(
             context,
-          ).clamp(minScaleFactor: 0.9, maxScaleFactor: 1.25),
+          ).clamp(minScaleFactor: 0.9, maxScaleFactor: 1.3),
         ),
-        child: child!,
+        // From a tablet up a toast is a 420 px floating card, not a bar
+        // stretched across the whole window; a phone keeps its own.
+        child: AppTheme.isPhone(context)
+            ? child!
+            : Theme(
+                data: Theme.of(context).copyWith(
+                  snackBarTheme: const SnackBarThemeData(
+                    behavior: SnackBarBehavior.floating,
+                    width: 420,
+                  ),
+                ),
+                child: child!,
+              ),
       ),
       home: const AuthGate(),
     );

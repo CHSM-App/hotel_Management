@@ -118,3 +118,36 @@ test('an add-on line carries its per-day rate and day count for the quote breakd
   assert.equal(dj.numberOfDays, 2);
   assert.equal(dj.amount, 30000);
 });
+
+// Rate card: the same hall hired by the hour, the day, or as a fixed block.
+const at = (start, end) => ({ startAt: `2026-12-01T${start}:00+05:30`, endAt: `2026-12-01T${end}:00+05:30` });
+
+test('an hourly rate bills each started hour', () => {
+  const rate = { type: 'HOUR', amount: 2000 };
+  assert.equal(priceEvent({ venueRate: rate, ...at('18:00', '22:00') }).venueCharge, 8000);
+  assert.equal(priceEvent({ venueRate: rate, ...at('18:00', '22:10') }).venueCharge, 10000);
+  assert.equal(priceEvent({ venueRate: rate, ...at('18:00', '22:00') }).lines[0].note, '4 hours');
+});
+
+test('a day rate multiplies by days, same as a venue with no rate card', () => {
+  const span = { startAt: '2026-12-01T09:00:00+05:30', endAt: '2026-12-03T09:00:00+05:30' };
+  assert.equal(priceEvent({ venueRate: { type: 'DAY', amount: 12000 }, ...span }).venueCharge, 24000);
+  assert.equal(priceEvent({ venueCharge: 12000, ...span }).venueCharge, 24000);
+});
+
+test('a block is one flat price, and flags when the function outruns it', () => {
+  const rate = { type: 'BLOCK', amount: 6000, blockHours: 4 };
+  const within = priceEvent({ venueRate: rate, ...at('18:00', '22:00') });
+  assert.equal(within.venueCharge, 6000);
+  assert.equal(within.overBlock, false);
+  assert.equal(within.lines[0].note, '4-hour block');
+  const over = priceEvent({ venueRate: rate, ...at('18:00', '23:00') });
+  assert.equal(over.venueCharge, 6000);
+  assert.equal(over.overBlock, true);
+});
+
+test('a settled venue total is taken as is, whatever the rate', () => {
+  const q = priceEvent({ venueTotal: 6000, venueCharge: 1, ...at('18:00', '23:00') });
+  assert.equal(q.venueCharge, 6000);
+  assert.equal(q.totalAmount, 6000);
+});

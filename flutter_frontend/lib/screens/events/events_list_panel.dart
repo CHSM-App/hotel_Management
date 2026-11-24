@@ -5,6 +5,7 @@ import '../../domain/models/event_booking.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/compact_date_picker.dart';
 import '../../widgets/format.dart';
+import '../../widgets/adaptive_grid.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'event_detail_screen.dart';
@@ -254,19 +255,22 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
                   message: 'No functions match. Tap + to take a new enquiry.',
                 )
               else
-                for (final ev in shown)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppTheme.s8 - 2),
-                    child: _EventCard(
-                      event: ev,
-                      onTap: () async {
-                        await Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => EventDetailScreen(eventId: ev.id)),
-                        );
-                        _load();
-                      },
-                    ),
-                  ),
+                AdaptiveGrid(
+                  minTileWidth: 420,
+                  spacing: AppTheme.s8 - 2,
+                  children: [
+                    for (final ev in shown)
+                      _EventCard(
+                        event: ev,
+                        onTap: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => EventDetailScreen(eventId: ev.id)),
+                          );
+                          _load();
+                        },
+                      ),
+                  ],
+                ),
             ],
           ),
         ),
@@ -274,8 +278,8 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             onPressed: () async {
               await Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const EventFormScreen()),

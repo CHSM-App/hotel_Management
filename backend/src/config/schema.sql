@@ -1958,6 +1958,27 @@ CREATE TABLE dbo.event_venues (
     CONSTRAINT uq_event_venues_lodge_name UNIQUE (lodge_id, name)
 );
 
+-- A venue's rate card: several ways to hire the same space. HOUR is priced per
+-- hour, DAY per day, BLOCK is one flat price for block_hours hours ("4 hours
+-- only"). event_venues.base_charge stays as the legacy per-day default for a
+-- venue with no card.
+IF OBJECT_ID('dbo.event_venue_rates', 'U') IS NULL
+CREATE TABLE dbo.event_venue_rates (
+    id           BIGINT IDENTITY(1,1) PRIMARY KEY,
+    venue_id     BIGINT NOT NULL REFERENCES dbo.event_venues(id),
+    label        NVARCHAR(60) NOT NULL,
+    rate_type    NVARCHAR(5) NOT NULL
+        CONSTRAINT ck_event_venue_rates_type CHECK (rate_type IN ('HOUR', 'DAY', 'BLOCK')),
+    amount       DECIMAL(10,2) NOT NULL CONSTRAINT ck_event_venue_rates_amount CHECK (amount >= 0),
+    block_hours  DECIMAL(5,2) NULL,
+    sort_order   INT NOT NULL CONSTRAINT df_event_venue_rates_sort DEFAULT 0,
+    created_at   DATETIMEOFFSET NOT NULL CONSTRAINT df_event_venue_rates_created DEFAULT SYSDATETIMEOFFSET(),
+    CONSTRAINT ck_event_venue_rates_block CHECK (
+        (rate_type = 'BLOCK' AND block_hours > 0) OR (rate_type <> 'BLOCK' AND block_hours IS NULL)
+    ),
+    CONSTRAINT uq_event_venue_rates_label UNIQUE (venue_id, label)
+);
+
 -- Photos of a venue, up to six, kept the way room_images are.
 IF OBJECT_ID('dbo.event_venue_images', 'U') IS NULL
 CREATE TABLE dbo.event_venue_images (
@@ -2082,6 +2103,19 @@ IF COL_LENGTH('dbo.event_bookings', 'refund_payment_method') IS NULL
 -- gave the stay reminder sweep.
 IF COL_LENGTH('dbo.event_bookings', 'reminder_sent_at') IS NULL
     EXEC('ALTER TABLE dbo.event_bookings ADD reminder_sent_at DATETIMEOFFSET NULL');
+
+-- Which rate card line priced the venue, frozen at quoting. All NULL = a
+-- booking from before rate cards, priced per day from venue_charge as always.
+-- rate_amount is the unit amount actually used (after any desk override).
+IF COL_LENGTH('dbo.event_bookings', 'rate_type') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD rate_type NVARCHAR(5) NULL
+            CONSTRAINT ck_event_bookings_rate_type CHECK (rate_type IN (''HOUR'', ''DAY'', ''BLOCK''))');
+IF COL_LENGTH('dbo.event_bookings', 'rate_label') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD rate_label NVARCHAR(60) NULL');
+IF COL_LENGTH('dbo.event_bookings', 'rate_amount') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD rate_amount DECIMAL(10,2) NULL');
+IF COL_LENGTH('dbo.event_bookings', 'rate_block_hours') IS NULL
+    EXEC('ALTER TABLE dbo.event_bookings ADD rate_block_hours DECIMAL(5,2) NULL');
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_event_bookings_venue_time' AND object_id = OBJECT_ID('dbo.event_bookings'))
     CREATE INDEX ix_event_bookings_venue_time ON dbo.event_bookings(venue_id, start_at, end_at) INCLUDE (status);
@@ -3657,6 +3691,14 @@ CREATE TABLE dbo.booking_edit_log (
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_booking_edit_log_booking' AND object_id = OBJECT_ID('dbo.booking_edit_log'))
     EXEC('CREATE INDEX ix_booking_edit_log_booking ON dbo.booking_edit_log(booking_id, created_at DESC)');
 
+-- What changed, device description, restated invoice (174). Mirrors the migration.
+IF COL_LENGTH('dbo.booking_edit_log', 'device_info') IS NULL
+    EXEC('ALTER TABLE dbo.booking_edit_log ADD device_info NVARCHAR(200) NULL');
+IF COL_LENGTH('dbo.booking_edit_log', 'changes') IS NULL
+    EXEC('ALTER TABLE dbo.booking_edit_log ADD changes NVARCHAR(MAX) NULL');
+IF COL_LENGTH('dbo.booking_edit_log', 'invoice_id') IS NULL
+    EXEC('ALTER TABLE dbo.booking_edit_log ADD invoice_id BIGINT NULL');
+
 -- Bar orders can be marked "ready to bill" (captain / reception), and reception
 -- gets the bar order and billing permissions (165). Remember: the same change
 -- must also land in src/config/schema.sql.
@@ -3790,4 +3832,12 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_lodge_quotations_lodge_status' AND object_id = OBJECT_ID('dbo.lodge_quotations'))
 CREATE INDEX ix_lodge_quotations_lodge_status ON dbo.lodge_quotations(lodge_id, status, check_in_date);
+GO
+
+IF COL_LENGTH('dbo.food_orders', 'is_parcel') IS NULL
+    EXEC('ALTER TABLE dbo.food_orders ADD is_parcel BIT NOT NULL CONSTRAINT df_food_orders_is_parcel DEFAULT 0');
+GO
+
+IF COL_LENGTH('dbo.bar_orders', 'is_parcel') IS NULL
+    EXEC('ALTER TABLE dbo.bar_orders ADD is_parcel BIT NOT NULL CONSTRAINT df_bar_orders_is_parcel DEFAULT 0');
 GO

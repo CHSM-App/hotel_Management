@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/staff.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/staff_viewmodel.dart';
+import '../../widgets/adaptive_grid.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
@@ -118,18 +119,18 @@ class _StaffTab extends ConsumerWidget {
             if (staff.isEmpty)
               const NeuNotice(message: 'No staff logins yet.', icon: Icons.people_outline_rounded)
             else
-              for (final member in staff) ...[
-                _StaffRow(member: member),
-                const SizedBox(height: AppTheme.s8),
-              ],
+              AdaptiveGrid(
+                spacing: AppTheme.s8,
+                children: [for (final member in staff) _StaffRow(member: member)],
+              ),
           ],
         ),
         Positioned(
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             tooltip: 'Add staff',
             onPressed: () => showStaffFormScreen(context),
             child: const Icon(Icons.add_rounded),
@@ -370,18 +371,20 @@ class _RolesTab extends ConsumerWidget {
               style: TextStyle(color: AppTheme.muted, fontSize: 13),
             ),
             const SizedBox(height: AppTheme.s12),
-            for (final role in state.roles) ...[
-              _RoleCard(role: role, labelFor: state.labelFor),
-              const SizedBox(height: AppTheme.s8),
-            ],
+            AdaptiveGrid(
+              spacing: AppTheme.s8,
+              children: [
+                for (final role in state.roles) _RoleCard(role: role, labelFor: state.labelFor),
+              ],
+            ),
           ],
         ),
         Positioned(
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             tooltip: 'Add role',
             onPressed: () => showRoleFormScreen(context),
             child: const Icon(Icons.add_rounded),

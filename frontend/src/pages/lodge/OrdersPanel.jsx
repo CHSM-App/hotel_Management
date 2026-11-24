@@ -169,7 +169,7 @@ function sectionsOf(items) {
 function targetLabel(order) {
   if (order.source === 'ROOM') return `Room ${order.roomNumber}`;
   if (order.source === 'TABLE') return order.tableLabel;
-  return 'Counter';
+  return order.isParcel ? 'Parcel' : 'Counter';
 }
 
 function dateTimeLabel(iso) {
@@ -179,7 +179,7 @@ function dateTimeLabel(iso) {
 // Where an order came from: a guest's own QR scan, or a member of staff typing
 // it in. Says where the food is going too (room = charged to a stay).
 function SourceTag({ order }) {
-  const place = order.source === 'ROOM' ? 'Room' : order.source === 'TABLE' ? 'Table' : 'Counter';
+  const place = order.source === 'ROOM' ? 'Room' : order.source === 'TABLE' ? 'Table' : order.isParcel ? 'Parcel' : 'Counter';
   // Food on a bar order: the kitchen cooks it, the bar bills it.
   if (order.barOrderId) return <span className="src-tag src-tag--bar">Bar · {place}</span>;
   return order.guestOrder ? (
@@ -305,7 +305,7 @@ function ViewToggle({ view, onChange }) {
 
 // `view` / `onViewChange` / `hideTabs` let a parent (FoodSection) own the tab
 // strip so orders and billing share one; on its own the panel keeps its tabs.
-const kotWhere = (o) => (o.roomNumber ? `Room ${o.roomNumber}` : o.tableLabel || 'Counter');
+const kotWhere = (o) => (o.roomNumber ? `Room ${o.roomNumber}` : o.tableLabel || (o.isParcel ? 'Parcel' : 'Counter'));
 const printOrderKot = (lodge, o, title = 'KOT') =>
   printKot({
     lodgeName: lodge?.name || '', title, where: kotWhere(o), orderNo: o.orderNumber, guest: o.guestName,
@@ -2611,6 +2611,7 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
           guestName: target.kind === 'COUNTER' ? guestName : '',
           guestPhone: target.kind === 'COUNTER' ? guestPhone : '',
           customerTag: target.kind === 'TABLE' ? customerTag.trim() || null : null,
+          isParcel: target.kind === 'COUNTER' && target.id === 'parcel',
           note,
           items: lines.map((l) => ({
             itemId: l.itemId,
@@ -2684,7 +2685,8 @@ function CounterOrderForm({ lodge, onClose, onPlaced, editOrder = null }) {
                 setOccupancyLoading(kind === 'ROOM' && !!id);
               }}
             >
-              <option value="COUNTER:">Counter / takeaway</option>
+              <option value="COUNTER:">Counter</option>
+              <option value="COUNTER:parcel">Parcel</option>
               {rooms.flatMap((r) => {
                 // One entry per guest in the room, named, so a guest holding two
                 // rooms is listed twice (once per room) and a dormitory lists

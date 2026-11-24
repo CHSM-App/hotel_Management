@@ -1,7 +1,7 @@
 const { getPool, sql } = require('../../config/connection');
 const { allocateEventNumber } = require('../bookings/bookingNumbers');
 const { ApiError } = require('../../middleware/errorHandler');
-const { priceEvent, billablePax, round2 } = require('./eventPricing');
+const { priceEvent, billablePax, numberOfDays, round2 } = require('./eventPricing');
 const eventConfirmation = require('../notifications/eventConfirmation');
 const eventCancellation = require('../notifications/eventCancellation');
 const eventReschedule = require('../notifications/eventReschedule');
@@ -53,7 +53,7 @@ async function getCapabilities(lodgeId, pool = null) {
 // Venues and the add-on catalogue
 // ---------------------------------------------------------------------------
 
-function mapVenue(row, images = []) {
+function mapVenue(row, images = [], rates = []) {
   return {
     id: row.id,
     name: row.name,
@@ -62,7 +62,96 @@ function mapVenue(row, images = []) {
     isActive: !!row.is_active,
     createdAt: toIso(row.created_at),
     images,
+    rates,
   };
+}
+
+function mapRate(row) {
+  return {
+    id: row.id,
+    label: row.label,
+    rateType: row.rate_type,
+    amount: Number(row.amount),
+    blockHours: row.block_hours == null ? null : Number(row.block_hours),
+  };
+}
+
+// Every rate card line at the property, grouped by venue — one query for the
+// whole list, like the photos.
+async function loadVenueRates(pool, lodgeId, venueId = null) {
+  const result = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('venueId', sql.BigInt, venueId)
+    .query(`
+      SELECT r.id, r.venue_id, r.label, r.rate_type, r.amount, r.block_hours
+      FROM dbo.event_venue_rates r
+      JOIN dbo.event_venues v ON v.id = r.venue_id
+      WHERE v.lodge_id = @lodgeId ${venueId == null ? '' : 'AND r.venue_id = @venueId'}
+      ORDER BY r.sort_order ASC, r.id ASC
+    `);
+  const byVenue = new Map();
+  for (const row of result.recordset) {
+    const list = byVenue.get(row.venue_id) || [];
+    list.push(mapRate(row));
+    byVenue.set(row.venue_id, list);
+  }
+  return byVenue;
+}
+
+// The card is saved as a whole: lines with an id are updated, lines without
+// one are added, and lines left out are removed. Bookings snapshot the rate
+// they were priced at, so removing a line never changes one.
+async function saveVenueRates(pool, venueId, rates) {
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    const keep = rates.filter((r) => r.id).map((r) => r.id);
+    await new sql.Request(transaction)
+      .input('venueId', sql.BigInt, venueId)
+      .query(`DELETE FROM dbo.event_venue_rates WHERE venue_id = @venueId ${keep.length ? `AND id NOT IN (${keep.map(Number).join(',')})` : ''}`);
+    // Labels are unique per venue: park every kept line on a throwaway label
+    // first so two lines swapping names in one save do not collide.
+    if (keep.length) {
+      await new sql.Request(transaction)
+        .input('venueId', sql.BigInt, venueId)
+        .query(`UPDATE dbo.event_venue_rates SET label = CONCAT('~', id) WHERE venue_id = @venueId`);
+    }
+    for (const [index, r] of rates.entries()) {
+      const request = new sql.Request(transaction)
+        .input('venueId', sql.BigInt, venueId)
+        .input('id', sql.BigInt, r.id ?? null)
+        .input('label', sql.NVarChar(60), r.label)
+        .input('type', sql.NVarChar(5), r.rateType)
+        .input('amount', sql.Decimal(10, 2), r.amount)
+        .input('blockHours', sql.Decimal(5, 2), r.blockHours ?? null)
+        .input('sort', sql.Int, index);
+      const updated = r.id
+        ? await request.query(`
+            UPDATE dbo.event_venue_rates
+            SET label = @label, rate_type = @type, amount = @amount, block_hours = @blockHours, sort_order = @sort
+            WHERE id = @id AND venue_id = @venueId
+          `)
+        : null;
+      if (!updated || updated.rowsAffected[0] === 0) {
+        await new sql.Request(transaction)
+          .input('venueId', sql.BigInt, venueId)
+          .input('label', sql.NVarChar(60), r.label)
+          .input('type', sql.NVarChar(5), r.rateType)
+          .input('amount', sql.Decimal(10, 2), r.amount)
+          .input('blockHours', sql.Decimal(5, 2), r.blockHours ?? null)
+          .input('sort', sql.Int, index)
+          .query(`
+            INSERT INTO dbo.event_venue_rates (venue_id, label, rate_type, amount, block_hours, sort_order)
+            VALUES (@venueId, @label, @type, @amount, @blockHours, @sort)
+          `);
+      }
+    }
+    await transaction.commit();
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
 }
 
 // Every photo of every venue at the property, grouped by venue and in gallery
@@ -90,7 +179,7 @@ async function loadVenueImages(pool, lodgeId, venueId = null) {
 
 async function listVenues(lodgeId, { includeInactive = false } = {}) {
   const pool = await getPool();
-  const [result, images] = await Promise.all([
+  const [result, images, rates] = await Promise.all([
     pool
       .request()
       .input('lodgeId', sql.BigInt, lodgeId)
@@ -101,8 +190,9 @@ async function listVenues(lodgeId, { includeInactive = false } = {}) {
         ORDER BY name
       `),
     loadVenueImages(pool, lodgeId),
+    loadVenueRates(pool, lodgeId),
   ]);
-  return result.recordset.map((row) => mapVenue(row, images.get(row.id) || []));
+  return result.recordset.map((row) => mapVenue(row, images.get(row.id) || [], rates.get(row.id) || []));
 }
 
 async function getVenue(lodgeId, venueId) {
@@ -114,8 +204,8 @@ async function getVenue(lodgeId, venueId) {
     .query('SELECT id, name, capacity_pax, base_charge, is_active, created_at FROM dbo.event_venues WHERE id = @venueId AND lodge_id = @lodgeId');
   const row = result.recordset[0];
   if (!row) throw new ApiError('Venue not found.', 404);
-  const images = await loadVenueImages(pool, lodgeId, venueId);
-  return mapVenue(row, images.get(row.id) || []);
+  const [images, rates] = await Promise.all([loadVenueImages(pool, lodgeId, venueId), loadVenueRates(pool, lodgeId, venueId)]);
+  return mapVenue(row, images.get(row.id) || [], rates.get(row.id) || []);
 }
 
 // A duplicate name is the one error worth translating: the unique index
@@ -124,6 +214,9 @@ async function getVenue(lodgeId, venueId) {
 function isUniqueViolation(err) {
   return err?.number === 2627 || err?.number === 2601;
 }
+
+const uniqueMessage = (err) =>
+  String(err.message).includes('uq_event_venue_rates_label') ? 'Two rates have the same name.' : 'A venue with that name already exists.';
 
 async function createVenue(lodgeId, input) {
   const pool = await getPool();
@@ -139,9 +232,11 @@ async function createVenue(lodgeId, input) {
         OUTPUT inserted.id
         VALUES (@lodgeId, @name, @capacity, @baseCharge)
       `);
-    return getVenue(lodgeId, result.recordset[0].id);
+    const venueId = result.recordset[0].id;
+    if (input.rates?.length) await saveVenueRates(pool, venueId, input.rates);
+    return getVenue(lodgeId, venueId);
   } catch (err) {
-    if (isUniqueViolation(err)) throw new ApiError('A venue with that name already exists.', 409);
+    if (isUniqueViolation(err)) throw new ApiError(uniqueMessage(err), 409);
     throw err;
   }
 }
@@ -167,8 +262,9 @@ async function updateVenue(lodgeId, venueId, input) {
             is_active = COALESCE(@isActive, is_active)
         WHERE id = @venueId AND lodge_id = @lodgeId
       `);
+    if (input.rates) await saveVenueRates(pool, venueId, input.rates);
   } catch (err) {
-    if (isUniqueViolation(err)) throw new ApiError('A venue with that name already exists.', 409);
+    if (isUniqueViolation(err)) throw new ApiError(uniqueMessage(err), 409);
     throw err;
   }
   return getVenue(lodgeId, venueId);
@@ -352,6 +448,22 @@ async function resolveAddonLines(request, lodgeId, lines) {
   });
 }
 
+// The rate card line the venue is hired on: the one asked for by id, else the
+// booking's own saved rate (`input.rate`, set on an edit), else none — the
+// venue's per-day charge. A typed venueCharge replaces the line's amount.
+function resolveRate(venue, input) {
+  let base = null;
+  if (input.rateId != null) {
+    const line = venue.rates.find((r) => r.id === Number(input.rateId));
+    if (!line) throw new ApiError('That rate isn’t on this venue’s rate card.', 400);
+    base = { type: line.rateType, label: line.label, amount: line.amount, blockHours: line.blockHours };
+  } else if (input.rate) {
+    base = input.rate;
+  }
+  if (!base) return null;
+  return { ...base, amount: input.venueCharge != null ? Number(input.venueCharge) : base.amount };
+}
+
 // The quote, priced against the venue's own charge unless the desk agreed a
 // different one. Pure once the lines are resolved, so create and update
 // snapshot exactly what this returns.
@@ -359,7 +471,10 @@ async function quote(lodgeId, input, { pool = null, request = null } = {}) {
   const db = pool ?? (await getPool());
   const [venue, capabilities] = await Promise.all([getVenue(lodgeId, input.venueId), getCapabilities(lodgeId, db)]);
   const addons = await resolveAddonLines(request ?? db.request(), lodgeId, input.addons);
+  const rate = resolveRate(venue, input);
   const pricing = priceEvent({
+    venueRate: rate,
+    // No rate card line: the venue's own per-day charge, as before.
     venueCharge: input.venueCharge != null ? input.venueCharge : venue.baseCharge,
     // No kitchen, no plates — whatever the request said.
     perPlateRate: capabilities.servesFood ? (input.perPlateRate ?? 0) : 0,
@@ -375,7 +490,12 @@ async function quote(lodgeId, input, { pool = null, request = null } = {}) {
     venue.capacityPax != null && pricing.billablePax > venue.capacityPax
       ? `${venue.name} seats ${venue.capacityPax}; this party is ${pricing.billablePax}. Lower the count or pick a larger venue.`
       : null;
-  return { venue, addons, pricing, overCapacity, capabilities };
+  // Shown beside the quote, not enforced: a block that has been outrun still
+  // saves at its price, the desk types the amount it wants instead.
+  const overBlock = pricing.overBlock
+    ? `${rate.label} covers ${rate.blockHours} hours; this function runs longer. Type a higher amount if the extra time is charged.`
+    : null;
+  return { venue, addons, pricing, overCapacity, overBlock, rate, capabilities };
 }
 
 // A party the venue cannot seat is refused, not filed with a note on it.
@@ -505,6 +625,16 @@ function mapEvent(row) {
       finalPax: row.final_pax,
     }),
     venueCharge: Number(row.venue_charge),
+    // The rate card line the venue was priced on, as it was then. null for a
+    // function booked before rate cards (priced per day).
+    rate: row.rate_type
+      ? {
+          type: row.rate_type,
+          label: row.rate_label,
+          amount: Number(row.rate_amount),
+          blockHours: row.rate_block_hours == null ? null : Number(row.rate_block_hours),
+        }
+      : null,
     perPlateRate: Number(row.per_plate_rate),
     cateringAmount: Number(row.catering_amount),
     addonsTotal: Number(row.addons_total),
@@ -622,8 +752,12 @@ function bindRooms(request, input, capabilities) {
     .input('roomsNotes', sql.NVarChar(500), required ? (input.roomsNotes ?? null) : null);
 }
 
-function bindPricing(request, pricing, input) {
+function bindPricing(request, pricing, input, rate = null) {
   return request
+    .input('rateType', sql.NVarChar(5), rate?.type ?? null)
+    .input('rateLabel', sql.NVarChar(60), rate?.label ?? null)
+    .input('rateAmount', sql.Decimal(10, 2), rate?.amount ?? null)
+    .input('rateBlockHours', sql.Decimal(5, 2), rate?.blockHours ?? null)
     .input('expectedPax', sql.Int, input.expectedPax ?? 0)
     .input('guaranteedPax', sql.Int, input.guaranteedPax ?? 0)
     .input('finalPax', sql.Int, input.finalPax ?? null)
@@ -643,7 +777,7 @@ function bindPricing(request, pricing, input) {
 // one thing this feature must never allow.
 async function createEventBooking(lodgeId, userId, input) {
   const pool = await getPool();
-  const { addons, pricing, capabilities, overCapacity } = await quote(lodgeId, input, { pool });
+  const { addons, pricing, capabilities, overCapacity, rate } = await quote(lodgeId, input, { pool });
   assertWithinCapacity(overCapacity);
   const blocks = BLOCKING.includes(input.status);
 
@@ -669,7 +803,7 @@ async function createEventBooking(lodgeId, userId, input) {
     // back rather than leaving a hole in the month's sequence.
     const eventNumber = await allocateEventNumber(transaction, lodgeId);
 
-    const inserted = await bindRooms(bindPricing(new sql.Request(transaction), pricing, input), input, capabilities)
+    const inserted = await bindRooms(bindPricing(new sql.Request(transaction), pricing, input, rate), input, capabilities)
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('eventNumber', sql.NVarChar, eventNumber)
       .input('venueId', sql.BigInt, input.venueId)
@@ -690,7 +824,8 @@ async function createEventBooking(lodgeId, userId, input) {
         INSERT INTO dbo.event_bookings
           (lodge_id, event_number, venue_id, event_type, title, organiser_name, organiser_phone, organiser_alt_phone,
            start_at, end_at, slot, expected_pax, guaranteed_pax, final_pax,
-           venue_charge, per_plate_rate, catering_amount, addons_total, discount_amount, discount_reason,
+           venue_charge, rate_type, rate_label, rate_amount, rate_block_hours,
+           per_plate_rate, catering_amount, addons_total, discount_amount, discount_reason,
            total_amount, pricing_breakdown, menu_notes, setup_notes, schedule_notes,
            rooms_required, rooms_count, rooms_from, rooms_to, rooms_notes,
            status, created_by)
@@ -698,7 +833,8 @@ async function createEventBooking(lodgeId, userId, input) {
         VALUES
           (@lodgeId, @eventNumber, @venueId, @eventType, @title, @organiserName, @organiserPhone, @organiserAltPhone,
            @startAt, @endAt, @slot, @expectedPax, @guaranteedPax, @finalPax,
-           @venueCharge, @perPlateRate, @cateringAmount, @addonsTotal, @discountAmount, @discountReason,
+           @venueCharge, @rateType, @rateLabel, @rateAmount, @rateBlockHours,
+           @perPlateRate, @cateringAmount, @addonsTotal, @discountAmount, @discountReason,
            @totalAmount, @breakdown, @menuNotes, @setupNotes, @scheduleNotes,
            @roomsRequired, @roomsCount, @roomsFrom, @roomsTo, @roomsNotes,
            @status, @createdBy)
@@ -757,7 +893,14 @@ async function updateEventBooking(lodgeId, id, input) {
     expectedPax: input.expectedPax ?? current.expectedPax,
     guaranteedPax: input.guaranteedPax ?? current.guaranteedPax,
     finalPax: input.finalPax !== undefined ? input.finalPax : current.finalPax,
-    venueCharge: input.venueCharge ?? current.venueCharge,
+    // The booking keeps the rate it was priced on unless another is chosen.
+    // A booking from before rate cards stored only its venue total, so its
+    // per-day amount is recovered by dividing the day count back out.
+    rateId: input.rateId,
+    rate: input.rateId == null ? current.rate : null,
+    venueCharge:
+      input.venueCharge ??
+      (input.rateId != null ? undefined : current.rate ? current.rate.amount : round2(current.venueCharge / numberOfDays(current))),
     perPlateRate: input.perPlateRate ?? current.perPlateRate,
     addons: input.addons !== undefined ? input.addons : current.addons.map(savedLine),
     discountAmount: input.discountAmount ?? current.discountAmount,
@@ -770,7 +913,7 @@ async function updateEventBooking(lodgeId, id, input) {
     throw new ApiError('The function must end after it starts.', 400);
   }
 
-  const { addons, pricing, capabilities, overCapacity } = await quote(lodgeId, merged, { pool });
+  const { addons, pricing, capabilities, overCapacity, rate } = await quote(lodgeId, merged, { pool });
   assertWithinCapacity(overCapacity);
   // The rooms need travels as a set: sent, it replaces; absent, it stays.
   const roomsGiven = input.roomsRequired !== undefined;
@@ -794,7 +937,7 @@ async function updateEventBooking(lodgeId, id, input) {
       if (clashes.length > 0) throw clashError(clashes);
     }
 
-    await bindRooms(bindPricing(new sql.Request(transaction), pricing, merged), input, capabilities)
+    await bindRooms(bindPricing(new sql.Request(transaction), pricing, merged, rate), input, capabilities)
       .input('roomsGiven', sql.Bit, roomsGiven ? 1 : 0)
       .input('lodgeId', sql.BigInt, lodgeId)
       .input('id', sql.BigInt, id)
@@ -825,7 +968,8 @@ async function updateEventBooking(lodgeId, id, input) {
             start_at = @startAt, end_at = @endAt,
             slot = COALESCE(@slot, slot),
             expected_pax = @expectedPax, guaranteed_pax = @guaranteedPax, final_pax = @finalPax,
-            venue_charge = @venueCharge, per_plate_rate = @perPlateRate, catering_amount = @cateringAmount,
+            venue_charge = @venueCharge, rate_type = @rateType, rate_label = @rateLabel,
+            rate_amount = @rateAmount, rate_block_hours = @rateBlockHours, per_plate_rate = @perPlateRate, catering_amount = @cateringAmount,
             addons_total = @addonsTotal, discount_amount = @discountAmount, discount_reason = @discountReason,
             total_amount = @totalAmount, pricing_breakdown = @breakdown,
             menu_notes = CASE WHEN @menuGiven = 1 THEN @menuNotes ELSE menu_notes END,

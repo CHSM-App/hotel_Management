@@ -157,9 +157,14 @@ async function moveStock(tx, lodgeId, productId, changeMl, reason, { orderId = n
     .query(
       `UPDATE dbo.bar_products SET stock_ml = stock_ml + @c
        OUTPUT inserted.stock_ml AS balance
-       WHERE id = @p AND lodge_id = @lodgeId`
+       WHERE id = @p AND lodge_id = @lodgeId AND stock_ml + @c >= 0`
     );
-  if (!r.recordset.length) throw new ApiError('Product not found.', 404);
+  if (!r.recordset.length) {
+    const ex = await new sql.Request(tx).input('lodgeId', sql.BigInt, lodgeId).input('p', sql.BigInt, productId)
+      .query('SELECT name FROM dbo.bar_products WHERE id = @p AND lodge_id = @lodgeId');
+    if (!ex.recordset.length) throw new ApiError('Product not found.', 404);
+    throw new ApiError(`Insufficient stock for ${ex.recordset[0].name}.`, 400);
+  }
   const balance = r.recordset[0].balance;
   await new sql.Request(tx)
     .input('lodgeId', sql.BigInt, lodgeId)
@@ -394,6 +399,7 @@ async function addFoodOrder(tx, lodgeId, barOrderId, ctx, foodItems, userId) {
     status: ctx.foodStatus || 'QUEUED',
     note: ctx.note ?? null,
     customerTag: ctx.customerTag ?? null,
+    isParcel: !!ctx.isParcel,
     createdBy: userId ?? null,
     barOrderId,
     transaction: tx,
@@ -430,11 +436,12 @@ async function createOrder(lodgeId, input, userId) {
       .input('gp', sql.NVarChar, input.guestPhone ?? null)
       .input('u', sql.BigInt, userId ?? null)
       .input('ct', sql.NVarChar, input.source === 'TABLE' ? cleanTag(input.customerTag) : null)
+      .input('ip', sql.Bit, input.source === 'COUNTER' && !!input.isParcel)
       .query(
         `INSERT INTO dbo.bar_orders (lodge_id, order_date, order_number, source, table_id, room_id, booking_id,
-           restaurant_order_id, guest_name, guest_phone, created_by, customer_tag)
+           restaurant_order_id, guest_name, guest_phone, created_by, customer_tag, is_parcel)
          OUTPUT inserted.id
-         VALUES (@lodgeId, @d, @n, @src, @t, @r, @b, @ro, @gn, @gp, @u, @ct)`
+         VALUES (@lodgeId, @d, @n, @src, @t, @r, @b, @ro, @gn, @gp, @u, @ct, @ip)`
       );
     const orderId = r.recordset[0].id;
     await insertLines(tx, lodgeId, orderId, lines, userId);
@@ -769,7 +776,7 @@ async function listOrders(lodgeId, { status = 'OPEN', from = null, to = null } =
     await bind(pool.request())
       .query(
         `SELECT o.id, o.order_date, o.order_number, o.source, o.table_id, o.room_id, o.booking_id, o.restaurant_order_id,
-                o.guest_name, o.guest_phone, o.customer_tag, o.status, o.bill_id, o.created_at, o.ready_to_bill_at,
+                o.guest_name, o.guest_phone, o.customer_tag, o.is_parcel, o.status, o.bill_id, o.created_at, o.ready_to_bill_at,
                 t.label AS table_label, r.room_number, bb.bill_seq, inv.invoice_number AS room_invoice_number
          FROM dbo.bar_orders o
          LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
@@ -818,6 +825,7 @@ async function listOrders(lodgeId, { status = 'OPEN', from = null, to = null } =
       guestName: o.guest_name,
       guestPhone: o.guest_phone,
       customerTag: o.customer_tag ?? null,
+      isParcel: !!o.is_parcel,
       status: o.status,
       // Worked out from the lines, so a dish the restaurant side later returns is already out of it.
       subtotal: round2(drinks.reduce((s, d) => s + d.lineTotal, 0) + foodItems.reduce((s, f) => s + f.lineTotal, 0)),

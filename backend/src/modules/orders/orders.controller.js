@@ -218,6 +218,7 @@ async function createCounterOrderHandler(req, res, next) {
       guestPhone: input.guestPhone,
       note: input.note,
       customerTag: input.customerTag,
+      isParcel: input.isParcel,
       items: input.items,
       status: 'QUEUED',
       createdBy: req.user.sub,

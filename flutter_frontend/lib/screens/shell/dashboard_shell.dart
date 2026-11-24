@@ -63,7 +63,20 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
 
   /// Icon-only rail — only meaningful for the permanent rail; the phone
   /// drawer never collapses (see [Sidebar.onToggleCollapsed]).
-  bool _railCollapsed = false;
+  /// The desk's own choice (button / Ctrl+B); null means "follow the tier":
+  /// icons only on a tablet or laptop, the full rail from a desktop up.
+  bool? _railOverride;
+
+  /// The mouse is over the icon rail: it opens over the content (not pushing
+  /// it) and closes when the pointer leaves. Touch never triggers this, and
+  /// nothing depends on it — the toggle button and Ctrl+B do the same.
+  bool _railHover = false;
+
+  bool _railCollapsed(BuildContext context) =>
+      _railOverride ?? AppTheme.tier(context).index < Tier.desktop.index;
+
+  void _toggleRail() =>
+      setState(() => _railOverride = !_railCollapsed(context));
 
   /// "Maximize view": sidebar and top bar hidden so the section fills the whole
   /// window. Desktop only; F11 / Ctrl+Shift+F toggle it, Esc leaves it.
@@ -145,7 +158,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   Widget build(BuildContext context) {
     final state = ref.watch(authViewModelProvider);
     final me = state.me;
-    final compact = AppTheme.isCompact(context);
+    final compact = AppTheme.isPhone(context);
     final issueCount = ref.watch(
       housekeepingViewModelProvider.select((s) => s.issueSummary.count),
     );
@@ -201,7 +214,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
               if (_focus) setState(() => _focus = false);
             },
             const SingleActivator(LogicalKeyboardKey.keyB, control: true): () {
-              if (!compact && !_focus) setState(() => _railCollapsed = !_railCollapsed);
+              if (!compact && !_focus) _toggleRail();
             },
            },
            child: Focus(
@@ -219,6 +232,14 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                     ? () => _scaffoldKey.currentState?.openDrawer()
                     : null,
                 onToggleFocus: compact ? null : _toggleFocus,
+                lodgeName: me?.lodge.name,
+                userName: me?.user.name,
+                userRole: me?.user.roleName,
+                onProfileTap: me == null
+                    ? null
+                    : () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                      ),
                 actions: _headerActions,
                 bell: (me != null && _canSeeStaffAlerts(me))
                     ? StaffAlertsBell(
@@ -236,20 +257,46 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                 child: SafeArea(
                   top: false,
                   bottom: false,
-                  child: Row(
+                  child: Stack(
+                    children: [
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (me != null && !compact)
                         _Collapse(
                           open: !_focus,
                           axis: Axis.horizontal,
-                          child: _rail(me, issueCount),
+                          child: MouseRegion(
+                            onEnter: (_) {
+                              if (_railCollapsed(context) && !_railHover) {
+                                setState(() => _railHover = true);
+                              }
+                            },
+                            child: _rail(me, issueCount),
+                          ),
                         ),
                       Expanded(
                         child: _ResponsiveBody(
                           child: _body(state.isLoading, state.error, me),
                         ),
                       ),
+                    ],
+                  ),
+                  if (me != null && !compact && !_focus && _railHover && _railCollapsed(context))
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 240,
+                      child: MouseRegion(
+                        onExit: (_) => setState(() => _railHover = false),
+                        child: Material(
+                          elevation: 8,
+                          color: AppTheme.card,
+                          child: _railSidebar(me, issueCount, _features(me), collapsed: false),
+                        ),
+                      ),
+                    ),
                     ],
                   ),
                 ),
@@ -363,6 +410,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
 
   void _select(String key) => setState(() {
     _section = key;
+    _railHover = false;
     // Every section change drops whatever icon is up there right away,
     // unconditionally — relying on the outgoing screen's own dispose() to
     // clear it instead left a stale icon showing on whatever opened next
@@ -389,7 +437,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   Widget _rail(Me me, int issueCount) {
     final features = _features(me);
     if (features.isEmpty) return const SizedBox.shrink();
-    final railWidth = _railCollapsed ? 72.0 : 240.0;
+    final collapsed = _railCollapsed(context);
+    final railWidth = collapsed ? 64.0 : 240.0;
     // Framer-style: a fast-in, soft-landing curve on the width (only layout
     // property animated), while the content cross-fades between the two
     // layouts, each laid out at its own final width and merely revealed by the
@@ -411,7 +460,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
           children: [...previous, if (current != null) current],
         ),
         child: OverflowBox(
-          key: ValueKey(_railCollapsed),
+          key: ValueKey(collapsed),
           alignment: Alignment.centerLeft,
           minWidth: railWidth - 1,
           maxWidth: railWidth - 1,
@@ -421,7 +470,7 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     );
   }
 
-  Widget _railSidebar(Me me, int issueCount, List<Feature> features) {
+  Widget _railSidebar(Me me, int issueCount, List<Feature> features, {bool? collapsed}) {
     return Sidebar(
         features: features,
         activeKey: _activeKey(features),
@@ -434,9 +483,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
           MaterialPageRoute(builder: (_) => const ProfileScreen()),
         ),
         onLogoutTap: () => _confirmSignOut(context),
-        collapsed: _railCollapsed,
-        onToggleCollapsed: () =>
-            setState(() => _railCollapsed = !_railCollapsed),
+        collapsed: collapsed ?? _railCollapsed(context),
+        onToggleCollapsed: _toggleRail,
     );
   }
 
@@ -631,15 +679,17 @@ class _ResponsiveBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (AppTheme.isCompact(context)) return child;
+    if (AppTheme.isPhone(context)) return child;
     final desktop = AppTheme.isDesktop(context);
     final body = Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          // Desktop mirrors the web's `.dash-main` (max 1360, centred on very
-          // wide windows). A narrow tablet (600-800 px) keeps the phone column.
-          maxWidth: desktop ? AppTheme.dashMaxWidth : AppTheme.pageMaxWidth(context),
+          // Mirrors the web's `.dash-main` (max 1360, 1600 on a wide window,
+          // centred). A tablet gets the whole pane too: each screen sizes its
+          // own columns by that width, so a 768 px tablet shows two card
+          // columns rather than one stretched phone column.
+          maxWidth: AppTheme.contentMaxWidth(context),
         ),
         // Pages carry their own 12-16px gutter; +16 lands near the web's 32.
         child: desktop
@@ -792,12 +842,24 @@ class _TopBar extends StatelessWidget {
   /// window (see _DashboardShellState._focus). Null on a phone.
   final VoidCallback? onToggleFocus;
 
+  /// The web top bar's identity cluster: the signed-in profile chip with the
+  /// property name. Shown from a laptop up, where the rail may be icons only
+  /// and no longer says whose property this is.
+  final String? lodgeName;
+  final String? userName;
+  final String? userRole;
+  final VoidCallback? onProfileTap;
+
   const _TopBar({
     this.title,
     this.onMenuTap,
     this.actions,
     this.bell,
     this.onToggleFocus,
+    this.lodgeName,
+    this.userName,
+    this.userRole,
+    this.onProfileTap,
   });
 
   @override
@@ -859,7 +921,103 @@ class _TopBar extends StatelessWidget {
                 onPressed: onToggleFocus,
               ),
             if (bell != null) bell!,
+            if (AppTheme.atLeast(context, Tier.laptop) && userName != null)
+              _ProfileChip(
+                lodgeName: lodgeName,
+                userName: userName!,
+                userRole: userRole,
+                onTap: onProfileTap,
+              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Property name and the signed-in user as one tappable chip at the right of
+/// the top bar (the web's profile chip). Opens the profile.
+class _ProfileChip extends StatelessWidget {
+  final String? lodgeName;
+  final String userName;
+  final String? userRole;
+  final VoidCallback? onTap;
+
+  const _ProfileChip({
+    required this.userName,
+    this.lodgeName,
+    this.userRole,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = userName.trim().isEmpty ? '?' : userName.trim()[0].toUpperCase();
+    final showText = AppTheme.atLeast(context, Tier.desktop);
+    return Padding(
+      padding: const EdgeInsets.only(left: AppTheme.s8),
+      child: Tooltip(
+        message: [if (lodgeName != null) lodgeName!, userName].join(' - '),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            padding: EdgeInsets.fromLTRB(4, 4, showText ? 14 : 4, 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AppTheme.cta,
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
+                      color: AppTheme.ctaInk,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                if (showText) ...[
+                  const SizedBox(width: AppTheme.s8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 220),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          userName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            height: 1.15,
+                          ),
+                        ),
+                        Text(
+                          userRole ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.75),
+                            fontSize: 11,
+                            height: 1.15,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -80,63 +80,13 @@ class _Banner extends StatelessWidget {
 
 String _day(DateTime d) => formatDate(d);
 
-/// Which methods a tender can be, as chips — cash / UPI / card.
-class _MethodChips extends StatelessWidget {
-  final String value;
-  final ValueChanged<String> onChanged;
-
-  const _MethodChips({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: AppTheme.s8,
-    runSpacing: AppTheme.s4,
-    children: [
-      for (final e in kPaymentMethods.entries)
-        ChoiceChip(
-          label: Text(e.value),
-          selected: value == e.key,
-          onSelected: (_) => onChanged(e.key),
-          selectedColor: AppTheme.sidebarBrandWash,
-          labelStyle: TextStyle(
-            color: value == e.key ? AppTheme.accent : AppTheme.text,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-    ],
-  );
-}
-
-/// Shown while correcting a billed stay. Says what will happen to the invoice,
-/// which dates the neighbouring invoices allow, and collects the reason plus
-/// how any extra is paid.
+/// Shown while correcting a billed stay. The edit is silent: the invoice and
+/// its payments follow automatically, so this only states which dates the
+/// neighbouring invoices allow.
 class InvoiceRevisionPanel extends StatelessWidget {
   final InvoiceEditWindow window;
-  final TextEditingController reason;
-  final String? reasonError;
-  final String method;
-  final ValueChanged<String> onMethod;
-  final TextEditingController reference;
-  final bool refundAcknowledged;
-  final ValueChanged<bool> onRefundAcknowledged;
 
-  /// The total on file and the re-priced one; null until a quote is in.
-  final num? oldTotal;
-  final num? newTotal;
-
-  const InvoiceRevisionPanel({
-    super.key,
-    required this.window,
-    required this.reason,
-    required this.reasonError,
-    required this.method,
-    required this.onMethod,
-    required this.reference,
-    required this.refundAcknowledged,
-    required this.onRefundAcknowledged,
-    this.oldTotal,
-    this.newTotal,
-  });
+  const InvoiceRevisionPanel({super.key, required this.window});
 
   String get _windowText {
     if (window.isOpen) {
@@ -153,88 +103,12 @@ class InvoiceRevisionPanel extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final diff = (oldTotal != null && newTotal != null)
-        ? newTotal! - oldTotal!
-        : null;
-    final needsMethod = diff == null || diff > 0;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _Banner(
-          tone: _Tone.warn,
-          icon: Icons.receipt_long_rounded,
-          title: 'Invoice #${window.invoiceNumber} will be updated in place',
-          body:
-              '$_windowText\nIt keeps its number and date; the change is '
-              'recorded.',
-        ),
-        const SizedBox(height: AppTheme.s12),
-        NeuField(
-          controller: reason,
-          label: 'Reason for the change (optional)',
-          hint: 'e.g. Guest left a day early',
-          maxLength: 200,
-          errorText: reasonError,
-        ),
-        if (diff != null && diff != 0) ...[
-          const SizedBox(height: AppTheme.s8),
-          Row(
-            children: [
-              Icon(
-                diff > 0 ? Icons.north_east_rounded : Icons.south_east_rounded,
-                size: 16,
-                color: diff > 0 ? AppTheme.checkout : AppTheme.danger,
-              ),
-              const SizedBox(width: AppTheme.s4),
-              Expanded(
-                child: Text(
-                  diff > 0
-                      ? 'New total ${formatPrice(newTotal)} — about '
-                            '${formatPrice(diff)} more than the invoice.'
-                      : 'New total ${formatPrice(newTotal)} — about '
-                            '${formatPrice(-diff)} less than the invoice.',
-                  style: const TextStyle(
-                    color: AppTheme.heading,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-        if (needsMethod) ...[
-          const SizedBox(height: AppTheme.s12),
-          Text('If more is due, it is paid by', style: AppTheme.fieldLabel(context)),
-          const SizedBox(height: AppTheme.s4),
-          _MethodChips(value: method, onChanged: onMethod),
-          if (method != 'CASH') ...[
-            const SizedBox(height: AppTheme.s8),
-            NeuField(
-              controller: reference,
-              label: 'Transaction number (optional)',
-              maxLength: 64,
-            ),
-          ],
-        ],
-        if (diff == null || diff < 0) ...[
-          const SizedBox(height: AppTheme.s8),
-          CheckboxListTile(
-            value: refundAcknowledged,
-            onChanged: (v) => onRefundAcknowledged(v ?? false),
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            dense: true,
-            title: const Text(
-              'If the new bill is lower, I will refund the difference to the guest',
-              style: TextStyle(fontSize: 12.5, color: AppTheme.heading),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
+  Widget build(BuildContext context) => _Banner(
+    tone: _Tone.info,
+    icon: Icons.receipt_long_rounded,
+    title: 'Invoice #${window.invoiceNumber} will follow this change',
+    body: _windowText,
+  );
 }
 
 /// Shown when a new booking ends today or earlier and the property may record

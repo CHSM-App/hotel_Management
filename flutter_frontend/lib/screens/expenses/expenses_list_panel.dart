@@ -9,6 +9,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/page_kit.dart';
 import '../bookings/id_proof_viewer_screen.dart';
 import '../theme.dart';
 import 'expense_form_screen.dart';
@@ -25,6 +26,7 @@ class ExpensesListPanel extends ConsumerStatefulWidget {
 
 class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
 
   // 'table' is the landing view — the sheet-style view for scanning every
   // expense's amount/category/status at once, mirroring the asset
@@ -81,6 +83,7 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -134,7 +137,9 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
 
     final shownTotal = shown.fold<double>(0, (sum, e) => sum + e.amount);
 
-    return Stack(
+    return SearchShortcut(
+      focusNode: _searchFocus,
+      child: Stack(
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
@@ -176,6 +181,7 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
                           Expanded(
                             child: TextField(
                               controller: _search,
+                              focusNode: _searchFocus,
                               onChanged: (_) => setState(() {}),
                               style: const TextStyle(color: AppTheme.heading, fontSize: 14),
                               decoration: const InputDecoration(
@@ -270,8 +276,8 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             elevation: 2,
             onPressed: () async {
               await showExpenseFormSheet(context);
@@ -281,6 +287,7 @@ class _ExpensesListPanelState extends ConsumerState<ExpensesListPanel> {
           ),
         ),
       ],
+      ),
     );
   }
 
@@ -513,17 +520,24 @@ class _ExpenseTableColumn {
   final String label;
   final double width;
   final TextAlign align;
+  final bool lowPriority;
 
-  const _ExpenseTableColumn(this.key, this.label, {this.width = 100, this.align = TextAlign.left});
+  const _ExpenseTableColumn(
+    this.key,
+    this.label, {
+    this.width = 100,
+    this.align = TextAlign.left,
+    this.lowPriority = false,
+  });
 }
 
 const _kExpenseTableColumns = [
   _ExpenseTableColumn('date', 'Date', width: 90),
   _ExpenseTableColumn('title', 'Title', width: 150),
   _ExpenseTableColumn('category', 'Category', width: 110),
-  _ExpenseTableColumn('vendor', 'Vendor', width: 110),
+  _ExpenseTableColumn('vendor', 'Vendor', width: 110, lowPriority: true),
   _ExpenseTableColumn('amount', 'Amount', width: 90, align: TextAlign.right),
-  _ExpenseTableColumn('paid', 'Paid', width: 90, align: TextAlign.right),
+  _ExpenseTableColumn('paid', 'Paid', width: 90, align: TextAlign.right, lowPriority: true),
   _ExpenseTableColumn('status', 'Status', width: 90),
 ];
 
@@ -545,9 +559,20 @@ class _ExpenseTable extends StatelessWidget {
     required this.onDelete,
   });
 
+  /// Columns this window has room for; header and rows share the list so they
+  /// stay aligned.
+  static List<_ExpenseTableColumn> visibleColumns(BuildContext context) {
+    final all = AppTheme.showLowPriorityColumns(context);
+    return [
+      for (final c in _kExpenseTableColumns)
+        if (all || !c.lowPriority) c,
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final width = _kExpenseTableColumns.fold<double>(0, (sum, c) => sum + c.width) + 36;
+    final cols = visibleColumns(context);
+    final width = cols.fold<double>(0, (sum, c) => sum + c.width) + 36;
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -567,7 +592,7 @@ class _ExpenseTable extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      for (final c in _kExpenseTableColumns)
+                      for (final c in cols)
                         TableCol(
                           width: c.width,
                           child: Padding(
@@ -632,7 +657,7 @@ class _ExpenseTableRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            for (final c in _kExpenseTableColumns)
+            for (final c in _ExpenseTable.visibleColumns(context))
               TableCol(
                 width: c.width,
                 child: Padding(

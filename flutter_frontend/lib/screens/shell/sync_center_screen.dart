@@ -124,7 +124,11 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen> {
                 ),
               ),
             )
-          : RefreshIndicator(
+          : Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
+                child: RefreshIndicator(
               onRefresh: _refresh,
               child: ListView.separated(
                 padding: const EdgeInsets.all(AppTheme.s12),
@@ -221,6 +225,8 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen> {
                     ),
                   );
                 },
+              ),
+            ),
               ),
             ),
     );

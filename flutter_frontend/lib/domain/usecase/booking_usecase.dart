@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../models/booking.dart';
+import '../models/booking_edit.dart';
 import '../models/draft.dart';
 import '../models/guest_match.dart';
 import '../models/invoice_window.dart';
@@ -115,6 +116,8 @@ class BookingUsecase {
   /// Correct a booking already on file.
   Future<Booking> updateBooking(int id, FormData form) =>
       repository.updateBooking(id, form);
+
+  Future<List<BookingEdit>> bookingEdits(int id) => repository.bookingEdits(id);
 
   Future<BookingRevision> reviseBooking(int id, FormData form) =>
       repository.reviseBooking(id, form);

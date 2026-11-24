@@ -245,6 +245,7 @@ class BarOrder {
 
   /// Who at the table the order is for; each customer is billed separately.
   final String? customerTag;
+  final bool isParcel;
 
   /// OPEN | BILLED | CANCELLED
   final String status;
@@ -271,6 +272,7 @@ class BarOrder {
     this.guestName,
     this.guestPhone,
     this.customerTag,
+    this.isParcel = false,
     required this.status,
     required this.subtotal,
     this.undelivered = 0,
@@ -286,7 +288,7 @@ class BarOrder {
   String get label => switch (source) {
     'TABLE' => 'Table ${tableLabel ?? tableId}',
     'ROOM' => 'Room ${roomNumber ?? roomId}',
-    _ => 'Counter',
+    _ => isParcel ? 'Parcel' : 'Counter',
   };
 
   bool get isOpen => status == 'OPEN';
@@ -304,6 +306,7 @@ class BarOrder {
     guestName: asStringOrNull(j['guestName']),
     guestPhone: asStringOrNull(j['guestPhone']),
     customerTag: asStringOrNull(j['customerTag']),
+    isParcel: j['isParcel'] == true,
     status: j['status']?.toString() ?? 'OPEN',
     subtotal: asNum(j['subtotal']).toDouble(),
     undelivered: asInt(j['undelivered']),

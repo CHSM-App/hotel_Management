@@ -324,6 +324,34 @@ async function updateRoom(lodgeId, roomId, input) {
 // categories and switchable charges, which are also historically referenced.
 async function setRoomActive(lodgeId, roomId, isActive) {
   const pool = await getPool();
+  if (!isActive) {
+    // Block while any live booking still needs the room (stay not yet ended).
+    // IST date, same convention as bookings.service todayIsoIST.
+    const today = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+    const open = await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('roomId', sql.BigInt, roomId)
+      .input('today', sql.Date, today)
+      .query(`
+        SELECT COUNT(*) AS n FROM (
+          SELECT b.id FROM dbo.bookings b
+           WHERE b.lodge_id = @lodgeId AND b.room_id = @roomId
+             AND b.status IN ('BOOKED','CHECKED_IN') AND b.check_out_date > @today
+          UNION
+          SELECT br.booking_id FROM dbo.booking_rooms br
+            JOIN dbo.bookings b ON b.id = br.booking_id
+           WHERE b.lodge_id = @lodgeId AND br.room_id = @roomId
+             AND br.status IN ('BOOKED','CHECKED_IN') AND br.check_out_date > @today
+        ) x
+      `);
+    if (open.recordset[0].n > 0) {
+      throw new ApiError(
+        `Can't deactivate: this room has ${open.recordset[0].n} current or upcoming booking(s). Cancel or move them first.`,
+        409
+      );
+    }
+  }
   const result = await pool
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/laundry.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/form_grid.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'laundry_parts.dart';
@@ -106,7 +107,11 @@ class _LinenReceiveScreenState extends ConsumerState<LinenReceiveScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Receive washed')),
       body: SafeArea(
-        child: ListView(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
+            child: ListView(
           padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
           children: [
             NeuCard(
@@ -143,15 +148,15 @@ class _LinenReceiveScreenState extends ConsumerState<LinenReceiveScreen> {
             const SizedBox(height: AppTheme.s12),
             NeuCard(child: NeuField(controller: _note, label: 'Note (optional)', hint: 'e.g. bag number')),
             const SizedBox(height: AppTheme.s24),
-            NeuButton(
-              primary: true,
-              expand: true,
-              onPressed: state.submitting || items.isEmpty ? null : _submit,
-              child: state.submitting
+            FormActions(
+              onSave: state.submitting || items.isEmpty ? null : _submit,
+              saveChild: state.submitting
                   ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : const Text('Receive'),
             ),
           ],
+        ),
+          ),
         ),
       ),
     );

@@ -101,6 +101,7 @@ class FoodOrder {
 
   /// ROOM, TABLE or COUNTER.
   final String source;
+  final bool isParcel;
 
   final String? roomNumber;
   final String? tableLabel;
@@ -161,6 +162,7 @@ class FoodOrder {
     this.orderNumber = 0,
     this.orderDate,
     this.source = 'COUNTER',
+    this.isParcel = false,
     this.roomNumber,
     this.tableLabel,
     this.guestName,
@@ -191,6 +193,7 @@ class FoodOrder {
     orderNumber: asIntOrNull(json['orderNumber']) ?? 0,
     orderDate: asStringOrNull(json['orderDate']),
     source: asStringOrNull(json['source']) ?? 'COUNTER',
+    isParcel: json['isParcel'] == true,
     roomNumber: asStringOrNull(json['roomNumber']),
     tableLabel: asStringOrNull(json['tableLabel']),
     guestName: asStringOrNull(json['guestName']),
@@ -266,7 +269,7 @@ class FoodOrder {
   String get target {
     if (roomNumber != null && roomNumber!.isNotEmpty) return 'Room $roomNumber';
     if (tableLabel != null && tableLabel!.isNotEmpty) return tableLabel!;
-    return 'Counter';
+    return isParcel ? 'Parcel' : 'Counter';
   }
 
   /// Whether this order matches a History search — order number, who it's

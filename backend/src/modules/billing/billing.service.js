@@ -1764,7 +1764,7 @@ function mapInvoice(row) {
     tableLabel:
       row.table_label ??
       (row.tab_room_number != null ? `Room ${row.tab_room_number}` : null) ??
-      (row.takeaway_order_number != null ? `Takeaway #${row.takeaway_order_number}` : null),
+      (row.takeaway_order_number != null ? `${row.takeaway_is_parcel ? 'Parcel' : 'Takeaway'} #${row.takeaway_order_number}` : null),
     // The function behind an EVENT bill, for the document's register strip.
     eventBookingId: row.event_booking_id ?? null,
     eventTitle: row.event_title ?? null,
@@ -2033,7 +2033,7 @@ async function getInvoice(lodgeId, invoiceId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('invoiceId', sql.BigInt, invoiceId)
     .query(`
-      SELECT i.*, dt.label AS table_label, fr.room_number AS tab_room_number, tko.order_number AS takeaway_order_number,
+      SELECT i.*, dt.label AS table_label, fr.room_number AS tab_room_number, tko.order_number AS takeaway_order_number, tko.is_parcel AS takeaway_is_parcel,
              COALESCE(b.guest_name, eb.organiser_name, rb.guest_name, fo.guest_name) AS guest_name,
              COALESCE(b.guest_phone, eb.organiser_phone, rb.guest_phone, fo.guest_phone) AS guest_phone,
              COALESCE(b.num_guests, CASE WHEN eb.id IS NULL THEN NULL
@@ -2108,7 +2108,7 @@ async function getInvoice(lodgeId, invoiceId) {
         -- Matched on voided_invoice_id too: a void clears the order's own
         -- invoice_id (see voidInvoice), so without this a voided takeaway
         -- bill lost the only order it named itself after.
-        SELECT TOP 1 fo.order_number, fo.guest_name, fo.guest_phone
+        SELECT TOP 1 fo.order_number, fo.is_parcel, fo.guest_name, fo.guest_phone
         FROM dbo.food_orders fo
         WHERE COALESCE(fo.invoice_id, fo.voided_invoice_id) = i.id AND fo.source = 'COUNTER'
         ORDER BY fo.id
@@ -2151,7 +2151,7 @@ async function listInvoices(lodgeId, { stream = null } = {}) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .query(`
-      SELECT TOP 200 i.*, dt.label AS table_label, fr.room_number AS tab_room_number, tko.order_number AS takeaway_order_number,
+      SELECT TOP 200 i.*, dt.label AS table_label, fr.room_number AS tab_room_number, tko.order_number AS takeaway_order_number, tko.is_parcel AS takeaway_is_parcel,
              COALESCE(b.guest_name, eb.organiser_name, rb.guest_name, fo.guest_name) AS guest_name,
              COALESCE(b.guest_phone, eb.organiser_phone, rb.guest_phone, fo.guest_phone) AS guest_phone,
              COALESCE(b.num_guests, CASE WHEN eb.id IS NULL THEN NULL
@@ -2221,7 +2221,7 @@ async function listInvoices(lodgeId, { stream = null } = {}) {
         -- Matched on voided_invoice_id too: a void clears the order's own
         -- invoice_id (see voidInvoice), so without this a voided takeaway
         -- bill lost the only order it named itself after.
-        SELECT TOP 1 fo.order_number, fo.guest_name, fo.guest_phone
+        SELECT TOP 1 fo.order_number, fo.is_parcel, fo.guest_name, fo.guest_phone
         FROM dbo.food_orders fo
         WHERE COALESCE(fo.invoice_id, fo.voided_invoice_id) = i.id AND fo.source = 'COUNTER'
         ORDER BY fo.id
@@ -2329,18 +2329,6 @@ async function voidInvoice(lodgeId, invoiceId, reason) {
 const NOT_ON_STAY_BILL = `((o.on_room_bill = 0 OR EXISTS (
   SELECT 1 FROM dbo.invoices bi WHERE bi.booking_id = o.booking_id AND bi.status = 'ISSUED')) AND o.bar_order_id IS NULL)`;
 
-// Orders on a tab that are still in the kitchen or on their way (not yet
-// delivered). Billing a tab while these exist leaves food off the bill.
-async function countLiveOrdersOnTab(request, lodgeId, tab) {
-  request.input('lodgeId', sql.BigInt, lodgeId);
-  const scope = tabScope(request, tab);
-  const result = await request.query(`
-    SELECT COUNT(*) AS n FROM dbo.food_orders o
-    WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING') AND o.invoice_id IS NULL AND o.bar_order_id IS NULL ${scope}
-  `);
-  return result.recordset[0].n;
-}
-
 // The grouping column for a table's customers; other sources have no customers.
 const CUSTOMER_KEY = customerKeySql('o.customer_tag');
 
@@ -2359,6 +2347,7 @@ async function listOpenFoodTabs(lodgeId) {
              MAX(CASE WHEN o.source = 'TABLE' THEN o.customer_tag END) AS customer_label,
              MAX(o.order_number) AS order_number,
              COUNT(*) AS order_count, SUM(o.subtotal) AS subtotal,
+             CASE WHEN o.source = 'COUNTER' THEN o.is_parcel END AS is_parcel,
              MIN(o.placed_at) AS opened_at, MAX(o.delivered_at) AS last_delivered_at,
              -- Who a room tab is actually running for — the same guest the bill
              -- itself will name. Looked up by the order's own booking_id, not
@@ -2389,6 +2378,7 @@ async function listOpenFoodTabs(lodgeId) {
       GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
                CASE WHEN o.source = 'ROOM' THEN o.booking_id END,
                CASE WHEN o.source = 'COUNTER' THEN o.id END,
+               CASE WHEN o.source = 'COUNTER' THEN o.is_parcel END,
                CASE WHEN o.source = 'TABLE' THEN ${CUSTOMER_KEY} END,
                rb.guest_name, rb.guest_phone
       -- Newest activity first: a fresh order on a table that already has an
@@ -2398,30 +2388,8 @@ async function listOpenFoodTabs(lodgeId) {
       ORDER BY MAX(o.placed_at) DESC
     `);
 
-  // How many orders on each tab are still being cooked or carried out.
-  const liveResult = await pool
-    .request()
-    .input('lodgeId', sql.BigInt, lodgeId)
-    .query(`
-      SELECT o.source, o.table_id, o.room_id, t.label AS table_label, r.room_number,
-             CASE WHEN o.source = 'COUNTER' THEN o.id END AS order_id,
-             CASE WHEN o.source = 'ROOM' THEN o.booking_id END AS booking_id,
-             CASE WHEN o.source = 'TABLE' THEN ${CUSTOMER_KEY} END AS customer_key,
-             MAX(o.order_number) AS order_number, COUNT(*) AS live_count
-      FROM dbo.food_orders o
-      LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
-      LEFT JOIN dbo.rooms r ON r.id = o.room_id
-      WHERE o.lodge_id = @lodgeId AND o.status IN ('PENDING', 'QUEUED', 'PREPARING', 'READY') AND o.invoice_id IS NULL AND o.bar_order_id IS NULL
-      GROUP BY o.source, o.table_id, o.room_id, t.label, r.room_number,
-               CASE WHEN o.source = 'ROOM' THEN o.booking_id END,
-               CASE WHEN o.source = 'COUNTER' THEN o.id END,
-               CASE WHEN o.source = 'TABLE' THEN ${CUSTOMER_KEY} END
-    `);
-  const liveByTab = new Map(liveResult.recordset.map((row) => [tabIdentity(row).tab, row.live_count]));
-
   return result.recordset.map((row) => ({
     ...tabIdentity(row),
-    liveOrderCount: liveByTab.get(tabIdentity(row).tab) ?? 0,
     // A table tab is one customer's: named by their tag when they have one.
     guestName: row.source === 'TABLE' ? row.customer_label ?? null : row.guest_name ?? null,
     guestPhone: row.guest_phone ?? null,
@@ -2497,7 +2465,7 @@ function tabIdentity(row) {
     tab: orderId == null ? 'counter' : `counter-${orderId}`,
     tableId: null,
     roomId: null,
-    tableLabel: orderNumber == null ? 'Counter / takeaway' : `Takeaway #${orderNumber}`,
+    tableLabel: orderNumber == null ? 'Counter / takeaway' : `${row.is_parcel ? 'Parcel' : 'Takeaway'} #${orderNumber}`,
   };
 }
 
@@ -2553,7 +2521,7 @@ async function loadUnbilledTabOrders(request, lodgeId, tab) {
   const result = await request.query(`
     SELECT o.id, o.order_number, o.subtotal, o.placed_at, o.source,
            o.table_id, o.room_id, t.label AS table_label, r.room_number,
-           o.guest_name, o.guest_phone, o.customer_tag
+           o.guest_name, o.guest_phone, o.customer_tag, o.is_parcel
     FROM dbo.food_orders o
     LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
     LEFT JOIN dbo.rooms r ON r.id = o.room_id
@@ -2691,11 +2659,9 @@ async function previewFoodBill(lodgeId, tab, { discountAmount = 0, targetTotal =
   }
 
   const bill = await buildFoodBill(pool, lodge, orders, applied, foodRate);
-  const liveOrderCount = await countLiveOrdersOnTab(pool.request(), lodgeId, tab);
 
   return {
     tab,
-    liveOrderCount,
     tableLabel: orders[0].tableLabel,
     // Every order on a tab carries the same customer fields (see
     // loadUnbilledTabOrders — null for a table or room tab, the counter
@@ -2761,6 +2727,10 @@ async function issueFoodInvoice(lodgeId, userId, tab, input) {
     const tabRoomId = orders[0].roomId;
 
     const bill = await buildFoodBill(pool, lodge, orders, input.discountAmount ?? 0);
+    // Preview clamps while typing; the final bill must not silently do so.
+    if (round2(input.discountAmount ?? 0) > bill.grossSubtotal) {
+      throw new ApiError(`Discount can’t exceed the bill amount (₹${bill.grossSubtotal}).`, 400, 'discountAmount');
+    }
     const { documentType, ...breakdown } = billingSide === 'GST' ? bill.gst : bill.nonGst;
 
     // Restaurant bills run their own series, plain 1, 2, 3, apart from the room/stay run
@@ -3218,12 +3188,7 @@ async function reviseInvoice(
   lodgeId,
   userId,
   bookingId,
-  { reason, paymentLines = [], paymentMethod = null, paymentReference = null, refundAcknowledged = false }
 ) {
-  const why = String(reason ?? '').trim();
-  // Optional; the column is NOT NULL, so a blank is stored as ''.
-  if (why.length > 200) throw new ApiError('The reason is too long — keep it under 200 characters.', 400);
-
   const tx = () => new sql.Request(transaction);
   const db = { request: tx };
   const old = (
@@ -3258,26 +3223,20 @@ async function reviseInvoice(
   const newDue = Math.max(0, round2(b.totalAmount - Number(old.advance_paid)));
   const extra = Math.max(0, round2(newDue - paid));
   const refund = Math.max(0, round2(paid - newDue));
-  // One method given and no split: it covers whatever the extra turns out to be,
-  // which the screen cannot know before the bill is re-priced.
-  const given0 = paymentLines.length === 0 && paymentMethod && extra > 0
-    ? [{ method: paymentMethod, amount: extra, reference: paymentReference }]
-    : paymentLines;
-  const lines = given0.map((l) => ({ method: l.method, amount: Number(l.amount), reference: l.reference ?? null }));
-  const given = round2(lines.reduce((s, l) => s + l.amount, 0));
-  if (given !== extra) {
-    throw new ApiError(
-      extra > 0
-        ? `The new bill is ₹${extra} more than was collected. Record exactly ₹${extra} as payment${given ? ` (₹${given} entered)` : ''}.`
-        : `No extra payment is due on this change${given ? ` — remove the ₹${given} entered` : ''}.`,
-      409
-    );
+  // Silent edit: the difference settles itself so the invoice, its payment lines
+  // and every report stay in step. An extra is booked in the way the guest last
+  // paid this invoice; a refund trims the newest lines below.
+  if (extra > 0) {
+    const last = (
+      await tx()
+        .input('invoiceId', sql.BigInt, old.id)
+        .query('SELECT TOP 1 method, reference FROM dbo.payment_lines WHERE invoice_id = @invoiceId ORDER BY id DESC')
+    ).recordset[0];
+    const method = last?.method ?? old.balance_payment_method ?? 'CASH';
+    await insertPaymentLines(transaction, lodgeId, { invoiceId: old.id }, [
+      { method, amount: extra, reference: method === 'CASH' ? null : (last?.reference ?? null) },
+    ]);
   }
-  if (refund > 0 && !refundAcknowledged) {
-    throw new ApiError(`The new bill is ₹${refund} less than was collected. Confirm that ₹${refund} is refunded to the guest.`, 409);
-  }
-
-  if (extra > 0) await insertPaymentLines(transaction, lodgeId, { invoiceId: old.id }, lines);
   // Trim the newest tenders first so the lines still add up to what was kept.
   let toTrim = refund;
   if (toTrim > 0) {
@@ -3336,7 +3295,7 @@ async function reviseInvoice(
   await tx()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('invoiceId', sql.BigInt, old.id)
-    .input('reason', sql.NVarChar(200), why)
+    .input('reason', sql.NVarChar(200), 'Stay edited')
     .input('before', sql.NVarChar(sql.MAX), snap(old.document_type, old.room_subtotal, old.total_amount, old.balance_collected))
     .input('after', sql.NVarChar(sql.MAX), snap(documentType, b.subtotal, b.totalAmount, kept))
     .input('extra', sql.Decimal(10, 2), extra)

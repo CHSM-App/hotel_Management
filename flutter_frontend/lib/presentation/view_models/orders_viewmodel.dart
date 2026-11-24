@@ -512,6 +512,7 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
     String guestName = '',
     String guestPhone = '',
     String customerTag = '',
+    bool isParcel = false,
     String note = '',
     required List<OrderLineDraft> lines,
   }) async {
@@ -524,6 +525,7 @@ class OrdersViewModel extends StateNotifier<OrdersState> {
         guestName: guestName,
         guestPhone: guestPhone,
         customerTag: customerTag,
+        isParcel: isParcel,
         note: note,
         lines: lines,
       );

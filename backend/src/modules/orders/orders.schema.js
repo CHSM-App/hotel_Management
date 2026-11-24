@@ -30,6 +30,8 @@ const counterOrderSchema = z
     note: z.string().trim().max(300).optional().default(''),
     // Who at the table this is for; only meaningful with a tableId.
     customerTag: z.string().trim().max(60).optional().nullable(),
+    // Counter order packed to go; ignored for a room or table.
+    isParcel: z.boolean().optional().default(false),
     items: orderItemsSchema,
   })
   .refine((data) => !(data.tableId && data.roomId), {
@@ -53,7 +55,7 @@ const customerSchema = z.object({ customerTag: z.string().trim().max(60).nullabl
 
 const updateStatusSchema = z.object({
   status: z.enum(ORDER_STATUSES, { error: 'Unknown order status.' }),
-  cancelReason: z.string().trim().max(200).optional().default(''),
+  cancelReason: z.string().trim().max(200).optional(),
 });
 
 // Ticking one dish off the ticket. A boolean rather than a bare "mark ready"
@@ -74,7 +76,7 @@ const editOrderSchema = z.object({
 // Cancelling some dishes off a live order.
 const cancelItemsSchema = z.object({
   itemIds: z.array(z.coerce.number().int().positive()).min(1, 'Pick at least one dish to cancel.').max(50),
-  cancelReason: z.string().trim().max(200).optional().default(''),
+  cancelReason: z.string().trim().max(200).optional(),
 });
 
 module.exports = {

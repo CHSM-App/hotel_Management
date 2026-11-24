@@ -241,10 +241,11 @@ class _IssuesTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final anyClosed = issues.any((i) => !i.isOpen);
+    final showReporter = AppTheme.showLowPriorityColumns(context);
     final columns = [
       (label: placeHead, width: 90.0),
       (label: 'Type', width: 110.0),
-      (label: 'Reported by', width: 120.0),
+      if (showReporter) (label: 'Reported by', width: 120.0),
       (label: 'When', width: 130.0),
       if (anyClosed) (label: 'Note', width: 160.0),
     ];
@@ -313,7 +314,7 @@ class _IssueTableRow extends StatelessWidget {
           cell(240, Text(issue.text, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w600))),
           cell(90, Text(issue.roomNumber, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.heading, fontSize: 12.5, fontWeight: FontWeight.w700))),
           cell(110, Align(alignment: Alignment.centerLeft, child: StatusPill(label: kIssueKindLabel[issue.kind] ?? issue.kind, color: tone))),
-          cell(120, text(issue.reportedBy)),
+          if (AppTheme.showLowPriorityColumns(context)) cell(120, text(issue.reportedBy)),
           cell(130, text(when)),
           if (anyClosed) cell(160, text(issue.resolution)),
           SizedBox(

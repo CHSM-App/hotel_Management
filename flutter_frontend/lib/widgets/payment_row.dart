@@ -64,8 +64,9 @@ class _PaymentRowState extends State<PaymentRow> {
       };
 
   Widget _methodDropdown() {
+    final fs = RoomyForm.fs(context, 13);
     return SizedBox(
-      height: widget.compact ? 40 : 44,
+      height: RoomyForm.height(context, widget.compact ? 40 : 44),
       child: NeuPressed(
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
         child: DropdownButtonHideUnderline(
@@ -101,8 +102,8 @@ class _PaymentRowState extends State<PaymentRow> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         softWrap: false,
-                        style: const TextStyle(
-                          fontSize: 13,
+                        style: TextStyle(
+                          fontSize: fs,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.heading,
                         ),
@@ -250,7 +251,7 @@ class _PaymentRowState extends State<PaymentRow> {
         ),
         const SizedBox(height: AppTheme.s8),
         SizedBox(
-          height: 44,
+          height: RoomyForm.height(context, 44),
           width: double.infinity,
           child: NeuPressed(
             padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
@@ -267,9 +268,9 @@ class _PaymentRowState extends State<PaymentRow> {
                   widget.line.amount = v;
                   widget.onChanged();
                 },
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppTheme.heading,
-                  fontSize: 13,
+                  fontSize: RoomyForm.fs(context, 13),
                 ),
                 decoration: const InputDecoration(
                   hintText: '0',

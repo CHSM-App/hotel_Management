@@ -168,7 +168,13 @@ class _Row extends StatelessWidget {
           const SizedBox(width: AppTheme.s8),
           SegmentedButton<bool>(
             showSelectedIcon: false,
-            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            // A tablet is touched, not pointed at: full-height segments there.
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              minimumSize: AppTheme.tier(context) == Tier.tablet
+                  ? const WidgetStatePropertyAll(Size(0, 48))
+                  : null,
+            ),
             segments: const [
               ButtonSegment(value: true, label: Text('Auto')),
               ButtonSegment(value: false, label: Text('Manual')),

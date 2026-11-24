@@ -87,7 +87,7 @@ class _BarIssueBillScreenState extends ConsumerState<BarIssueBillScreen> {
     super.dispose();
   }
 
-  Future<void> _issue({bool anyway = false}) async {
+  Future<void> _issue() async {
     final bad = paymentLinesError(_pay);
     if (bad != null) return setState(() => _error = bad);
     final paid = sumPayments(_pay);
@@ -99,7 +99,6 @@ class _BarIssueBillScreenState extends ConsumerState<BarIssueBillScreen> {
     final bill = await vm.issueBill(
       orderIds: widget.tab.orderIds,
       customerName: _customer.text,
-      billAnyway: anyway,
       payments: [
         for (final p in _pay) (method: p.method!, amount: p.value.toDouble(), reference: p.reference.trim().isEmpty ? null : p.reference.trim()),
       ],
@@ -194,21 +193,6 @@ class _BarIssueBillScreenState extends ConsumerState<BarIssueBillScreen> {
                 ),
               ),
               if (_error != null) Padding(padding: const EdgeInsets.only(top: AppTheme.s8), child: Text(_error!, style: const TextStyle(color: AppTheme.danger))),
-              if (bar.pendingMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: AppTheme.s8),
-                  child: NeuCard(
-                    color: AppTheme.warningWash,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(bar.pendingMessage!, style: const TextStyle(color: AppTheme.warningInk)),
-                        const SizedBox(height: 6),
-                        NeuButton(minHeight: 38, onPressed: bar.submitting ? null : () => _issue(anyway: true), child: const Text('Bill anyway')),
-                      ],
-                    ),
-                  ),
-                ),
               const SizedBox(height: AppTheme.s16),
               NeuButton(onPressed: bar.submitting ? null : _toRoom, expand: true, child: const Text('Add to room bill instead')),
               const SizedBox(height: AppTheme.s8),

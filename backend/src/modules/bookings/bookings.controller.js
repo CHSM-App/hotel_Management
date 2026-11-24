@@ -237,6 +237,14 @@ async function getBookingHandler(req, res, next) {
   }
 }
 
+async function listBookingEditsHandler(req, res, next) {
+  try {
+    res.json({ edits: await bookingsService.listBookingEdits(req.user.lodgeId, Number(req.params.id)) });
+  } catch (err) {
+    next(err);
+  }
+}
+
 function parseJsonArrayField(value) {
   if (typeof value !== 'string') return [];
   try {
@@ -506,7 +514,6 @@ async function updateBookingHandler(req, res, next) {
     }
     if (body.guests !== undefined) body.guests = parseJsonArrayField(body.guests);
     if (body.vehicles !== undefined) body.vehicles = parseJsonArrayField(body.vehicles);
-    if (body.revisionPaymentLines !== undefined) body.revisionPaymentLines = parseJsonArrayField(body.revisionPaymentLines);
     // Same JSON-array shape as create — a lone bedId (plain field) is still
     // the single-bed shape and reaches the schema untouched.
     if (typeof body.bedIds === 'string') body.bedIds = parseJsonArrayField(body.bedIds);
@@ -518,13 +525,14 @@ async function updateBookingHandler(req, res, next) {
     }
 
     const primaryFile = files.find((file) => file.fieldname === 'idProofDocument');
-    const booking = await bookingsService.updateBooking(req.user.lodgeId, Number(req.params.id), {
+    const { editLog, ...booking } = await bookingsService.updateBooking(req.user.lodgeId, Number(req.params.id), {
       ...parsed.data,
       idProofDocument: primaryFile ? primaryFile.filename : null,
       // Only when the party was sent at all — attachGuestFiles maps by
       // position, and mapping an absent list would turn it into an empty one.
       guests: parsed.data.guests && attachGuestFiles(parsed.data.guests, files),
     }, req.user.sub);
+    res.locals.editLog = editLog; // read by middleware/bookingEditLog.js
     res.json({ booking });
   } catch (err) {
     cleanupUploads();
@@ -686,6 +694,7 @@ module.exports = {
   priceQuoteHandler,
   getTapeChartHandler,
   getBookingHandler,
+  listBookingEditsHandler,
   getIdProofHandler,
   getGuestIdProofHandler,
   createBookingHandler,

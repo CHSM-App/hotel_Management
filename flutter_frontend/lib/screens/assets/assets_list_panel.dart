@@ -6,6 +6,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/page_kit.dart';
 import '../theme.dart';
 import 'asset_detail_screen.dart';
 import 'asset_form_sheet.dart';
@@ -23,6 +24,7 @@ class AssetsListPanel extends ConsumerStatefulWidget {
 
 class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
 
   // 'table' is the landing view — the sheet-style view for scanning every
   // asset's warranty/AMC/location at once, mirroring assetView in
@@ -41,6 +43,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -93,7 +96,9 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
       ..sort((a, b) => a.name.compareTo(b.name));
     final openWorkOrders = shown.fold<int>(0, (sum, a) => sum + a.openWorkOrders);
 
-    return Stack(
+    return SearchShortcut(
+      focusNode: _searchFocus,
+      child: Stack(
       fit: StackFit.expand,
       children: [
         RefreshIndicator(
@@ -135,6 +140,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
                           Expanded(
                             child: TextField(
                               controller: _search,
+                              focusNode: _searchFocus,
                               onChanged: (_) => setState(() {}),
                               style: const TextStyle(color: AppTheme.heading, fontSize: 14),
                               decoration: const InputDecoration(
@@ -276,8 +282,8 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             elevation: 2,
             onPressed: () async {
               await showAssetFormSheet(context);
@@ -287,6 +293,7 @@ class _AssetsListPanelState extends ConsumerState<AssetsListPanel> {
           ),
         ),
       ],
+      ),
     );
   }
 }
@@ -368,18 +375,25 @@ class _AssetTableColumn {
   final String label;
   final double width;
   final TextAlign align;
+  final bool lowPriority;
 
-  const _AssetTableColumn(this.key, this.label, {this.width = 100, this.align = TextAlign.left});
+  const _AssetTableColumn(
+    this.key,
+    this.label, {
+    this.width = 100,
+    this.align = TextAlign.left,
+    this.lowPriority = false,
+  });
 }
 
 const _kAssetTableColumns = [
   _AssetTableColumn('tag', 'Tag', width: 86),
   _AssetTableColumn('name', 'Name', width: 160),
   _AssetTableColumn('category', 'Category', width: 110),
-  _AssetTableColumn('location', 'Location', width: 96),
+  _AssetTableColumn('location', 'Location', width: 96, lowPriority: true),
   _AssetTableColumn('status', 'Status', width: 84),
-  _AssetTableColumn('warranty', 'Warranty', width: 92),
-  _AssetTableColumn('amc', 'AMC', width: 92),
+  _AssetTableColumn('warranty', 'Warranty', width: 92, lowPriority: true),
+  _AssetTableColumn('amc', 'AMC', width: 92, lowPriority: true),
   _AssetTableColumn('openWos', 'Open WOs', width: 76, align: TextAlign.right),
 ];
 
@@ -404,6 +418,16 @@ class _AssetTable extends StatelessWidget {
     required this.onDelete,
   });
 
+  /// Columns this window has room for; header and rows share the list so they
+  /// stay aligned.
+  static List<_AssetTableColumn> visibleColumns(BuildContext context) {
+    final all = AppTheme.showLowPriorityColumns(context);
+    return [
+      for (final c in _kAssetTableColumns)
+        if (all || !c.lowPriority) c,
+    ];
+  }
+
   Color _statusColor(String status) => switch (status) {
     'IN_USE' => AppTheme.vacant,
     'UNDER_REPAIR' => AppTheme.draft,
@@ -412,7 +436,8 @@ class _AssetTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = _kAssetTableColumns.fold<double>(0, (sum, c) => sum + c.width) + 36;
+    final cols = _AssetTable.visibleColumns(context);
+    final width = cols.fold<double>(0, (sum, c) => sum + c.width) + 36;
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -432,7 +457,7 @@ class _AssetTable extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      for (final c in _kAssetTableColumns)
+                      for (final c in cols)
                         TableCol(
                           width: c.width,
                           child: Padding(
@@ -504,7 +529,7 @@ class _AssetTableRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            for (final c in _kAssetTableColumns)
+            for (final c in _AssetTable.visibleColumns(context))
               TableCol(
                 width: c.width,
                 child: Padding(

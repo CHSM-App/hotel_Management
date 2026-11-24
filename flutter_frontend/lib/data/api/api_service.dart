@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import '../../domain/models/asset.dart';
 import '../../domain/models/bar.dart';
 import '../../domain/models/booking.dart';
+import '../../domain/models/booking_edit.dart';
 import '../../domain/models/category.dart';
 import '../../domain/models/checkout_policy.dart';
 import '../../domain/models/saved_quotation.dart';
@@ -439,6 +440,15 @@ class ApiService {
   Future<BookingRevision> reviseBooking(int id, FormData form) async {
     final res = await _dio.patch('/bookings/$id', data: form);
     return BookingRevision.fromJson(_map(res.data));
+  }
+
+  /// The edit log of one booking, newest first.
+  Future<List<BookingEdit>> bookingEdits(int id) async {
+    final res = await _dio.get('/bookings/$id/edits');
+    return [
+      for (final e in (_map(res.data)['edits'] as List? ?? const []))
+        BookingEdit.fromJson(e as Map<String, dynamic>),
+    ];
   }
 
   /// Dates a billed stay may move within; null if it has no issued invoice.

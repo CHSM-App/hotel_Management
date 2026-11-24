@@ -505,9 +505,6 @@ class FoodTab {
   final num subtotal;
   final String? openedAt;
 
-  /// Orders on this tab still cooking or on their way, not yet delivered.
-  final int liveOrderCount;
-
   const FoodTab({
     required this.tab,
     this.tableLabel,
@@ -518,7 +515,6 @@ class FoodTab {
     this.orderCount = 0,
     this.subtotal = 0,
     this.openedAt,
-    this.liveOrderCount = 0,
   });
 
   factory FoodTab.fromJson(Map<String, dynamic> json) => FoodTab(
@@ -531,7 +527,6 @@ class FoodTab {
     orderCount: asInt(json['orderCount']),
     subtotal: asNum(json['subtotal']),
     openedAt: asStringOrNull(json['openedAt']),
-    liveOrderCount: asIntOrNull(json['liveOrderCount']) ?? 0,
   );
 
   /// A takeaway — one finished order rather than a tab still filling up, so
@@ -575,11 +570,6 @@ class FoodBillPreview {
   final BillSide? gst;
   final BillSide? nonGst;
 
-  /// Orders on this tab still in the kitchen or on their way — billing now
-  /// would leave that food off the document unless the desk says to go
-  /// ahead anyway.
-  final int liveOrderCount;
-
   const FoodBillPreview({
     required this.tab,
     this.tableLabel,
@@ -591,7 +581,6 @@ class FoodBillPreview {
     this.gstin,
     this.gst,
     this.nonGst,
-    this.liveOrderCount = 0,
   });
 
   factory FoodBillPreview.fromJson(Map<String, dynamic> json) =>
@@ -600,7 +589,6 @@ class FoodBillPreview {
         tableLabel: asStringOrNull(json['tableLabel']),
         customerName: asStringOrNull(json['customerName']),
         customerPhone: asStringOrNull(json['customerPhone']),
-        liveOrderCount: asIntOrNull(json['liveOrderCount']) ?? 0,
         foodItems:
             (json['foodItems'] as List?)
                 ?.map((e) => FoodItemLine.fromJson(e as Map<String, dynamic>))

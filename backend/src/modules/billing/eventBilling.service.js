@@ -14,7 +14,7 @@ const {
 } = require('./billing.service');
 const { paymentLinesOf } = require('../bookings/bookings.schema');
 const eventsService = require('../events/events.service');
-const { priceEvent, numberOfDays } = require('../events/eventPricing');
+const { priceEvent } = require('../events/eventPricing');
 
 // The final bill for a function.
 //
@@ -83,12 +83,10 @@ function addonsOf(row) {
 // rates are in hand, which is what lets the target-total search below run
 // without a query per turn.
 function priceEventBill(row, { discountAmount, venueRate, foodRate }) {
-  const days = numberOfDays({ startAt: row.start_at, endAt: row.end_at });
   const pricing = priceEvent({
-    // venue_charge is stored already multiplied by the day count agreed at
-    // quoting time; priceEvent multiplies by days again, so it is divided
-    // back to a per-day rate first to land on the same stored total.
-    venueCharge: round2(Number(row.venue_charge) / days),
+    // venue_charge is stored as the venue's settled total (per hour, per day
+    // or a block — whichever rate priced it), so it is taken as is.
+    venueTotal: Number(row.venue_charge),
     perPlateRate: Number(row.per_plate_rate),
     expectedPax: Number(row.expected_pax),
     guaranteedPax: Number(row.guaranteed_pax),

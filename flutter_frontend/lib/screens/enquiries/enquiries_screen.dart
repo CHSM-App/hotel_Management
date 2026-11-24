@@ -9,6 +9,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/page_kit.dart';
 import '../theme.dart';
 
 const _kindLabel = {
@@ -114,6 +115,7 @@ class EnquiriesScreen extends ConsumerStatefulWidget {
 
 class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
   String _filter = 'NEW';
 
   /// null = the spreadsheet view; the toggle switches to cards.
@@ -132,6 +134,7 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -372,7 +375,9 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
     final view =
         _view ?? 'table';
 
-    return RefreshIndicator(
+    return SearchShortcut(
+      focusNode: _searchFocus,
+      child: RefreshIndicator(
       notificationPredicate: (n) => n.metrics.axis == Axis.vertical,
       onRefresh: () => ref.read(enquiriesViewModelProvider.notifier).load(),
       color: AppTheme.accent,
@@ -407,6 +412,7 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
                 Expanded(
                   child: _SearchBar(
                     controller: _search,
+                    focusNode: _searchFocus,
                     onChanged: () => setState(() {}),
                   ),
                 ),
@@ -492,6 +498,7 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
           ],
         ],
       ),
+      ),
     );
   }
 }
@@ -499,9 +506,10 @@ class _EnquiriesScreenState extends ConsumerState<EnquiriesScreen> {
 /// Pill search box — same construction as the Customers register's.
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final VoidCallback onChanged;
 
-  const _SearchBar({required this.controller, required this.onChanged});
+  const _SearchBar({required this.controller, required this.onChanged, this.focusNode});
 
   @override
   Widget build(BuildContext context) {
@@ -530,6 +538,7 @@ class _SearchBar extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: focusNode,
               onChanged: (_) => onChanged(),
               style: const TextStyle(color: AppTheme.heading, fontSize: 14),
               decoration: const InputDecoration(
@@ -614,17 +623,27 @@ class _Col {
   final String key;
   final String label;
   final double width;
-  const _Col(this.key, this.label, this.width);
+  final bool lowPriority;
+  const _Col(this.key, this.label, this.width, {this.lowPriority = false});
+}
+
+/// Columns this window has room for (header and rows share the list).
+List<_Col> _visibleCols(BuildContext context) {
+  final all = AppTheme.showLowPriorityColumns(context);
+  return [
+    for (final c in _cols)
+      if (all || !c.lowPriority) c,
+  ];
 }
 
 const _cols = [
   _Col('name', 'Guest', 150),
-  _Col('ref', 'Reference', 110),
+  _Col('ref', 'Reference', 110, lowPriority: true),
   _Col('phone', 'Phone', 120),
   _Col('kind', 'Type', 80),
   _Col('looking', 'Looking for', 190),
   _Col('status', 'Status', 100),
-  _Col('received', 'Received', 140),
+  _Col('received', 'Received', 140, lowPriority: true),
 ];
 
 class _EnquiryTable extends StatelessWidget {
@@ -642,7 +661,8 @@ class _EnquiryTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = _cols.fold<double>(0, (sum, c) => sum + c.width) + 36;
+    final cols = _visibleCols(context);
+    final width = cols.fold<double>(0, (sum, c) => sum + c.width) + 36;
     return NeuCard(
       padding: EdgeInsets.zero,
       radius: AppTheme.rMedium,
@@ -663,7 +683,7 @@ class _EnquiryTable extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    for (final c in _cols)
+                    for (final c in cols)
                       TableCol(
                         width: c.width,
                         child: Padding(
@@ -741,7 +761,7 @@ class _EnquiryTableRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          for (final c in _cols)
+          for (final c in _visibleCols(context))
             TableCol(
               width: c.width,
               child: Padding(

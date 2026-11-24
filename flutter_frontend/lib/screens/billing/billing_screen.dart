@@ -362,10 +362,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                         'Placed ${formatTimeOfDay(tab.openedAt)}',
                       ].join(' · ')
                     : '${tab.orderCount} order${tab.orderCount == 1 ? '' : 's'} '
-                          '· since ${formatTimeOfDay(tab.openedAt)}') +
-                (tab.liveOrderCount > 0
-                    ? ' · ${tab.liveOrderCount} still in progress'
-                    : ''),
+                          '· since ${formatTimeOfDay(tab.openedAt)}'),
             amount: tab.subtotal,
           ),
       ];
@@ -2532,16 +2529,27 @@ class _QueueTableColumn {
   final String key;
   final String label;
   final double width;
+  final bool lowPriority;
 
-  const _QueueTableColumn(this.key, this.label, {this.width = 120});
+  const _QueueTableColumn(this.key, this.label, {this.width = 120, this.lowPriority = false});
 }
 
 const _kQueueTableColumns = [
   _QueueTableColumn('label', 'Room / Item', width: 100),
   _QueueTableColumn('title', 'Guest / Details', width: 170),
-  _QueueTableColumn('subtitle', 'Info', width: 200),
+  _QueueTableColumn('subtitle', 'Info', width: 200, lowPriority: true),
   _QueueTableColumn('amount', 'Amount', width: 110),
 ];
+
+/// Columns this window has room for; header, rows and the totals row share the
+/// list so they stay aligned.
+List<_QueueTableColumn> _visibleQueueCols(BuildContext context) {
+  final all = AppTheme.showLowPriorityColumns(context);
+  return [
+    for (final c in _kQueueTableColumns)
+      if (all || !c.lowPriority) c,
+  ];
+}
 
 /// The sheet-style view of a billing queue — mirrors [_AssetTable] in
 /// AssetsListPanel: a scrollable grid instead of one card per row, handy for
@@ -2553,7 +2561,7 @@ class BillingQueueTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = _kQueueTableColumns.fold<double>(
+    final width = _visibleQueueCols(context).fold<double>(
       0,
       (sum, c) => sum + c.width,
     );
@@ -2581,7 +2589,7 @@ class BillingQueueTable extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    for (final c in _kQueueTableColumns)
+                    for (final c in _visibleQueueCols(context))
                       TableCol(
                         width: c.width,
                         child: Padding(
@@ -2629,10 +2637,10 @@ class _QueueTableFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = rows.fold<num>(0, (sum, r) => sum + (r.amount ?? 0));
-    final labelWidth = _kQueueTableColumns
+    final labelWidth = _visibleQueueCols(context)
         .where((c) => c.key != 'amount')
         .fold<double>(0, (sum, c) => sum + c.width);
-    final amountWidth = _kQueueTableColumns
+    final amountWidth = _visibleQueueCols(context)
         .firstWhere((c) => c.key == 'amount')
         .width;
 
@@ -2708,7 +2716,7 @@ class _QueueTableRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            for (final c in _kQueueTableColumns)
+            for (final c in _visibleQueueCols(context))
               TableCol(
                 width: c.width,
                 child: Padding(
@@ -3476,8 +3484,9 @@ class _InvoiceTableColumn {
   final String key;
   final String label;
   final double width;
+  final bool lowPriority;
 
-  const _InvoiceTableColumn(this.key, this.label, {this.width = 110});
+  const _InvoiceTableColumn(this.key, this.label, {this.width = 110, this.lowPriority = false});
 }
 
 // Same eight columns, same order, as the web's own history-table in
@@ -3489,11 +3498,21 @@ const _kInvoiceTableColumns = [
   _InvoiceTableColumn('date', 'Date', width: 96),
   _InvoiceTableColumn('billedFor', 'Billed for', width: 150),
   _InvoiceTableColumn('guest', 'Guest / Table', width: 140),
-  _InvoiceTableColumn('room', 'Room', width: 70),
-  _InvoiceTableColumn('document', 'Document', width: 130),
+  _InvoiceTableColumn('room', 'Room', width: 70, lowPriority: true),
+  _InvoiceTableColumn('document', 'Document', width: 130, lowPriority: true),
   _InvoiceTableColumn('status', 'Status', width: 90),
   _InvoiceTableColumn('amount', 'Amount', width: 100),
 ];
+
+/// Columns this window has room for; header, rows and the totals row share the
+/// list so they stay aligned.
+List<_InvoiceTableColumn> _visibleInvoiceCols(BuildContext context) {
+  final all = AppTheme.showLowPriorityColumns(context);
+  return [
+    for (final c in _kInvoiceTableColumns)
+      if (all || !c.lowPriority) c,
+  ];
+}
 
 // What was sold — mirrors billSource()/SOURCE_LABEL in Billing.jsx: a room
 // stay, a room that also carries food, a dining table, a function, or an
@@ -3544,7 +3563,7 @@ class BillingInvoiceTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = _kInvoiceTableColumns.fold<double>(
+    final width = _visibleInvoiceCols(context).fold<double>(
       0,
       (sum, c) => sum + c.width,
     );
@@ -3572,7 +3591,7 @@ class BillingInvoiceTable extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    for (final c in _kInvoiceTableColumns)
+                    for (final c in _visibleInvoiceCols(context))
                       TableCol(
                         width: c.width,
                         child: Padding(
@@ -3626,10 +3645,10 @@ class _InvoiceTableFooter extends StatelessWidget {
       0,
       (sum, d) => d.isVoid ? sum : sum + d.totalAmount,
     );
-    final labelWidth = _kInvoiceTableColumns
+    final labelWidth = _visibleInvoiceCols(context)
         .where((c) => c.key != 'amount')
         .fold<double>(0, (sum, c) => sum + c.width);
-    final amountWidth = _kInvoiceTableColumns
+    final amountWidth = _visibleInvoiceCols(context)
         .firstWhere((c) => c.key == 'amount')
         .width;
 
@@ -3746,7 +3765,7 @@ class _InvoiceTableRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              for (final c in _kInvoiceTableColumns)
+              for (final c in _visibleInvoiceCols(context))
                 TableCol(
                   width: c.width,
                   child: Padding(

@@ -154,7 +154,11 @@ class _TableScale extends InheritedWidget {
 class TableSheet extends StatelessWidget {
   final double width;
   final Widget child;
-  static const double maxScale = 3;
+
+  /// How far a table may stretch to fill the window. A wide window gets
+  /// margins rather than a single enormous row.
+  static double maxScaleFor(BuildContext context) =>
+      AppTheme.tier(context) == Tier.wide ? 2.2 : 3;
 
   const TableSheet({super.key, required this.width, required this.child});
 
@@ -165,7 +169,7 @@ class TableSheet extends StatelessWidget {
     // Room for the rows' scrollbar lane.
     final available = viewport - 14;
     final scale = available > width
-        ? (available / width).clamp(1.0, maxScale)
+        ? (available / width).clamp(1.0, maxScaleFor(context))
         : 1.0;
     return _TableScale(
       scale: scale,

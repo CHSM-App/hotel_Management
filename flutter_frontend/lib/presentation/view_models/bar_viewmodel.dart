@@ -169,7 +169,6 @@ class BarViewModel extends StateNotifier<BarState> {
     required List<int> orderIds,
     String? customerName,
     required List<({String method, double amount, String? reference})> payments,
-    bool billAnyway = false,
   }) async {
     state = state.copyWith(submitting: true, clearError: true, clearPending: true);
     try {
@@ -177,7 +176,6 @@ class BarViewModel extends StateNotifier<BarState> {
       final bill = await usecase.issueBill({
         'orderIds': orderIds,
         'customerName': name.isEmpty ? null : name,
-        'billAnyway': billAnyway,
         'payments': [
           for (final p in payments) {'method': p.method, 'amount': p.amount, 'reference': p.reference},
         ],

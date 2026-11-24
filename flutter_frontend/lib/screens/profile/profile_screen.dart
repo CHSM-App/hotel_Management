@@ -29,6 +29,9 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final me = ref.watch(authViewModelProvider).me;
+    // From a laptop up the page uses two columns (identity and property on
+    // the left, settings on the right) instead of one long phone column.
+    final twoCol = AppTheme.atLeast(context, Tier.laptop);
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
@@ -36,7 +39,7 @@ class ProfileScreen extends ConsumerWidget {
           ? const Center(child: CircularProgressIndicator())
           : Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
+                constraints: BoxConstraints(maxWidth: twoCol ? 1040 : 560),
                 child: CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(child: _Header(me: me)),
@@ -48,7 +51,7 @@ class ProfileScreen extends ConsumerWidget {
                     AppTheme.s32,
                   ),
                   sliver: SliverList(
-                    delegate: SliverChildListDelegate([
+                    delegate: SliverChildListDelegate(_arrange(twoCol, [
                       const _SectionLabel('Contact', icon: Icons.person_outline_rounded),
                       const SizedBox(height: AppTheme.s12),
                       NeuCard(
@@ -205,6 +208,7 @@ class ProfileScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
+                    ], [
                       if (me.user.role == 'OWNER') ...[
                         const SizedBox(height: AppTheme.s16),
                         _LogoSection(lodge: me.lodge),
@@ -308,7 +312,7 @@ class ProfileScreen extends ConsumerWidget {
                           ),
                         ),
                       ),
-                    ]),
+                    ])),
                   ),
                 ),
               ],
@@ -316,6 +320,25 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
     );
+  }
+
+  /// One column on a phone/tablet (the two lists back to back, exactly the
+  /// old order); side by side from a laptop up. The right column drops its
+  /// leading spacer so both columns start at the same top edge.
+  static List<Widget> _arrange(bool twoCol, List<Widget> left, List<Widget> right) {
+    if (!twoCol) return [...left, ...right];
+    final r = [...right];
+    if (r.isNotEmpty && r.first is SizedBox) r.removeAt(0);
+    return [
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: left)),
+          const SizedBox(width: AppTheme.s24),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: r)),
+        ],
+      ),
+    ];
   }
 
 

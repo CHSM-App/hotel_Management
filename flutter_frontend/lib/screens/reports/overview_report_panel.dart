@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/report.dart';
 import '../../presentation/providers/view_model_provider.dart';
+import '../../widgets/adaptive_grid.dart';
 import '../../widgets/format.dart';
 import '../theme.dart';
 import 'report_widgets.dart';
@@ -219,35 +220,45 @@ class OverviewReportPanel extends ConsumerWidget {
                 : null,
           ),
         ],
-        if (totalRevenue > 0) ...[
-          const SizedBox(height: AppTheme.s16),
-          ReportDonut(
-            title: 'Revenue mix',
-            centerLabel: formatPrice(totalRevenue),
-            centerSub: 'this period',
-            formatValue: formatPrice,
-            slices: revenueMixSlices,
-          ),
-        ],
-        if (categoryBars.isNotEmpty) ...[
-          const SizedBox(height: AppTheme.s16),
-          ReportBarList(title: 'Revenue by room category', rows: categoryBars, formatValue: formatPrice),
-        ],
-        if (hasEvents && functionTypeBars.isNotEmpty) ...[
-          const SizedBox(height: AppTheme.s16),
-          ReportBarList(
-            title: 'Top function types',
-            rows: functionTypeBars,
-            color: AppTheme.checkout,
-            formatValue: formatPrice,
-          ),
-        ],
-        if (paymentSlices.isNotEmpty) ...[
-          const SizedBox(height: AppTheme.s16),
-          ReportPaymentMix(title: 'Payment mix', slices: paymentSlices, formatValue: formatPrice),
-        ],
+        // The four breakdown cards: stacked on a phone exactly as before, in a
+        // grid (two across, more when wide) from a tablet up.
+        ...(){
+          final charts = <Widget>[
+            if (totalRevenue > 0)
+              ReportDonut(
+                title: 'Revenue mix',
+                centerLabel: formatPrice(totalRevenue),
+                centerSub: 'this period',
+                formatValue: formatPrice,
+                slices: revenueMixSlices,
+              ),
+            if (categoryBars.isNotEmpty)
+              ReportBarList(title: 'Revenue by room category', rows: categoryBars, formatValue: formatPrice),
+            if (hasEvents && functionTypeBars.isNotEmpty)
+              ReportBarList(
+                title: 'Top function types',
+                rows: functionTypeBars,
+                color: AppTheme.checkout,
+                formatValue: formatPrice,
+              ),
+            if (paymentSlices.isNotEmpty)
+              ReportPaymentMix(title: 'Payment mix', slices: paymentSlices, formatValue: formatPrice),
+          ];
+          if (AppTheme.isPhone(context)) {
+            return [
+              for (final c in charts) ...[const SizedBox(height: AppTheme.s16), c],
+            ];
+          }
+          return [
+            if (charts.isNotEmpty) ...[
+              const SizedBox(height: AppTheme.s16),
+              AdaptiveGrid(minTileWidth: 420, spacing: AppTheme.s16, children: charts),
+            ],
+          ];
+        }(),
         if (insights.isNotEmpty) ...[
-          const SizedBox(height: AppTheme.s16),
+          // (the grid above already ends with its own bottom spacing)
+          SizedBox(height: AppTheme.isPhone(context) ? AppTheme.s16 : 0),
           ReportInsightList(title: 'What needs a look', insights: insights),
         ],
         const SizedBox(height: AppTheme.s16),

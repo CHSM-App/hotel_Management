@@ -69,7 +69,6 @@ class _BarOrdersPanelState extends ConsumerState<BarOrdersPanel> {
     final me = ref.watch(authViewModelProvider).me;
     final canTake = me?.user.can('bar.take') ?? false;
     final orders = bar.openOrders;
-    final cols = AppTheme.isDesktop(context) ? (MediaQuery.of(context).size.width > 1200 ? 3 : 2) : 1;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -90,7 +89,11 @@ class _BarOrdersPanelState extends ConsumerState<BarOrdersPanel> {
             ? ListView(children: [NeuNotice(icon: Icons.error_outline_rounded, message: bar.error!)])
             : orders.isEmpty
             ? ListView(children: const [NeuNotice(icon: Icons.local_bar_rounded, message: 'No open bar orders.\nTap “Take order” to start one.')])
-            : GridView.builder(
+            : LayoutBuilder(builder: (context, pane) {
+                // By the pane's own width: a phone stays one column, a
+                // tablet/laptop two, a roomy window three.
+                final cols = AppTheme.isPhone(context) ? 1 : (pane.maxWidth >= 1140 ? 3 : (pane.maxWidth >= 700 ? 2 : 1));
+                return GridView.builder(
                 padding: EdgeInsets.fromLTRB(AppTheme.gutter(context), AppTheme.s8, AppTheme.gutter(context), 96),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: cols,
@@ -110,7 +113,8 @@ class _BarOrdersPanelState extends ConsumerState<BarOrdersPanel> {
                   onToRoom: () => _toRoom(orders[i]),
                   onAct: _act,
                 ),
-              ),
+              );
+              }),
       ),
     );
   }

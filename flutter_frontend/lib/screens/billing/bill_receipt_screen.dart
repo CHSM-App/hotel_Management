@@ -116,7 +116,11 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
         ),
       ),
       body: SafeArea(
-        child: Padding(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
+            child: Padding(
           padding: const EdgeInsets.all(AppTheme.s16),
           child: Column(
             children: [
@@ -243,6 +247,8 @@ class _BillReceiptScreenState extends ConsumerState<BillReceiptScreen> {
                 child: const Text('Done'),
               ),
             ],
+          ),
+        ),
           ),
         ),
       ),

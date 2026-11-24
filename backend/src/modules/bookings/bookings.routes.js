@@ -12,6 +12,7 @@ const {
   priceQuoteHandler,
   getTapeChartHandler,
   getBookingHandler,
+  listBookingEditsHandler,
   getEditWindowHandler,
   getPastWindowHandler,
   getIdProofHandler,
@@ -68,6 +69,7 @@ router.get('/checkin-alerts', authenticate, staff, listCheckinAlertsHandler);
 router.get('/past-window', authenticate, staff, getPastWindowHandler);
 router.get('/:id/edit-window', authenticate, staff, getEditWindowHandler);
 router.get('/:id', authenticate, staff, getBookingHandler);
+router.get('/:id/edits', authenticate, staff, listBookingEditsHandler);
 router.get('/:id/available-rooms', authenticate, staff, listAvailableRoomsForBookingHandler);
 router.get('/:id/late-checkout', authenticate, staff, getLateCheckoutHandler);
 router.get('/:id/rooms/:roomId/late-checkout', authenticate, staff, getLateCheckoutHandler);

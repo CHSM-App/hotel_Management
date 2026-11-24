@@ -7,6 +7,7 @@ import '../../presentation/view_models/customers_viewmodel.dart';
 import '../../widgets/format.dart';
 import '../../widgets/h_scroll_table.dart';
 import '../../widgets/neu.dart';
+import '../../widgets/page_kit.dart';
 import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
 import 'customer_detail_screen.dart';
@@ -28,6 +29,7 @@ class CustomersScreen extends ConsumerStatefulWidget {
 
 class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
 
   /// 'table' is the landing view — scanning every customer's stays/spend at
   /// once, same default ExpensesListPanel lands on. 'cards' is one customer
@@ -47,6 +49,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -54,7 +57,9 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(customersViewModelProvider);
 
-    return Column(
+    return SearchShortcut(
+      focusNode: _searchFocus,
+      child: Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s8),
@@ -75,6 +80,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
               : _buildCustomersTab(context, state),
         ),
       ],
+      ),
     );
   }
 
@@ -95,7 +101,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
 
     final filtered = state.filtered;
     // Phones get cards by default — the table needs sideways scrolling there.
-    final view = _view ?? (MediaQuery.of(context).size.width < 600 ? 'cards' : 'table');
+    final view = _view ?? (AppTheme.isPhone(context) ? 'cards' : 'table');
 
     return Stack(
       fit: StackFit.expand,
@@ -141,6 +147,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                           Expanded(
                             child: TextField(
                               controller: _search,
+                              focusNode: _searchFocus,
                               onChanged: (v) =>
                                   ref.read(customersViewModelProvider.notifier).setSearch(v),
                               style: const TextStyle(color: AppTheme.heading, fontSize: 14),
@@ -231,8 +238,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             elevation: 2,
             tooltip: 'Add customer',
             onPressed: () => showCustomerFormScreen(context),
@@ -428,8 +435,15 @@ class _CustomerTableColumn {
   final String label;
   final double width;
   final TextAlign align;
+  final bool lowPriority;
 
-  const _CustomerTableColumn(this.key, this.label, {this.width = 100, this.align = TextAlign.left});
+  const _CustomerTableColumn(
+    this.key,
+    this.label, {
+    this.width = 100,
+    this.align = TextAlign.left,
+    this.lowPriority = false,
+  });
 }
 
 const _kCustomerTableColumns = [
@@ -438,8 +452,8 @@ const _kCustomerTableColumns = [
   _CustomerTableColumn('stays', 'Stays', width: 70, align: TextAlign.right),
   _CustomerTableColumn('spend', 'Spend', width: 100, align: TextAlign.right),
   _CustomerTableColumn('lastVisit', 'Last visit', width: 100),
-  _CustomerTableColumn('tags', 'Tags', width: 120),
-  _CustomerTableColumn('offers', 'Offers', width: 90),
+  _CustomerTableColumn('tags', 'Tags', width: 120, lowPriority: true),
+  _CustomerTableColumn('offers', 'Offers', width: 90, lowPriority: true),
 ];
 
 /// The sheet-style view — every customer's name/phone/stays/spend/last
@@ -449,9 +463,20 @@ class _CustomerTable extends StatelessWidget {
   final List<Customer> customers;
   const _CustomerTable({required this.customers});
 
+  /// Columns this window has room for; the header and every row use the same
+  /// list so they stay aligned.
+  static List<_CustomerTableColumn> visibleColumns(BuildContext context) {
+    final all = AppTheme.showLowPriorityColumns(context);
+    return [
+      for (final c in _kCustomerTableColumns)
+        if (all || !c.lowPriority) c,
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final width = _kCustomerTableColumns.fold<double>(0, (sum, c) => sum + c.width) + 36;
+    final cols = visibleColumns(context);
+    final width = cols.fold<double>(0, (sum, c) => sum + c.width) + 36;
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -471,7 +496,7 @@ class _CustomerTable extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      for (final c in _kCustomerTableColumns)
+                      for (final c in cols)
                         TableCol(
                           width: c.width,
                           child: Padding(
@@ -536,7 +561,7 @@ class _CustomerTableRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            for (final c in _kCustomerTableColumns)
+            for (final c in _CustomerTable.visibleColumns(context))
               TableCol(
                 width: c.width,
                 child: Padding(

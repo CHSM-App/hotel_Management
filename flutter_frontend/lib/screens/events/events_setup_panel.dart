@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart' as dio;
@@ -111,8 +112,8 @@ class _EventsSetupPanelState extends ConsumerState<EventsSetupPanel> {
                 right: AppTheme.s16,
                 bottom: AppTheme.s16,
                 child: FloatingActionButton(
-                  backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-                  foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+                  backgroundColor: AppTheme.ctaBg(context),
+                  foregroundColor: AppTheme.ctaFg(context),
                   tooltip: _tab == 'venues' ? 'Add a venue' : 'Add an add-on',
                   onPressed: () => _tab == 'venues' ? _editVenue(context, ref) : _editAddon(context, ref),
                   child: const Icon(Icons.add_rounded),
@@ -402,9 +403,15 @@ class _VenueRow extends StatelessWidget {
                         Text('${venue.capacityPax} pax', style: Theme.of(context).textTheme.bodySmall),
                         const SizedBox(width: 8),
                       ],
-                      Text(
-                        formatPrice(venue.baseCharge),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.heading, fontWeight: FontWeight.w600),
+                      Flexible(
+                        child: Text(
+                          venue.rates.isEmpty
+                              ? formatPrice(venue.baseCharge)
+                              : venue.rates.map((r) => r.summary(formatPrice)).join('  ·  '),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.heading, fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ],
                   ),
@@ -644,6 +651,7 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
   late final _charge = TextEditingController(text: widget.venue?.baseCharge == null ? '' : widget.venue!.baseCharge.toString());
   late final List<RoomImage> _existingPhotos = List.of(widget.venue?.images ?? const []);
   final List<XFile> _newPhotos = [];
+  late final List<_RateDraft> _rates = [for (final r in widget.venue?.rates ?? const <VenueRate>[]) _RateDraft.from(r)];
   String? _error;
 
   bool get _photosFull => _existingPhotos.length + _newPhotos.length >= maxVenueImages;
@@ -653,6 +661,9 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
     _name.dispose();
     _capacity.dispose();
     _charge.dispose();
+    for (final r in _rates) {
+      r.dispose();
+    }
     super.dispose();
   }
 
@@ -693,10 +704,21 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
       setState(() => _error = 'Enter a name for the venue.');
       return;
     }
+    final rates = <VenueRate>[];
+    for (final draft in _rates) {
+      final rate = draft.toRate();
+      if (rate == null) {
+        setState(() => _error = draft.problem);
+        return;
+      }
+      rates.add(rate);
+    }
     final formMap = <String, dynamic>{
       'name': _name.text.trim(),
       'capacityPax': _capacity.text.trim(),
       'baseCharge': (num.tryParse(_charge.text.trim()) ?? 0).toString(),
+      // The whole rate card, as one JSON field next to the photos.
+      'rates': jsonEncode([for (final r in rates) r.toJson()]),
     };
     for (final file in _newPhotos) {
       formMap.update(
@@ -733,7 +755,36 @@ class _VenueDialogState extends ConsumerState<_VenueDialog> {
           const SizedBox(height: AppTheme.s8),
           NeuField(controller: _capacity, label: 'Capacity (optional)', hint: '200', keyboardType: TextInputType.number, dense: true),
           const SizedBox(height: AppTheme.s8),
-          NeuField(controller: _charge, label: 'Hire charge', hint: '25000', keyboardType: TextInputType.number, dense: true),
+          NeuField(
+            controller: _charge,
+            label: _rates.isEmpty ? 'Hire charge (per day)' : 'Default hire charge (per day, used when no rate fits)',
+            hint: '25000',
+            keyboardType: TextInputType.number,
+            dense: true,
+          ),
+          const SectionDivider(),
+          const Text(
+            'RATES',
+            style: TextStyle(color: AppTheme.muted, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.4),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Per hour, per day, or a fixed block (e.g. 4 hours only). Pick one when booking.',
+            style: TextStyle(color: AppTheme.muted, fontSize: 11.5),
+          ),
+          const SizedBox(height: AppTheme.s8),
+          for (final (i, draft) in _rates.indexed)
+            _RateEditor(
+              key: ObjectKey(draft),
+              draft: draft,
+              onChanged: () => setState(() {}),
+              onRemove: () => setState(() => _rates.removeAt(i).dispose()),
+            ),
+          TextButton.icon(
+            onPressed: () => setState(() => _rates.add(_RateDraft())),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Add a rate'),
+          ),
           const SectionDivider(),
           Text(
             'PHOTOS (UP TO $maxVenueImages)',
@@ -866,6 +917,127 @@ class _AddonDialogState extends ConsumerState<_AddonDialog> {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// A rate card line being edited in the venue dialog.
+class _RateDraft {
+  final int? id;
+  final TextEditingController label;
+  final TextEditingController amount;
+  final TextEditingController hours;
+  VenueRateType type;
+  String? problem;
+
+  _RateDraft()
+    : id = null,
+      label = TextEditingController(),
+      amount = TextEditingController(),
+      hours = TextEditingController(),
+      type = VenueRateType.hour;
+
+  _RateDraft.from(VenueRate r)
+    : id = r.id,
+      label = TextEditingController(text: r.label),
+      amount = TextEditingController(text: _text(r.amount)),
+      hours = TextEditingController(text: r.blockHours == null ? '' : _text(r.blockHours!)),
+      type = r.type;
+
+  static String _text(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+
+  /// Null, with [problem] set, when the line is not fit to save.
+  VenueRate? toRate() {
+    final name = label.text.trim();
+    if (name.isEmpty) {
+      problem = 'Name each rate, e.g. "4 hours only".';
+      return null;
+    }
+    final price = num.tryParse(amount.text.trim());
+    if (price == null || price < 0) {
+      problem = 'Enter a price for "$name".';
+      return null;
+    }
+    final blockHours = type == VenueRateType.block ? num.tryParse(hours.text.trim()) : null;
+    if (type == VenueRateType.block && (blockHours == null || blockHours <= 0)) {
+      problem = 'Enter how many hours "$name" covers.';
+      return null;
+    }
+    return VenueRate(id: id, label: name, type: type, amount: price, blockHours: blockHours);
+  }
+
+  void dispose() {
+    label.dispose();
+    amount.dispose();
+    hours.dispose();
+  }
+}
+
+class _RateEditor extends StatelessWidget {
+  final _RateDraft draft;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  const _RateEditor({super.key, required this.draft, required this.onChanged, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.all(AppTheme.s8),
+      decoration: BoxDecoration(color: AppTheme.bg, borderRadius: BorderRadius.circular(AppTheme.rSmall)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: NeuField(controller: draft.label, label: 'Name', hint: '4 hours only', dense: true)),
+              IconButton(
+                tooltip: 'Remove this rate',
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppTheme.muted),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Wrap(
+            spacing: 6,
+            children: [
+              for (final t in VenueRateType.values)
+                ChoiceChip(
+                  label: Text(t.label),
+                  selected: draft.type == t,
+                  onSelected: (_) {
+                    draft.type = t;
+                    onChanged();
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.s8),
+          Row(
+            children: [
+              Expanded(
+                child: NeuField(
+                  controller: draft.amount,
+                  label: switch (draft.type) {
+                    VenueRateType.hour => 'Price per hour',
+                    VenueRateType.day => 'Price per day',
+                    VenueRateType.block => 'Block price',
+                  },
+                  keyboardType: TextInputType.number,
+                  dense: true,
+                ),
+              ),
+              if (draft.type == VenueRateType.block) ...[
+                const SizedBox(width: AppTheme.s8),
+                Expanded(child: NeuField(controller: draft.hours, label: 'Block hours', hint: '4', keyboardType: TextInputType.number, dense: true)),
+              ],
+            ],
           ),
         ],
       ),

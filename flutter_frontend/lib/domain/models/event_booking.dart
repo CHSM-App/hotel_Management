@@ -1,6 +1,63 @@
 import 'json.dart';
 import 'room.dart' show RoomImage;
 
+/// How a rate is charged: per hour, per day, or one flat price for a fixed
+/// block of hours ("4 hours only").
+enum VenueRateType {
+  hour('HOUR', 'Per hour'),
+  day('DAY', 'Per day'),
+  block('BLOCK', 'Fixed block');
+
+  final String code;
+  final String label;
+  const VenueRateType(this.code, this.label);
+
+  static VenueRateType fromCode(String? code) =>
+      VenueRateType.values.firstWhere((t) => t.code == code, orElse: () => VenueRateType.day);
+}
+
+/// One line of a venue's rate card — mirrors event_venue_rates.
+class VenueRate {
+  final int? id;
+  final String label;
+  final VenueRateType type;
+  final num amount;
+
+  /// Hours a [VenueRateType.block] covers; null for the other types.
+  final num? blockHours;
+
+  const VenueRate({this.id, required this.label, required this.type, required this.amount, this.blockHours});
+
+  factory VenueRate.fromJson(Map<String, dynamic> json) => VenueRate(
+    id: asIntOrNull(json['id']),
+    label: json['label']?.toString() ?? '',
+    type: VenueRateType.fromCode(json['rateType']?.toString() ?? json['type']?.toString()),
+    amount: asNum(json['amount']),
+    blockHours: asNumOrNull(json['blockHours']),
+  );
+
+  Map<String, dynamic> toJson() => {
+    if (id != null) 'id': id,
+    'label': label,
+    'rateType': type.code,
+    'amount': amount,
+    if (type == VenueRateType.block) 'blockHours': blockHours,
+  };
+
+  /// "Rs 2,000 / hour", "Rs 12,000 / day", "Rs 6,000 for 4 hrs".
+  String summary(String Function(num) formatPrice) => switch (type) {
+    VenueRateType.hour => '${formatPrice(amount)} / hour',
+    VenueRateType.day => '${formatPrice(amount)} / day',
+    VenueRateType.block => '${formatPrice(amount)} for ${_hours(blockHours)}',
+  };
+
+  static String _hours(num? h) {
+    final n = h ?? 0;
+    final text = n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+    return '$text hr${n == 1 ? '' : 's'}';
+  }
+}
+
 /// A hall or lawn that can be hired for a function — mirrors event_venues,
 /// read the same way the web Setup tab's Venues card does.
 class EventVenue {
@@ -9,6 +66,9 @@ class EventVenue {
   final int? capacityPax;
   final num baseCharge;
   final bool isActive;
+
+  /// The venue's rate card. Empty means it is hired at [baseCharge] per day.
+  final List<VenueRate> rates;
 
   /// Uploaded to the same `{id, filename}` shape as [RoomImage] — the
   /// backend's event_venue_images table is modelled directly on room_images.
@@ -21,6 +81,7 @@ class EventVenue {
     this.baseCharge = 0,
     this.isActive = true,
     this.images = const [],
+    this.rates = const [],
   });
 
   factory EventVenue.fromJson(Map<String, dynamic> json) => EventVenue(
@@ -28,6 +89,7 @@ class EventVenue {
     name: json['name']?.toString() ?? '',
     capacityPax: asIntOrNull(json['capacityPax']),
     baseCharge: asNum(json['baseCharge']),
+    rates: (json['rates'] as List?)?.map((e) => VenueRate.fromJson(e as Map<String, dynamic>)).toList() ?? const [],
     isActive: json['isActive'] == null ? true : asBool(json['isActive']),
     images:
         (json['images'] as List?)?.map((e) => RoomImage.fromJson(e as Map<String, dynamic>)).toList() ?? const [],
@@ -158,6 +220,9 @@ class EventPricing {
   final List<EventPricingLine> lines;
   final int billablePax;
   final int numberOfDays;
+
+  /// The function runs longer than the fixed block it was priced on.
+  final bool overBlock;
   final num venueCharge;
   final num perPlateRate;
   final num cateringAmount;
@@ -170,6 +235,7 @@ class EventPricing {
     this.lines = const [],
     this.billablePax = 0,
     this.numberOfDays = 1,
+    this.overBlock = false,
     this.venueCharge = 0,
     this.perPlateRate = 0,
     this.cateringAmount = 0,
@@ -185,6 +251,7 @@ class EventPricing {
         .toList(),
     billablePax: asInt(json['billablePax']),
     numberOfDays: asInt(json['numberOfDays'], fallback: 1),
+    overBlock: asBool(json['overBlock']),
     venueCharge: asNum(json['venueCharge']),
     perPlateRate: asNum(json['perPlateRate']),
     cateringAmount: asNum(json['cateringAmount']),
@@ -242,6 +309,10 @@ class EventBooking {
   final num? finalPax;
   final int billablePax;
   final num venueCharge;
+
+  /// The rate card line the venue was priced on, as it was then; null for a
+  /// function booked before rate cards (priced per day).
+  final VenueRate? rate;
   final num perPlateRate;
   final num discountAmount;
   final String? discountReason;
@@ -292,6 +363,7 @@ class EventBooking {
     this.finalPax,
     this.billablePax = 0,
     this.venueCharge = 0,
+    this.rate,
     this.perPlateRate = 0,
     this.discountAmount = 0,
     this.discountReason,
@@ -337,6 +409,7 @@ class EventBooking {
     finalPax: asNumOrNull(json['finalPax']),
     billablePax: asInt(json['billablePax']),
     venueCharge: asNum(json['venueCharge']),
+    rate: json['rate'] is Map ? VenueRate.fromJson((json['rate'] as Map).cast<String, dynamic>()) : null,
     perPlateRate: asNum(json['perPlateRate']),
     discountAmount: asNum(json['discountAmount']),
     discountReason: asStringOrNull(json['discountReason']),
@@ -425,13 +498,18 @@ class EventQuoteResult {
   final EventPricing pricing;
   final String? overCapacity;
 
-  const EventQuoteResult({required this.pricing, this.overCapacity});
+  /// Set when the function runs longer than the fixed block it is priced on —
+  /// a nudge to type a higher amount, not an error.
+  final String? overBlock;
+
+  const EventQuoteResult({required this.pricing, this.overCapacity, this.overBlock});
 
   factory EventQuoteResult.fromJson(Map<String, dynamic> json) => EventQuoteResult(
     pricing: EventPricing.fromJson(
       (json['pricing'] as Map? ?? {}).cast<String, dynamic>(),
     ),
     overCapacity: asStringOrNull(json['overCapacity']),
+    overBlock: asStringOrNull(json['overBlock']),
   );
 }
 

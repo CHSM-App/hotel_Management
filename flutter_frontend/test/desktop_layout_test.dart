@@ -48,7 +48,7 @@ void main() {
   });
 
   testWidgets('table: a wide window stretches every column in proportion, no overflow', (tester) async {
-    tester.view.physicalSize = const Size(6000, 1000);
+    tester.view.physicalSize = const Size(1700, 1000); // desktop tier: cap 3x
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(_table(1414));
@@ -66,7 +66,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(_table(5000));
-    expect(tester.getSize(find.byType(TableSheet)).width, 600 * TableSheet.maxScale);
+    expect(tester.getSize(find.byType(TableSheet)).width, 600 * 2.2); // wide tier cap
   });
 
   Widget grid(double w, int n) => MaterialApp(

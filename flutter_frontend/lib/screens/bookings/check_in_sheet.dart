@@ -146,7 +146,11 @@ class _CheckInPageState extends State<_CheckInPage> {
                 ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
+            child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
             AppTheme.s8,
             AppTheme.s12,
@@ -389,6 +393,8 @@ class _CheckInPageState extends State<_CheckInPage> {
               ],
             ),
           ),
+          ),
+        ),
         ),
       );
   }

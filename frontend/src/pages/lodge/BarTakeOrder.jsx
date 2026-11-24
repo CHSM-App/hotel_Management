@@ -117,7 +117,8 @@ export default function BarTakeOrder({ hasFood, onBack, onPlaced, editOrder = nu
       const res = await apiPost(
         '/bar/orders',
         {
-          source,
+          source: source === 'PARCEL' ? 'COUNTER' : source,
+          isParcel: source === 'PARCEL',
           tableId: source === 'TABLE' ? Number(targetId) : null,
           roomId: guest ? guest.roomId : null,
           bookingId: guest ? guest.bookingId : null,
@@ -130,7 +131,7 @@ export default function BarTakeOrder({ hasFood, onBack, onPlaced, editOrder = nu
         { token }
       );
       const tl = source === 'TABLE' ? targets.tables.find((t) => String(t.id) === String(targetId))?.label : null;
-      onPlaced({ ...res, kot: kotOf(source === 'TABLE' ? `Table ${tl ?? ''}` : source === 'ROOM' ? `Room ${guest?.roomNumber ?? ''}` : 'Counter', 'KOT') });
+      onPlaced({ ...res, kot: kotOf(source === 'TABLE' ? `Table ${tl ?? ''}` : source === 'ROOM' ? `Room ${guest?.roomNumber ?? ''}` : source === 'PARCEL' ? 'Parcel' : 'Counter', 'KOT') });
     } catch (e) {
       setError(errText(e, 'Could not place the order.'));
       setBusy(false);
@@ -291,6 +292,7 @@ export default function BarTakeOrder({ hasFood, onBack, onPlaced, editOrder = nu
               <span>For</span>
               <select value={source} onChange={(e) => { setSource(e.target.value); setTargetId(''); }}>
                 <option value="COUNTER">Counter</option>
+                <option value="PARCEL">Parcel</option>
                 <option value="TABLE">Table</option>
                 <option value="ROOM">Room</option>
               </select>

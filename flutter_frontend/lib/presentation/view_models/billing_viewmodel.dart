@@ -41,11 +41,6 @@ class BillingState {
   final FoodTab? foodTarget;
   final FoodBillPreview? foodPreview;
 
-  /// Set when the desk chooses to bill a food tab even though some of its
-  /// orders are still in the kitchen — that food stays unbilled and joins
-  /// the next bill.
-  final bool billAnyway;
-
   /// Set instead of the two pairs above when a function is being settled —
   /// the event detail screen's "Settle & bill". Same rule: only one of the
   /// three targets is ever non-null.
@@ -106,7 +101,6 @@ class BillingState {
     this.preview,
     this.foodTarget,
     this.foodPreview,
-    this.billAnyway = false,
     this.eventTarget,
     this.eventPreview,
     this.serviceTarget,
@@ -139,7 +133,6 @@ class BillingState {
     bool clearFoodTarget = false,
     FoodBillPreview? foodPreview,
     bool clearFoodPreview = false,
-    bool? billAnyway,
     EventBooking? eventTarget,
     bool clearEventTarget = false,
     EventBillPreview? eventPreview,
@@ -173,7 +166,6 @@ class BillingState {
     preview: clearPreview ? null : (preview ?? this.preview),
     foodTarget: clearFoodTarget ? null : (foodTarget ?? this.foodTarget),
     foodPreview: clearFoodPreview ? null : (foodPreview ?? this.foodPreview),
-    billAnyway: billAnyway ?? this.billAnyway,
     eventTarget: clearEventTarget ? null : (eventTarget ?? this.eventTarget),
     eventPreview: clearEventPreview ? null : (eventPreview ?? this.eventPreview),
     serviceTarget: clearServiceTarget ? null : (serviceTarget ?? this.serviceTarget),
@@ -357,7 +349,6 @@ class BillingViewModel extends StateNotifier<BillingState> {
       clearError: true,
       payment: [PaymentDraft()],
       paymentTouched: false,
-      billAnyway: false,
     );
     await refreshFoodPreview();
   }
@@ -368,12 +359,7 @@ class BillingViewModel extends StateNotifier<BillingState> {
     clearError: true,
     payment: const [],
     paymentTouched: false,
-    billAnyway: false,
   );
-
-  /// The desk choosing to bill a tab anyway, with some orders still in the
-  /// kitchen — that food stays unbilled and joins the next bill.
-  void setBillAnyway(bool value) => state = state.copyWith(billAnyway: value);
 
   Future<void> refreshFoodPreview() async {
     final tab = state.foodTarget;
@@ -579,15 +565,6 @@ class BillingViewModel extends StateNotifier<BillingState> {
     final preview = state.foodPreview;
     if (tab == null || preview == null || state.issuing) return null;
 
-    if (preview.liveOrderCount > 0 && !state.billAnyway) {
-      state = state.copyWith(
-        error:
-            '${preview.liveOrderCount} order${preview.liveOrderCount == 1 ? ' is' : 's are'} '
-            'still in progress on this tab — that food is not on this bill.',
-      );
-      return null;
-    }
-
     final problem = state.settlementProblem;
     if (problem != null) {
       state = state.copyWith(error: problem);
@@ -601,8 +578,6 @@ class BillingViewModel extends StateNotifier<BillingState> {
         'billingSide': preview.billingSide,
         'discountAmount': preview.amounts?.discountAmount ?? 0,
         'collectedAmount': state.collected,
-        if (preview.liveOrderCount > 0 && state.billAnyway)
-          'billAnyway': true,
         if (rows.isNotEmpty) ...{
           'paymentMethod': rows.first.method,
           if (needsPaymentReference(rows.first.method) &&

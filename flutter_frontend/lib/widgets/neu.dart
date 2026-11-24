@@ -229,17 +229,10 @@ Future<void> showNeuFilterSheet(
   /// the pick, as there is nothing else to set.
   bool multi = false,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: AppTheme.card,
-    showDragHandle: false,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
-    constraints: const BoxConstraints(maxWidth: 560),
-    builder: (sheetContext) {
+  // From a tablet up the same content opens as a centred dialog, the way the
+  // web's filter popover does; a phone keeps the bottom sheet.
+  final asDialog = !AppTheme.isPhone(context);
+  Widget content(BuildContext sheetContext) {
       void close() => Navigator.of(sheetContext).pop();
       // With several groups, picking an option does not close the sheet — a
       // date and a category can be set in one visit — so the panels get a
@@ -259,6 +252,7 @@ Future<void> showNeuFilterSheet(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 8),
+                if (!asDialog)
                 Container(
                   width: 40,
                   height: 4,
@@ -332,7 +326,37 @@ Future<void> showNeuFilterSheet(
         ),
         ),
       );
-    },
+  }
+
+  if (asDialog) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: AppTheme.card,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(AppTheme.s24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.rMedium + 4),
+          side: const BorderSide(color: AppTheme.border),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 480, maxWidth: 480),
+          child: content(ctx),
+        ),
+      ),
+    );
+  }
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: AppTheme.card,
+    showDragHandle: false,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    constraints: const BoxConstraints(maxWidth: 560),
+    builder: content,
   );
 }
 
@@ -703,6 +727,31 @@ class NeuRowMenu extends StatelessWidget {
   }
 }
 
+/// Wrap a form in this and, on desktop, its inputs get the roomy treatment:
+/// larger text, a 46px minimum height and a darker border (WCAG 1.4.11 asks
+/// 3:1 for a control's edge; the default hairline is nearer 1.3:1). Phones and
+/// every screen outside the scope are untouched.
+class RoomyForm extends InheritedWidget {
+  const RoomyForm({super.key, required super.child});
+
+  static bool on(BuildContext context) =>
+      AppTheme.isDesktop(context) &&
+      context.dependOnInheritedWidgetOfExactType<RoomyForm>() != null;
+
+  /// [base] on a phone / outside the scope, [base] + 1.5 inside it.
+  static double fs(BuildContext context, double base) =>
+      on(context) ? base + 1.5 : base;
+
+  /// The height to give a fixed-height control.
+  static double height(BuildContext context, double base) =>
+      on(context) ? 46 : base;
+
+  static const Color edge = Color(0xFF8C98AC);
+
+  @override
+  bool updateShouldNotify(RoomyForm old) => false;
+}
+
 /// A sunken well — inputs and other surfaces that read as "inside" a card.
 ///
 /// The neumorphic version faked an inset shadow with a gradient; flat design
@@ -737,18 +786,23 @@ class NeuPressed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final roomy = RoomyForm.on(context);
     final color = hasError
         ? AppTheme.danger
-        : (focused ? AppTheme.accent : AppTheme.border);
+        : (focused
+              ? AppTheme.accent
+              : (roomy ? RoomyForm.edge : AppTheme.border));
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
-      padding: AppTheme.compactPadding(context, padding),
+      constraints: roomy ? const BoxConstraints(minHeight: 46) : null,
+      alignment: roomy ? Alignment.centerLeft : null,
+      padding: roomy ? padding : AppTheme.compactPadding(context, padding),
       decoration: BoxDecoration(
-        color: AppTheme.bg,
+        color: roomy ? AppTheme.card : AppTheme.bg,
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(
           color: color,
-          width: (focused || hasError) ? 1.6 : 1,
+          width: (focused || hasError) ? 1.8 : 1.2,
         ),
       ),
       child: child,
@@ -1036,7 +1090,8 @@ class _NeuFieldState extends State<NeuField> {
   Widget build(BuildContext context) {
     final hasLabel = widget.label.isNotEmpty || widget.labelAction != null;
     // On desktop every field is the compact one, whatever a screen asked for.
-    final desktop = AppTheme.isDesktop(context);
+    final roomy = RoomyForm.on(context);
+    final desktop = AppTheme.isDesktop(context) && !roomy;
     final dense = widget.dense || desktop;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1051,6 +1106,7 @@ class _NeuFieldState extends State<NeuField> {
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: widget.labelColor ?? AppTheme.heading,
                           fontWeight: widget.labelWeight ?? FontWeight.w700,
+                          fontSize: roomy ? 13.5 : null,
                         ),
                     children: widget.required
                         ? const [
@@ -1069,7 +1125,9 @@ class _NeuFieldState extends State<NeuField> {
               if (widget.labelAction != null) widget.labelAction!,
             ],
           ),
-          SizedBox(height: dense ? (desktop ? 3 : AppTheme.s4) : AppTheme.s8),
+          SizedBox(
+            height: roomy ? 6 : (dense ? (desktop ? 3 : AppTheme.s4) : AppTheme.s8),
+          ),
         ],
         NeuPressed(
           focused: _focused,
@@ -1105,20 +1163,20 @@ class _NeuFieldState extends State<NeuField> {
                   onChanged: widget.onChanged,
                   style: TextStyle(
                     color: AppTheme.heading,
-                    fontSize: desktop ? 13.5 : (dense ? 14 : 16),
+                    fontSize: roomy ? 15.5 : (desktop ? 13.5 : (dense ? 14 : 16)),
                   ),
                   cursorColor: AppTheme.accent,
                   decoration: InputDecoration(
                     hintText: widget.hint,
                     hintStyle: TextStyle(
                       color: AppTheme.muted,
-                      fontSize: dense ? 13 : null,
+                      fontSize: roomy ? 15 : (dense ? 13 : null),
                     ),
                     border: InputBorder.none,
                     counterText: '',
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(
-                      vertical: desktop ? 4 : (dense ? 6 : 10),
+                      vertical: roomy ? 8 : (desktop ? 4 : (dense ? 6 : 10)),
                     ),
                   ),
                 ),

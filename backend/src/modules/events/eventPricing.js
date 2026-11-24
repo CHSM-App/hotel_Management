@@ -35,6 +35,31 @@ function numberOfDays({ startAt, endAt }) {
   return Math.max(1, Math.ceil(ms / MS_PER_DAY));
 }
 
+function hoursBetween({ startAt, endAt }) {
+  if (!startAt || !endAt) return 1;
+  const ms = new Date(endAt).getTime() - new Date(startAt).getTime();
+  return Number.isFinite(ms) && ms > 0 ? ms / (60 * 60 * 1000) : 1;
+}
+
+// The venue line under a rate card entry. HOUR bills each started hour, DAY
+// each day (as a booking without a card always has), BLOCK is one flat price
+// for block_hours hours — running past the block does not add to it; the desk
+// types a higher amount, and overBlock is the nudge to do so.
+function priceVenue({ rate, days, hours }) {
+  if (rate.type === 'HOUR') {
+    const units = Math.max(1, Math.ceil(hours - 1e-9));
+    return { amount: round2(rate.amount * units), note: `${units} hour${units > 1 ? 's' : ''}`, overBlock: false };
+  }
+  if (rate.type === 'BLOCK') {
+    return {
+      amount: round2(rate.amount),
+      note: `${Number(rate.blockHours)}-hour block`,
+      overBlock: hours > Number(rate.blockHours) + 1e-9,
+    };
+  }
+  return { amount: round2(rate.amount * days), note: `${days} day${days > 1 ? 's' : ''}`, overBlock: false };
+}
+
 // Which head count the catering is billed on. The final figure once it is
 // known, the expected one before that, and never below the guarantee.
 function billablePax({ expectedPax, guaranteedPax, finalPax }) {
@@ -52,8 +77,15 @@ function addonLineAmount(line) {
 // decide how many days that rate is charged for. An agreedAmount on an
 // add-on is still the whole line as agreed — the desk already priced it for
 // however many days it covers — so it is not multiplied again.
+//
+// The venue is priced one of three ways: `venueRate` ({ type, amount,
+// blockHours }) from the venue's rate card; `venueTotal`, an already-settled
+// venue figure taken as is (what the bill uses — the stored total must not be
+// re-derived); or neither, the old per-day `venueCharge`.
 function priceEvent({
   venueCharge = 0,
+  venueRate = null,
+  venueTotal = null,
   perPlateRate = 0,
   expectedPax = 0,
   guaranteedPax = 0,
@@ -65,7 +97,12 @@ function priceEvent({
 }) {
   const days = numberOfDays({ startAt, endAt });
   const pax = billablePax({ expectedPax, guaranteedPax, finalPax });
-  const venue = round2((Number(venueCharge) || 0) * days);
+  const priced = priceVenue({
+    rate: venueRate ?? { type: 'DAY', amount: Number(venueCharge) || 0 },
+    days,
+    hours: hoursBetween({ startAt, endAt }),
+  });
+  const venue = venueTotal != null ? round2(Number(venueTotal) || 0) : priced.amount;
   const plate = round2(Number(perPlateRate) || 0);
   const catering = round2(plate * pax);
 
@@ -91,7 +128,7 @@ function priceEvent({
   const totalAmount = round2(gross - discount);
 
   const lines = [
-    { label: 'Venue hire', note: `${days} day${days > 1 ? 's' : ''}`, amount: venue, side: 'VENUE' },
+    { label: 'Venue hire', note: priced.note, amount: venue, side: 'VENUE' },
     ...(catering > 0 || plate > 0
       ? [{ label: 'Catering', note: `${pax} plates × ${plate}`, quantity: pax, unitAmount: plate, amount: catering, side: 'FOOD' }]
       : []),
@@ -100,6 +137,7 @@ function priceEvent({
 
   return {
     numberOfDays: days,
+    overBlock: priced.overBlock,
     billablePax: pax,
     venueCharge: venue,
     perPlateRate: plate,

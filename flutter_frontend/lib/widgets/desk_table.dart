@@ -10,7 +10,16 @@ class DeskColumn {
   final String label;
   final double width;
   final TextAlign align;
-  const DeskColumn(this.label, this.width, {this.align = TextAlign.left});
+
+  /// A low-priority column is dropped on a tablet or laptop (see
+  /// [AppTheme.showLowPriorityColumns]).
+  final bool lowPriority;
+  const DeskColumn(
+    this.label,
+    this.width, {
+    this.align = TextAlign.left,
+    this.lowPriority = false,
+  });
 }
 
 /// One row: a cell per column (in order), an optional trailing actions cell,
@@ -44,6 +53,13 @@ class DeskTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showAll = AppTheme.showLowPriorityColumns(context);
+    // Indices of the columns this tier shows; rows' cells are picked by index.
+    final shown = [
+      for (var i = 0; i < this.columns.length; i++)
+        if (showAll || !this.columns[i].lowPriority) i,
+    ];
+    final columns = [for (final i in shown) this.columns[i]];
     final width = columns.fold<double>(0, (s, c) => s + c.width) + actionsWidth + AppTheme.s8;
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -88,7 +104,7 @@ class DeskTable extends StatelessWidget {
                 ),
               ),
               rows: [
-                for (var i = 0; i < rows.length; i++) _row(rows[i], shaded: i.isOdd),
+                for (var i = 0; i < rows.length; i++) _row(rows[i], shown, shaded: i.isOdd),
               ],
             ),
           ),
@@ -97,7 +113,7 @@ class DeskTable extends StatelessWidget {
     );
   }
 
-  Widget _row(DeskRow r, {required bool shaded}) {
+  Widget _row(DeskRow r, List<int> shown, {required bool shaded}) {
     return Container(
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.8)),
@@ -111,7 +127,7 @@ class DeskTable extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(width: AppTheme.s8),
-              for (var i = 0; i < columns.length; i++)
+              for (final i in shown)
                 TableCol(
                   width: columns[i].width,
                   child: Padding(

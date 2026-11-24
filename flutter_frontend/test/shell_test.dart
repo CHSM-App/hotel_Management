@@ -1,9 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotel_manager/domain/models/booking.dart';
+import 'package:hotel_manager/domain/models/booking_edit.dart';
 import 'package:hotel_manager/domain/models/draft.dart';
 import 'package:hotel_manager/domain/models/guest_match.dart';
 import 'package:hotel_manager/domain/models/invoice_window.dart';
@@ -210,6 +212,9 @@ class _FakeBookings implements BookingRepository {
       throw UnimplementedError();
 
   @override
+  Future<List<BookingEdit>> bookingEdits(int id) async => const [];
+
+  @override
   Future<InvoiceEditWindow?> invoiceEditWindow(int id) =>
       throw UnimplementedError();
 
@@ -298,6 +303,15 @@ Widget _app(Me me, List<_Stay> stays) => ProviderScope(
   ],
   child: MaterialApp(theme: AppTheme.light, home: const DashboardShell()),
 );
+
+/// The test window is tablet tier, where the rail starts icon-only; Ctrl+B
+/// opens it to its labelled form, the way a desk would.
+Future<void> _openRail(WidgetTester tester) async {
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  await tester.pumpAndSettle();
+}
 
 void main() {
   // Every section the owner can reach, at a desktop, a laptop, a small window
@@ -469,8 +483,9 @@ void main() {
     await tester.pumpWidget(_app(_owner(), const []));
     await tester.pumpAndSettle();
 
-    // Normal: the rail names the property, and the top bar offers the toggle.
-    expect(find.text('Anand Executive Home Stay'), findsOneWidget);
+    // Normal: the rail and the top bar's profile chip name the property, and
+    // the top bar offers the toggle.
+    expect(find.text('Anand Executive Home Stay'), findsNWidgets(2));
     expect(find.byIcon(Icons.fullscreen_rounded), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.fullscreen_rounded));
@@ -482,7 +497,7 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.text('Anand Executive Home Stay'), findsOneWidget);
+    expect(find.text('Anand Executive Home Stay'), findsNWidgets(2));
 
     // F11 toggles it too.
     await tester.sendKeyEvent(LogicalKeyboardKey.f11);
@@ -524,6 +539,7 @@ void main() {
     );
     // Two pumps: one for the microtask that loads /me, one for the chart.
     await tester.pumpAndSettle();
+    await _openRail(tester);
 
     // The property is named.
     expect(find.text('Anand Executive Home Stay'), findsOneWidget);
@@ -551,10 +567,30 @@ void main() {
   ) async {
     await tester.pumpWidget(_app(_owner(), const []));
     await tester.pumpAndSettle();
+    await _openRail(tester);
 
     expect(find.text('No active rooms yet.'), findsOneWidget);
     expect(find.byIcon(Icons.add_rounded), findsOneWidget);
     expect(find.text('Room billing'), findsOneWidget);
+  });
+
+  testWidgets('tablet: the icon rail opens over the content on hover and closes on exit', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_owner(), const []));
+    await tester.pumpAndSettle();
+    expect(find.text('Room billing'), findsNothing);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: const Offset(900, 300));
+    await mouse.moveTo(const Offset(30, 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Room billing'), findsOneWidget);
+
+    await mouse.moveTo(const Offset(600, 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Room billing'), findsNothing);
   });
 
   testWidgets('the group holding the landing section starts open, others do not', (
@@ -562,6 +598,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_app(_owner(), const []));
     await tester.pumpAndSettle();
+    await _openRail(tester);
 
     // Room Chart lands the desk inside the Rooms group, so Rooms starts
     // expanded — its sibling rows are reachable without a tap.

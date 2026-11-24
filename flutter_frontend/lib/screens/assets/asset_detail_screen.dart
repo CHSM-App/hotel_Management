@@ -160,7 +160,11 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
             : RefreshIndicator(
                 onRefresh: _load,
                 color: AppTheme.accent,
-                child: LayoutBuilder(
+                child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
+            child: LayoutBuilder(
                   builder: (context, constraints) {
                     // Tablets/landscape get the facts and QR side by side —
                     // on a phone-width column they'd otherwise leave the QR
@@ -173,15 +177,16 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
                         _HeaderCard(asset: _asset!, onChanged: _load),
                         const SizedBox(height: AppTheme.s12),
                         if (wide && hasQr)
-                          IntrinsicHeight(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(flex: 3, child: _FactsCard(asset: _asset!)),
-                                const SizedBox(width: AppTheme.s12),
-                                Expanded(flex: 2, child: _QrCard(asset: _asset!)),
-                              ],
-                            ),
+                          // Not an IntrinsicHeight row: the facts card holds a
+                          // LayoutBuilder, which cannot report intrinsic sizes
+                          // (it threw on every window >= 640 wide).
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(flex: 3, child: _FactsCard(asset: _asset!)),
+                              const SizedBox(width: AppTheme.s12),
+                              Expanded(flex: 2, child: _QrCard(asset: _asset!)),
+                            ],
                           )
                         else ...[
                           _FactsCard(asset: _asset!),
@@ -208,6 +213,8 @@ class _AssetDetailScreenState extends ConsumerState<AssetDetailScreen> {
                     );
                   },
                 ),
+          ),
+        ),
               ),
       ),
     );
@@ -1138,7 +1145,11 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
         ),
       ),
       body: SafeArea(
-        child: ListView(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
+            child: ListView(
           padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s12, AppTheme.s16, AppTheme.s32),
           children: [
             if (renewing) ...[
@@ -1322,6 +1333,8 @@ class _CoverageFormScreenState extends ConsumerState<_CoverageFormScreen> {
                   : const Text('Save'),
             ),
           ],
+        ),
+          ),
         ),
       ),
     );

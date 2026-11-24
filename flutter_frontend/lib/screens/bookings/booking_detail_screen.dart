@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 
 import '../../domain/models/booking.dart';
+import '../../domain/models/booking_edit.dart';
 import '../../domain/models/invoice.dart';
 import '../../presentation/providers/usecase_provider.dart';
 import '../../presentation/providers/view_model_provider.dart';
@@ -287,6 +288,12 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                         ? null
                         : _BillSection(invoice: booking.invoice!);
 
+                    // Reloads with the stay: a new Booking object is a new key.
+                    final history = _EditHistorySection(
+                      key: ObjectKey(booking),
+                      bookingId: widget.bookingId,
+                    );
+
                     const gap = SizedBox(height: AppTheme.s8);
                     Widget stack(List<Widget?> items) => Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -309,7 +316,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                               const SizedBox(width: AppTheme.s12),
                               Expanded(
                                 flex: 2,
-                                child: stack([advance, charges, food, services, bill]),
+                                child: stack([advance, charges, food, services, bill, history]),
                               ),
                             ],
                           )
@@ -343,6 +350,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                               if (food != null) ...[gap, food],
                               if (services != null) ...[gap, services],
                               if (bill != null) ...[gap, bill],
+                              gap,
+                              history,
                             ],
                           );
 
@@ -2728,4 +2737,77 @@ class _EmptyBox extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// Who edited this stay, from which device, and what moved. Loads itself and
+/// shows nothing for a stay that was never edited (or if the log can't load).
+class _EditHistorySection extends ConsumerStatefulWidget {
+  final int bookingId;
+
+  const _EditHistorySection({super.key, required this.bookingId});
+
+  @override
+  ConsumerState<_EditHistorySection> createState() => _EditHistorySectionState();
+}
+
+class _EditHistorySectionState extends ConsumerState<_EditHistorySection> {
+  late final Future<List<BookingEdit>> _edits = ref
+      .read(bookingUsecaseProvider)
+      .bookingEdits(widget.bookingId)
+      .catchError((_) => <BookingEdit>[]);
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<List<BookingEdit>>(
+    future: _edits,
+    builder: (context, snap) {
+      final edits = snap.data ?? const <BookingEdit>[];
+      if (edits.isEmpty) return const SizedBox.shrink();
+      return NeuCard(
+        padding: const EdgeInsets.all(AppTheme.s12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Edit history',
+              style: TextStyle(
+                color: AppTheme.heading,
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
+            ),
+            for (final e in edits) ...[
+              const Divider(height: AppTheme.s16),
+              Text(
+                '${e.isCancel ? 'Cancelled' : 'Edited'} by '
+                '${e.userName ?? 'unknown'}'
+                '${e.role == null ? '' : ' (${e.role})'}',
+                style: const TextStyle(
+                  color: AppTheme.heading,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+              Text(
+                [
+                  if (e.at != null) formatDateTime(e.at!.toIso8601String()),
+                  if (e.device != null) e.device!,
+                  if (e.ip != null) e.ip!,
+                ].join(' · '),
+                style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+              ),
+              for (final c in e.changes)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '${c.field}: ${c.from ?? '—'} → ${c.to ?? '—'}',
+                    style: const TextStyle(color: AppTheme.heading, fontSize: 12.5),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      );
+    },
+  );
 }

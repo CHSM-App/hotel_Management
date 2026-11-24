@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constant.dart';
+import 'device_headers.dart';
 import 'jwt.dart';
 import 'token_provider.dart';
 
@@ -32,7 +33,11 @@ class TokenInterceptor extends Interceptor {
   bool _refreshing = false;
 
   @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+  Future<void> onRequest(
+    RequestOptions options,
+    RequestInterceptorHandler handler,
+  ) async {
+    options.headers.addAll(await DeviceHeaders.get());
     final token = ref.read(tokenProvider).token;
     if (token != null && token.isNotEmpty) {
       options.headers['Authorization'] = 'Bearer $token';

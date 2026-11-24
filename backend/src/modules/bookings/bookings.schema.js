@@ -540,15 +540,6 @@ const updateBookingSchema = z
     ),
     idProofType: z.enum(ID_PROOF_TYPES).optional(),
     idProofNumber: idProofNumberField(),
-    // Only read when the stay is already checked out and billed: the invoice is
-    // then corrected in place, which needs a reason, any extra money taken for
-    // it, and an acknowledged refund when the bill gets smaller.
-    revisionReason: z.string().trim().max(200, 'Keep the reason under 200 characters.').optional(),
-    revisionPaymentLines: paymentLinesField(),
-    // The one-tender shorthand: the whole extra amount, by this method.
-    revisionPaymentMethod: z.enum(PAYMENT_METHODS).optional(),
-    revisionPaymentReference: z.string().trim().max(64, 'That transaction number looks too long — check it.').optional(),
-    refundAcknowledged: z.preprocess((v) => v === true || v === 'true', z.boolean()).optional(),
   })
   .refine((data) => (data.advanceAmount == null) === (data.advancePaymentMethod == null), {
     message: 'Choose a payment method for the advance amount.',

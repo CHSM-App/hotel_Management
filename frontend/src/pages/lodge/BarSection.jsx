@@ -66,7 +66,7 @@ export default function BarSection({ lodge, permissions = [], onViewReport = nul
 }
 
 const sourceLabel = (o) =>
-  o.source === 'TABLE' ? `Table ${o.tableLabel ?? ''}` : o.source === 'ROOM' ? `Room ${o.roomNumber ?? ''}` : 'Counter';
+  o.source === 'TABLE' ? `Table ${o.tableLabel ?? ''}` : o.source === 'ROOM' ? `Room ${o.roomNumber ?? ''}` : o.isParcel ? 'Parcel' : 'Counter';
 
 const KITCHEN_LABEL = { QUEUED: 'In kitchen queue', PREPARING: 'Cooking', READY: 'Ready', DELIVERED: 'Delivered' };
 

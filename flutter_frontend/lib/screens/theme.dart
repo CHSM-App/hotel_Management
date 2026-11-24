@@ -10,8 +10,10 @@ import 'package:flutter/material.dart';
 /// a filled variant instead. Named `shadowDark`/`shadowLight` are kept as
 /// aliases so call sites built against the old neumorphic tokens still
 /// resolve to the right flat colours without per-screen edits.
-/// Window-width tiers; see [AppTheme.screenSize].
-enum ScreenSize { mobile, tablet, desktop, large }
+/// Window-width tiers, defined once; see [AppTheme.tier]. Width only, never
+/// platform or orientation: phone <600, tablet 600-1023, laptop 1024-1439,
+/// desktop 1440-1919, wide >=1920.
+enum Tier { phone, tablet, laptop, desktop, wide }
 
 /// Desktop page transition that also keeps every pushed (non-first) screen to
 /// the web's 1360px content width on the web's page background — one place
@@ -33,7 +35,7 @@ class DeskPageTransitions extends PageTransitionsBuilder {
             child: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: AppTheme.dashMaxWidth),
+                constraints: BoxConstraints(maxWidth: AppTheme.contentMaxWidth(context)),
                 child: child,
               ),
             ),
@@ -172,60 +174,65 @@ class AppTheme {
   static const double s48 = 48;
 
   // ── Breakpoints ───────────────────────────────────────────────────────────
-  // Material's own compact/medium/expanded cutoffs. Every screen here was
-  // built for a phone, so "compact" is the baseline — the other two only
-  // matter on a tablet or the desktop/web build, where content should stop
-  // stretching edge-to-edge.
+  // The one tier definition. Everything layout-related asks [tier] (or the
+  // [isPhone]/[atLeast] shorthands) instead of reading MediaQuery itself.
+  static const double bpTablet = 600;
+  static const double bpLaptop = 1024;
+  static const double bpDesktopTier = 1440;
+  static const double bpWide = 1920;
+
+  // Content-specific, deliberately not tiers: the room chart fits a whole month
+  // across the window from 1100 (compact rows), and gives its room column more
+  // space from 1300. Named here so no screen carries the raw numbers.
+  static const double bpChartMonth = 1100;
+  static const double bpChartRoomy = 1300;
+
+  // Kept for orders_screen's card-column count until its batch migrates it.
   static const double bpMedium = 600;
   static const double bpExpanded = 840;
 
-  // Shortest side rather than width: a phone rotated to landscape gets a
-  // wider width than its own breakpoint, but it is still a phone — the
-  // rail/drawer split (and everything else keyed off isCompact) should
-  // track device size, not which way it's currently held.
-  static bool isCompact(BuildContext context) =>
-      MediaQuery.sizeOf(context).shortestSide < bpMedium;
-
-  static bool isExpanded(BuildContext context) =>
-      MediaQuery.sizeOf(context).shortestSide >= bpExpanded;
-
-  // ── Width tiers (layout choices inside a page) ────────────────────────────
-  // mobile <600, tablet 600-1023, desktop 1024-1439, large >=1440. By window
-  // width, so a dragged window re-flows live. [isDesktop] above (800) still
-  // drives control density; this drives column counts and max widths.
-  static const double bpTablet = 600;
-  static const double bpDesktopTier = 1024;
-  static const double bpLarge = 1440;
-
-  static ScreenSize screenSize(BuildContext context) {
-    final w = MediaQuery.sizeOf(context).width;
-    if (w >= bpLarge) return ScreenSize.large;
-    if (w >= bpDesktopTier) return ScreenSize.desktop;
-    if (w >= bpTablet) return ScreenSize.tablet;
-    return ScreenSize.mobile;
+  static Tier tierOfWidth(double w) {
+    if (w >= bpWide) return Tier.wide;
+    if (w >= bpDesktopTier) return Tier.desktop;
+    if (w >= bpLaptop) return Tier.laptop;
+    if (w >= bpTablet) return Tier.tablet;
+    return Tier.phone;
   }
 
-  /// Per-tier value; a missing tier falls back to the next smaller one.
-  static T pick<T>(BuildContext context, {required T mobile, T? tablet, T? desktop, T? large}) {
-    switch (screenSize(context)) {
-      case ScreenSize.large:
-        return large ?? desktop ?? tablet ?? mobile;
-      case ScreenSize.desktop:
-        return desktop ?? tablet ?? mobile;
-      case ScreenSize.tablet:
-        return tablet ?? mobile;
-      case ScreenSize.mobile:
-        return mobile;
-    }
+  static Tier tier(BuildContext context) =>
+      tierOfWidth(MediaQuery.sizeOf(context).width);
+
+  static bool isPhone(BuildContext context) => tier(context) == Tier.phone;
+
+  static bool atLeast(BuildContext context, Tier t) =>
+      tier(context).index >= t.index;
+
+  /// Content cap inside the shell: the web's 1360 (`.dash-main`) up to a
+  /// desktop, 1600 on a wide window where the extra room becomes margin.
+  static double contentMaxWidth(BuildContext context) =>
+      tier(context) == Tier.wide ? 1600 : dashMaxWidth;
+
+  /// Low-priority table columns (tags, notes, secondary dates) are dropped on
+  /// a tablet or laptop, where width is scarce; a phone scrolls the whole sheet
+  /// sideways as it always has, and a desktop has the room for all of them.
+  static bool showLowPriorityColumns(BuildContext context) {
+    final t = tier(context);
+    return t != Tier.tablet && t != Tier.laptop;
   }
+
+  /// The primary action's colours: the web's amber from tablet up, the phone's
+  /// blue on a phone.
+  static Color ctaBg(BuildContext context) => isPhone(context) ? accent : cta;
+  static Color ctaFg(BuildContext context) => isPhone(context) ? Colors.white : ctaInk;
 
   /// A phone-width column for anything meant to be read top to bottom (a
   /// form, a detail page) — centered rather than stretched once the surface
   /// is wider than a phone.
   static const double maxContentWidth = 640;
 
-  /// A desktop-sized window — same 800 px cutoff the web dashboard uses for its
-  /// permanent sidebar. By width (not shortest side) so a window dragged short
+  /// Legacy 800 px cutoff the web dashboard uses for its permanent sidebar.
+  /// New code asks [tier]; the remaining callers migrate with their batch.
+  /// A desktop-sized window — same cutoff. By width (not shortest side) so a window dragged short
   /// but still wide does not fall back to the phone layout. Pages use the full
   /// width on desktop; see [pageMaxWidth].
   static const double bpDesktop = 800;

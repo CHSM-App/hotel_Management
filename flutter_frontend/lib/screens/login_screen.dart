@@ -104,6 +104,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(authViewModelProvider);
     final size = MediaQuery.of(context).size;
+    // A phone keeps the top wash that fades into the page. From a tablet up
+    // the brand colour fills the whole window (the web's sign-in sits on a
+    // full-bleed navy scene), so the card never straddles a hard seam.
+    final phone = AppTheme.isPhone(context);
 
     return Scaffold(
       body: Stack(
@@ -112,12 +116,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           // so the sign-in card reads as sitting on something rather than
           // floating on flat grey.
           Container(
-            height: size.height * 0.46,
-            decoration: const BoxDecoration(
+            height: phone ? size.height * 0.46 : size.height,
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF1457AD), Color(0xFF7C6FE0)],
+                colors: phone
+                    ? const [Color(0xFF1457AD), Color(0xFF7C6FE0)]
+                    : const [AppTheme.sidebarBrand, AppTheme.sidebarBrandInk],
               ),
             ),
           ),
@@ -156,7 +162,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         child: Text(
                           'Trouble signing in? Contact your property owner or admin.',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: phone ? null : Colors.white70,
+                          ),
                         ),
                       ),
                     ],

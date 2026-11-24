@@ -1939,10 +1939,6 @@ class BookingViewModel extends StateNotifier<BookingState> {
     XFile? idProofFile,
     List<GuestDraft> guests = const [],
     List<VehicleDraft> vehicles = const [],
-    String? revisionReason,
-    String? revisionPaymentMethod,
-    String? revisionPaymentReference,
-    bool refundAcknowledged = false,
   }) async {
     if (state.submitting) return null;
     final room = state.room;
@@ -1989,16 +1985,6 @@ class BookingViewModel extends StateNotifier<BookingState> {
           vehicles.where((v) => !v.isEmpty).map((v) => v.toJson()),
         ),
         ..._idProofParts(idProofFile, guests),
-        if (state.revising) ...{
-          if (revisionReason != null && revisionReason.trim().isNotEmpty)
-            'revisionReason': revisionReason.trim(),
-          if (revisionPaymentMethod != null)
-            'revisionPaymentMethod': revisionPaymentMethod,
-          if (revisionPaymentReference != null &&
-              revisionPaymentReference.trim().isNotEmpty)
-            'revisionPaymentReference': revisionPaymentReference.trim(),
-          'refundAcknowledged': '$refundAcknowledged',
-        },
       };
 
       final form = FormData.fromMap(formMap);

@@ -614,15 +614,15 @@ class _NewOrderButton extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!AppTheme.isDesktop(context)) {
       return FloatingActionButton(
-        backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-        foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+        backgroundColor: AppTheme.ctaBg(context),
+        foregroundColor: AppTheme.ctaFg(context),
         onPressed: onPressed,
         child: const Icon(Icons.add_rounded),
       );
     }
     return FloatingActionButton.extended(
-      backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-      foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+      backgroundColor: AppTheme.ctaBg(context),
+      foregroundColor: AppTheme.ctaFg(context),
       onPressed: onPressed,
       icon: const Icon(Icons.add_rounded),
       label: const Text('New order'),

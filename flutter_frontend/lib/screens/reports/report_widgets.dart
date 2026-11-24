@@ -467,6 +467,12 @@ class KpiRow extends StatelessWidget {
 
   const KpiRow({super.key, required this.items});
 
+  static int columnsFor(Tier t) => switch (t) {
+    Tier.phone || Tier.tablet => 2,
+    Tier.laptop => 3,
+    Tier.desktop || Tier.wide => 4,
+  };
+
   Widget _buildCard(KpiCardData item) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.s12),
@@ -517,11 +523,12 @@ class KpiRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final desktop = AppTheme.isDesktop(context);
+    final tier = AppTheme.tier(context);
     return LayoutBuilder(
       builder: (context, box) {
-        // Web `.kpi-row`: 4 across on a wide page, 2 below ~640px.
-        final cols = desktop && box.maxWidth >= 640 ? 4 : 2;
+        // Web `.kpi-row`: 2 on a phone/tablet, 3 on a laptop, 4 from a desktop
+        // up; a narrow pane (a split view) drops back to 2.
+        final cols = box.maxWidth >= 640 ? columnsFor(tier) : 2;
         final rows = <Widget>[];
         for (var i = 0; i < items.length; i += cols) {
           rows.add(

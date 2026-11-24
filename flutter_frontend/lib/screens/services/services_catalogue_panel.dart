@@ -44,7 +44,7 @@ class _ServicesCataloguePanelState extends ConsumerState<ServicesCataloguePanel>
     final needle = _search.text.trim().toLowerCase();
     final shown = needle.isEmpty ? state.services : state.services.where((s) => s.name.toLowerCase().contains(needle)).toList();
 
-    if (AppTheme.isDesktop(context)) return _desktop(state, shown);
+    if (!AppTheme.isPhone(context)) return _desktop(state, shown);
 
     return Stack(
       children: [
@@ -86,8 +86,8 @@ class _ServicesCataloguePanelState extends ConsumerState<ServicesCataloguePanel>
           right: AppTheme.s16,
           bottom: AppTheme.s16,
           child: FloatingActionButton(
-            backgroundColor: AppTheme.isDesktop(context) ? AppTheme.cta : AppTheme.accent,
-            foregroundColor: AppTheme.isDesktop(context) ? AppTheme.ctaInk : Colors.white,
+            backgroundColor: AppTheme.ctaBg(context),
+            foregroundColor: AppTheme.ctaFg(context),
             elevation: 2,
             onPressed: () => showServiceFormScreen(context),
             child: const Icon(Icons.add_rounded),
@@ -111,11 +111,16 @@ class _ServicesCataloguePanelState extends ConsumerState<ServicesCataloguePanel>
         ],
         Row(
           children: [
-            SizedBox(
-              width: 460,
-              child: _SearchField(controller: _search, hint: 'Search services…', onChanged: (_) => setState(() {})),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: _SearchField(controller: _search, hint: 'Search services…', onChanged: (_) => setState(() {})),
+                ),
+              ),
             ),
-            const Spacer(),
+            const SizedBox(width: AppTheme.s12),
             NeuButton(
               primary: true,
               onPressed: () => showServiceFormScreen(context),
@@ -137,7 +142,7 @@ class _ServicesCataloguePanelState extends ConsumerState<ServicesCataloguePanel>
               DeskColumn('Service', 260),
               DeskColumn('Price', 110, align: TextAlign.right),
               DeskColumn('Per', 110),
-              DeskColumn('GST', 90, align: TextAlign.right),
+              DeskColumn('GST', 90, align: TextAlign.right, lowPriority: true),
               DeskColumn('Status', 110),
             ],
             actionsWidth: 220,

@@ -14,6 +14,7 @@ import 'booking_detail_screen.dart';
 import 'take_booking_screen.dart';
 import '../../widgets/adaptive_grid.dart';
 import '../../widgets/h_scroll_table.dart';
+import '../../widgets/page_kit.dart';
 
 /// The guest register: every stay whose dates overlap a range, searchable and
 /// cut by status, with the same summary strip the web's own Guest register
@@ -33,6 +34,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   late String _toDate = _today();
   String _search = '';
   final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
 
   /// Empty means "no cut" — the same meaning 'ALL' carries on the web page.
   final Set<String> _statuses = {};
@@ -55,6 +57,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -306,7 +309,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final visibleBookings = showingStays ? filtered : const <Booking>[];
     final visibleDrafts = _filteredDrafts;
 
-    return RefreshIndicator(
+    return SearchShortcut(
+      focusNode: _searchFocus,
+      child: RefreshIndicator(
       onRefresh: _load,
       color: AppTheme.accent,
       child: ListView(
@@ -322,6 +327,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             fromDate: _fromDate,
             toDate: _toDate,
             searchController: _searchController,
+            searchFocus: _searchFocus,
             searchNotEmpty: _search.isNotEmpty,
             activeFilterCount: _statuses.length,
             onFromTo: _setRange,
@@ -378,6 +384,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           ],
         ],
       ),
+      ),
     );
   }
 }
@@ -412,6 +419,7 @@ class _RangeAndSearch extends StatelessWidget {
   final String fromDate;
   final String toDate;
   final TextEditingController searchController;
+  final FocusNode searchFocus;
   final bool searchNotEmpty;
   final int activeFilterCount;
   final void Function(String from, String to) onFromTo;
@@ -422,6 +430,7 @@ class _RangeAndSearch extends StatelessWidget {
     required this.fromDate,
     required this.toDate,
     required this.searchController,
+    required this.searchFocus,
     required this.searchNotEmpty,
     required this.activeFilterCount,
     required this.onFromTo,
@@ -472,6 +481,7 @@ class _RangeAndSearch extends StatelessWidget {
                       child: TextField(
                         onChanged: onSearch,
                         controller: searchController,
+                        focusNode: searchFocus,
                         style: const TextStyle(
                           color: AppTheme.heading,
                           fontSize: 14,
@@ -902,7 +912,7 @@ class _RegisterTable extends StatelessWidget {
   const _RegisterTable({required this.bookings, required this.onOpen});
 
   static const _cols = <(String, double, bool)>[
-    ('Booking no.', 120, false),
+    ('Booking no.', 120, false), // low priority
     ('Guest', 200, false),
     ('Phone', 120, false),
     ('Room', 170, false),
@@ -912,9 +922,16 @@ class _RegisterTable extends StatelessWidget {
     ('Amount', 110, true),
   ];
 
+  /// Booking no. and Left are dropped on a tablet/laptop (low priority).
+  static bool hidden(BuildContext context, int i) =>
+      (i == 0 || i == 5) && !AppTheme.showLowPriorityColumns(context);
+
   @override
   Widget build(BuildContext context) {
-    final width = _cols.fold<double>(0, (sum, c) => sum + c.$2);
+    final width = [
+      for (var i = 0; i < _cols.length; i++)
+        if (!hidden(context, i)) _cols[i].$2,
+    ].fold<double>(0, (sum, w) => sum + w);
     return NeuCard(
       padding: EdgeInsets.zero,
       radius: AppTheme.rMedium,
@@ -938,19 +955,20 @@ class _RegisterTable extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    for (final c in _cols)
+                    for (var i = 0; i < _cols.length; i++)
+                      if (!hidden(context, i))
                       TableCol(
-                        width: c.$2,
+                        width: _cols[i].$2,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: AppTheme.s8,
                             vertical: 10,
                           ),
                           child: Text(
-                            c.$1.toUpperCase(),
+                            _cols[i].$1.toUpperCase(),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            textAlign: c.$3 ? TextAlign.right : TextAlign.left,
+                            textAlign: _cols[i].$3 ? TextAlign.right : TextAlign.left,
                             style: const TextStyle(
                               color: Colors.black,
                               fontSize: 10.5,
@@ -1004,7 +1022,9 @@ class _RegisterTableRowState extends State<_RegisterTableRow> {
     final left = b.actualCheckOutAt;
     final statusColor = BookingActions.statusColor(b.status);
 
-    Widget cell(int i, Widget child, {double v = 12}) => TableCol(
+    Widget cell(int i, Widget child, {double v = 12}) => _RegisterTable.hidden(context, i)
+        ? const SizedBox.shrink()
+        : TableCol(
       width: _RegisterTable._cols[i].$2,
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: v),

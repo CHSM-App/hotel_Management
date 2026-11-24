@@ -230,11 +230,6 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
   bool get _editing => widget.editBooking != null;
 
   // -- Billed-stay revision / past booking ----------------------------------
-  final _reason = TextEditingController();
-  String _revMethod = 'CASH';
-  final _revRef = TextEditingController();
-  bool _refundAck = false;
-  final _revisionKey = GlobalKey();
 
   final _pastKey = GlobalKey();
   String _pastSide = 'NON_GST';
@@ -297,31 +292,6 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     final due = total - adv;
     return due < 0 ? 0 : (due * 100).round() / 100;
   }
-
-  static bool _sameDay(DateTime? a, DateTime? b) =>
-      a != null &&
-      b != null &&
-      a.year == b.year &&
-      a.month == b.month &&
-      a.day == b.day;
-
-  /// Whether this save changes the invoice - the dates moved or the total
-  /// did. Only then is a reason required, as on the web.
-  bool _restates(BookingState s) {
-    final edit = widget.editBooking;
-    if (edit == null || !s.revising) return false;
-    final oldIn = DateTime.tryParse(edit.checkInDate ?? '');
-    final oldOut = DateTime.tryParse(edit.checkOutDate ?? '');
-    final newTotal = s.quote?.totalPrice;
-    return !_sameDay(oldIn, s.checkIn) ||
-        !_sameDay(oldOut, s.checkOut) ||
-        (newTotal != null &&
-            edit.totalPrice != null &&
-            newTotal != edit.totalPrice);
-  }
-
-  // The reason is optional - nothing to validate.
-  String? _reasonError(BookingState s) => null;
 
   String _ts(DateTime d, TimeOfDay t) =>
       '${BookingViewModel.iso(d)}T'
@@ -742,8 +712,6 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     _name.dispose();
     _phone.dispose();
     _idProofNumber.dispose();
-    _reason.dispose();
-    _revRef.dispose();
     super.dispose();
   }
 
@@ -866,11 +834,6 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
     }
 
     final state0 = ref.read(bookingViewModelProvider);
-    final revising = _editing && state0.revising;
-    if (revising && _reasonError(state0) != null) {
-      _scrollToError(_revisionKey);
-      return;
-    }
 
     final pastMode = _pastMode(state0);
     PastStay? past;
@@ -917,33 +880,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       setState(() => _pastError = null);
     }
 
-    if (revising && _restates(state0)) {
-      final edit = widget.editBooking!;
-      final newTotal = state0.quote?.totalPrice;
-      final ok = await confirmMoneyChange(
-        context,
-        title: 'Update invoice #${state0.editWindow!.invoiceNumber}?',
-        confirmLabel: 'Update invoice',
-        rows: [
-          (
-            'Stay',
-            '${formatDate(DateTime.tryParse(edit.checkInDate ?? ''))} → '
-                '${formatDate(DateTime.tryParse(edit.checkOutDate ?? ''))}',
-          ),
-          (
-            'Moves to',
-            '${formatDate(state0.checkIn)} → ${formatDate(state0.checkOut)}',
-          ),
-          if (newTotal != null)
-            (
-              'Total',
-              '${formatPrice(edit.totalPrice)} → ${formatPrice(newTotal)}',
-            ),
-          ('Reason', _reason.text.trim()),
-        ],
-      );
-      if (!ok || !mounted) return;
-    } else if (pastMode) {
+    if (pastMode) {
       final ok = await confirmMoneyChange(
         context,
         title: 'Save past booking?',
@@ -994,10 +931,6 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
         idProofFile: _idProofFile,
         guests: saveGuests,
         vehicles: _vehicles,
-        revisionReason: _reason.text,
-        revisionPaymentMethod: _revMethod,
-        revisionPaymentReference: _revMethod == 'CASH' ? null : _revRef.text,
-        refundAcknowledged: _refundAck,
       );
     } else {
       // Only rows with money on them count; an untouched row is not a
@@ -1046,16 +979,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
       Navigator.of(context).pop(true);
       return;
     }
-    final rev = vm.lastRevision;
-    if (rev != null) {
-      _say(
-        rev.extra > 0
-            ? 'Invoice updated. ${formatPrice(rev.extra)} more was collected.'
-            : rev.refund > 0
-            ? 'Invoice updated. ${formatPrice(rev.refund)} is to be refunded to the guest.'
-            : 'Invoice updated.',
-      );
-    }
+    if (vm.lastRevision != null) _say('Invoice updated.');
     if (!_editing) {
       final paid = _advance.where((l) => l.value > 0).toList();
       await _showBookingSaved(
@@ -1457,7 +1381,24 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                       onChanged: () => setState(() {}),
                     ),
             ];
-            final list = ListView(
+            Widget addGuestBtn(BookingState s, bool child) => NeuButton(
+              expand: true,
+              onPressed: () {
+                setState(() => _guests.add(GuestDraft(isChild: child)));
+                _checkCapacityCrossing(s);
+              },
+              padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+              soft: true,
+              minHeight: 34,
+              child: Text(
+                child
+                    ? '+ Add child details (optional)'
+                    : '+ Add adult details (optional)',
+              ),
+            );
+            Widget addAdultBtn(BookingState s) => addGuestBtn(s, false);
+            Widget addChildBtn(BookingState s) => addGuestBtn(s, true);
+            final list = RoomyForm(child: ListView(
           controller: _scrollController,
           padding: EdgeInsets.fromLTRB(
             desktop ? AppTheme.s16 : AppTheme.s8,
@@ -1641,22 +1582,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                         state.revising &&
                         state.editWindow != null) ...[
                       const SizedBox(height: AppTheme.s12),
-                      KeyedSubtree(
-                        key: _revisionKey,
-                        child: InvoiceRevisionPanel(
-                          window: state.editWindow!,
-                          reason: _reason,
-                          reasonError: _reasonError(state),
-                          method: _revMethod,
-                          onMethod: (m) => setState(() => _revMethod = m),
-                          reference: _revRef,
-                          refundAcknowledged: _refundAck,
-                          onRefundAcknowledged: (v) =>
-                              setState(() => _refundAck = v),
-                          oldTotal: widget.editBooking?.totalPrice,
-                          newTotal: state.quote?.totalPrice,
-                        ),
-                      ),
+                      InvoiceRevisionPanel(window: state.editWindow!),
                     ],
                     if (_pastRequested(state)) ...[
                       const SizedBox(height: AppTheme.s12),
@@ -1878,19 +1804,18 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                         ),
                       ),
                     const SizedBox(height: AppTheme.s4),
-                    NeuButton(
-                      expand: true,
-                      onPressed: () {
-                        setState(() => _guests.add(GuestDraft(isChild: false)));
-                        _checkCapacityCrossing(state);
-                      },
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.s4,
-                      ),
-                      soft: true,
-                      minHeight: 34,
-                      child: const Text('+ Add adult details (optional)'),
-                    ),
+                    // Desktop, no children yet: both add buttons share a row
+                    // and the empty "Children" heading is skipped.
+                    if (desktop && children.isEmpty)
+                      Row(
+                        children: [
+                          Expanded(child: addAdultBtn(state)),
+                          const SizedBox(width: AppTheme.s12),
+                          Expanded(child: addChildBtn(state)),
+                        ],
+                      )
+                    else ...[
+                    addAdultBtn(state),
 
                     const SizedBox(height: AppTheme.s4),
                     _SectionLabel(
@@ -1912,19 +1837,8 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                           onChanged: () => setState(() {}),
                         ),
                       ),
-                    NeuButton(
-                      expand: true,
-                      onPressed: () {
-                        setState(() => _guests.add(GuestDraft(isChild: true)));
-                        _checkCapacityCrossing(state);
-                      },
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.s4,
-                      ),
-                      soft: true,
-                      minHeight: 34,
-                      child: const Text('+ Add child details (optional)'),
-                    ),
+                    addChildBtn(state),
+                    ],
 
                     if (!_editing && state.isWalkIn) ...[
                       const SizedBox(height: AppTheme.s4),
@@ -2038,7 +1952,7 @@ class _TakeBookingScreenState extends ConsumerState<TakeBookingScreen> {
                   : 'Create reservation',
             ),
           ],
-        );
+        ));
             final centered = Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
@@ -2217,7 +2131,7 @@ class _SectionLabel extends StatelessWidget {
             title.toUpperCase(),
             style: TextStyle(
               color: number != null ? AppTheme.heading : AppTheme.muted,
-              fontSize: number != null ? 13.5 : 12,
+              fontSize: RoomyForm.fs(context, number != null ? 13.5 : 12),
               fontWeight: FontWeight.w700,
               letterSpacing: 0.4,
             ),
@@ -2718,10 +2632,10 @@ class _DateBox extends StatelessWidget {
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.date_range_rounded,
                   color: AppTheme.accent,
-                  size: 16,
+                  size: RoomyForm.fs(context, 16) + 2,
                 ),
                 const SizedBox(width: AppTheme.s8),
                 Expanded(
@@ -2729,6 +2643,7 @@ class _DateBox extends StatelessWidget {
                     value == null ? 'Choose' : formatDate(value),
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       color: value == null ? AppTheme.muted : AppTheme.heading,
+                      fontSize: RoomyForm.on(context) ? 15.5 : null,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -2918,9 +2833,12 @@ class _RoomPicker extends ConsumerWidget {
                 children: [
                   Icon(Icons.bed_outlined, size: 18, color: AppTheme.muted),
                   const SizedBox(width: AppTheme.s8),
-                  const Text(
+                  Text(
                     'Choose a room',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 13.5),
+                    style: TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: RoomyForm.fs(context, 13.5),
+                    ),
                   ),
                 ],
               ),
@@ -2951,9 +2869,9 @@ class _RoomPicker extends ConsumerWidget {
                             '${room.categoryName} · '
                             '${formatPrice(room.categoryBasePrice)}/night',
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppTheme.heading,
-                              fontSize: 13.5,
+                              fontSize: RoomyForm.fs(context, 13.5),
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -3744,9 +3662,12 @@ class _ExtraRoomPicker extends ConsumerWidget {
                 children: [
                   Icon(Icons.bed_outlined, size: 18, color: AppTheme.muted),
                   const SizedBox(width: AppTheme.s8),
-                  const Text(
+                  Text(
                     'Choose a room',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 13.5),
+                    style: TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: RoomyForm.fs(context, 13.5),
+                    ),
                   ),
                 ],
               ),
@@ -3777,9 +3698,9 @@ class _ExtraRoomPicker extends ConsumerWidget {
                             '${room.categoryName} · '
                             '${formatPrice(room.categoryBasePrice)}/night',
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppTheme.heading,
-                              fontSize: 13.5,
+                              fontSize: RoomyForm.fs(context, 13.5),
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -3891,25 +3812,22 @@ class _ExtraRoomExtras extends ConsumerWidget {
         if (!ChargeSelections.isHiddenExtra(draft.extras, c)) c,
     ];
 
-    return Column(
+    return _ExtrasLayout(
       children: [
-        for (var i = 0; i < charges.length; i++) ...[
-          if (i > 0) const SizedBox(height: AppTheme.s4),
+        for (final c in charges)
           _ExtraRow(
-            name: charges[i].name,
-            pricePerNight: charges[i].chargePerNight,
-            selected: draft.extras.containsKey(charges[i].id),
-            onToggle: (on) => vm.toggleExtraRoomExtra(index, charges[i].id, on),
-            counter:
-                charges[i].isCounter && draft.extras.containsKey(charges[i].id)
+            name: c.name,
+            pricePerNight: c.chargePerNight,
+            selected: draft.extras.containsKey(c.id),
+            onToggle: (on) => vm.toggleExtraRoomExtra(index, c.id, on),
+            counter: c.isCounter && draft.extras.containsKey(c.id)
                 ? _Stepper(
-                    value: draft.extras[charges[i].id]!.quantity,
+                    value: draft.extras[c.id]!.quantity,
                     onChanged: (v) =>
-                        vm.setExtraRoomExtraQuantity(index, charges[i].id, v),
+                        vm.setExtraRoomExtraQuantity(index, c.id, v),
                   )
                 : null,
           ),
-        ],
       ],
     );
   }
@@ -4180,25 +4098,48 @@ class _ExtrasCard extends ConsumerWidget {
         if (!ChargeSelections.isHiddenExtra(state.extras, c)) c,
     ];
 
-    return Column(
+    return _ExtrasLayout(
       children: [
-        for (var i = 0; i < charges.length; i++) ...[
-          if (i > 0) const SizedBox(height: AppTheme.s4),
+        for (final c in charges)
           _ExtraRow(
-            name: charges[i].name,
-            pricePerNight: charges[i].chargePerNight,
-            selected: state.extras.containsKey(charges[i].id),
-            onToggle: (on) => vm.toggleExtra(charges[i].id, on),
-            counter:
-                charges[i].isCounter && state.extras.containsKey(charges[i].id)
+            name: c.name,
+            pricePerNight: c.chargePerNight,
+            selected: state.extras.containsKey(c.id),
+            onToggle: (on) => vm.toggleExtra(c.id, on),
+            counter: c.isCounter && state.extras.containsKey(c.id)
                 ? _Stepper(
-                    value: state.extras[charges[i].id]!.quantity,
-                    onChanged: (v) => vm.setExtraQuantity(charges[i].id, v),
+                    value: state.extras[c.id]!.quantity,
+                    onChanged: (v) => vm.setExtraQuantity(c.id, v),
                   )
                 : null,
           ),
-        ],
       ],
+    );
+  }
+}
+
+/// Phone: one full-width row per extra. Desktop: compact tiles that wrap, so
+/// seven extras take two lines instead of seven.
+class _ExtrasLayout extends StatelessWidget {
+  final List<Widget> children;
+  const _ExtrasLayout({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!AppTheme.isDesktop(context)) {
+      return Column(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppTheme.s4),
+            children[i],
+          ],
+        ],
+      );
+    }
+    return Wrap(
+      spacing: AppTheme.s8,
+      runSpacing: AppTheme.s8,
+      children: [for (final c in children) SizedBox(width: 200, child: c)],
     );
   }
 }
@@ -4251,17 +4192,20 @@ class _ExtraRow extends StatelessWidget {
                   children: [
                     Text(
                       name,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.black,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                        fontSize: RoomyForm.fs(context, 13),
+                        fontWeight: FontWeight.w600,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       '${formatPrice(pricePerNight)}/night',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.text,
+                        fontSize: RoomyForm.fs(context, 12),
+                      ),
                     ),
                   ],
                 ),
@@ -5044,12 +4988,15 @@ class _GuestCardState extends State<_GuestCard> {
             onChanged: (v) => widget.guest.name = v,
             forceCapitalizeWords: true,
             dense: true,
+            // 16px tall so the label row is no taller than its neighbour's
+            // (a 20px icon pushed Name's box lower than Mobile's).
             labelAction: SizedBox(
-              height: 20,
+              height: 16,
               width: 20,
               child: IconButton(
-                icon: const Icon(Icons.delete_outline, size: 18),
+                icon: const Icon(Icons.delete_outline, size: 16),
                 color: AppTheme.danger,
+                tooltip: 'Remove guest',
                 onPressed: widget.onRemove,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -5157,16 +5104,7 @@ class _VehicleCardState extends State<_VehicleCard> {
 
   @override
   Widget build(BuildContext context) {
-    return NeuCard(
-      shadow: AppTheme.subtle,
-      padding: const EdgeInsets.all(AppTheme.s8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // The delete icon sits on the label's own line, trailing it —
-          // NeuField's labelAction slot, same as a required field's own
-          // trailing control.
-          NeuField(
+    final number = NeuField(
             controller: _number,
             label: 'Number',
             onChanged: (v) => widget.vehicle.number = v,
@@ -5182,10 +5120,35 @@ class _VehicleCardState extends State<_VehicleCard> {
                 constraints: const BoxConstraints(),
               ),
             ),
-          ),
-          const SizedBox(height: AppTheme.s4),
-          SizedBox(
-            height: 34,
+          );
+    // Desktop: number and type on one line (type's box is the field's height,
+    // so aligning to the bottom lines it up under the label).
+    return NeuCard(
+      shadow: AppTheme.subtle,
+      padding: const EdgeInsets.all(AppTheme.s8),
+      child: AppTheme.isDesktop(context)
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(child: number),
+                const SizedBox(width: AppTheme.s12),
+                Expanded(child: _typeDropdown()),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                number,
+                const SizedBox(height: AppTheme.s4),
+                _typeDropdown(),
+              ],
+            ),
+    );
+  }
+
+  Widget _typeDropdown() {
+    return SizedBox(
+            height: RoomyForm.height(context, 34),
             child: NeuPressed(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
               child: DropdownButtonHideUnderline(
@@ -5194,9 +5157,16 @@ class _VehicleCardState extends State<_VehicleCard> {
                   isExpanded: true,
                   isDense: true,
                   dropdownColor: AppTheme.bg,
-                  hint: const Text(
+                  style: TextStyle(
+                    color: AppTheme.heading,
+                    fontSize: RoomyForm.fs(context, 14),
+                  ),
+                  hint: Text(
                     'Type',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 14),
+                    style: TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: RoomyForm.fs(context, 14),
+                    ),
                   ),
                   items: [
                     for (final e in kVehicleTypes.entries)
@@ -5212,9 +5182,6 @@ class _VehicleCardState extends State<_VehicleCard> {
                 ),
               ),
             ),
-          ),
-        ],
-      ),
     );
   }
 }

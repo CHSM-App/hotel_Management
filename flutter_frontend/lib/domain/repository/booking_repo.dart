@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../models/booking.dart';
+import '../models/booking_edit.dart';
 import '../models/draft.dart';
 import '../models/guest_match.dart';
 import '../models/invoice_window.dart';
@@ -85,6 +86,9 @@ abstract class BookingRepository {
 
   /// [updateBooking] that also reports the invoice restatement.
   Future<BookingRevision> reviseBooking(int id, FormData form);
+
+  /// The edit log of one booking, newest first.
+  Future<List<BookingEdit>> bookingEdits(int id);
 
   /// Dates a billed stay may move within; null if it has no issued invoice.
   Future<InvoiceEditWindow?> invoiceEditWindow(int id);

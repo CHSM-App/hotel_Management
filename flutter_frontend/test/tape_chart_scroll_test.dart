@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotel_manager/domain/models/booking.dart';
+import 'package:hotel_manager/domain/models/booking_edit.dart';
 import 'package:hotel_manager/domain/models/draft.dart';
 import 'package:hotel_manager/domain/models/guest_match.dart';
 import 'package:hotel_manager/domain/models/invoice_window.dart';
@@ -118,6 +119,9 @@ class _FakeBookingRepository implements BookingRepository {
   @override
   Future<BookingRevision> reviseBooking(int id, FormData form) =>
       throw UnimplementedError();
+
+  @override
+  Future<List<BookingEdit>> bookingEdits(int id) async => const [];
 
   @override
   Future<InvoiceEditWindow?> invoiceEditWindow(int id) =>

@@ -18,6 +18,7 @@ const { logger } = require('../../config/logger');
 const draftsService = require('./drafts.service');
 const customersService = require('../customers/customers.service');
 const { allocateBookingNumber } = require('./bookingNumbers');
+const { snapshotOf, diffBookingEdit } = require('./editDiff');
 const lateCheckout = require('./lateCheckout');
 const { istDateOf } = require('./bookings.schema');
 const { apportionDiscount, mergeRoomNights, rollUpStatus } = require('./bookingRooms');
@@ -2917,6 +2918,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
   if (currentRooms.length === 0) {
     throw new ApiError('Booking not found.', 404);
   }
+  const beforeEdit = snapshotOf(bookingRow, currentRooms);
   const currentBeds = (
     await pool
       .request()
@@ -3332,13 +3334,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
     await syncBookingFromRooms(transaction, bookingId);
 
     if (restates) {
-      revised = await billingService.reviseInvoice(transaction, lodgeId, userId, bookingId, {
-        reason: input.revisionReason,
-        paymentLines: input.revisionPaymentLines ?? [],
-        paymentMethod: input.revisionPaymentMethod ?? null,
-        paymentReference: input.revisionPaymentReference ?? null,
-        refundAcknowledged: input.refundAcknowledged === true,
-      });
+      revised = await billingService.reviseInvoice(transaction, lodgeId, userId, bookingId);
     }
 
     if (input.guests) {
@@ -3376,8 +3372,30 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
   }
 
   const result = await getBooking(lodgeId, bookingId);
+
+  // What this edit changed, for the edit log. Re-read rather than derived from
+  // the input, so it records what was actually saved. Never blocks the save.
+  let editLog = { changes: [], invoiceId: revised?.invoiceId ?? null };
+  try {
+    const q = (text) => pool.request().input('bookingId', sql.BigInt, bookingId).query(text);
+    const [b, r] = await Promise.all([
+      q('SELECT guest_name, guest_phone, num_guests, num_children, discount_amount, advance_amount, total_price FROM dbo.bookings WHERE id = @bookingId'),
+      q(`SELECT rm.room_number, br.check_in_date, br.check_out_date FROM dbo.booking_rooms br
+         JOIN dbo.rooms rm ON rm.id = br.room_id WHERE br.booking_id = @bookingId AND br.status <> 'CANCELLED' ORDER BY br.id`),
+    ]);
+    editLog.changes = diffBookingEdit(beforeEdit, snapshotOf(b.recordset[0], r.recordset));
+    if (input.guests) editLog.changes.push({ field: 'Guest list', from: null, to: `${input.guests.length} saved` });
+    if (input.vehicles) editLog.changes.push({ field: 'Vehicles', from: null, to: `${input.vehicles.length} saved` });
+    if (input.idProofDocument) editLog.changes.push({ field: 'ID proof', from: null, to: 'replaced' });
+  } catch (err) {
+    logger.warn({ err, bookingId }, 'Could not build the edit diff');
+  }
   // What the correction did to the money, so the screen can say so.
-  return revised ? { ...result, invoiceRevision: { extra: revised.extra, refund: revised.refund } } : result;
+  return {
+    ...result,
+    ...(revised ? { invoiceRevision: { extra: revised.extra, refund: revised.refund } } : {}),
+    editLog,
+  };
 }
 
 // Cancelling settles the money as well as the room, and the settlement takes
@@ -3675,7 +3693,44 @@ async function getEditWindow(lodgeId, bookingId) {
   return billingService.getInvoiceEditWindow(lodgeId, bookingId);
 }
 
+// The edit log of one booking, newest first, with the editor's name.
+async function listBookingEdits(lodgeId, bookingId) {
+  const pool = await getPool();
+  const rows = (
+    await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('bookingId', sql.BigInt, bookingId)
+      .query(`
+        SELECT TOP 100 l.id, l.created_at, l.user_role, l.device_id, l.device_info, l.client_ip, l.action,
+               l.fields, l.changes, l.invoice_id, u.name AS user_name
+        FROM dbo.booking_edit_log l
+        LEFT JOIN dbo.users u ON u.id = l.user_id
+        WHERE l.lodge_id = @lodgeId AND l.booking_id = @bookingId
+        ORDER BY l.id DESC
+      `)
+  ).recordset;
+  return rows.map((r) => {
+    let changes = [];
+    try { changes = r.changes ? JSON.parse(r.changes) : []; } catch { /* keep [] */ }
+    return {
+      id: Number(r.id),
+      at: r.created_at,
+      userName: r.user_name ?? null,
+      role: r.user_role,
+      deviceId: r.device_id,
+      device: r.device_info,
+      ip: r.client_ip,
+      kind: /cancel$/.test(r.action) ? 'CANCEL' : 'EDIT',
+      fields: r.fields ? r.fields.split(',') : [],
+      invoiceId: r.invoice_id == null ? null : Number(r.invoice_id),
+      changes,
+    };
+  });
+}
+
 module.exports = {
+  listBookingEdits,
   spreadConcession,
   getPastWindow,
   createPastBooking,
