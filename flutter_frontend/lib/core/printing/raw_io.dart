@@ -63,15 +63,19 @@ Future<void> sendBluetooth(String mac, Uint8List bytes) async {
     throw const ThermalPrintException('Could not connect to the Bluetooth printer. Is it on and in range?');
   }
   try {
-    const chunk = 900;
+    // ponytail: ~6 KB/s; a dropped byte inside a raster command garbles the whole
+    // receipt, so favour slow. Raise if the printer copes.
+    const chunk = 240;
     for (var i = 0; i < bytes.length; i += chunk) {
       final end = (i + chunk < bytes.length) ? i + chunk : bytes.length;
       // A plain List<int>: a Uint8List crosses the channel as a Java byte[],
       // which the plugin fails to cast, so raster receipts never print.
       final sent = await PrintBluetoothThermal.writeBytes(List<int>.from(bytes.sublist(i, end)));
       if (!sent) throw const ThermalPrintException('The Bluetooth printer stopped accepting data.');
-      await Future<void>.delayed(const Duration(milliseconds: 25));
+      await Future<void>.delayed(const Duration(milliseconds: 40));
     }
+    // Let the printer drain its buffer before the link is dropped.
+    await Future<void>.delayed(const Duration(milliseconds: 500));
   } finally {
     await PrintBluetoothThermal.disconnect;
   }

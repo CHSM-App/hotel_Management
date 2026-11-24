@@ -1,7 +1,7 @@
 name: hotel_manager
 description: Front desk for the lodge — bookings, billing and the kitchen, on a phone.
 publish_to: 'none'
-version: 1.0.12+13
+version: 1.0.13+14
 
 environment:
   sdk: ^3.10.0

@@ -10,7 +10,7 @@ class EscPos {
 
   /// Rows per `GS v 0` command: complete commands back to back, ~256 dots
   /// each, so a small printer's buffer is never asked to hold the whole image.
-  static const bandRows = 256;
+  static const bandRows = 64;
 
   static Uint8List raster(
     int width,
