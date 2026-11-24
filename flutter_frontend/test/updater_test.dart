@@ -23,5 +23,8 @@ void main() {
     expect(parseManifest({'version': '2.0.0'}, '1.0.9'), isNull); // no url
     expect(parseManifest('not a map', '1.0.9'), isNull);
     expect(parseManifest(null, '1.0.9'), isNull);
+    // GitHub serves octet-stream, so the body arrives as a raw JSON string.
+    expect(parseManifest('{"version":"1.0.11","url":"https://x/s.exe"}', '1.0.10'), isNotNull);
+    expect(parseManifest('{not json', '1.0.10'), isNull);
   });
 }

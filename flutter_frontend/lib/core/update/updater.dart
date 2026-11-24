@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -47,6 +48,15 @@ bool isNewer(String latest, String current) {
 /// Pure half of [checkForUpdate] — anything malformed, missing or not actually
 /// newer means "no update", never a prompt the user cannot satisfy.
 UpdateInfo? parseManifest(Object? data, String current) {
+  // GitHub serves release assets as application/octet-stream, so Dio hands the
+  // body back as a String rather than a decoded Map.
+  if (data is String) {
+    try {
+      data = jsonDecode(data);
+    } catch (_) {
+      return null;
+    }
+  }
   if (data is! Map) return null;
   final version = '${data['version'] ?? ''}', url = '${data['url'] ?? ''}';
   if (url.isEmpty || !isNewer(version, current)) return null;
@@ -61,7 +71,7 @@ Future<UpdateInfo?> checkForUpdate() async {
     final res = await Dio().get<dynamic>(
       _manifestUrl,
       options: Options(
-        responseType: ResponseType.json,
+        responseType: ResponseType.plain,
         receiveTimeout: const Duration(seconds: 10),
         sendTimeout: const Duration(seconds: 10),
       ),
