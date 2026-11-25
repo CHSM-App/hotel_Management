@@ -105,6 +105,30 @@ async function loadBookingForReceipt(request, lodgeId, bookingId) {
     `);
   const booking = result.recordset[0];
   if (!booking) throw new ApiError('Booking not found.', 404);
+
+  // An open-ended stay (no check-out date) has no total or nights yet. The nights
+  // are borrowed from what it would cost if it ended now, only so the advance is
+  // taxed at the rate a night of this stay attracts; stay_total stays 0 and the
+  // receipt says so (openEnded).
+  if (booking.check_out_date == null) {
+    const bookings = require('../bookings/bookings.service');
+    const pool = await getPool();
+    const openRooms = (
+      await pool
+        .request()
+        .input('bookingId', sql.BigInt, bookingId)
+        .query(`
+          SELECT id, booking_id, room_id, check_in_date, base_price_override
+          FROM dbo.booking_rooms WHERE booking_id = @bookingId AND check_out_date IS NULL AND status <> 'CANCELLED'
+        `)
+    ).recordset;
+    const nights = [];
+    for (const room of openRooms) {
+      nights.push(...JSON.parse((await bookings.priceOpenStay(pool, lodgeId, room)).nightlyBreakdown));
+    }
+    booking.nightly_breakdown = JSON.stringify(nights);
+    booking.open_ended = true;
+  }
   return booking;
 }
 
@@ -163,6 +187,8 @@ function mapReceipt(row) {
     // Against a stay or against a function. The document branches on this
     // for its register strip; nothing about the money changes.
     kind: row.event_booking_id != null ? 'EVENT' : 'STAY',
+    // A stay with no check-out date yet: its total (and so any balance due) is unknown until check-out.
+    openEnded: row.event_booking_id == null && row.booking_id != null && row.check_out_date == null,
     eventBookingId: row.event_booking_id ?? null,
     eventTitle: row.event_title ?? null,
     eventType: row.event_type ?? null,
@@ -423,13 +449,15 @@ function buildReceiptPreview(booking, slabs, input, { alreadyOnBooking = false }
   // bring have to be the figures the invoice lands on, or the receipt sends
   // them away expecting paise the bill will never charge. buildBreakdown
   // rounds the invoice the same way; this is that same rupee, stated early.
+  const openEnded = !isEvent && booking.open_ended === true;
   const stayTotal = Math.round(Number(booking.total_price));
   const roundOff = round2(stayTotal - Number(booking.total_price));
   // Held to the stay it is against. Taking more than the stay costs is a
   // data-entry slip, and one that would print a negative balance due on a
   // document handed to a guest.
   const alreadyHeld = heldBefore(booking, amount, alreadyOnBooking);
-  if (round2(alreadyHeld + amount) > stayTotal) {
+  // No cap on an open-ended stay: its total is only known at check-out.
+  if (!openEnded && round2(alreadyHeld + amount) > stayTotal) {
     throw new ApiError(
       alreadyHeld > 0
         ? `That would take the advance past the ${noun} total of ₹${stayTotal} — ₹${alreadyHeld} is already held.`
@@ -465,6 +493,7 @@ function buildReceiptPreview(booking, slabs, input, { alreadyOnBooking = false }
     sgst_amount: sgstAmount,
     rate_percent: ratePercent,
     stay_total: stayTotal,
+    open_ended: openEnded,
     round_off: roundOff,
     payment_method: input.paymentMethod,
     payment_reference: input.paymentReference ?? null,

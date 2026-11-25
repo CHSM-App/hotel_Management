@@ -86,7 +86,7 @@ test('the quote marks extras lines editable and leaves the room line alone', () 
   );
   assert.match(
     src,
-    /charges: quote\.lines\.map\(\(line\) => \(\{[\s\S]{0,200}chargeId: line\.chargeId/,
+    /charges = quote\.lines\.map\(\(line\) => \(\{[\s\S]{0,200}chargeId: line\.chargeId/,
     'priceStay is dropping chargeId again — the extras totals will not be editable'
   );
   assert.match(src, /quantity: line\.quantity/, 'quantity is needed to turn a typed total into a unit price');

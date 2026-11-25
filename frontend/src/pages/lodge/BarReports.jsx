@@ -23,9 +23,11 @@ export default function BarReports({ from = null, to = null, lodgeName = '', vie
   const token = barToken();
   const [own, setOwn] = useState({ from: firstOfMonthIso(), to: todayIso() });
   const range = from && to ? { from, to } : own;
-  const [view, setView] = useState('sales');
+  const [view, setView] = useState('overview');
+  // Overview, Bar and Restaurant are three cuts of the one sales payload.
+  const endpoint = view === 'stock' || view === 'bills' ? view : 'sales';
   // Keyed by what was asked for: a result for another view or range reads as "loading".
-  const key = `${view}|${range.from}|${range.to}`;
+  const key = `${endpoint}|${range.from}|${range.to}`;
   const [result, setResult] = useState({ key: '', data: null, error: '' });
   const data = result.key === key ? result.data : null;
   const error = result.key === key ? result.error : '';
@@ -37,7 +39,7 @@ export default function BarReports({ from = null, to = null, lodgeName = '', vie
     setBusy(kind);
     setFileError('');
     try {
-      await fn(view, data, range, lodgeName);
+      await fn(endpoint, data, range, lodgeName);
     } catch {
       setFileError('Could not prepare the file. Try again.');
     } finally {
@@ -47,16 +49,16 @@ export default function BarReports({ from = null, to = null, lodgeName = '', vie
 
   useEffect(() => {
     let live = true;
-    apiGet(`/bar/reports/${view}?from=${range.from}&to=${range.to}`, { token })
+    apiGet(`/bar/reports/${endpoint}?from=${range.from}&to=${range.to}`, { token })
       .then((d) => live && setResult({ key, data: d, error: '' }))
       .catch((e) => live && setResult({ key, data: null, error: errText(e, 'Could not load the report.') }));
     return () => {
       live = false;
     };
-  }, [key, view, range.from, range.to, token]);
+  }, [key, endpoint, range.from, range.to, token]);
 
   const embedded = Boolean(viewHost && actionsHost);
-  const seg = <Seg value={view} onChange={setView} options={[['sales', 'Sales'], ['stock', 'Stock'], ['bills', 'Bills']]} />;
+  const seg = <Seg value={view} onChange={setView} options={[['overview', 'Overview'], ['bar', 'Bar'], ['restaurant', 'Restaurant'], ['stock', 'Stock'], ['bills', 'Bills']]} />;
   const downloadMenu = data ? (
     <ReportDownloadMenu
       onPreview={makeFile('preview', previewBarReportPdf)}
@@ -89,7 +91,9 @@ export default function BarReports({ from = null, to = null, lodgeName = '', vie
       {error && <Note kind="error">{error}</Note>}
       {fileError && <Note kind="error">{fileError}</Note>}
       {!data && !error && <PageLoader label="Loading report" />}
-      {data && view === 'sales' && <Sales d={data} />}
+      {data && view === 'overview' && <Sales d={data} />}
+      {data && view === 'bar' && <Items d={data} kind="DRINK" />}
+      {data && view === 'restaurant' && <Items d={data} kind="FOOD" />}
       {data && view === 'stock' && <Stock d={data} />}
       {data && view === 'bills' && <Bills d={data} />}
     </div>
@@ -149,7 +153,6 @@ function PayMix({ payments, total }) {
 function Sales({ d }) {
   const paid = d.byPayment.reduce((s, p) => s + p.amount, 0);
   const catTotal = d.byCategory.reduce((s, c) => s + c.amount, 0);
-  const maxItem = Math.max(1, ...d.byItem.map((i) => i.amount));
   const onRoom = d.onRoomBill?.total || 0;
   return (
     <>
@@ -186,22 +189,6 @@ function Sales({ d }) {
             ))}
           </ul>
         </section>
-        <section className="bar-card">
-          <h3 className="bar-card__title">Top items</h3>
-          {d.byItem.length === 0 && <div className="bar-empty">Nothing in this period.</div>}
-          <ul className="bar-share">
-            {d.byItem.slice(0, 8).map((i) => (
-              <li key={`${i.kind}-${i.name}-${i.size}`}>
-                <div className="bar-share__row">
-                  <span>{i.name}{i.size ? ` · ${i.size}` : ''}{i.kind === 'FOOD' && <> <span className="bar-chip bar-chip--brand">Food</span></>}</span>
-                  <b className="bar-num">{formatPrice(i.amount)}</b>
-                </div>
-                <div className="bar-share__track"><span style={{ width: `${pct(i.amount, maxItem)}%` }} /></div>
-                <span className="bar-muted">{i.quantity} sold{i.kind === 'DRINK' && i.ml ? ` · ${i.ml.toLocaleString('en-IN')} ml` : ''}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
       </div>
 
       {d.food > 0 && (
@@ -209,6 +196,33 @@ function Sales({ d }) {
           Food ordered on bar orders is counted here, not in the restaurant report. The Tax &amp; GST report reads normal invoices only, so the food GST ({formatPrice(d.foodTax)}) is for your GST filing.
         </p>
       )}
+    </>
+  );
+}
+
+// Item-wise sales for one side of the counter: drinks (DRINK) or dishes ordered on bar orders (FOOD).
+function Items({ d, kind }) {
+  const drinks = kind === 'DRINK';
+  const items = d.byItem.filter((i) => i.kind === kind);
+  const qty = items.reduce((s, i) => s + i.quantity, 0);
+  const total = items.reduce((s, i) => s + i.amount, 0);
+  return (
+    <>
+      <div className="bar-kpis">
+        <Kpi hero label={drinks ? 'Drinks sales' : 'Restaurant sales'} value={formatPrice(total)} sub={drinks ? 'Before tax split' : 'Dishes ordered on bar orders'} />
+        <Kpi label={drinks ? 'Units sold' : 'Dishes sold'} value={qty.toLocaleString('en-IN')} />
+        <Kpi label="Items" value={items.length} />
+      </div>
+      <Table
+        title={drinks ? 'Drinks sold' : 'Dishes sold'}
+        count={items.length}
+        head={['#', 'Item', drinks ? 'Size' : 'Portion', '#Qty sold', '#Sale amount', '#Share']}
+        empty={drinks ? 'No drinks sold in this period.' : 'No dishes sold on bar orders in this period.'}
+        rows={[
+          ...items.map((i, n) => [n + 1, <span key="n" className="bar-strong">{i.name}</span>, i.size || '—', i.quantity, formatPrice(i.amount), `${pct(i.amount, total)}%`]),
+          ...(items.length ? [['', <b key="t" className="bar-strong">Total</b>, '', <b key="q" className="bar-strong">{qty}</b>, <b key="a" className="bar-strong">{formatPrice(total)}</b>, '']] : []),
+        ]}
+      />
     </>
   );
 }

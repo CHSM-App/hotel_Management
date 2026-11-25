@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
+import 'package:hotel_manager/domain/models/scanned_guest.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,14 +47,14 @@ class _FakeBookingRepository implements BookingRepository {
   }
 
   @override
-  Future<List<Room>> availableRooms(String checkInDate, String checkOutDate) =>
+  Future<List<Room>> availableRooms(String checkInDate, String? checkOutDate) =>
       throw UnimplementedError();
 
   @override
   Future<Quote> priceQuote({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
@@ -63,7 +65,7 @@ class _FakeBookingRepository implements BookingRepository {
   Future<MultiRoomQuote> multiRoomPriceQuote({
     required List<Map<String, dynamic>> rooms,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     num? discountAmount,
   }) => throw UnimplementedError();
 
@@ -71,7 +73,7 @@ class _FakeBookingRepository implements BookingRepository {
   Future<AvailableBeds> availableBeds({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
   }) => throw UnimplementedError();
 
   @override
@@ -86,6 +88,9 @@ class _FakeBookingRepository implements BookingRepository {
 
   @override
   Future<List<CheckAlert>> checkoutAlerts() async => const [];
+
+  @override
+  Future<List<ScannedGuest>> scanIds(List<XFile> photos) async => const [];
 
   @override
   Future<List<GuestMatch>> searchGuests(String query) =>
@@ -108,7 +113,7 @@ class _FakeBookingRepository implements BookingRepository {
   @override
   Future<List<Room>> availableRoomsForBooking(
     int bookingId, {
-    required String checkOutDate,
+    required String? checkOutDate,
     String? checkInDate,
   }) => throw UnimplementedError();
 

@@ -807,6 +807,9 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
   const foodTaxable = invoice.foodTaxable ?? shareOf(invoice.foodSubtotal);
   const serviceTaxable = invoice.serviceTaxable ?? shareOf(serviceSubtotal);
   const barTaxable = invoice.barTaxable ?? 0;
+  const generalDiscount = round2(
+    invoice.discountAmount - (invoice.foodDiscountAmount ?? 0) - (invoice.barDiscountAmount ?? 0)
+  );
 
   // The room charge is built base rate first, then any season uplift, then each
   // switched-on extra — bed, AC, extra person — in the order the quote applied
@@ -1260,6 +1263,12 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
                       <span>{amt(item.lineTotal)}</span>
                     </div>
                   ))}
+                  {invoice.foodDiscountAmount > 0 && (
+                    <div className="memo__misc-line">
+                      <span>{T.lessDiscount}</span>
+                      <span>-{amt(invoice.foodDiscountAmount)}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1299,6 +1308,12 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
                       <span>{amt(item.lineTotal)}</span>
                     </div>
                   ))}
+                  {invoice.barDiscountAmount > 0 && (
+                    <div className="memo__misc-line">
+                      <span>{T.lessDiscount}</span>
+                      <span>-{amt(invoice.barDiscountAmount)}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </td>
@@ -1320,10 +1335,12 @@ const BillDocument = forwardRef(function BillDocument({ invoice, lang = 'en' }, 
           <col className="memo__col-ps" />
         </colgroup>
         <tbody>
-          {invoice.discountAmount > 0 && (
+          {/* The restaurant and bar parts print inside their own sections above;
+              what is left here is the discount given on the bill itself. */}
+          {generalDiscount > 0 && (
             <Money
               label={`${T.lessDiscount}${discountQualifier(invoice)}`}
-              value={-invoice.discountAmount}
+              value={-generalDiscount}
             />
           )}
           <Money label={isGst ? T.taxableValue : T.totalAmount} value={round2(roomTaxable + foodTaxable + serviceTaxable + barTaxable)} rule strong total />

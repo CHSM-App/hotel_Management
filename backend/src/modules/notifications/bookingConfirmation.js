@@ -143,7 +143,8 @@ function directionsFor(lodge) {
 // there is no time to promise until they do.
 function stayTimes(booking, lodge) {
   const checkIn = formatDate(dateParts(booking.check_in_date));
-  const checkOut = formatDate(dateParts(booking.check_out_date));
+  // An open-ended stay has no check-out date yet.
+  const checkOut = booking.check_out_date == null ? 'To be confirmed' : formatDate(dateParts(booking.check_out_date));
   if (lodge.checkin_mode === 'HOUR_24') {
     return { checkIn, checkOut: `${checkOut} (24 hrs from check-in)` };
   }
@@ -318,6 +319,7 @@ function sameDatesAcrossRooms(rooms) {
 }
 
 function toIsoDate(value) {
+  if (value == null) return null;
   return typeof value === 'string' ? value.slice(0, 10) : value.toISOString().slice(0, 10);
 }
 

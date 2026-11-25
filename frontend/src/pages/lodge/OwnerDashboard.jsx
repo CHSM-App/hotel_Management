@@ -1026,7 +1026,7 @@ export default function OwnerDashboard() {
               {activeFeature && activeFeature.key === 'laundry' && <LaundryPanel lodge={me.lodge} />}
 
               {activeFeature && activeFeature.key === 'bookings' && rawPage === 'quotations' && (
-                <Quotations onBack={() => setQuotationsPage(false)} onConvert={convertQuotation} />
+                <Quotations onBack={() => setQuotationsPage(false)} onConvert={convertQuotation} permissions={permissions} />
               )}
 
               {activeFeature && activeFeature.key === 'bookings' && rawPage !== 'quotations' && (

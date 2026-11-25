@@ -88,7 +88,7 @@ async function listPublicRoomTypes(lodgeId, checkInDate, checkOutDate) {
              CASE WHEN EXISTS (
                SELECT 1 FROM dbo.booking_rooms br
                WHERE br.room_id = r.id AND br.status IN ('BOOKED', 'CHECKED_IN')
-                 AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+                 AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
              ) THEN 0 ELSE 1 END AS is_available`;
   }
 

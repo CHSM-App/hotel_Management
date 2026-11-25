@@ -186,7 +186,7 @@ async function listDraftsForRange(pool, lodgeId, startDate, endDate) {
       FROM dbo.booking_drafts
       WHERE lodge_id = @lodgeId AND room_id IS NOT NULL
         AND check_in_date IS NOT NULL AND check_out_date IS NOT NULL
-        AND check_in_date < @endDate AND check_out_date > @startDate
+        AND check_in_date < @endDate AND COALESCE(check_out_date, '9999-12-31') > @startDate
       ORDER BY check_in_date ASC
     `);
 

@@ -53,6 +53,7 @@ function dateParts(value) {
 }
 
 function formatDate(value) {
+  if (value == null) return 'To be confirmed'; // an open-ended stay has no check-out date
   const { y, m, d } = dateParts(value);
   return `${d} ${MONTHS[m - 1]} ${y}`;
 }

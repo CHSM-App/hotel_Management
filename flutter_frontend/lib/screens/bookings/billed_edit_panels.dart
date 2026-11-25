@@ -120,10 +120,6 @@ class PastBookingPanel extends StatelessWidget {
   final bool showSide;
   final String billingSide;
   final ValueChanged<String> onSide;
-  final TimeOfDay inTime;
-  final TimeOfDay outTime;
-  final VoidCallback onPickIn;
-  final VoidCallback onPickOut;
   final List<PaymentDraft> finalLines;
   final VoidCallback onAddLine;
   final ValueChanged<int> onRemoveLine;
@@ -141,10 +137,6 @@ class PastBookingPanel extends StatelessWidget {
     required this.showSide,
     required this.billingSide,
     required this.onSide,
-    required this.inTime,
-    required this.outTime,
-    required this.onPickIn,
-    required this.onPickOut,
     required this.finalLines,
     required this.onAddLine,
     required this.onRemoveLine,
@@ -196,26 +188,6 @@ class PastBookingPanel extends StatelessWidget {
             onSelectionChanged: (s) => onSide(s.first),
           ),
         ],
-        const SizedBox(height: AppTheme.s12),
-        Row(
-          children: [
-            Expanded(
-              child: _TimeBox(
-                label: 'Checked in at',
-                time: inTime,
-                onTap: onPickIn,
-              ),
-            ),
-            const SizedBox(width: AppTheme.s12),
-            Expanded(
-              child: _TimeBox(
-                label: 'Checked out at',
-                time: outTime,
-                onTap: onPickOut,
-              ),
-            ),
-          ],
-        ),
         const SizedBox(height: AppTheme.s12),
         Row(
           children: [
@@ -274,56 +246,6 @@ class PastBookingPanel extends StatelessWidget {
       ],
     );
   }
-}
-
-class _TimeBox extends StatelessWidget {
-  final String label;
-  final TimeOfDay time;
-  final VoidCallback onTap;
-
-  const _TimeBox({
-    required this.label,
-    required this.time,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: AppTheme.fieldLabel(context)),
-      const SizedBox(height: AppTheme.s4),
-      Semantics(
-        button: true,
-        label: '$label ${time.format(context)}',
-        child: GestureDetector(
-          onTap: onTap,
-          child: NeuPressed(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.s12,
-              vertical: AppTheme.s8,
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.schedule_rounded,
-                  color: AppTheme.accent,
-                  size: 16,
-                ),
-                const SizedBox(width: AppTheme.s8),
-                Text(
-                  time.format(context),
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: AppTheme.heading,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ],
-  );
 }
 
 /// Last look before money or an invoice changes. Returns true to go ahead.

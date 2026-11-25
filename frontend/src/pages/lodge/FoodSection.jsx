@@ -1,3 +1,4 @@
+import Quotations from './Quotations';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useUrlState } from '../../lib/urlState';
@@ -41,6 +42,7 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
       { replace: true }
     );
   const [pending, setPending] = useState(0);
+  const [quoting, setQuoting] = useState(false);
   // The common Billing screen serves both streams: Restaurant | Bar.
   const canBar = Boolean(lodge?.hasBar) && permissions.includes('bar.bill');
   const [stream, setStream] = useState('restaurant');
@@ -64,16 +66,17 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
   const strip = [
     ...(canOrders
       ? [
-          { id: liveKey, label: 'Kitchen queue', badge: !canWork ? pending : 0, on: showing === liveKey, go: () => go(liveKey) },
-          { id: 'history', label: 'History', on: showing === 'history', go: () => go('history') },
+          { id: liveKey, label: 'Kitchen queue', badge: !canWork ? pending : 0, on: !quoting && showing === liveKey, go: () => { setQuoting(false); go(liveKey); } },
+          { id: 'history', label: 'History', on: !quoting && showing === 'history', go: () => { setQuoting(false); go('history'); } },
+          { id: 'quotation', label: 'Quotation', on: quoting, go: () => setQuoting(true) },
         ]
       : []),
     ...(canBill
       ? billingTabs.map((t) => ({
           id: t.key,
           label: t.label,
-          on: showing === 'billing' && activeBillTab === t.key,
-          go: () => go('billing', t.key),
+          on: !quoting && showing === 'billing' && activeBillTab === t.key,
+          go: () => { setQuoting(false); go('billing', t.key); },
         }))
       : []),
   ];
@@ -98,7 +101,9 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
         </div>
       )}
 
-      {showing !== 'billing' && (
+      {quoting && <Quotations kind="FOOD" />}
+
+      {!quoting && showing !== 'billing' && (
         <OrdersPanel
           lodge={lodge}
           permissions={permissions}
@@ -110,7 +115,7 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
         />
       )}
 
-      {showing === 'billing' && canBar && (
+      {!quoting && showing === 'billing' && canBar && (
         <div className="subtabs">
           {[['restaurant', 'Restaurant'], ['bar', 'Bar']].map(([key, label]) => (
             <button key={key} type="button" className="subtabs__item" aria-current={stream === key ? 'page' : undefined} onClick={() => setStream(key)}>
@@ -120,8 +125,8 @@ export default function FoodSection({ lodge, permissions = [], initialView = nul
         </div>
       )}
 
-      {showing === 'billing' && !(canBar && stream === 'bar') && <Billing lodge={lodge} stream="restaurant" hideTabs={canOrders} forceTab={canOrders ? activeBillTab : null} />}
-      {showing === 'billing' && canBar && stream === 'bar' && <BarBilling lodge={lodge} />}
+      {!quoting && showing === 'billing' && !(canBar && stream === 'bar') && <Billing lodge={lodge} stream="restaurant" hideTabs={canOrders} forceTab={canOrders ? activeBillTab : null} />}
+      {!quoting && showing === 'billing' && canBar && stream === 'bar' && <BarBilling lodge={lodge} />}
     </div>
   );
 }

@@ -31,7 +31,7 @@ export function printBarBill(bill, lodgeName) {
     <style>body{font:13px monospace;margin:12px;max-width:300px}table{width:100%;border-collapse:collapse}h3,p{margin:4px 0;text-align:center}hr{border:0;border-top:1px dashed #000}</style></head>
     <body><h3>${esc(lodgeName)} - Bar</h3><p>${esc(bill.billNumber)} &middot; ${esc(String(bill.billDate).slice(0, 10))}</p>
     ${bill.customerName ? `<p>${esc(bill.customerName)}</p>` : ''}<hr><table>${rows}</table><hr>
-    <table>${bill.taxPercent > 0 ? `<tr><td>Drinks tax ${bill.taxPercent}% (incl.)</td><td style="text-align:right">${bill.taxAmount.toFixed(2)}</td></tr>` : ''}${foodTax}
+    <table>${bill.discountAmount > 0 ? `<tr><td>Subtotal</td><td style="text-align:right">${bill.subtotal.toFixed(2)}</td></tr><tr><td>Discount</td><td style="text-align:right">-${bill.discountAmount.toFixed(2)}</td></tr>` : ''}${bill.taxPercent > 0 ? `<tr><td>Drinks tax ${bill.taxPercent}% (incl.)</td><td style="text-align:right">${bill.taxAmount.toFixed(2)}</td></tr>` : ''}${foodTax}
     <tr><td><b>Total</b></td><td style="text-align:right"><b>${bill.total.toFixed(2)}</b></td></tr></table><hr>${pays}</body></html>`);
   w.document.close();
   w.focus();

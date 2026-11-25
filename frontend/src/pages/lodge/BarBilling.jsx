@@ -20,6 +20,7 @@ export default function BarBilling({ lodge, pickKey = null }) {
   const [picked, setPicked] = useState(null);
   const [lines, setLines] = useState([emptyPaymentLine()]);
   const [customer, setCustomer] = useState('');
+  const [discount, setDiscount] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [bill, setBill] = useState(null);
@@ -33,6 +34,7 @@ export default function BarBilling({ lodge, pickKey = null }) {
     setPicked(tab);
     setCustomer(tab.guestName || '');
     setLines([{ ...emptyPaymentLine(), amount: String(tab.subtotal) }]);
+    setDiscount('');
     setError('');
     setToRoom(false);
     setBill(null);
@@ -62,13 +64,26 @@ export default function BarBilling({ lodge, pickKey = null }) {
   const paid = picked ? sumLines(lines) : 0;
   const drinksTotal = picked ? picked.items.reduce((s, i) => s + i.lineTotal, 0) : 0;
   const foodTotal = picked ? picked.foodItems.reduce((s, f) => s + f.lineTotal, 0) : 0;
-  const tax = Math.round((drinksTotal - drinksTotal / (1 + taxPercent / 100)) * 100) / 100;
-  const diff = picked ? Math.round((picked.subtotal - paid) * 100) / 100 : 0;
+  // What the desk takes off, never more than the bill; drinks and food give it up in proportion.
+  const off = picked ? Math.min(Math.max(Math.round((Number(discount) || 0) * 100) / 100, 0), picked.subtotal) : 0;
+  const total = picked ? Math.round((picked.subtotal - off) * 100) / 100 : 0;
+  const netDrinks = picked && picked.subtotal > 0 ? (drinksTotal * total) / picked.subtotal : 0;
+  const tax = Math.round((netDrinks - netDrinks / (1 + taxPercent / 100)) * 100) / 100;
+  const diff = picked ? Math.round((total - paid) * 100) / 100 : 0;
+
+  const changeDiscount = (v) => {
+    setDiscount(v);
+    // One payment row simply follows the new total.
+    if (lines.length === 1) {
+      const n = Math.min(Math.max(Number(v) || 0, 0), picked.subtotal);
+      setLines([{ ...lines[0], amount: String(Math.round((picked.subtotal - n) * 100) / 100) }]);
+    }
+  };
 
   const issue = async () => {
     setError('');
     if (lines.some((l) => !l.method || !(Number(l.amount) > 0))) return setError('Choose a payment type and amount for every row.');
-    if (Math.abs(diff) > 0.009) return setError(`Payments add up to ${formatPrice(paid)}, but the bill is ${formatPrice(picked.subtotal)}.`);
+    if (Math.abs(diff) > 0.009) return setError(`Payments add up to ${formatPrice(paid)}, but the bill is ${formatPrice(total)}.`);
     setBusy(true);
     try {
       const made = await apiPost(
@@ -76,6 +91,7 @@ export default function BarBilling({ lodge, pickKey = null }) {
         {
           orderIds: picked.orderIds,
           customerName: customer || null,
+          ...(off > 0 ? { discountAmount: off } : {}),
           payments: lines.map((l) => ({ method: l.method, amount: Number(l.amount), reference: l.reference || null })),
         },
         { token }
@@ -97,11 +113,11 @@ export default function BarBilling({ lodge, pickKey = null }) {
     <div className="bar-bill">
       <section className="bar-card" aria-label="Bar to bill">
         <div>
-          <h3 className="bar-card__title">Ready to bill</h3>
-          <div className="bar-card__sub">Orders marked ready to bill, by table, room or counter.</div>
+          <h3 className="bar-card__title">Open bills</h3>
+          <div className="bar-card__sub">Open orders to bill, by table, room or counter.</div>
         </div>
         {tabs.length === 0 ? (
-          <div className="bar-empty">No orders are ready to bill. Mark an order “Ready to bill” from Open orders.</div>
+          <div className="bar-empty">Nothing to bill. Take an order from Open orders.</div>
         ) : (
           <div className="bar-stack">
             {tabs.map((t) => (
@@ -151,12 +167,16 @@ export default function BarBilling({ lodge, pickKey = null }) {
               <hr className="bar-rule" />
               {drinksTotal > 0 && <div className="bar-receipt-line"><span>Drinks include tax ({taxPercent}%)</span><b>{formatPrice(tax)}</b></div>}
               {foodTotal > 0 && <div className="bar-receipt-line"><span>Food total (GST added on the bill if registered)</span><b>{formatPrice(foodTotal)}</b></div>}
-              <div className="bar-total"><span className="bar-strong">Total</span><b>{formatPrice(picked.subtotal)}</b></div>
+              {off > 0 && <div className="bar-receipt-line"><span>Discount</span><b>-{formatPrice(off)}</b></div>}
+              <div className="bar-total"><span className="bar-strong">Total</span><b>{formatPrice(total)}</b></div>
             </div>
             {!toRoom && (
               <>
                 <Field label="Customer name (optional)">
                   <input value={customer} onChange={(e) => setCustomer(e.target.value)} />
+                </Field>
+                <Field label="Discount (optional)">
+                  <input type="number" min="0" step="1" inputMode="decimal" placeholder="₹ 0" value={discount} onChange={(e) => changeDiscount(e.target.value)} />
                 </Field>
                 <div>
                   <div className="bar-strong" style={{ fontSize: 12.5, marginBottom: 6 }}>Payment</div>
@@ -183,7 +203,7 @@ export default function BarBilling({ lodge, pickKey = null }) {
               <>
                 <button type="button" className="bar-btn bar-btn--block" onClick={() => setToRoom(true)}>Add to room bill instead</button>
                 <button type="button" className="bar-btn bar-btn--primary bar-btn--block" disabled={busy} onClick={issue}>
-                  {busy ? 'Issuing bill…' : `Issue bill · ${formatPrice(picked.subtotal)}`}
+                  {busy ? 'Issuing bill…' : `Issue bill · ${formatPrice(total)}`}
                 </button>
               </>
             )}

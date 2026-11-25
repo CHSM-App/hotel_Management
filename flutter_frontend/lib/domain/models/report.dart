@@ -1345,6 +1345,23 @@ class FoodOrdersReportSummary {
   int statusCount(String status) => byStatus[status] ?? 0;
 }
 
+/// One dish (and portion) sold over a period: quantity and sale amount.
+class FoodItemSale {
+  final String name;
+  final String portion;
+  final int quantity;
+  final double amount;
+
+  const FoodItemSale({required this.name, this.portion = '', required this.quantity, required this.amount});
+
+  factory FoodItemSale.fromJson(Map<String, dynamic> json) => FoodItemSale(
+    name: json['name']?.toString() ?? '',
+    portion: json['portion']?.toString() ?? '',
+    quantity: asInt(json['quantity']),
+    amount: asNum(json['amount']).toDouble(),
+  );
+}
+
 /// GET /reports/food-orders.
 class FoodOrdersReport {
   final String fromDate;
@@ -1353,6 +1370,7 @@ class FoodOrdersReport {
   final String lodgeName;
   final FoodOrdersReportSummary summary;
   final List<ReportFoodOrderRow> orders;
+  final List<FoodItemSale> byItem;
 
   const FoodOrdersReport({
     required this.fromDate,
@@ -1361,6 +1379,7 @@ class FoodOrdersReport {
     this.lodgeName = '',
     this.summary = const FoodOrdersReportSummary(),
     this.orders = const [],
+    this.byItem = const [],
   });
 
   factory FoodOrdersReport.fromJson(Map<String, dynamic> json) => FoodOrdersReport(
@@ -1373,6 +1392,7 @@ class FoodOrdersReport {
             ?.map((e) => ReportFoodOrderRow.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
+    byItem: (json['byItem'] as List?)?.map((e) => FoodItemSale.fromJson(Map<String, dynamic>.from(e as Map))).toList() ?? const [],
   );
 }
 

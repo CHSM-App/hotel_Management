@@ -31,7 +31,7 @@ abstract class BarRepository {
 
   Future<List<MenuSection>> foodMenu();
 
-  Future<void> createOrder(Map<String, dynamic> body);
+  Future<int> createOrder(Map<String, dynamic> body);
 
   Future<void> addItems(int id, Map<String, dynamic> body);
 
@@ -47,10 +47,9 @@ abstract class BarRepository {
 
   Future<void> deliverFoodItem(int foodOrderId, int itemId);
 
-  Future<void> readyToBill(int id);
   Future<void> setCustomer(int id, String? tag);
 
-  Future<void> addToRoom(int id, int bookingId, int roomId);
+  Future<void> addToRoom(int id, int bookingId, int roomId, {num discountAmount = 0});
 
   Future<List<BarTab>> tabs();
 

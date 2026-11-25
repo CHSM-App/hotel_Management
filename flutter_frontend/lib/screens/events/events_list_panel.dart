@@ -8,6 +8,7 @@ import '../../widgets/format.dart';
 import '../../widgets/adaptive_grid.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
+import '../rooms/quotation_screen.dart';
 import 'event_detail_screen.dart';
 import 'event_form_screen.dart';
 
@@ -272,6 +273,18 @@ class _EventsListPanelState extends ConsumerState<EventsListPanel> {
                   ],
                 ),
             ],
+          ),
+        ),
+        Positioned(
+          right: AppTheme.s16 + 56 + AppTheme.s12,
+          bottom: AppTheme.s16 + 8,
+          child: FloatingActionButton.small(
+            heroTag: 'event-quotation',
+            tooltip: 'Quotation',
+            backgroundColor: AppTheme.card,
+            foregroundColor: AppTheme.sidebarBrand,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QuotationScreen(kind: 'EVENT'))),
+            child: const Icon(Icons.request_quote_outlined),
           ),
         ),
         Positioned(

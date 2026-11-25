@@ -16,6 +16,7 @@ const {
   viewSharedBillHandler,
   downloadSharedBillHandler,
   getSharedReceiptHandler,
+  viewSharedQuotationHandler,
   getSharedReceiptPreviewImageHandler,
   viewSharedReceiptHandler,
   downloadSharedReceiptHandler,
@@ -89,6 +90,9 @@ router.get('/receipts/:token', getSharedReceiptHandler);
 router.get('/receipts/:token/preview.png', getSharedReceiptPreviewImageHandler);
 router.get('/receipts/:token/view', viewSharedReceiptHandler);
 router.get('/receipts/:token/download', downloadSharedReceiptHandler);
+
+// A shared quotation: the PDF itself, opened in the guest's browser.
+router.get('/quotations/:token', viewSharedQuotationHandler);
 
 // What a scanned asset QR opens — one asset's record, same trust model as
 // the table route above: the qr_token in the link is the whole credential,

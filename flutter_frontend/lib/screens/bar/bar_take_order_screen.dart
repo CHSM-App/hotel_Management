@@ -13,6 +13,7 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
+import 'bar_billing_panel.dart';
 import 'bar_common.dart';
 
 /// Take a bar order — drinks and, optionally, restaurant dishes — or add more
@@ -20,7 +21,12 @@ import 'bar_common.dart';
 class BarTakeOrderScreen extends ConsumerStatefulWidget {
   final BarOrder? existing;
 
-  const BarTakeOrderScreen({super.key, this.existing});
+  /// A saved quotation being converted: bar size id -> quantity, plus guest.
+  final Map<int, int>? prefillDrinks;
+  final String? prefillName;
+  final String? prefillPhone;
+
+  const BarTakeOrderScreen({super.key, this.existing, this.prefillDrinks, this.prefillName, this.prefillPhone});
 
   @override
   ConsumerState<BarTakeOrderScreen> createState() => _BarTakeOrderScreenState();
@@ -42,6 +48,9 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
   String? _error;
   bool _busy = false;
 
+  /// Bill the order as soon as it is placed (like the restaurant counter).
+  bool _billNow = false;
+
   /// Set while the review sheet is open, so a quantity changed inside it
   /// redraws the sheet too (it lives outside this widget's own build).
   VoidCallback? _sheetRefresh;
@@ -56,6 +65,11 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
   @override
   void initState() {
     super.initState();
+    if (!_adding) {
+      _drinkQty.addAll(widget.prefillDrinks ?? const {});
+      _name.text = widget.prefillName ?? '';
+      _phone.text = widget.prefillPhone ?? '';
+    }
     Future.microtask(() {
       ref.read(barSetupViewModelProvider.notifier).load();
       if (!_adding) ref.read(barViewModelProvider.notifier).loadTargets();
@@ -124,9 +138,10 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
       _error = null;
     });
     final vm = ref.read(barViewModelProvider.notifier);
+    int? newId;
     final ok = _adding
         ? await vm.addItems(widget.existing!.id, {'items': items, 'foodItems': foodItems})
-        : await vm.placeOrder({
+        : (newId = await vm.placeOrder({
             'source': _source == 'PARCEL' ? 'COUNTER' : _source,
             if (_source == 'PARCEL') 'isParcel': true,
             if (_source == 'TABLE') 'tableId': _tableId,
@@ -136,7 +151,7 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
             if (phone.isNotEmpty) 'guestPhone': phone,
             'items': items,
             'foodItems': foodItems,
-          });
+          })) != null;
     if (!mounted) return;
     if (ok) {
       {
@@ -174,6 +189,16 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
           message: _adding ? 'Items added.' : 'Bar order placed.',
         );
         if (!mounted) return;
+      }
+      if (_billNow && newId != null && _source != 'ROOM') {
+        await vm.loadTabs();
+        if (!mounted) return;
+        final tab = ref.read(barViewModelProvider).tabs.where((t) => t.orderIds.contains(newId)).firstOrNull;
+        if (tab != null) {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => BarIssueBillScreen(tab: tab)));
+          return;
+        }
+        barSnack(context, 'Order placed, but the bill could not be opened. Use Issue bill on Open orders.');
       }
       Navigator.pop(context, true);
     } else {
@@ -223,6 +248,15 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
                   DropdownMenuItem(value: g, child: Text('${g.roomNumber} · ${g.guestName}')),
               ],
               onChanged: (v) => setState(() => _guest = v),
+            ),
+          if (_source != 'ROOM' && (ref.watch(authViewModelProvider).me?.user.can('bar.bill') ?? false))
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _billNow,
+              onChanged: (v) => setState(() => _billNow = v ?? false),
+              title: const Text('Issue bill now', style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: const Text('Place the order, then go straight to payment'),
             ),
           if (_source != 'ROOM') ...[
             const SizedBox(height: AppTheme.s12),
@@ -476,7 +510,7 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
             NeuButton(
               primary: true,
               onPressed: _busy ? null : _submit,
-              child: Text(_busy ? 'Saving…' : _adding ? 'Add items' : 'Place order'),
+              child: Text(_busy ? 'Saving…' : _adding ? 'Add items' : (_billNow && _source != 'ROOM' ? 'Place & bill' : 'Place order')),
             ),
         ],
       ),
@@ -486,7 +520,7 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
           primary: true,
           expand: true,
           onPressed: _busy ? null : _submit,
-          child: Text(_busy ? 'Saving…' : _adding ? 'Add items' : 'Place order'),
+          child: Text(_busy ? 'Saving…' : _adding ? 'Add items' : (_billNow && _source != 'ROOM' ? 'Place & bill' : 'Place order')),
         ),
       ],
     ],
@@ -615,7 +649,7 @@ class _BarTakeOrderScreenState extends ConsumerState<BarTakeOrderScreen> {
                                   Navigator.pop(ctx);
                                   _submit();
                                 },
-                          child: Text(_adding ? 'Add items' : 'Place order'),
+                          child: Text(_adding ? 'Add items' : (_billNow && _source != 'ROOM' ? 'Place & bill' : 'Place order')),
                         ),
                       ],
                     ),

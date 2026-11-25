@@ -1,6 +1,8 @@
 const { Router } = require('express');
 const { authenticate, requirePermission } = require('../../middleware/authenticate');
 const { idProofUpload } = require('../../middleware/idProofUpload');
+const { idScanUpload } = require('../../middleware/idScanUpload');
+const { idScanLimiter } = require('../../middleware/rateLimit');
 const { idempotent } = require('../../middleware/idempotency');
 const { bookingEditLog } = require('../../middleware/bookingEditLog');
 const {
@@ -18,6 +20,7 @@ const {
   getIdProofHandler,
   getGuestIdProofHandler,
   createBookingHandler,
+  scanIdsHandler,
   createPastBookingHandler,
   checkInHandler,
   updateBookingHandler,
@@ -75,6 +78,8 @@ router.get('/:id/late-checkout', authenticate, staff, getLateCheckoutHandler);
 router.get('/:id/rooms/:roomId/late-checkout', authenticate, staff, getLateCheckoutHandler);
 router.get('/:id/id-proof', authenticate, canSeeRegister, getIdProofHandler);
 router.get('/:id/guests/:guestId/id-proof', authenticate, canSeeRegister, getGuestIdProofHandler);
+// AI reads the ID photos. POST, so it can never be mistaken for GET /:id.
+router.post('/scan-id', authenticate, staff, idScanLimiter, idScanUpload, scanIdsHandler);
 router.post('/past', authenticate, staff, idProofUpload, createPastBookingHandler);
 router.post('/', authenticate, staff, idempotent, idProofUpload, createBookingHandler);
 router.patch('/:id', authenticate, staff, idProofUpload, updateBookingHandler);

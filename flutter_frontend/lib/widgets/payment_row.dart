@@ -25,8 +25,22 @@ class PaymentRow extends StatefulWidget {
   /// share the page with a lot else.
   final bool compact;
 
+  /// Labelled "Payment type" and "Amount" boxes side by side with the delete
+  /// button at the end — the booking form's advance rows.
+  final bool inline;
+
+  /// Fired only when the person types in the amount box.
+  final VoidCallback? onAmountEdited;
+
+  /// Inline rows: labels only on the first row of a list, so a split
+  /// payment reads as one table rather than repeated captions.
+  final bool showLabels;
+
   const PaymentRow({
     super.key,
+    this.inline = false,
+    this.onAmountEdited,
+    this.showLabels = true,
     required this.line,
     required this.onRemove,
     required this.onChanged,
@@ -224,9 +238,120 @@ class _PaymentRowState extends State<PaymentRow> {
     );
   }
 
+  Widget _label(String text) => Padding(
+    padding: EdgeInsets.only(bottom: RoomyForm.on(context) ? 6 : AppTheme.s4),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: AppTheme.heading,
+        fontWeight: FontWeight.w700,
+        fontSize: RoomyForm.on(context) ? 13.5 : null,
+      ),
+    ),
+  );
+
+  Widget _amountBox({TextAlign align = TextAlign.left}) => SizedBox(
+    height: RoomyForm.height(context, 44),
+    width: double.infinity,
+    child: NeuPressed(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+      child: Center(
+        child: TextField(
+          controller: _amount,
+          keyboardType: TextInputType.number,
+          textAlign: align,
+          onTap: () => _amount.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _amount.text.length,
+          ),
+          onChanged: (v) {
+            widget.line.amount = v;
+            widget.onAmountEdited?.call();
+            widget.onChanged();
+          },
+          style: TextStyle(
+            color: AppTheme.heading,
+            fontSize: RoomyForm.fs(context, 13),
+          ),
+          decoration: const InputDecoration(
+            hintText: '0',
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _inlineBuild() {
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.showLabels) _label('Payment type'),
+                  _methodDropdown(),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppTheme.s12),
+            Expanded(
+              flex: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.showLabels) _label('Amount'),
+                  _amountBox(),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppTheme.s8),
+            // Level with the boxes, below the label line.
+            Padding(
+              padding: EdgeInsets.only(top: widget.showLabels ? 22 : 0),
+              child: SizedBox(
+                height: RoomyForm.height(context, 44),
+                width: 36,
+                child: IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  color: widget.onRemove == null
+                      ? AppTheme.muted.withValues(alpha: 0.4)
+                      : AppTheme.danger,
+                  tooltip: 'Remove payment',
+                  onPressed: widget.onRemove,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (needsPaymentReference(widget.line.method)) ...[
+          const SizedBox(height: AppTheme.s8),
+          NeuField(
+            controller: _reference,
+            label: 'Transaction number (optional)',
+            hint: widget.line.method == 'UPI'
+                ? 'UPI reference / UTR'
+                : 'Approval code',
+            maxLength: 64,
+            onChanged: (v) => widget.line.reference = v,
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.compact) return _compactBuild();
+    if (widget.inline) return _inlineBuild();
     return Column(
       children: [
         Row(

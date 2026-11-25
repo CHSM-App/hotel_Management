@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/booking.dart';
 import '../models/booking_edit.dart';
@@ -8,6 +9,7 @@ import '../models/invoice_window.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
+import '../models/scanned_guest.dart';
 import '../models/staff_alert.dart';
 import '../models/tape_chart.dart';
 import '../repository/booking_repo.dart';
@@ -18,7 +20,7 @@ class BookingUsecase {
   BookingUsecase(this.repository);
 
   /// Which rooms are free across these nights.
-  Future<List<Room>> availableRooms(String checkIn, String checkOut) =>
+  Future<List<Room>> availableRooms(String checkIn, String? checkOut) =>
       repository.availableRooms(checkIn, checkOut);
 
   /// The tape chart's own fetch.
@@ -31,7 +33,7 @@ class BookingUsecase {
   Future<Quote> priceQuote({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
@@ -50,7 +52,7 @@ class BookingUsecase {
   Future<MultiRoomQuote> multiRoomPriceQuote({
     required List<Map<String, dynamic>> rooms,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     num? discountAmount,
   }) => repository.multiRoomPriceQuote(
     rooms: rooms,
@@ -63,7 +65,7 @@ class BookingUsecase {
   Future<AvailableBeds> availableBeds({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
   }) => repository.availableBeds(
     roomId: roomId,
     checkInDate: checkInDate,
@@ -87,6 +89,10 @@ class BookingUsecase {
   Future<List<GuestMatch>> searchGuests(String query) =>
       repository.searchGuests(query);
 
+  /// AI reads ID card photos.
+  Future<List<ScannedGuest>> scanIds(List<XFile> photos) =>
+      repository.scanIds(photos);
+
   /// The primary guest's uploaded ID proof, raw bytes plus content type.
   Future<Response<List<int>>> idProof(int bookingId) =>
       repository.idProof(bookingId);
@@ -105,7 +111,7 @@ class BookingUsecase {
   /// Rooms free for an edit of this booking.
   Future<List<Room>> availableRoomsForBooking(
     int bookingId, {
-    required String checkOutDate,
+    required String? checkOutDate,
     String? checkInDate,
   }) => repository.availableRoomsForBooking(
     bookingId,

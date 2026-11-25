@@ -1,5 +1,5 @@
 const { getPool, sql } = require('../../config/connection');
-const { netOfDiscount } = require('../billing/billing.service');
+const { netOfDiscount, applyDiscounts } = require('../billing/billing.service');
 const assetsService = require('../assets/assets.service');
 const housekeepingService = require('../housekeeping/housekeeping.service');
 const { depreciationForAssets, fyStart, fyEnd } = require('../assets/depreciation');
@@ -22,8 +22,15 @@ function linesByParent(result) {
 }
 
 function toIsoDate(d) {
+  if (d == null) return null; // an open-ended stay has no check-out date
   if (typeof d === 'string') return d.slice(0, 10);
   return d.toISOString().slice(0, 10);
+}
+
+// Where an open-ended stay (no check-out date yet) counts up to: the end of
+// today in IST, so it is occupying its room every night so far and tonight.
+function openStayEnd() {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000 + 86400000).toISOString().slice(0, 10);
 }
 
 // The rooms_json column from a FOR JSON PATH subquery — null when a booking
@@ -134,11 +141,12 @@ function billFigures(row) {
   const barFoodTax = Number(row.bar_food_tax_amount ?? 0);
   const discountAmount = Number(row.discount_amount ?? 0);
   const grossAmount = round2(roomGross + foodGross + serviceGross + barGross);
-  const [roomNetOfDiscount, foodNetOfDiscount, serviceNetOfDiscount, barNetOfDiscount] = netOfDiscount(
+  const foodDiscount = Number(row.food_discount_amount ?? 0);
+  const barDiscount = Number(row.bar_discount_amount ?? 0);
+  const [roomNetOfDiscount, foodNetOfDiscount, serviceNetOfDiscount, barNetOfDiscount] = applyDiscounts(
     [roomGross, foodGross, serviceGross, barGross],
-    discountAmount,
-    grossAmount
-  );
+    { foodDiscount, barDiscount, general: round2(discountAmount - foodDiscount - barDiscount) }
+  ).net;
   const roomTaxable = round2(roomNetOfDiscount - roomCgst - roomSgst);
   const foodTaxable = round2(foodNetOfDiscount - foodCgst - foodSgst);
   const serviceTaxable = round2(serviceNetOfDiscount - serviceCgst - serviceSgst);
@@ -277,7 +285,7 @@ async function getCollectionsInPeriod(pool, lodgeId, fromDate, toDate) {
            i.room_subtotal, i.food_subtotal, i.service_subtotal,
            i.bar_subtotal, i.bar_food_subtotal, i.bar_tax_amount, i.bar_food_tax_amount,
            i.cgst_amount, i.sgst_amount, i.food_cgst_amount, i.food_sgst_amount,
-           i.service_cgst_amount, i.service_sgst_amount, i.discount_amount,
+           i.service_cgst_amount, i.service_sgst_amount, i.discount_amount, i.food_discount_amount, i.bar_discount_amount,
            i.round_off, i.total_amount
     FROM dbo.invoices i
     JOIN dbo.bookings b ON b.id = i.booking_id
@@ -500,7 +508,7 @@ async function getOccupancyReport(lodgeId, fromDate, toDate) {
       FROM dbo.booking_rooms br
       JOIN dbo.bookings b ON b.id = br.booking_id
       WHERE b.lodge_id = @lodgeId AND br.status IN ('CHECKED_IN', 'CHECKED_OUT')
-        AND br.check_in_date < DATEADD(day, 1, @toDate) AND br.check_out_date > @fromDate
+        AND br.check_in_date < DATEADD(day, 1, @toDate) AND COALESCE(br.check_out_date, '9999-12-31') > @fromDate
     `);
 
   const dates = datesInRange(fromDate, toDate);
@@ -508,7 +516,7 @@ async function getOccupancyReport(lodgeId, fromDate, toDate) {
 
   for (const row of bookingsResult.recordset) {
     const stayStart = toIsoDate(row.check_in_date);
-    const stayEnd = toIsoDate(row.check_out_date);
+    const stayEnd = toIsoDate(row.check_out_date) ?? openStayEnd();
     for (const date of dates) {
       if (date >= stayStart && date < stayEnd) {
         occupiedByDate.get(date).add(row.room_id);
@@ -568,7 +576,7 @@ async function getGstSummary(lodgeId, fromDate, toDate) {
     .query(`
       SELECT i.id, i.document_type, i.billing_side, i.invoice_number, i.room_subtotal,
              i.cgst_amount, i.sgst_amount, i.round_off, i.total_amount, i.created_at,
-             i.event_booking_id, i.booking_id, i.discount_amount,
+             i.event_booking_id, i.booking_id, i.discount_amount, i.food_discount_amount, i.bar_discount_amount,
              i.food_subtotal, i.food_cgst_amount, i.food_sgst_amount,
              i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount,
              COALESCE(b.guest_name, eb.organiser_name) AS guest_name
@@ -749,7 +757,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
     .query(`
       SELECT b.id, b.guest_name, b.guest_phone, b.num_guests, b.status,
              b.check_in_date, b.check_out_date,
-             DATEDIFF(day, b.check_in_date, b.check_out_date) AS nights,
+             DATEDIFF(day, b.check_in_date, COALESCE(b.check_out_date, CAST(DATEADD(minute, 330, SYSUTCDATETIME()) AS DATE))) AS nights,
              b.actual_check_in_at, b.actual_check_out_at,
              b.total_price, b.advance_amount, b.advance_payment_method, b.created_at,
              b.cancel_reason, b.refund_amount, b.cancellation_charge,
@@ -773,7 +781,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
              i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount,
              i.bar_subtotal, i.bar_food_subtotal, i.bar_tax_amount, i.bar_food_tax_amount,
              i.cgst_amount, i.sgst_amount, i.food_cgst_amount, i.food_sgst_amount,
-             i.late_checkout_charge, i.discount_amount,
+             i.late_checkout_charge, i.discount_amount, i.food_discount_amount, i.bar_discount_amount,
              i.round_off, i.total_amount,
              i.advance_paid, i.balance_collected, i.balance_payment_method
       FROM dbo.bookings b
@@ -785,7 +793,7 @@ async function getBookingsReport(lodgeId, fromDate, toDate, billingSide = 'ALL')
                service_subtotal, service_cgst_amount, service_sgst_amount,
                bar_subtotal, bar_food_subtotal, bar_tax_amount, bar_food_tax_amount,
                cgst_amount, sgst_amount, food_cgst_amount, food_sgst_amount,
-               late_checkout_charge, discount_amount, round_off,
+               late_checkout_charge, discount_amount, food_discount_amount, bar_discount_amount, round_off,
                total_amount, advance_paid, balance_collected, balance_payment_method
         FROM dbo.invoices
         WHERE booking_id = b.id AND status = 'ISSUED'
@@ -1458,6 +1466,25 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
     for (const row of itemsResult.recordset) itemCounts.set(String(row.order_id), Number(row.qty));
   }
 
+  // Items sold: the same orders as the register above (restaurant only, no bar-linked
+  // food), less cancelled orders and voided bills - what was actually sold.
+  const itemsSold = await pool
+    .request()
+    .input('lodgeId', sql.BigInt, lodgeId)
+    .input('fromDate', sql.Date, fromDate)
+    .input('toDate', sql.Date, toDate)
+    .query(`
+      SELECT it.item_name, it.portion_label, SUM(it.quantity) AS qty, SUM(it.line_total) AS amount
+      FROM dbo.food_order_items it
+      JOIN dbo.food_orders o ON o.id = it.order_id
+      LEFT JOIN dbo.invoices i ON i.id = o.invoice_id
+      WHERE o.lodge_id = @lodgeId AND o.order_date BETWEEN @fromDate AND @toDate
+        AND o.bar_order_id IS NULL AND o.status <> 'CANCELLED'
+        AND (i.id IS NULL OR i.status <> 'VOID')
+      GROUP BY it.item_name, it.portion_label
+      ORDER BY SUM(it.line_total) DESC, it.item_name
+    `);
+
   const allOrders = result.recordset.map((row) => ({
     id: row.id,
     orderNumber: row.order_number,
@@ -1550,6 +1577,12 @@ async function getFoodOrdersReport(lodgeId, fromDate, toDate) {
       onStayBillValue,
     },
     orders,
+    byItem: itemsSold.recordset.map((r) => ({
+      name: r.item_name,
+      portion: r.portion_label || '',
+      quantity: Number(r.qty),
+      amount: round2(Number(r.amount)),
+    })),
   };
 }
 
@@ -1626,7 +1659,7 @@ async function getOccupiedRoomsByDate(pool, lodgeId, fromDate, toDate, categoryI
     JOIN dbo.bookings b ON b.id = br.booking_id
     ${categoryJoin}
     WHERE b.lodge_id = @lodgeId AND br.status IN ('CHECKED_IN', 'CHECKED_OUT')
-      AND br.check_in_date < DATEADD(day, 1, @toDate) AND br.check_out_date > @fromDate
+      AND br.check_in_date < DATEADD(day, 1, @toDate) AND COALESCE(br.check_out_date, '9999-12-31') > @fromDate
       ${categoryFilter}
   `);
 
@@ -1634,7 +1667,7 @@ async function getOccupiedRoomsByDate(pool, lodgeId, fromDate, toDate, categoryI
   const occupiedByDate = new Map(dates.map((d) => [d, new Set()]));
   for (const row of result.recordset) {
     const stayStart = toIsoDate(row.check_in_date);
-    const stayEnd = toIsoDate(row.check_out_date);
+    const stayEnd = toIsoDate(row.check_out_date) ?? openStayEnd();
     for (const date of dates) {
       if (date >= stayStart && date < stayEnd) occupiedByDate.get(date).add(row.room_id);
     }
@@ -2014,7 +2047,7 @@ async function getRoomsAnalytics(lodgeId, fromDate, toDate) {
     .input('fromDate', sql.Date, fromDate)
     .input('toDate', sql.Date, toDate)
     .query(`
-      SELECT status, DATEDIFF(day, check_in_date, check_out_date) AS nights
+      SELECT status, DATEDIFF(day, check_in_date, COALESCE(check_out_date, CAST(DATEADD(minute, 330, SYSUTCDATETIME()) AS DATE))) AS nights
       FROM dbo.bookings
       WHERE lodge_id = @lodgeId AND check_in_date BETWEEN @fromDate AND @toDate
     `);
@@ -2091,7 +2124,7 @@ async function getRevenueByStream(pool, lodgeId, fromDate, toDate) {
     .input('toDate', sql.Date, toDate)
     .query(`
       SELECT i.room_subtotal, i.food_subtotal, i.cgst_amount, i.sgst_amount,
-             i.food_cgst_amount, i.food_sgst_amount, i.discount_amount, i.event_booking_id,
+             i.food_cgst_amount, i.food_sgst_amount, i.discount_amount, i.food_discount_amount, i.bar_discount_amount, i.event_booking_id,
              i.service_subtotal, i.service_cgst_amount, i.service_sgst_amount,
              i.bar_subtotal, i.bar_food_subtotal, i.bar_tax_amount, i.bar_food_tax_amount
       FROM dbo.invoices i

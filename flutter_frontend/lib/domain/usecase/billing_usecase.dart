@@ -46,8 +46,8 @@ class BillingUsecase {
   Future<List<FoodTab>> foodTabs() => repository.foodTabs();
 
   /// What a food bill will say.
-  Future<FoodBillPreview> previewFoodBill(String tab) =>
-      repository.previewFoodBill(tab);
+  Future<FoodBillPreview> previewFoodBill(String tab, {num discountAmount = 0}) =>
+      repository.previewFoodBill(tab, discountAmount: discountAmount);
 
   /// Close one food tab.
   Future<Invoice> issueFoodInvoice(String tab, Map<String, dynamic> body) =>
@@ -59,8 +59,8 @@ class BillingUsecase {
 
   /// Moves a table or takeaway tab's delivered, unbilled food onto a stay's
   /// bill.
-  Future<void> addFoodTabToRoom(String tab, int bookingId) =>
-      repository.addFoodTabToRoom(tab, bookingId);
+  Future<void> addFoodTabToRoom(String tab, int bookingId, {num discountAmount = 0}) =>
+      repository.addFoodTabToRoom(tab, bookingId, discountAmount: discountAmount);
 
   /// Bills already issued.
   Future<List<Invoice>> invoices() => repository.invoices();

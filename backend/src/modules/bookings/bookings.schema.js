@@ -3,6 +3,11 @@ const { z } = require('zod');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const dateField = (message) => z.string({ error: message }).regex(DATE_RE, message);
 
+// A check-out date is optional: leaving it out (or sending an empty string, as a
+// form field does) books an open-ended stay, held until the guest is checked out.
+const optionalDateField = (message) =>
+  z.preprocess((value) => (value === '' || value === null ? undefined : value), dateField(message).optional());
+
 const ID_PROOF_TYPES = ['AADHAAR', 'PAN', 'PASSPORT', 'DRIVING_LICENSE', 'VOTER_ID', 'OTHER'];
 
 // An Indian mobile number: 10 digits, the first from 6-9 — landlines and
@@ -229,7 +234,7 @@ const bookingRoomSchema = z.object({
   bedId: z.coerce.number().int().positive('Choose a valid bed.').optional(),
   bedIds: z.array(z.coerce.number().int().positive('Choose a valid bed.')).optional(),
   checkInDate: dateField('Choose a valid check-in date.').optional(),
-  checkOutDate: dateField('Choose a valid check-out date.').optional(),
+  checkOutDate: optionalDateField('Choose a valid check-out date.'),
   basePriceOverride: z.preprocess(
     (value) => (value === '' ? null : value),
     z
@@ -271,7 +276,7 @@ const createBookingSchema = z
     bedId: z.coerce.number().int().positive('Choose a valid bed.').optional(),
     bedIds: z.array(z.coerce.number().int().positive('Choose a valid bed.')).optional(),
     checkInDate: dateField('Choose a check-in date.'),
-    checkOutDate: dateField('Choose a check-out date.'),
+    checkOutDate: optionalDateField('Choose a valid check-out date.'),
     guestName: z.string({ error: 'Enter the guest name.' }).trim().min(1, 'Enter the guest name.'),
     guestPhone: requiredMobileField(),
     numGuests: z.coerce.number().int().positive().optional().default(1),
@@ -320,7 +325,7 @@ const createBookingSchema = z
     // every ordinary booking.
     enquiryId: z.coerce.number().int().positive().optional(),
   })
-  .refine((data) => data.checkOutDate > data.checkInDate, {
+  .refine((data) => !data.checkOutDate || data.checkOutDate > data.checkInDate, {
     message: 'Check-out date must be after check-in date.',
     path: ['checkOutDate'],
   })

@@ -52,7 +52,7 @@ class BarImpl implements BarRepository {
   Future<List<MenuSection>> foodMenu() => api.barFoodMenu();
 
   @override
-  Future<void> createOrder(Map<String, dynamic> body) => api.createBarOrder(body);
+  Future<int> createOrder(Map<String, dynamic> body) => api.createBarOrder(body);
 
   @override
   Future<void> addItems(int id, Map<String, dynamic> body) => api.addBarOrderItems(id, body);
@@ -79,10 +79,8 @@ class BarImpl implements BarRepository {
   Future<void> setCustomer(int id, String? tag) => api.barSetCustomer(id, tag);
 
   @override
-  Future<void> readyToBill(int id) => api.barReadyToBill(id);
-
-  @override
-  Future<void> addToRoom(int id, int bookingId, int roomId) => api.barAddToRoom(id, bookingId, roomId);
+  Future<void> addToRoom(int id, int bookingId, int roomId, {num discountAmount = 0}) =>
+      api.barAddToRoom(id, bookingId, roomId, discountAmount: discountAmount);
 
   @override
   Future<List<BarTab>> tabs() => api.barTabs();

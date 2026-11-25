@@ -157,8 +157,11 @@ class _AdvanceReceiptScreenState extends ConsumerState<AdvanceReceiptScreen> {
           child: Column(
             children: [
               Text(
-                '${r.guestName ?? ''} · ${r.isEventReceipt ? 'function' : 'stay'} total ${_money(r.stayTotal)} · '
-                '${_money(r.amountReceived)} advance held · ${_money(r.balanceDue)} still to pay',
+                r.openEnded
+                    ? '${r.guestName ?? ''} · open-ended stay (no check-out date) · '
+                          '${_money(r.amountReceived)} advance held · total is billed at check-out'
+                    : '${r.guestName ?? ''} · ${r.isEventReceipt ? 'function' : 'stay'} total ${_money(r.stayTotal)} · '
+                          '${_money(r.amountReceived)} advance held · ${_money(r.balanceDue)} still to pay',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),

@@ -76,7 +76,9 @@ const addItemsSchema = z.object({
   foodItems: z.array(foodItemSchema).default([]),
 }).refine(hasLines, noLines);
 
-const roomBillSchema = z.object({ bookingId: id, roomId: id });
+const discountAmount = z.coerce.number().min(0, 'A discount can’t be negative.').optional();
+
+const roomBillSchema = z.object({ bookingId: id, roomId: id, discountAmount });
 
 const qtySchema = z.object({ quantity: z.coerce.number().int().min(1).max(100) });
 
@@ -84,6 +86,7 @@ const billSchema = z.object({
   orderIds: z.array(id).min(1, 'Pick at least one order.'),
   customerName: text(100).optional().nullable(),
   customerPhone: text(20).optional().nullable(),
+  discountAmount,
   payments: z
     .array(
       z.object({

@@ -2,7 +2,6 @@ import './staySummary.css';
 import { roomSections } from './multiRoom';
 import { formatPrice } from './priceFormat';
 import { describeAdvance } from './paymentSplit';
-import IconButton from '../../components/IconButton';
 import { EyeIcon } from '../../components/ActionIcons';
 import {
   BedIcon,
@@ -76,7 +75,12 @@ function PersonCard({ name, tag, muted, phone, idType, idNumber, hasDocument, on
               {hasDocument ? (
                 <>
                   Uploaded
-                  {onViewDocument && <IconButton label={viewLabel} icon={<EyeIcon />} onClick={onViewDocument} />}
+                  {onViewDocument && (
+                    <button type="button" className="stay-summary__view" aria-label={viewLabel} onClick={onViewDocument}>
+                      <EyeIcon />
+                      View
+                    </button>
+                  )}
                 </>
               ) : (
                 missing

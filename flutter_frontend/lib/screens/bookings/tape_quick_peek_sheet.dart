@@ -133,7 +133,7 @@ class _QuickPeekSheet extends StatelessWidget {
                     child: Icon(Icons.arrow_forward_rounded, size: 13, color: AppTheme.muted),
                   ),
                   Text(
-                    formatIsoDate(tapped.checkOutDate),
+                    formatCheckOut(tapped.checkOutDate),
                     style: const TextStyle(
                       color: AppTheme.text,
                       fontSize: 13,
@@ -248,7 +248,7 @@ class _RoomRow extends StatelessWidget {
                   ),
                   Text(
                     '${room?.categoryName != null ? '${room!.categoryName} · ' : ''}'
-                    '${formatIsoDate(stay.checkInDate)} → ${formatIsoDate(stay.checkOutDate)}',
+                    '${formatIsoDate(stay.checkInDate)} → ${formatCheckOut(stay.checkOutDate)}',
                     style: const TextStyle(color: AppTheme.muted, fontSize: 11),
                   ),
                 ],

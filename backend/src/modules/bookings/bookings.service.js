@@ -45,7 +45,20 @@ function newFoodPin(taken = new Set()) {
 }
 
 function toIsoDate(d) {
+  if (d == null) return null; // an open-ended stay has no check-out date
   if (typeof d === 'string') return d.slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
+
+// An open-ended stay (no check-out date yet) holds its room until the guest is
+// checked out, so every overlap test reads its missing end as this far-future
+// date — in SQL as COALESCE(check_out_date, '9999-12-31'), in JS as endOrOpen().
+const OPEN_END = '9999-12-31';
+const endOrOpen = (checkOutDate) => checkOutDate ?? OPEN_END;
+
+function addDaysIso(isoDate, days) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
@@ -62,6 +75,7 @@ function todayIsoIST() {
 // including, checkout day, matching the pricing simulator's per-date lookup.
 function datesInRange(checkInDate, checkOutDate) {
   const dates = [];
+  if (!checkOutDate) return dates; // open-ended: nights are counted at check-out
   const cur = new Date(`${checkInDate}T00:00:00Z`);
   const end = new Date(`${checkOutDate}T00:00:00Z`);
   while (cur < end) {
@@ -120,16 +134,39 @@ async function priceStay(
   bedId = null,
   bedIds = null
 ) {
+  // An open-ended stay (no check-out date) is priced as its first night, only to
+  // show the rate; there is no total until check-out, when the nights actually
+  // stayed are priced (see settleOpenStay).
+  const open = checkOutDate == null;
   const quote = await pricingService.simulateRange(
     lodgeId,
     roomId,
     checkInDate,
-    checkOutDate,
+    open ? addDaysIso(checkInDate, 1) : checkOutDate,
     chargeIds,
     basePriceOverride,
     bedId,
     bedIds
   );
+
+  const charges = quote.lines.map((line) => ({
+    label: line.label,
+    amount: line.amount,
+    isBase: Boolean(line.isBase),
+    chargeId: line.chargeId,
+    quantity: line.quantity,
+  }));
+  if (open) {
+    return {
+      nights: [],
+      charges,
+      grossTotal: 0,
+      discountAmount: 0,
+      totalPrice: 0,
+      openEnded: true,
+      nightlyRate: quote.total,
+    };
+  }
 
   const grossTotal = quote.total;
   const requested = Number(discountAmount);
@@ -154,13 +191,7 @@ async function priceStay(
     //
     // isBase is a flag rather than a label match on purpose — the label carries
     // the price, so it changes the moment reception negotiates one.
-    charges: quote.lines.map((line) => ({
-      label: line.label,
-      amount: line.amount,
-      isBase: Boolean(line.isBase),
-      chargeId: line.chargeId,
-      quantity: line.quantity,
-    })),
+    charges,
     grossTotal,
     discountAmount: discount,
     totalPrice: round2(grossTotal - discount),
@@ -200,8 +231,12 @@ function normalizeRoomInputs(input) {
     }
     seen.add(roomId);
     const checkInDate = r.checkInDate ?? input.checkInDate;
-    const checkOutDate = r.checkOutDate ?? input.checkOutDate;
-    if (!checkInDate || !checkOutDate || checkOutDate <= checkInDate) {
+    // Optional: no check-out date = an open-ended stay (see OPEN_END).
+    const checkOutDate = r.checkOutDate ?? input.checkOutDate ?? null;
+    if (!checkInDate) {
+      throw new ApiError('Check-in date is required.', 400);
+    }
+    if (checkOutDate && checkOutDate <= checkInDate) {
       throw new ApiError('Check-out date must be after check-in date.', 400);
     }
     return {
@@ -211,6 +246,7 @@ function normalizeRoomInputs(input) {
       ),
       checkInDate,
       checkOutDate,
+      open: checkOutDate == null,
       basePriceOverride: r.basePriceOverride ?? null,
       switchableCharges: pricingService.normalizeSelections(r.switchableCharges ?? input.switchableCharges ?? []),
     };
@@ -281,6 +317,7 @@ async function priceBooking(lodgeId, rooms, discountAmount = 0) {
       )
     );
   }
+  // An open room's grossTotal is already 0, so it adds nothing to the total.
   const grossTotal = round2(quotes.reduce((sum, q) => sum + q.grossTotal, 0));
   const requested = Number(discountAmount);
   const discount = round2(Math.min(Math.max(Number.isFinite(requested) ? requested : 0, 0), grossTotal));
@@ -289,14 +326,28 @@ async function priceBooking(lodgeId, rooms, discountAmount = 0) {
     discount
   );
   return {
-    rooms: rooms.map((r, i) => ({
-      ...r,
-      nights: spreadConcession(quotes[i].nights, quotes[i].grossTotal, shares[i]),
-      charges: quotes[i].charges,
-      grossTotal: quotes[i].grossTotal,
-      discountAmount: shares[i],
-      totalPrice: round2(quotes[i].grossTotal - shares[i]),
-    })),
+    rooms: rooms.map((r, i) =>
+      r.checkOutDate == null
+        ? {
+            ...r,
+            // No nights are snapshotted for an open stay: they don't exist yet.
+            nights: [],
+            // The rate a night will cost, for the form to show.
+            nightlyRate: quotes[i].nightlyRate ?? 0,
+            charges: quotes[i].charges,
+            grossTotal: 0,
+            discountAmount: 0,
+            totalPrice: 0,
+          }
+        : {
+            ...r,
+            nights: spreadConcession(quotes[i].nights, quotes[i].grossTotal, shares[i]),
+            charges: quotes[i].charges,
+            grossTotal: quotes[i].grossTotal,
+            discountAmount: shares[i],
+            totalPrice: round2(quotes[i].grossTotal - shares[i]),
+          }
+    ),
     grossTotal,
     discountAmount: discount,
     totalPrice: round2(grossTotal - discount),
@@ -312,6 +363,8 @@ async function quoteBooking(lodgeId, { rooms, checkInDate, checkOutDate, discoun
       roomId: r.roomId,
       checkInDate: r.checkInDate,
       checkOutDate: r.checkOutDate,
+      openEnded: r.checkOutDate == null,
+      nightlyRate: r.nightlyRate ?? null,
       nights: r.nights,
       charges: r.charges,
       grossTotal: r.grossTotal,
@@ -350,7 +403,8 @@ async function insertBookingRoom(transaction, bookingId, room) {
     .input('basePriceOverride', sql.Decimal(10, 2), room.basePriceOverride ?? null)
     .input('totalPrice', sql.Decimal(10, 2), room.totalPrice)
     .input('discountAmount', sql.Decimal(10, 2), room.discountAmount)
-    .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(room.nights))
+    // NULL while open — the nights are snapshotted when the guest checks out.
+    .input('nightlyBreakdown', sql.NVarChar(sql.MAX), room.checkOutDate == null ? null : JSON.stringify(room.nights))
     .query(`
       INSERT INTO dbo.booking_rooms
         (booking_id, room_id, check_in_date, check_out_date, base_price_override, total_price, discount_amount, nightly_breakdown)
@@ -392,6 +446,7 @@ function roomNights(row) {
       // Falls through to the even split.
     }
   }
+  if (row.check_out_date == null) return []; // open-ended: no nights yet
   const dates = datesInRange(toIsoDate(row.check_in_date), toIsoDate(row.check_out_date));
   const even = dates.length > 0 ? round2(Number(row.total_price) / dates.length) : 0;
   return dates.map((date) => ({ date, total: even, lines: [] }));
@@ -429,7 +484,14 @@ async function syncBookingFromRooms(transaction, bookingId) {
     .input('bookingId', sql.BigInt, bookingId)
     .input('roomId', sql.BigInt, rows[0].room_id)
     .input('checkInDate', sql.Date, rows.map((r) => toIsoDate(r.check_in_date)).sort()[0])
-    .input('checkOutDate', sql.Date, rows.map((r) => toIsoDate(r.check_out_date)).sort().reverse()[0])
+    // Any room still open keeps the booking open; otherwise the latest check-out.
+    .input(
+      'checkOutDate',
+      sql.Date,
+      rows.some((r) => r.check_out_date == null)
+        ? null
+        : rows.map((r) => toIsoDate(r.check_out_date)).sort().reverse()[0]
+    )
     .input('status', sql.NVarChar, status)
     .input('totalPrice', sql.Decimal(10, 2), round2(rows.reduce((s, r) => s + Number(r.total_price), 0)))
     .input('discountAmount', sql.Decimal(10, 2), round2(rows.reduce((s, r) => s + Number(r.discount_amount ?? 0), 0)))
@@ -616,7 +678,7 @@ async function hasOverlap(
   const request = makeRequest()
     .input('roomId', sql.BigInt, roomId)
     .input('checkInDate', sql.Date, checkInDate)
-    .input('checkOutDate', sql.Date, checkOutDate);
+    .input('checkOutDate', sql.Date, endOrOpen(checkOutDate));
   let excludeClause = '';
   if (excludeBookingId) {
     request.input('excludeBookingId', sql.BigInt, excludeBookingId);
@@ -647,7 +709,7 @@ async function hasOverlap(
     SELECT TOP 1 br.id FROM dbo.booking_rooms br ${lockHint}
     JOIN dbo.bookings b ON b.id = br.booking_id
     WHERE br.room_id = @roomId AND br.status IN ('BOOKED', 'CHECKED_IN')
-      AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+      AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
       ${excludeClause}
       AND (${bedClause})
   `);
@@ -691,7 +753,7 @@ async function listRoomConflicts(pool, lodgeId, checkInDate, checkOutDate, exclu
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('checkInDate', sql.Date, checkInDate)
-    .input('checkOutDate', sql.Date, checkOutDate)
+    .input('checkOutDate', sql.Date, endOrOpen(checkOutDate))
     .input('excludeBookingId', sql.BigInt, excludeBookingId)
     .query(`
       SELECT br.room_id, br.check_in_date, br.check_out_date
@@ -700,7 +762,7 @@ async function listRoomConflicts(pool, lodgeId, checkInDate, checkOutDate, exclu
       WHERE r.lodge_id = @lodgeId AND r.is_active = 1
         AND br.status IN ('BOOKED', 'CHECKED_IN')
         AND (@excludeBookingId IS NULL OR br.booking_id <> @excludeBookingId)
-        AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+        AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
       ORDER BY br.room_id, br.check_in_date ASC
     `);
 
@@ -720,7 +782,7 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
     .request()
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('checkInDate', sql.Date, checkInDate)
-    .input('checkOutDate', sql.Date, checkOutDate)
+    .input('checkOutDate', sql.Date, endOrOpen(checkOutDate))
     .query(`
       SELECT r.id, r.room_number, r.floor, r.bed_size, r.beds, r.bathroom_type, r.max_occupancy, r.description,
              r.is_dormitory, r.dormitory_price, r.dormitory_gender, r.dormitory_is_ac,
@@ -735,7 +797,7 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
           NOT EXISTS (
             SELECT 1 FROM dbo.booking_rooms br
             WHERE br.room_id = r.id AND br.status IN ('BOOKED', 'CHECKED_IN')
-              AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+              AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
           )
           OR (
             -- A dormitory sells its beds one at a time, so it stays offered
@@ -749,7 +811,7 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
               SELECT 1 FROM dbo.booking_rooms br
               JOIN dbo.bookings b ON b.id = br.booking_id
               WHERE br.room_id = r.id AND br.status IN ('BOOKED', 'CHECKED_IN') AND b.bed_id IS NULL
-                AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+                AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
             )
             AND EXISTS (
               SELECT 1 FROM dbo.dormitory_beds db
@@ -758,7 +820,7 @@ async function listAvailableRooms(lodgeId, checkInDate, checkOutDate) {
                   SELECT 1 FROM dbo.booking_rooms br
                   JOIN dbo.bookings b ON b.id = br.booking_id
                   WHERE br.room_id = r.id AND br.status IN ('BOOKED', 'CHECKED_IN')
-                    AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+                    AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
                     AND (
                       b.bed_id = db.id
                       OR EXISTS (SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id = db.id)
@@ -839,7 +901,7 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate, exc
     .request()
     .input('roomId', sql.BigInt, roomId)
     .input('checkInDate', sql.Date, checkInDate)
-    .input('checkOutDate', sql.Date, checkOutDate)
+    .input('checkOutDate', sql.Date, endOrOpen(checkOutDate))
     .input('excludeBookingId', sql.BigInt, excludeBookingId)
     .query(`
       SELECT db.id, db.bed_label,
@@ -847,7 +909,7 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate, exc
                SELECT 1 FROM dbo.booking_rooms br
                JOIN dbo.bookings b ON b.id = br.booking_id
                WHERE br.room_id = @roomId AND br.status IN ('BOOKED', 'CHECKED_IN')
-                 AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+                 AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
                  AND (@excludeBookingId IS NULL OR b.id <> @excludeBookingId)
                  AND (
                    b.bed_id = db.id OR b.bed_id IS NULL
@@ -865,12 +927,12 @@ async function listAvailableBeds(lodgeId, roomId, checkInDate, checkOutDate, exc
     .request()
     .input('roomId', sql.BigInt, roomId)
     .input('checkInDate', sql.Date, checkInDate)
-    .input('checkOutDate', sql.Date, checkOutDate)
+    .input('checkOutDate', sql.Date, endOrOpen(checkOutDate))
     .input('excludeBookingId', sql.BigInt, excludeBookingId)
     .query(`
       SELECT TOP 1 id FROM dbo.booking_rooms
       WHERE room_id = @roomId AND status IN ('BOOKED', 'CHECKED_IN')
-        AND check_in_date < @checkOutDate AND check_out_date > @checkInDate
+        AND check_in_date < @checkOutDate AND COALESCE(check_out_date, '9999-12-31') > @checkInDate
         AND (@excludeBookingId IS NULL OR booking_id <> @excludeBookingId)
     `);
 
@@ -924,7 +986,7 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate, re
   // never offers rooms against a range the save would go on to refuse.
   const checkInDate =
     requestedCheckInDate && bookingRow.status === 'BOOKED' ? requestedCheckInDate : storedCheckInDate;
-  if (checkOutDate <= checkInDate) {
+  if (checkOutDate && checkOutDate <= checkInDate) {
     throw new ApiError('Check-out date must be after check-in date.', 400);
   }
 
@@ -933,7 +995,7 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate, re
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .input('checkInDate', sql.Date, checkInDate)
-    .input('checkOutDate', sql.Date, checkOutDate)
+    .input('checkOutDate', sql.Date, endOrOpen(checkOutDate))
     .query(`
       SELECT r.id, r.room_number, r.floor, r.bed_size, r.beds, r.bathroom_type, r.max_occupancy, r.description,
              r.is_dormitory, r.dormitory_price, r.dormitory_gender, r.dormitory_is_ac,
@@ -945,7 +1007,7 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate, re
           NOT EXISTS (
             SELECT 1 FROM dbo.booking_rooms br
             WHERE br.room_id = r.id AND br.booking_id <> @bookingId AND br.status IN ('BOOKED', 'CHECKED_IN')
-              AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+              AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
           )
           OR (
             -- Same bed-aware carve-out as listAvailableRooms: a dormitory
@@ -958,7 +1020,7 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate, re
               SELECT 1 FROM dbo.booking_rooms br
               JOIN dbo.bookings b ON b.id = br.booking_id
               WHERE br.room_id = r.id AND br.booking_id <> @bookingId AND br.status IN ('BOOKED', 'CHECKED_IN') AND b.bed_id IS NULL
-                AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+                AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
             )
             AND EXISTS (
               SELECT 1 FROM dbo.dormitory_beds db
@@ -967,7 +1029,7 @@ async function listAvailableRoomsForBooking(lodgeId, bookingId, checkOutDate, re
                   SELECT 1 FROM dbo.booking_rooms br
                   JOIN dbo.bookings b ON b.id = br.booking_id
                   WHERE br.room_id = r.id AND br.booking_id <> @bookingId AND br.status IN ('BOOKED', 'CHECKED_IN')
-                    AND br.check_in_date < @checkOutDate AND br.check_out_date > @checkInDate
+                    AND br.check_in_date < @checkOutDate AND COALESCE(br.check_out_date, '9999-12-31') > @checkInDate
                     AND (
                       b.bed_id = db.id
                       OR EXISTS (SELECT 1 FROM dbo.booking_beds bb WHERE bb.booking_id = b.id AND bb.bed_id = db.id)
@@ -1019,7 +1081,7 @@ async function listBookings(lodgeId, { fromDate, toDate } = {}) {
   let dateFilter = '';
   if (fromDate && toDate) {
     request.input('fromDate', sql.Date, fromDate).input('toDate', sql.Date, toDate);
-    dateFilter = 'AND b.check_in_date <= @toDate AND b.check_out_date > @fromDate';
+    dateFilter = "AND b.check_in_date <= @toDate AND COALESCE(b.check_out_date, '9999-12-31') > @fromDate";
   }
 
   const result = await request.query(`
@@ -1159,7 +1221,7 @@ async function getTapeChart(lodgeId, startDate, endDate) {
         ORDER BY created_at DESC
       ) i
       WHERE b.lodge_id = @lodgeId AND br.status IN ('BOOKED', 'CHECKED_IN', 'CHECKED_OUT')
-        AND br.check_in_date < @endDate AND br.check_out_date > @startDate
+        AND br.check_in_date < @endDate AND COALESCE(br.check_out_date, '9999-12-31') > @startDate
       ORDER BY br.check_in_date ASC, br.id ASC
     `);
 
@@ -1185,7 +1247,7 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       FROM dbo.booking_rooms br
       JOIN dbo.bookings b ON b.id = br.booking_id
       WHERE b.lodge_id = @lodgeId AND b.status = 'CANCELLED'
-        AND br.check_in_date < @endDate AND br.check_out_date > @startDate
+        AND br.check_in_date < @endDate AND COALESCE(br.check_out_date, '9999-12-31') > @startDate
       ORDER BY br.check_in_date ASC, br.id ASC
     `);
 
@@ -1232,6 +1294,8 @@ async function getTapeChart(lodgeId, startDate, endDate) {
       coGuestIdNumbers: b.co_guest_id_numbers ? b.co_guest_id_numbers.split('\u001f') : [],
       checkInDate: toIsoDate(b.check_in_date),
       checkOutDate: toIsoDate(b.check_out_date),
+      // No check-out date yet: the room is held until the guest leaves.
+      isOpenEnded: b.check_out_date == null,
       status: b.status,
       totalPrice: Number(b.total_price),
     })),
@@ -1314,6 +1378,7 @@ function mapBooking(row, charges = [], guests = [], vehicles = [], extra = {}) {
     hasIdProofDocument: !!row.id_proof_document,
     checkInDate: toIsoDate(row.check_in_date),
     checkOutDate: toIsoDate(row.check_out_date),
+    isOpenEnded: row.check_out_date == null,
     // What the stay is charged after the concession, which is the number the
     // guest was quoted and the one every screen shows.
     totalPrice: Number(row.total_price),
@@ -1463,7 +1528,10 @@ async function searchGuests(lodgeId, query) {
     .input('q', sql.NVarChar, likeContains(term))
     .query(`
       WITH matches AS (
-        SELECT id, guest_name, guest_phone, id_proof_type, id_proof_number, id_proof_document, check_in_date
+        SELECT id, guest_name, guest_phone, id_proof_type, id_proof_number, id_proof_document, check_in_date,
+               -- What this stay was billed, from its issued invoice (0 until billed).
+               (SELECT ISNULL(SUM(i.total_amount), 0) FROM dbo.invoices i
+                WHERE i.booking_id = bookings.id AND i.status = 'ISSUED') AS business
         FROM dbo.bookings
         WHERE lodge_id = @lodgeId
           -- A cancelled booking is not evidence anybody ever stayed, and its
@@ -1484,7 +1552,8 @@ async function searchGuests(lodgeId, query) {
                           check_in_date DESC, id DESC
                ) AS rn,
                COUNT(*) OVER (PARTITION BY guest_name, guest_phone) AS stay_count,
-               MAX(check_in_date) OVER (PARTITION BY guest_name, guest_phone) AS last_stay
+               MAX(check_in_date) OVER (PARTITION BY guest_name, guest_phone) AS last_stay,
+               SUM(business) OVER (PARTITION BY guest_name, guest_phone) AS total_business
         FROM matches
       ),
       people AS (
@@ -1494,7 +1563,7 @@ async function searchGuests(lodgeId, query) {
         ORDER BY last_stay DESC
       )
       SELECT r.id, r.guest_name, r.guest_phone, r.id_proof_type, r.id_proof_number, r.id_proof_document,
-             r.stay_count, r.last_stay, r.rn
+             r.stay_count, r.last_stay, r.total_business, r.rn
       FROM ranked r
       JOIN people p ON p.guest_name = r.guest_name AND p.guest_phone = r.guest_phone
       -- Five deep: enough that one guest's tidied-up old document doesn't cost
@@ -1554,6 +1623,8 @@ async function searchGuests(lodgeId, query) {
       // to know there is one, so it can say so instead of asking again.
       hasIdProofDocument: hasDocument,
       stayCount: chosen.stay_count,
+      // Everything this guest has been billed across those stays.
+      totalBusiness: Number(chosen.total_business) || 0,
       lastStayDate: toIsoDate(chosen.last_stay),
     });
   }
@@ -1842,7 +1913,7 @@ async function getBooking(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT o.id, o.order_number, o.source, o.status, o.subtotal, o.placed_at, o.on_room_bill, o.invoice_id,
+      SELECT o.id, o.order_number, o.source, o.status, o.subtotal, o.discount_amount, o.placed_at, o.on_room_bill, o.invoice_id,
              t.label AS table_label
       FROM dbo.food_orders o
       LEFT JOIN dbo.dining_tables t ON t.id = o.table_id
@@ -1870,6 +1941,8 @@ async function getBooking(lodgeId, bookingId) {
     placedFrom: o.source === 'TABLE' ? o.table_label : o.source === 'COUNTER' ? 'Takeaway' : null,
     status: o.status,
     subtotal: Number(o.subtotal),
+    // Taken off when the desk added this to the room bill; shown under Restaurant there.
+    discount: Number(o.discount_amount) || 0,
     placedAt: o.placed_at,
     billed: o.invoice_id != null,
     // Only food the desk has deliberately added counts on the room bill.
@@ -1911,7 +1984,7 @@ async function getBooking(lodgeId, bookingId) {
     .input('lodgeId', sql.BigInt, lodgeId)
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
-      SELECT o.id, o.order_number, o.on_room_bill, o.invoice_id, o.created_at,
+      SELECT o.id, o.order_number, o.on_room_bill, o.invoice_id, o.created_at, o.discount_amount,
              (SELECT ISNULL(SUM(i.line_total), 0) FROM dbo.bar_order_items i WHERE i.order_id = o.id AND i.is_cancelled = 0) AS drinks,
              (SELECT ISNULL(SUM(fi.line_total), 0) FROM dbo.food_orders fo JOIN dbo.food_order_items fi ON fi.order_id = fo.id
               WHERE fo.bar_order_id = o.id AND fo.lodge_id = @lodgeId AND fo.status <> 'CANCELLED') AS food
@@ -1925,6 +1998,7 @@ async function getBooking(lodgeId, bookingId) {
     drinks: Number(o.drinks),
     food: Number(o.food),
     amount: Math.round((Number(o.drinks) + Number(o.food)) * 100) / 100,
+    discount: Number(o.discount_amount) || 0,
     billed: o.invoice_id != null,
     onRoomBill: !!o.on_room_bill,
     placedAt: o.created_at,
@@ -2022,7 +2096,9 @@ async function createBooking(lodgeId, userId, input) {
 
   // Against what is actually payable, not the gross: a stay discounted to ₹900
   // cannot take ₹1,000 up front.
-  assertAdvanceWithinTotal(input.advanceAmount, totalPrice);
+  // An open-ended stay has no total yet, so there is nothing to cap the advance
+  // against; it is settled against the bill at check-out.
+  if (!rooms.some((r) => r.open)) assertAdvanceWithinTotal(input.advanceAmount, totalPrice);
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
@@ -2062,7 +2138,7 @@ async function createBooking(lodgeId, userId, input) {
       .input('checkOutDate', sql.Date, first.checkOutDate)
       .input('totalPrice', sql.Decimal(10, 2), totalPrice)
       .input('discountAmount', sql.Decimal(10, 2), discountAmount)
-      .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(first.nights))
+      .input('nightlyBreakdown', sql.NVarChar(sql.MAX), first.open ? null : JSON.stringify(first.nights))
       .input('createdBy', sql.BigInt, userId ?? null)
       .input('advanceAmount', sql.Decimal(10, 2), input.advanceAmount ?? null)
       .input('advancePaymentMethod', sql.NVarChar, input.advancePaymentMethod ?? null)
@@ -2262,7 +2338,7 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
     .input('bookingId', sql.BigInt, bookingId)
     .query(`
       SELECT b.num_guests, b.num_children, b.id_proof_type, b.total_price, b.advance_amount,
-             b.guest_name, b.guest_phone,
+             b.check_out_date, b.guest_name, b.guest_phone,
              l.serves_food, l.food_room_service
       FROM dbo.bookings b
       JOIN dbo.lodges l ON l.id = b.lodge_id
@@ -2398,7 +2474,10 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
 
   // check-in ADDS to whatever was already taken, so the two are weighed
   // together — ₹500 at booking and ₹600 at the door is ₹1,100 against the stay.
-  assertAdvanceWithinTotal(input.advanceAmount, bookingRow.total_price, bookingRow.advance_amount);
+  // Open-ended stays have no total yet, so there is nothing to cap against.
+  if (bookingRow.check_out_date != null) {
+    assertAdvanceWithinTotal(input.advanceAmount, bookingRow.total_price, bookingRow.advance_amount);
+  }
 
   const takesRoomOrders = !!bookingRow.serves_food && !!bookingRow.food_room_service;
 
@@ -2519,6 +2598,84 @@ async function checkIn(lodgeId, bookingId, input, userId = null, { roomId = null
 // Per room, because each room has its own dates and its own arrival. Without a
 // roomId it answers for the room the booking is most "live" in: the first one
 // checked in, else the first one.
+// The IST calendar date of an instant (see todayIsoIST for why IST).
+function isoDateIST(at = new Date()) {
+  return new Date(at.getTime() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+// What an open-ended room costs if the guest leaves at `at`: the nights from
+// check-in up to that day (at least one), priced by the same engine as any stay,
+// with the extras, agreed rate and beds the booking was made with. Nothing is
+// written here — the preview and the check-out both call it, and applyCheckOut
+// is what stores the result, in the check-out's own transaction.
+async function priceOpenStay(db, lodgeId, row, at = new Date()) {
+  const checkInDate = toIsoDate(row.check_in_date);
+  const leaveDate = isoDateIST(at);
+  const checkOutDate = leaveDate > checkInDate ? leaveDate : addDaysIso(checkInDate, 1);
+
+  const chargeRows = (
+    await db
+      .request()
+      .input('bookingRoomId', sql.BigInt, row.id)
+      .query('SELECT charge_id, quantity, agreed_amount FROM dbo.booking_room_switchable_charges WHERE booking_room_id = @bookingRoomId')
+  ).recordset;
+  const charges = chargeRows.map((c) => ({
+    id: Number(c.charge_id),
+    quantity: Number(c.quantity),
+    agreedAmount: c.agreed_amount == null ? undefined : Number(c.agreed_amount),
+  }));
+  const bedRows = (
+    await db
+      .request()
+      .input('bookingId', sql.BigInt, row.booking_id)
+      .input('roomId', sql.BigInt, row.room_id)
+      .query(`
+        SELECT db.id
+        FROM (SELECT bed_id FROM dbo.booking_beds WHERE booking_id = @bookingId
+              UNION SELECT bed_id FROM dbo.bookings WHERE id = @bookingId AND bed_id IS NOT NULL) v
+        JOIN dbo.dormitory_beds db ON db.id = v.bed_id
+        WHERE db.room_id = @roomId
+        ORDER BY db.id
+      `)
+  ).recordset;
+  const bedIds = bedRows.map((b) => Number(b.id));
+
+  const priced = await priceStay(
+    lodgeId,
+    row.room_id,
+    checkInDate,
+    checkOutDate,
+    pricingService.normalizeSelections(charges),
+    row.base_price_override != null ? Number(row.base_price_override) : null,
+    0,
+    bedIds[0] ?? null,
+    bedIds
+  );
+  return {
+    bookingRoomId: Number(row.id),
+    checkOutDate,
+    totalPrice: priced.totalPrice,
+    nightlyBreakdown: JSON.stringify(priced.nights),
+    nights: priced.nights.length,
+  };
+}
+
+// The booking row's own figures, derived from its rooms exactly as
+// syncBookingFromRooms does — for a bill previewed before the check-out has
+// been written. `rows` are booking_rooms rows (with room_number), overrides
+// already applied.
+function bookingFiguresFromRooms(rows) {
+  return {
+    check_out_date: rows.some((r) => r.check_out_date == null)
+      ? null
+      : rows.map((r) => toIsoDate(r.check_out_date)).sort().reverse()[0],
+    total_price: round2(rows.reduce((sum, r) => sum + Number(r.total_price), 0)),
+    nightly_breakdown: JSON.stringify(
+      mergeRoomNights(rows.map((r) => ({ roomNumber: r.room_number, nights: roomNights(r) })))
+    ),
+  };
+}
+
 async function getLateCheckout(lodgeId, bookingId, at = new Date(), roomId = null) {
   const pool = await getPool();
   const result = await pool
@@ -2527,8 +2684,8 @@ async function getLateCheckout(lodgeId, bookingId, at = new Date(), roomId = nul
     .input('bookingId', sql.BigInt, bookingId)
     .input('roomId', sql.BigInt, roomId)
     .query(`
-      SELECT TOP 1 br.id AS booking_room_id, br.room_id, r.room_number,
-             br.check_in_date, br.check_out_date, br.actual_check_in_at, br.status,
+      SELECT TOP 1 br.id AS booking_room_id, br.id, br.booking_id, br.room_id, r.room_number,
+             br.check_in_date, br.check_out_date, br.actual_check_in_at, br.status, br.base_price_override,
              br.total_price, br.nightly_breakdown, br.late_checkout_charge,
              l.checkin_mode, l.check_out_time, l.check_in_time, l.early_arrival_from, l.late_grace_minutes,
              l.late_half_day_percent, l.late_full_day_after_minutes, l.late_full_day_percent
@@ -2543,6 +2700,16 @@ async function getLateCheckout(lodgeId, bookingId, at = new Date(), roomId = nul
   const row = result.recordset[0];
   if (!row) {
     throw new ApiError('Booking not found.', 404);
+  }
+
+  // An open-ended stay has no check-out date yet, so it is judged as if the guest
+  // were leaving at `at`: the nights it will be billed for, its rate, and the
+  // checkout time of that day. applyCheckOut stores the same figures.
+  const openStay = row.check_out_date == null ? await priceOpenStay(pool, lodgeId, row, at) : null;
+  if (openStay) {
+    row.check_out_date = openStay.checkOutDate;
+    row.total_price = openStay.totalPrice;
+    row.nightly_breakdown = openStay.nightlyBreakdown;
   }
 
   const checkInDate = toIsoDate(row.check_in_date);
@@ -2614,6 +2781,8 @@ async function getLateCheckout(lodgeId, bookingId, at = new Date(), roomId = nul
     percent: suggestion.percent,
     policy,
     appliedCharge: Number(row.late_checkout_charge ?? 0),
+    // Set only for an open-ended stay: what applyCheckOut writes onto the room.
+    openStay,
   };
 }
 
@@ -2626,6 +2795,7 @@ function lastNightlyRate(row) {
     const nights = JSON.parse(row.nightly_breakdown);
     if (nights.length > 0) return round2(Number(nights[nights.length - 1].total));
   }
+  if (row.check_out_date == null) return 0;
   const nights = lateCheckout.nightsBetween(toIsoDate(row.check_in_date), toIsoDate(row.check_out_date));
   return round2(Number(row.total_price) / nights);
 }
@@ -2661,6 +2831,8 @@ async function listCheckoutAlerts(lodgeId, { windowMinutes = 60, at = new Date()
 
   const alerts = [];
   for (const row of result.recordset) {
+    // An open-ended stay has no check-out time to be late for.
+    if (row.check_out_date == null) continue;
     const deadline = lateCheckout.checkoutDeadline({
       checkinMode: row.checkin_mode,
       checkOutTime: toClockTime(row.check_out_time),
@@ -2815,6 +2987,24 @@ async function applyCheckOut(transaction, bookingId, { rooms, lateByRoom, ats = 
   let first = true;
   for (const [index, room] of rooms.entries()) {
     const late = lateByRoom[index];
+    // An open-ended stay is dated and priced as it closes, in this same
+    // transaction: from here on it is an ordinary stay that ended today.
+    if (late.openStay) {
+      const settled = await new sql.Request(transaction)
+        .input('id', sql.BigInt, room.id)
+        .input('checkOutDate', sql.Date, late.openStay.checkOutDate)
+        .input('totalPrice', sql.Decimal(10, 2), late.openStay.totalPrice)
+        .input('nightlyBreakdown', sql.NVarChar(sql.MAX), late.openStay.nightlyBreakdown)
+        .query(`
+          UPDATE dbo.booking_rooms
+          SET check_out_date = @checkOutDate, total_price = @totalPrice, nightly_breakdown = @nightlyBreakdown
+          OUTPUT inserted.id
+          WHERE id = @id AND check_out_date IS NULL
+        `);
+      if (settled.recordset.length === 0) {
+        throw new ApiError('This stay changed while it was being checked out. Reload it and try again.', 409);
+      }
+    }
     const result = await new sql.Request(transaction)
       .input('id', sql.BigInt, room.id)
       .input('lateCharge', sql.Decimal(10, 2), first ? round2(Number(lateCharge) || 0) : 0)
@@ -3002,8 +3192,13 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
 
     const checkInDate = d.checkInDate ?? (match ? toIsoDate(match.check_in_date) : defaultCheckIn);
     const checkOutDate = d.checkOutDate ?? (match ? toIsoDate(match.check_out_date) : defaultCheckOut);
-    if (checkOutDate <= checkInDate) {
+    // No check-out date = an open-ended stay, which is legitimate until the guest
+    // leaves. A billed (revised) stay is never open.
+    if (checkOutDate && checkOutDate <= checkInDate) {
       throw new ApiError('Check-out date must be after check-in date.', 400);
+    }
+    if (revising && !checkOutDate) {
+      throw new ApiError('A billed stay needs a check-out date.', 409);
     }
 
     const sameRoom = match && Number(match.room_id) === roomId;
@@ -3198,7 +3393,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
   // An edit SETS the advance rather than adding to it, so what is typed is
   // weighed against the stay on its own — and against the re-priced total,
   // since the same save may have shortened the stay or taken a discount off it.
-  if (input.advanceAmount != null) {
+  if (input.advanceAmount != null && !resolved.some((r) => !r.checkOutDate)) {
     assertAdvanceWithinTotal(input.advanceAmount, totalPrice);
   }
 
@@ -3233,11 +3428,11 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
         const clash = await new sql.Request(transaction)
           .input('roomId', sql.BigInt, room.roomId)
           .input('inDate', sql.Date, room.checkInDate)
-          .input('outDate', sql.Date, room.checkOutDate)
+          .input('outDate', sql.Date, endOrOpen(room.checkOutDate))
           .input('bookingId', sql.BigInt, bookingId)
           .query(`SELECT TOP 1 br.id FROM dbo.booking_rooms br WITH (UPDLOCK, HOLDLOCK)
                   WHERE br.room_id = @roomId AND br.booking_id <> @bookingId AND br.status <> 'CANCELLED'
-                    AND br.check_in_date < @outDate AND br.check_out_date > @inDate`);
+                    AND br.check_in_date < @outDate AND COALESCE(br.check_out_date, '9999-12-31') > @inDate`);
         if (clash.recordset.length > 0) throw new ApiError(takenMessage(room), 409);
       }
     }
@@ -3266,7 +3461,7 @@ async function updateBooking(lodgeId, bookingId, input, userId = null) {
         .input('basePriceOverride', sql.Decimal(10, 2), room.basePriceOverride ?? null)
         .input('totalPrice', sql.Decimal(10, 2), room.totalPrice)
         .input('discountAmount', sql.Decimal(10, 2), room.discountAmount)
-        .input('nightlyBreakdown', sql.NVarChar(sql.MAX), JSON.stringify(room.nights))
+        .input('nightlyBreakdown', sql.NVarChar(sql.MAX), room.checkOutDate == null ? null : JSON.stringify(room.nights))
         .input('shift', sql.Bit, revising ? 1 : 0)
         .query(`
           UPDATE dbo.booking_rooms
@@ -3577,7 +3772,7 @@ async function createPastBooking(lodgeId, userId, input) {
       .input('outDate', sql.Date, room.checkOutDate)
       .query(`SELECT TOP 1 br.id FROM dbo.booking_rooms br
               WHERE br.room_id = @roomId AND br.status = 'CHECKED_OUT'
-                AND br.check_in_date < @outDate AND br.check_out_date > @inDate`);
+                AND br.check_in_date < @outDate AND COALESCE(br.check_out_date, '9999-12-31') > @inDate`);
     if (clash.recordset.length > 0) {
       throw new ApiError('That room already has a stay for part of those nights.', 409);
     }
@@ -3755,6 +3950,9 @@ module.exports = {
   listCheckoutAlerts,
   listCheckinAlerts,
   prepareCheckOut,
+  priceOpenStay,
+  bookingFiguresFromRooms,
+  normalizeRoomInputs,
   applyCheckOut,
   updateBooking,
   cancelBooking,

@@ -140,7 +140,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
                         final where = [
                           if ((d.roomNumber ?? '').isNotEmpty) 'Room ${d.roomNumber}',
                           if ((d.checkInDate ?? '').isNotEmpty)
-                            '${formatIsoDate(d.checkInDate!)}${(d.checkOutDate ?? '').isNotEmpty ? ' → ${formatIsoDate(d.checkOutDate!)}' : ''}',
+                            '${formatIsoDate(d.checkInDate!)}${(d.checkOutDate ?? '').isNotEmpty ? ' → ${formatCheckOut(d.checkOutDate)}' : ''}',
                         ].join(' · ');
                         return ListTile(
                           dense: true,
@@ -1061,7 +1061,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
     DateTime? checkIn,
   }) async {
     final booked = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
+      FullWidthRoute(
         builder: (_) =>
             TakeBookingScreen(presetRoomId: roomId, presetCheckIn: checkIn),
       ),
@@ -1080,7 +1080,7 @@ class _TapeChartState extends ConsumerState<TapeChart>
         .loadDraft(draftId);
     if (!context.mounted || draft == null) return;
     await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => TakeBookingScreen(draft: draft)),
+      FullWidthRoute(builder: (_) => TakeBookingScreen(draft: draft)),
     );
     // Whatever happened in there — booked, saved again, deleted, or simply
     // backed out of — the chart's own drafts and bookings may have moved,
@@ -2754,6 +2754,7 @@ class _Tile extends StatefulWidget {
   final DateTime date;
   final bool isRunStart;
   final bool isRunEnd;
+
   final bool isDraftRunStart;
   final bool isDraftRunEnd;
   final bool isToday;
@@ -3135,6 +3136,12 @@ class _TileState extends State<_Tile> {
                       fontSize: 9,
                       fontWeight: FontWeight.w700,
                     ),
+                  )
+                // No check-out date yet: the stay carries on past this edge.
+                : (s != null && s.isOpenEnded && widget.isRunEnd && widget.size >= 24)
+                ? const Tooltip(
+                    message: 'No check-out date — grows a night each day until the guest leaves',
+                    child: Icon(Icons.arrow_forward_rounded, size: 16, color: Colors.white),
                   )
                 : null,
           ),

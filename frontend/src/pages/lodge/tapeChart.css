@@ -903,6 +903,23 @@
   width: calc(var(--tape-tile) - 2px);
 }
 
+.tape-tile--open-end {
+  /* An open-ended stay (no check-out date) runs off the edge of the chart. */
+  position: relative;
+}
+
+.tape-tile--open-end::after {
+  content: '92';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  pointer-events: none;
+}
+
 .tape-tile--end {
   border-top-right-radius: 6px;
   border-bottom-right-radius: 6px;

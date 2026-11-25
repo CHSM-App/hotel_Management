@@ -19,10 +19,50 @@ Future<DateTime?> showAppDatePicker({
   DateTime? currentDate,
   String? helpText,
   Widget Function(BuildContext, Widget?)? builder,
+  BuildContext? anchor,
 }) {
   final clampedInitial = initialDate.isBefore(firstDate)
       ? firstDate
       : (initialDate.isAfter(lastDate) ? lastDate : initialDate);
+  final box = anchor?.findRenderObject();
+  if (box is RenderBox && box.hasSize) {
+    // Dropdown style: the calendar opens right under the [anchor] field (or
+    // above it when there is no room) and a day tap picks and closes.
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    return showGeneralDialog<DateTime>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 120),
+      pageBuilder: (ctx, _, __) {
+        final screen = MediaQuery.of(ctx).size;
+        final width = rect.width.clamp(280.0, 340.0);
+        final left = rect.left.clamp(
+          8.0,
+          (screen.width - width - 8).clamp(8.0, double.infinity),
+        );
+        final fitsBelow = rect.bottom + 4 + 360 <= screen.height;
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              width: width,
+              top: fitsBelow ? rect.bottom + 4 : null,
+              bottom: fitsBelow ? null : screen.height - rect.top + 4,
+              child: _CompactDatePickerDialog(
+                initialDate: DateUtils.dateOnly(clampedInitial),
+                firstDate: DateUtils.dateOnly(firstDate),
+                lastDate: DateUtils.dateOnly(lastDate),
+                helpText: helpText,
+                anchored: true,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
   return showDialog<DateTime>(
     context: context,
     barrierDismissible: true,
@@ -74,7 +114,11 @@ class _CompactDatePickerDialog extends StatefulWidget {
   final DateTime? initialRangeStart;
   final DateTime? initialRangeEnd;
 
+  /// Drawn as a plain card (not a Dialog) and a day tap pops it straight away.
+  final bool anchored;
+
   const _CompactDatePickerDialog({
+    this.anchored = false,
     required this.initialDate,
     required this.firstDate,
     required this.lastDate,
@@ -85,14 +129,25 @@ class _CompactDatePickerDialog extends StatefulWidget {
   });
 
   @override
-  State<_CompactDatePickerDialog> createState() => _CompactDatePickerDialogState();
+  State<_CompactDatePickerDialog> createState() =>
+      _CompactDatePickerDialogState();
 }
 
 class _CompactDatePickerDialogState extends State<_CompactDatePickerDialog> {
   static const _weekdayLabels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
   static const _monthLabels = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
 
   late DateTime _displayedMonth;
@@ -108,10 +163,14 @@ class _CompactDatePickerDialogState extends State<_CompactDatePickerDialog> {
     _selected = widget.initialDate;
     _rangeStart = widget.initialRangeStart;
     _rangeEnd = widget.initialRangeEnd;
-    _displayedMonth = DateTime(widget.initialDate.year, widget.initialDate.month);
+    _displayedMonth = DateTime(
+      widget.initialDate.year,
+      widget.initialDate.month,
+    );
     // Centers the grid roughly on the current year on first open — each row
     // of 3 chips is ~44px tall, so this is an estimate, not an exact scroll.
-    final rowOfCurrentYear = (_displayedMonth.year - widget.firstDate.year) ~/ 3;
+    final rowOfCurrentYear =
+        (_displayedMonth.year - widget.firstDate.year) ~/ 3;
     _yearScrollController = ScrollController(
       initialScrollOffset: (rowOfCurrentYear - 2).clamp(0, 1 << 30) * 44.0,
     );
@@ -124,24 +183,35 @@ class _CompactDatePickerDialogState extends State<_CompactDatePickerDialog> {
   }
 
   bool get _canGoPrev {
-    final prevMonthEnd = DateTime(_displayedMonth.year, _displayedMonth.month, 0);
+    final prevMonthEnd = DateTime(
+      _displayedMonth.year,
+      _displayedMonth.month,
+      0,
+    );
     return !prevMonthEnd.isBefore(widget.firstDate);
   }
 
   bool get _canGoNext {
-    final nextMonthStart = DateTime(_displayedMonth.year, _displayedMonth.month + 1);
+    final nextMonthStart = DateTime(
+      _displayedMonth.year,
+      _displayedMonth.month + 1,
+    );
     return !nextMonthStart.isAfter(widget.lastDate);
   }
 
   void _goToMonth(int delta) {
     setState(() {
-      _displayedMonth = DateTime(_displayedMonth.year, _displayedMonth.month + delta);
+      _displayedMonth = DateTime(
+        _displayedMonth.year,
+        _displayedMonth.month + delta,
+      );
     });
   }
 
   void _onDayTap(DateTime date) {
     if (!widget.isRange) {
       setState(() => _selected = date);
+      if (widget.anchored) Navigator.of(context).pop(date);
       return;
     }
     setState(() {
@@ -160,223 +230,267 @@ class _CompactDatePickerDialogState extends State<_CompactDatePickerDialog> {
   @override
   Widget build(BuildContext context) {
     final today = DateUtils.dateOnly(DateTime.now());
-    final daysInMonth = DateUtils.getDaysInMonth(_displayedMonth.year, _displayedMonth.month);
-    final firstOfMonth = DateTime(_displayedMonth.year, _displayedMonth.month, 1);
+    final daysInMonth = DateUtils.getDaysInMonth(
+      _displayedMonth.year,
+      _displayedMonth.month,
+    );
+    final firstOfMonth = DateTime(
+      _displayedMonth.year,
+      _displayedMonth.month,
+      1,
+    );
     // DateTime.weekday: Mon=1..Sun=7 — matches the Mo..Su header directly.
     final leadingBlanks = firstOfMonth.weekday - 1;
     final totalCells = leadingBlanks + daysInMonth;
     final rows = (totalCells / 7).ceil();
 
-    return Dialog(
-      backgroundColor: AppTheme.card,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.rLarge),
-      ),
-      elevation: 8,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 300),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.helpText != null) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    widget.helpText!,
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
+    final card = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 300),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.helpText != null) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  widget.helpText!,
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 6),
-              ],
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: () => setState(() => _showYearGrid = !_showYearGrid),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${_monthLabels[_displayedMonth.month - 1]} ${_displayedMonth.year}',
-                              style: const TextStyle(
-                                color: AppTheme.heading,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
+              ),
+              const SizedBox(height: 6),
+            ],
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => setState(() => _showYearGrid = !_showYearGrid),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${_monthLabels[_displayedMonth.month - 1]} ${_displayedMonth.year}',
+                            style: const TextStyle(
+                              color: AppTheme.heading,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
                             ),
-                            const SizedBox(width: 4),
-                            AnimatedRotation(
-                              turns: _showYearGrid ? 0.5 : 0,
-                              duration: const Duration(milliseconds: 150),
-                              child: const Icon(
-                                Icons.keyboard_arrow_down,
-                                size: 20,
-                                color: AppTheme.muted,
-                              ),
+                          ),
+                          const SizedBox(width: 4),
+                          AnimatedRotation(
+                            turns: _showYearGrid ? 0.5 : 0,
+                            duration: const Duration(milliseconds: 150),
+                            child: const Icon(
+                              Icons.keyboard_arrow_down,
+                              size: 20,
+                              color: AppTheme.muted,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  if (!_showYearGrid) ...[
-                    _NavButton(
-                      icon: Icons.chevron_left,
-                      onPressed: _canGoPrev ? () => _goToMonth(-1) : null,
-                    ),
-                    const SizedBox(width: 6),
-                    _NavButton(
-                      icon: Icons.chevron_right,
-                      onPressed: _canGoNext ? () => _goToMonth(1) : null,
-                    ),
-                  ],
+                ),
+                if (!_showYearGrid) ...[
+                  _NavButton(
+                    icon: Icons.chevron_left,
+                    onPressed: _canGoPrev ? () => _goToMonth(-1) : null,
+                  ),
+                  const SizedBox(width: 6),
+                  _NavButton(
+                    icon: Icons.chevron_right,
+                    onPressed: _canGoNext ? () => _goToMonth(1) : null,
+                  ),
                 ],
-              ),
-              const SizedBox(height: 10),
-              if (_showYearGrid) ...[
-                SizedBox(
-                  height: 220,
-                  child: GridView.builder(
-                    controller: _yearScrollController,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      childAspectRatio: 2,
-                      mainAxisSpacing: 4,
-                      crossAxisSpacing: 4,
-                    ),
-                    itemCount: widget.lastDate.year - widget.firstDate.year + 1,
-                    itemBuilder: (context, index) {
-                      final year = widget.firstDate.year + index;
-                      final isSelected = year == _displayedMonth.year;
-                      return Material(
-                        color: isSelected ? AppTheme.accent : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(8),
-                          onTap: () => setState(() {
-                            _displayedMonth = DateTime(year, _displayedMonth.month);
-                            _showYearGrid = false;
-                          }),
-                          child: Center(
-                            child: Text(
-                              '$year',
-                              style: TextStyle(
-                                color: isSelected ? Colors.white : AppTheme.text,
-                                fontSize: 13,
-                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ] else ...[
-                Row(
-                  children: _weekdayLabels
-                      .map((d) => Expanded(
-                            child: Center(
-                              child: Text(
-                                d,
-                                style: const TextStyle(
-                                  color: AppTheme.muted,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ))
-                      .toList(),
-                ),
-                const SizedBox(height: 4),
-                for (var row = 0; row < rows; row++)
-                  Row(
-                    children: List.generate(7, (col) {
-                      final cellIndex = row * 7 + col;
-                      final day = cellIndex - leadingBlanks + 1;
-                      if (day < 1 || day > daysInMonth) {
-                        return const Expanded(child: SizedBox(height: 36));
-                      }
-                      final date = DateTime(_displayedMonth.year, _displayedMonth.month, day);
-                      final inBounds = !date.isBefore(widget.firstDate) && !date.isAfter(widget.lastDate);
-                      final isToday = DateUtils.isSameDay(date, today);
-                      if (widget.isRange) {
-                        final start = _rangeStart;
-                        final end = _rangeEnd;
-                        final isStart = start != null && DateUtils.isSameDay(date, start);
-                        final isEnd = end != null && DateUtils.isSameDay(date, end);
-                        final isBetween = start != null &&
-                            end != null &&
-                            date.isAfter(start) &&
-                            date.isBefore(end);
-                        return Expanded(
-                          child: _RangeDayCell(
-                            day: day,
-                            isStart: isStart,
-                            isEnd: isEnd,
-                            isBetween: isBetween,
-                            today: isToday && !isStart && !isEnd,
-                            enabled: inBounds,
-                            onTap: inBounds ? () => _onDayTap(date) : null,
-                          ),
-                        );
-                      }
-                      final isSelected = DateUtils.isSameDay(date, _selected);
-                      return Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: _DayCell(
-                            day: day,
-                            selected: isSelected,
-                            today: isToday && !isSelected,
-                            enabled: inBounds,
-                            onTap: inBounds ? () => _onDayTap(date) : null,
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
               ],
+            ),
+            const SizedBox(height: 10),
+            if (_showYearGrid) ...[
+              SizedBox(
+                height: 220,
+                child: GridView.builder(
+                  controller: _yearScrollController,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    childAspectRatio: 2,
+                    mainAxisSpacing: 4,
+                    crossAxisSpacing: 4,
+                  ),
+                  itemCount: widget.lastDate.year - widget.firstDate.year + 1,
+                  itemBuilder: (context, index) {
+                    final year = widget.firstDate.year + index;
+                    final isSelected = year == _displayedMonth.year;
+                    return Material(
+                      color: isSelected ? AppTheme.accent : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => setState(() {
+                          _displayedMonth = DateTime(
+                            year,
+                            _displayedMonth.month,
+                          );
+                          _showYearGrid = false;
+                        }),
+                        child: Center(
+                          child: Text(
+                            '$year',
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : AppTheme.text,
+                              fontSize: 13,
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ] else ...[
+              Row(
+                children: _weekdayLabels
+                    .map(
+                      (d) => Expanded(
+                        child: Center(
+                          child: Text(
+                            d,
+                            style: const TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
               const SizedBox(height: 4),
+              for (var row = 0; row < rows; row++)
+                Row(
+                  children: List.generate(7, (col) {
+                    final cellIndex = row * 7 + col;
+                    final day = cellIndex - leadingBlanks + 1;
+                    if (day < 1 || day > daysInMonth) {
+                      return const Expanded(child: SizedBox(height: 36));
+                    }
+                    final date = DateTime(
+                      _displayedMonth.year,
+                      _displayedMonth.month,
+                      day,
+                    );
+                    final inBounds =
+                        !date.isBefore(widget.firstDate) &&
+                        !date.isAfter(widget.lastDate);
+                    final isToday = DateUtils.isSameDay(date, today);
+                    if (widget.isRange) {
+                      final start = _rangeStart;
+                      final end = _rangeEnd;
+                      final isStart =
+                          start != null && DateUtils.isSameDay(date, start);
+                      final isEnd =
+                          end != null && DateUtils.isSameDay(date, end);
+                      final isBetween =
+                          start != null &&
+                          end != null &&
+                          date.isAfter(start) &&
+                          date.isBefore(end);
+                      return Expanded(
+                        child: _RangeDayCell(
+                          day: day,
+                          isStart: isStart,
+                          isEnd: isEnd,
+                          isBetween: isBetween,
+                          today: isToday && !isStart && !isEnd,
+                          enabled: inBounds,
+                          onTap: inBounds ? () => _onDayTap(date) : null,
+                        ),
+                      );
+                    }
+                    final isSelected = DateUtils.isSameDay(date, _selected);
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: _DayCell(
+                          day: day,
+                          selected: isSelected,
+                          today: isToday && !isSelected,
+                          enabled: inBounds,
+                          onTap: inBounds ? () => _onDayTap(date) : null,
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+            ],
+            const SizedBox(height: 4),
+            if (!widget.anchored)
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    style: TextButton.styleFrom(foregroundColor: AppTheme.muted),
-                    child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.muted,
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                   ),
                   TextButton(
                     onPressed: widget.isRange && _rangeStart == null
                         ? null
                         : () => Navigator.of(context).pop(
-                              widget.isRange
-                                  ? DateTimeRange(
-                                      start: _rangeStart!,
-                                      end: _rangeEnd ?? _rangeStart!,
-                                    )
-                                  : _selected,
-                            ),
-                    style: TextButton.styleFrom(foregroundColor: AppTheme.accent),
-                    child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w700)),
+                            widget.isRange
+                                ? DateTimeRange(
+                                    start: _rangeStart!,
+                                    end: _rangeEnd ?? _rangeStart!,
+                                  )
+                                : _selected,
+                          ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.accent,
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
                 ],
               ),
-            ],
-          ),
+          ],
         ),
       ),
+    );
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppTheme.rLarge),
+    );
+    if (widget.anchored) {
+      return Material(
+        color: AppTheme.card,
+        elevation: 8,
+        shape: shape,
+        child: card,
+      );
+    }
+    return Dialog(
+      backgroundColor: AppTheme.card,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+      shape: shape,
+      elevation: 8,
+      child: card,
     );
   }
 }
@@ -440,12 +554,16 @@ class _RangeDayCell extends StatelessWidget {
               children: [
                 Expanded(
                   child: Container(
-                    color: isStart && !sameDay ? Colors.transparent : AppTheme.sidebarBrandWash,
+                    color: isStart && !sameDay
+                        ? Colors.transparent
+                        : AppTheme.sidebarBrandWash,
                   ),
                 ),
                 Expanded(
                   child: Container(
-                    color: isEnd && !sameDay ? Colors.transparent : AppTheme.sidebarBrandWash,
+                    color: isEnd && !sameDay
+                        ? Colors.transparent
+                        : AppTheme.sidebarBrandWash,
                   ),
                 ),
               ],
@@ -453,7 +571,9 @@ class _RangeDayCell extends StatelessWidget {
           Material(
             color: isEndpoint
                 ? AppTheme.accent
-                : (today ? AppTheme.accent.withValues(alpha: 0.1) : Colors.transparent),
+                : (today
+                      ? AppTheme.accent.withValues(alpha: 0.1)
+                      : Colors.transparent),
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
@@ -467,9 +587,13 @@ class _RangeDayCell extends StatelessWidget {
                     style: TextStyle(
                       color: isEndpoint
                           ? Colors.white
-                          : (!enabled ? AppTheme.muted.withValues(alpha: 0.4) : AppTheme.text),
+                          : (!enabled
+                                ? AppTheme.muted.withValues(alpha: 0.4)
+                                : AppTheme.text),
                       fontSize: 13,
-                      fontWeight: isEndpoint || today ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight: isEndpoint || today
+                          ? FontWeight.w700
+                          : FontWeight.w500,
                     ),
                   ),
                 ),
@@ -520,7 +644,9 @@ class _DayCell extends StatelessWidget {
               style: TextStyle(
                 color: fg,
                 fontSize: 13,
-                fontWeight: selected || today ? FontWeight.w700 : FontWeight.w500,
+                fontWeight: selected || today
+                    ? FontWeight.w700
+                    : FontWeight.w500,
               ),
             ),
           ),

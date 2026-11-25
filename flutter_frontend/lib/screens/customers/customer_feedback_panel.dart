@@ -231,7 +231,7 @@ class _FeedbackRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final rating = response.rating.clamp(0, 5).toInt();
     final stars = '★' * rating + '☆' * (5 - rating);
-    final checkedOut = formatIsoDate(response.checkOutDate);
+    final checkedOut = formatCheckOut(response.checkOutDate);
     final submitted = formatIsoDate(response.submittedAt);
     final cells = {
       'guest': response.guestName ?? '—',

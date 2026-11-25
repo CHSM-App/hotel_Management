@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/booking.dart';
 import '../models/booking_edit.dart';
@@ -8,11 +9,12 @@ import '../models/invoice_window.dart';
 import '../models/late_checkout.dart';
 import '../models/quote.dart';
 import '../models/room.dart';
+import '../models/scanned_guest.dart';
 import '../models/staff_alert.dart';
 import '../models/tape_chart.dart';
 
 abstract class BookingRepository {
-  Future<List<Room>> availableRooms(String checkInDate, String checkOutDate);
+  Future<List<Room>> availableRooms(String checkInDate, String? checkOutDate);
 
   /// The tape chart's own fetch — every active room plus every stay, draft
   /// and cancellation touching [startDate, endDate).
@@ -24,7 +26,7 @@ abstract class BookingRepository {
   Future<Quote> priceQuote({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
@@ -37,7 +39,7 @@ abstract class BookingRepository {
   Future<MultiRoomQuote> multiRoomPriceQuote({
     required List<Map<String, dynamic>> rooms,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     num? discountAmount,
   });
 
@@ -45,7 +47,7 @@ abstract class BookingRepository {
   Future<AvailableBeds> availableBeds({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
   });
 
   /// The register over a date range. Both ends optional; omitting them asks
@@ -63,6 +65,9 @@ abstract class BookingRepository {
   /// Guests this property has had before, matched on a partly-typed name.
   Future<List<GuestMatch>> searchGuests(String query);
 
+  /// AI reads ID card photos. Online only — never queued by the offline desk.
+  Future<List<ScannedGuest>> scanIds(List<XFile> photos);
+
   /// The primary guest's uploaded ID proof, raw bytes plus content type.
   Future<Response<List<int>>> idProof(int bookingId);
 
@@ -77,7 +82,7 @@ abstract class BookingRepository {
   /// itself.
   Future<List<Room>> availableRoomsForBooking(
     int bookingId, {
-    required String checkOutDate,
+    required String? checkOutDate,
     String? checkInDate,
   });
 

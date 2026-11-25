@@ -1,25 +1,90 @@
-/* Saved quotations — the Quotation modal's second tab. Uses the dashboard's
-   own tokens (--brand, --brand-wash, --border, --text-muted, --danger). */
+/* Quotations — the list (home), its cards, and the create view. Uses the
+   dashboard's own tokens (--brand, --brand-wash, --accent, --border, --text,
+   --text-muted, --success, --danger). */
+
+/* ── List page ─────────────────────────────────────────────────────────── */
+.saved-quotes__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.saved-quotes__top h2 {
+  margin: 0;
+  font-size: 24px;
+  color: var(--brand-ink);
+}
+
+.saved-quotes__top p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+/* The one primary action on the page. */
+.saved-quotes__new {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-raised);
+  transition: var(--neu-transition);
+}
+
+.saved-quotes__new span {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.saved-quotes__new:hover {
+  background: var(--brand-lift);
+  box-shadow: var(--shadow-raised-hover);
+}
+
+.saved-quotes__new:focus-visible,
+.saved-quotes__filter:focus-visible,
+.saved-quotes__head:focus-visible {
+  outline: 3px solid var(--brand-wash-edge);
+  outline-offset: 2px;
+}
+
 .saved-quotes__bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
   margin-bottom: 14px;
 }
 
 .saved-quotes__bar input {
-  flex: 1 1 220px;
+  width: 100%;
   min-width: 0;
+}
+
+.saved-quotes__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
 }
 
 .saved-quotes__filters {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .saved-quotes__filter {
-  padding: 7px 14px;
+  min-height: 36px;
+  padding: 0 16px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: #fff;
@@ -35,25 +100,71 @@
   color: #fff;
 }
 
-.saved-quotes__card {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: #fff;
-  margin-bottom: 10px;
-  overflow: hidden;
+.saved-quotes__count {
+  margin: 0 4px 10px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
-.saved-quotes__card--expired {
+.saved-quotes__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.saved-quotes__empty strong {
+  color: var(--brand-ink);
+  font-size: 17px;
+}
+
+.saved-quotes__empty .saved-quotes__new {
+  margin-top: 10px;
+}
+
+.saved-quotes__empty-icon {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--brand-wash);
+  color: var(--brand);
+}
+
+/* ── Cards: as many columns as fit; an open one spans the row ─────────── */
+.saved-quotes__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.saved-quotes__card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: var(--shadow-raised);
+}
+
+.saved-quotes__card--open {
+  grid-column: 1 / -1;
+}
+
+.saved-quotes__card--expired .saved-quotes__head {
   opacity: 0.72;
 }
 
 .saved-quotes__head {
-  display: grid;
-  grid-template-columns: 1.4fr 1.6fr 1.3fr auto auto;
-  gap: 12px;
-  align-items: center;
+  display: flex;
+  gap: 14px;
   width: 100%;
-  padding: 12px 14px;
+  padding: 14px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -66,22 +177,74 @@
   background: var(--brand-wash);
 }
 
-.saved-quotes__who {
+.saved-quotes__badge {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--brand-wash);
+  color: var(--brand);
+}
+
+.saved-quotes__badge--event {
+  background: #fbf3df;
+  color: #8a5b00;
+}
+
+.saved-quotes__badge--food {
+  background: var(--success-bg);
+  color: #1c7a37;
+}
+
+.saved-quotes__badge--bar {
+  background: var(--brand);
+  color: #fff;
+}
+
+.saved-quotes__main {
   display: flex;
   flex-direction: column;
+  gap: 4px;
   min-width: 0;
+  flex: 1;
 }
 
-.saved-quotes__who small,
-.saved-quotes__room-title small {
+.saved-quotes__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.saved-quotes__row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  color: var(--brand-ink);
+}
+
+.saved-quotes__main small {
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 500;
 }
 
-.saved-quotes__rooms {
+.saved-quotes__summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   font-size: 13px;
   color: var(--text);
+}
+
+.saved-quotes__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
 }
 
 .saved-quotes__dates {
@@ -91,18 +254,20 @@
 
 .saved-quotes__total {
   font-weight: 800;
-  text-align: right;
+  font-size: 16px;
+  white-space: nowrap;
+  color: var(--brand-ink);
 }
 
 .saved-quotes__state {
   padding: 3px 10px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .saved-quotes__state--active {
-  background: #e8f6ec;
+  background: var(--success-bg);
   color: #1c7a37;
 }
 
@@ -116,8 +281,9 @@
   color: var(--text-muted);
 }
 
+/* ── Opened card ───────────────────────────────────────────────────────── */
 .saved-quotes__body {
-  padding: 4px 14px 14px;
+  padding: 4px 16px 16px;
   border-top: 1px solid var(--border);
 }
 
@@ -141,6 +307,12 @@
   flex-direction: column;
   font-weight: 700;
   margin-bottom: 6px;
+}
+
+.saved-quotes__room-title small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .saved-quotes__line {
@@ -183,18 +355,31 @@
   border-color: var(--danger);
 }
 
-@media (max-width: 720px) {
-  .saved-quotes__head {
-    grid-template-columns: 1fr auto;
-  }
-
-  .saved-quotes__rooms,
-  .saved-quotes__dates {
-    grid-column: 1 / -1;
-  }
+/* WhatsApp's own green, outlined, so it reads as "send" without out-shouting
+   the page's primary action. */
+.btn-whatsapp {
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1.5px solid #128c7e;
+  border-radius: 999px;
+  background: #fff;
+  color: #128c7e;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
 
-/* Header of the Quotations page: Back to the Room Chart, then the title. */
+.btn-whatsapp:hover:not(:disabled) {
+  background: #128c7e;
+  color: #fff;
+}
+
+.btn-whatsapp:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Create view ───────────────────────────────────────────────────────── */
 .quotations-head {
   display: flex;
   align-items: center;
@@ -205,4 +390,169 @@
 .quotations-head h2 {
   margin: 0;
   font-size: 20px;
+}
+
+.quote-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.quote-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 132px;
+  min-height: 68px;
+  padding: 8px 14px;
+  border: 1.2px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--brand-ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.quote-kind svg {
+  color: var(--brand-lift);
+}
+
+.quote-kind--event svg {
+  color: #8a5b00;
+}
+
+.quote-kind--food svg {
+  color: var(--success);
+}
+
+.quote-kind--on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.quote-kind--on svg {
+  color: #fff !important;
+}
+
+.quote-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.quote-cols__main,
+.quote-cols__side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.quote-cols__side {
+  position: sticky;
+  top: 12px;
+}
+
+.quote-section header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--brand-ink);
+}
+
+.quote-section header p {
+  margin: 2px 0 12px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.quote-section .sim-fields {
+  margin-bottom: 10px;
+}
+
+.quote-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quote-actions button {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 999px;
+}
+
+.quote-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-weight: 800;
+}
+
+.quote-total strong {
+  color: var(--brand);
+  font-size: 20px;
+}
+
+.quote-items__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.quote-items__row:last-child {
+  border-bottom: 0;
+}
+
+.quote-items__row small {
+  display: block;
+  color: var(--text-muted);
+}
+
+.quote-items__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quote-items__step button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--brand);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+@media (max-width: 980px) {
+  .quote-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quote-cols__side {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .saved-quotes__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .saved-quotes__top {
+    flex-direction: column;
+  }
 }

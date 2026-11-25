@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../../domain/models/booking.dart';
 import '../../domain/models/booking_edit.dart';
@@ -8,6 +9,7 @@ import '../../domain/models/invoice_window.dart';
 import '../../domain/models/late_checkout.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
+import '../../domain/models/scanned_guest.dart';
 import '../../domain/models/staff_alert.dart';
 import '../../domain/models/tape_chart.dart';
 import '../../domain/repository/booking_repo.dart';
@@ -63,7 +65,7 @@ class BookingImpl implements BookingRepository {
   }
 
   @override
-  Future<List<Room>> availableRooms(String checkInDate, String checkOutDate) =>
+  Future<List<Room>> availableRooms(String checkInDate, String? checkOutDate) =>
       _orOffline(
         () => api
             .availableRooms(checkInDate: checkInDate, checkOutDate: checkOutDate)
@@ -91,7 +93,7 @@ class BookingImpl implements BookingRepository {
   Future<Quote> priceQuote({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
@@ -121,7 +123,7 @@ class BookingImpl implements BookingRepository {
   Future<MultiRoomQuote> multiRoomPriceQuote({
     required List<Map<String, dynamic>> rooms,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     num? discountAmount,
   }) => api.multiRoomPriceQuote(
     rooms: rooms,
@@ -134,7 +136,7 @@ class BookingImpl implements BookingRepository {
   Future<AvailableBeds> availableBeds({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
   }) => api.availableBeds(
     roomId: roomId,
     checkInDate: checkInDate,
@@ -177,6 +179,10 @@ class BookingImpl implements BookingRepository {
   @override
   Future<List<GuestMatch>> searchGuests(String query) =>
       api.searchGuests(query);
+
+  // A live call, not a write: it bypasses the offline desk on purpose.
+  @override
+  Future<List<ScannedGuest>> scanIds(List<XFile> photos) => api.scanIds(photos);
 
   @override
   Future<Response<List<int>>> idProof(int bookingId) => api.idProof(bookingId);
@@ -239,7 +245,7 @@ class BookingImpl implements BookingRepository {
   @override
   Future<List<Room>> availableRoomsForBooking(
     int bookingId, {
-    required String checkOutDate,
+    required String? checkOutDate,
     String? checkInDate,
   }) => api
       .availableRoomsForBooking(

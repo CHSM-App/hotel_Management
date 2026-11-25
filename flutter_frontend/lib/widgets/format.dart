@@ -24,6 +24,10 @@ String formatIsoDate(String? iso) {
   return parsed == null ? iso : formatDate(parsed);
 }
 
+/// A check-out date for display — "Open" for a stay with none yet (it holds
+/// the room until the guest leaves, and is dated when they check out).
+String formatCheckOut(String? iso) => (iso == null || iso.isEmpty) ? 'Open' : formatIsoDate(iso);
+
 /// The head count as a document prints it: "3 (2 Adults, 1 Child)". The split
 /// is only stated when the booking recorded children — a booking from before
 /// the child count was kept reads 0 whether or not children came, and "0

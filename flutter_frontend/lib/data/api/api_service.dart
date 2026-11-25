@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../../domain/models/asset.dart';
 import '../../domain/models/bar.dart';
@@ -31,6 +32,7 @@ import '../../domain/models/menu.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/report.dart';
 import '../../domain/models/room.dart';
+import '../../domain/models/scanned_guest.dart';
 import '../../domain/models/season.dart';
 import '../../domain/models/session.dart';
 import '../../domain/models/staff.dart';
@@ -174,13 +176,13 @@ class ApiService {
   /// booked over those nights — availability is never decided on the phone.
   Future<AvailableRooms> availableRooms({
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
   }) async {
     final res = await _dio.get(
       '/bookings/available-rooms',
       queryParameters: {
         'checkInDate': checkInDate,
-        'checkOutDate': checkOutDate,
+        if (checkOutDate != null) 'checkOutDate': checkOutDate,
       },
     );
     return AvailableRooms.fromJson(_map(res.data));
@@ -192,7 +194,7 @@ class ApiService {
   Future<Quote> priceQuote({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
@@ -203,7 +205,7 @@ class ApiService {
       queryParameters: {
         'roomId': roomId,
         'checkInDate': checkInDate,
-        'checkOutDate': checkOutDate,
+        if (checkOutDate != null) 'checkOutDate': checkOutDate,
         if (chargeIds != null && chargeIds.isNotEmpty) 'chargeIds': chargeIds,
         if (basePriceOverride != null) 'basePriceOverride': basePriceOverride,
         if (discountAmount != null) 'discountAmount': discountAmount,
@@ -219,7 +221,7 @@ class ApiService {
   Future<MultiRoomQuote> multiRoomPriceQuote({
     required List<Map<String, dynamic>> rooms,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     num? discountAmount,
   }) async {
     final res = await _dio.get(
@@ -227,7 +229,7 @@ class ApiService {
       queryParameters: {
         'rooms': jsonEncode(rooms),
         'checkInDate': checkInDate,
-        'checkOutDate': checkOutDate,
+        if (checkOutDate != null) 'checkOutDate': checkOutDate,
         if (discountAmount != null) 'discountAmount': discountAmount,
       },
     );
@@ -274,10 +276,36 @@ class ApiService {
     return SavedQuotation.fromJson(_map(res.data));
   }
 
-  Future<List<SavedQuotation>> savedQuotations({String? state, String? q}) async {
+  /// Keeps an event / food / bar quotation. [body] carries `kind` and only the
+  /// choices; the server prices them.
+  Future<SavedQuotation> saveKindQuotation(Map<String, dynamic> body) async =>
+      SavedQuotation.fromJson(_map((await _dio.post('/quotations', data: body)).data));
+
+  /// Uploads the PDF the desk just built and returns the link a guest can open
+  /// without logging in (valid 30 days; sharing again replaces it).
+  Future<String> shareQuotationLink(int id, Uint8List pdfBytes, String filename) async {
+    final form = FormData.fromMap({'quotation': MultipartFile.fromBytes(pdfBytes, filename: filename, contentType: DioMediaType('application', 'pdf'))});
+    final res = await _dio.post('/quotations/$id/share', data: form);
+    return _map(res.data)['link']?.toString() ?? '';
+  }
+
+  /// Sends the quotation to the guest from the server (the approved WhatsApp
+  /// template), with a link to the uploaded PDF. Returns the number it went to.
+  /// A 503 means the template is not set up for this property.
+  Future<String> sendQuotationWhatsApp(int id, Uint8List pdfBytes, String filename, {String? phone}) async {
+    final form = FormData.fromMap({
+      'quotation': MultipartFile.fromBytes(pdfBytes, filename: filename, contentType: DioMediaType('application', 'pdf')),
+      if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+    });
+    final res = await _dio.post('/quotations/$id/share/whatsapp', data: form);
+    return _map(res.data)['phone']?.toString() ?? '';
+  }
+
+  Future<List<SavedQuotation>> savedQuotations({String? state, String? q, String? kind}) async {
     final res = await _dio.get(
       '/quotations',
       queryParameters: {
+        if (kind != null) 'kind': kind,
         if (state != null) 'state': state,
         if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
       },
@@ -294,8 +322,12 @@ class ApiService {
     await _dio.delete('/quotations/$id');
   }
 
-  Future<void> markQuotationBooked(int id, int bookingId) async {
-    await _dio.patch('/quotations/$id', data: {'status': 'BOOKED', 'bookingId': bookingId});
+  /// A zero [bookingId] means "not known" and is left out.
+  Future<void> markQuotationBooked(int id, int bookingId, {bool room = true}) async {
+    await _dio.patch('/quotations/$id', data: {
+      'status': 'BOOKED',
+      if (bookingId > 0) room ? 'bookingId' : 'refId': bookingId,
+    });
   }
 
   /// The bed picker's own fetch, for a dormitory room and a chosen stay —
@@ -303,14 +335,14 @@ class ApiService {
   Future<AvailableBeds> availableBeds({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
   }) async {
     final res = await _dio.get(
       '/bookings/available-beds',
       queryParameters: {
         'roomId': roomId,
         'checkInDate': checkInDate,
-        'checkOutDate': checkOutDate,
+        if (checkOutDate != null) 'checkOutDate': checkOutDate,
       },
     );
     return AvailableBeds.fromJson(_map(res.data));
@@ -391,6 +423,31 @@ class ApiService {
     return TapeChartData.fromJson(_map(res.data));
   }
 
+  /// AI reads ID card photos (many at once) and answers who is on them.
+  /// Slow on purpose-built timeouts: ten cards is one long call.
+  Future<List<ScannedGuest>> scanIds(List<XFile> photos) async {
+    final form = FormData();
+    for (final p in photos) {
+      form.files.add(
+        MapEntry(
+          'images',
+          MultipartFile.fromBytes(await p.readAsBytes(), filename: p.name),
+        ),
+      );
+    }
+    final res = await _dio.post(
+      '/bookings/scan-id',
+      data: form,
+      options: Options(
+        sendTimeout: const Duration(seconds: 120),
+        receiveTimeout: const Duration(seconds: 120),
+      ),
+    );
+    return (_map(res.data)['guests'] as List? ?? [])
+        .map((e) => ScannedGuest.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Take a booking. Multipart, for the reason in the class comment.
   Future<Booking> createBooking(FormData form, {String? idempotencyKey}) async {
     final res = await _dio.post('/bookings', data: form, options: _keyed(idempotencyKey));
@@ -413,13 +470,13 @@ class ApiService {
   /// already in reads as free rather than conflicting with itself.
   Future<AvailableRooms> availableRoomsForBooking(
     int bookingId, {
-    required String checkOutDate,
+    required String? checkOutDate,
     String? checkInDate,
   }) async {
     final res = await _dio.get(
       '/bookings/$bookingId/available-rooms',
       queryParameters: {
-        'checkOutDate': checkOutDate,
+        if (checkOutDate != null) 'checkOutDate': checkOutDate,
         if (checkInDate != null && checkInDate.isNotEmpty)
           'checkInDate': checkInDate,
       },
@@ -679,8 +736,11 @@ class ApiService {
 
   /// What a food bill will say. `tab` is the opaque id the queue row itself
   /// carries — "table-3", "room-12", "counter-88" — passed straight through.
-  Future<FoodBillPreview> previewFoodBill(String tab) async {
-    final res = await _dio.get('/billing/food-tabs/${Uri.encodeComponent(tab)}/preview');
+  Future<FoodBillPreview> previewFoodBill(String tab, {num discountAmount = 0}) async {
+    final res = await _dio.get(
+      '/billing/food-tabs/${Uri.encodeComponent(tab)}/preview',
+      queryParameters: {if (discountAmount > 0) 'discountAmount': discountAmount},
+    );
     return FoodBillPreview.fromJson(_map(res.data));
   }
 
@@ -696,10 +756,10 @@ class ApiService {
   /// Moves a table or takeaway tab's delivered, unbilled food onto
   /// [bookingId]'s stay bill — same as OrdersPanel.jsx's own
   /// `AddToRoomDialog.confirmAdd`.
-  Future<void> addFoodTabToRoom(String tab, int bookingId) async {
+  Future<void> addFoodTabToRoom(String tab, int bookingId, {num discountAmount = 0}) async {
     await _dio.post(
       '/billing/food-tabs/${Uri.encodeComponent(tab)}/add-to-room',
-      data: {'bookingId': bookingId},
+      data: {'bookingId': bookingId, if (discountAmount > 0) 'discountAmount': discountAmount},
     );
   }
 
@@ -2810,9 +2870,9 @@ class ApiService {
         .toList();
   }
 
-  Future<void> createBarOrder(Map<String, dynamic> body) async {
-    await _dio.post('/bar/orders', data: body);
-  }
+  /// Returns the new order's id.
+  Future<int> createBarOrder(Map<String, dynamic> body) async =>
+      asInt(_map((await _dio.post('/bar/orders', data: body)).data)['id']);
 
   Future<void> addBarOrderItems(int id, Map<String, dynamic> body) async {
     await _dio.post('/bar/orders/$id/items', data: body);
@@ -2847,12 +2907,12 @@ class ApiService {
     await _dio.patch('/bar/orders/$id/customer', data: {'customerTag': tag});
   }
 
-  Future<void> barReadyToBill(int id) async {
-    await _dio.post('/bar/orders/$id/ready-to-bill');
-  }
-
-  Future<void> barAddToRoom(int id, int bookingId, int roomId) async {
-    await _dio.post('/bar/orders/$id/add-to-room', data: {'bookingId': bookingId, 'roomId': roomId});
+  Future<void> barAddToRoom(int id, int bookingId, int roomId, {num discountAmount = 0}) async {
+    await _dio.post('/bar/orders/$id/add-to-room', data: {
+      'bookingId': bookingId,
+      'roomId': roomId,
+      if (discountAmount > 0) 'discountAmount': discountAmount,
+    });
   }
 
   Future<List<BarTab>> barTabs() async {

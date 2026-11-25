@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { normaliseMobile } = require('../bookings/bookings.schema');
+const { quoteSchema: eventQuoteSchema } = require('../events/events.schema');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -31,11 +32,49 @@ const quotationRoomSchema = z.object({
   chargeIds: z.string().max(200).nullish(),
 });
 
-const createQuotationSchema = z.object({
-  guestName: optionalName,
-  guestPhone: optionalPhone,
-  rooms: z.array(quotationRoomSchema).min(1, 'Add at least one room.').max(20, 'Quote up to 20 rooms at a time.'),
-});
+const KINDS = ['ROOM', 'EVENT', 'FOOD', 'BAR'];
+
+const base = { guestName: optionalName, guestPhone: optionalPhone };
+const qty = z.coerce.number().int().min(1, 'Enter a quantity.').max(999, 'That quantity looks wrong.');
+const note = z.string().trim().max(300).nullish().transform((v) => v || null);
+const discount = z.coerce.number().min(0, 'Enter a valid discount.').max(10000000).optional().default(0);
+
+const roomPart = { rooms: z.array(quotationRoomSchema).min(1, 'Add at least one room.').max(20, 'Quote up to 20 rooms at a time.') };
+// Same pricing fields the live event quote takes; the service prices it again.
+const eventPart = { event: eventQuoteSchema, note };
+const foodPart = {
+  items: z
+    .array(
+      z.object({
+        itemId: z.coerce.number().int().positive('Choose an item.'),
+        portionId: z.coerce.number().int().positive().nullish(),
+        quantity: qty,
+      })
+    )
+    .min(1, 'Add at least one item.')
+    .max(100, 'That is too many items for one quotation.'),
+  discountAmount: discount,
+  note,
+};
+const barPart = {
+  items: z
+    .array(z.object({ menuItemId: z.coerce.number().int().positive('Choose an item.'), quantity: qty }))
+    .min(1, 'Add at least one item.')
+    .max(100, 'That is too many items for one quotation.'),
+  discountAmount: discount,
+  note,
+};
+
+// kind defaults to ROOM so the existing room client keeps working unchanged.
+const createQuotationSchema = z.preprocess(
+  (v) => (v && typeof v === 'object' && v.kind == null ? { ...v, kind: 'ROOM' } : v),
+  z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('ROOM'), ...base, ...roomPart }),
+    z.object({ kind: z.literal('EVENT'), ...base, ...eventPart }),
+    z.object({ kind: z.literal('FOOD'), ...base, ...foodPart }),
+    z.object({ kind: z.literal('BAR'), ...base, ...barPart }),
+  ])
+);
 
 const updateQuotationSchema = z
   .object({
@@ -43,7 +82,9 @@ const updateQuotationSchema = z
     guestPhone: optionalPhone,
     status: z.literal('BOOKED').optional(),
     bookingId: z.coerce.number().int().positive().optional(),
+    // Event / food order / bar order id for the non-room kinds.
+    refId: z.coerce.number().int().positive().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update.' });
 
-module.exports = { createQuotationSchema, updateQuotationSchema };
+module.exports = { createQuotationSchema, updateQuotationSchema, KINDS };

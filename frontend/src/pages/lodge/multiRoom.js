@@ -56,7 +56,8 @@ export function bookingWindow(form) {
   ];
   return {
     checkInDate: dates.map((d) => d.checkInDate).sort()[0],
-    checkOutDate: dates.map((d) => d.checkOutDate).sort().reverse()[0],
+    // Blank when any room has no check-out date: the booking is then open-ended.
+    checkOutDate: dates.some((d) => !d.checkOutDate) ? '' : dates.map((d) => d.checkOutDate).sort().reverse()[0],
   };
 }
 

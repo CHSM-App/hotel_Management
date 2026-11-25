@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
@@ -57,6 +59,32 @@ class _IdProofViewerScreenState extends State<IdProofViewerScreen> {
     }
   }
 
+  Future<void> _download() async {
+    final ext = (_contentType ?? '').contains('pdf')
+        ? 'pdf'
+        : (_contentType ?? '').contains('png')
+        ? 'png'
+        : (_contentType ?? '').contains('webp')
+        ? 'webp'
+        : 'jpg';
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final path = await FilePicker.saveFile(
+        dialogTitle: 'Save ID proof',
+        fileName: 'id-proof.$ext',
+        bytes: _bytes,
+      );
+      if (path == null) return;
+      // Desktop dialogs only return the chosen path; the bytes are ours to write.
+      if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+        await File(path).writeAsBytes(_bytes!);
+      }
+      messenger.showSnackBar(const SnackBar(content: Text('ID proof saved')));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('Could not save the ID proof.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,6 +93,33 @@ class _IdProofViewerScreenState extends State<IdProofViewerScreen> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text(widget.title),
+        actions: [
+          if (_bytes != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                ),
+                icon: const Icon(Icons.download_rounded, size: 20),
+                label: const Text('Download'),
+                onPressed: _download,
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.danger,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.close_rounded, size: 20),
+              label: const Text('Close'),
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: _loading

@@ -11,61 +11,7 @@ import '../theme.dart';
 import 'bar_bill_screen.dart';
 import 'bar_common.dart';
 
-/// Orders marked ready to bill, by table / room / counter. Tap one to bill it.
-class BarBillingPanel extends ConsumerStatefulWidget {
-  const BarBillingPanel({super.key});
-
-  @override
-  ConsumerState<BarBillingPanel> createState() => _BarBillingPanelState();
-}
-
-class _BarBillingPanelState extends ConsumerState<BarBillingPanel> {
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() => ref.read(barViewModelProvider.notifier).loadTabs());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bar = ref.watch(barViewModelProvider);
-    return RefreshIndicator(
-      onRefresh: () => ref.read(barViewModelProvider.notifier).loadTabs(),
-      child: bar.isLoading && bar.tabs.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : bar.tabs.isEmpty
-          ? ListView(children: const [NeuNotice(icon: Icons.receipt_long_rounded, message: 'Nothing is ready to bill.\nMark an order “Ready to bill” from Open orders.')])
-          : ListView(
-              padding: EdgeInsets.all(AppTheme.gutter(context)),
-              children: [
-                for (final t in bar.tabs)
-                  NeuCard(
-                    margin: const EdgeInsets.only(bottom: AppTheme.s8),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BarIssueBillScreen(tab: t))),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(t.label, style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.heading)),
-                              Text('${(t.guestName ?? '').isEmpty ? '' : '${t.guestName} · '}${t.lineCount} item${t.lineCount == 1 ? '' : 's'}', style: const TextStyle(color: AppTheme.muted, fontSize: 12.5)),
-                              if (t.pendingDelivery > 0) Padding(padding: const EdgeInsets.only(top: 4), child: BarChip('${t.pendingDelivery} to deliver', color: AppTheme.checkout)),
-                            ],
-                          ),
-                        ),
-                        Text(formatPrice(t.subtotal), style: const TextStyle(fontWeight: FontWeight.w800)),
-                        const Icon(Icons.chevron_right_rounded, color: AppTheme.muted),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-    );
-  }
-}
-
-/// Bill one ready tab: receipt lines, customer, split payments — or post it to
+/// Bill one open tab: receipt lines, customer, split payments — or post it to
 /// a room's bill instead.
 class BarIssueBillScreen extends ConsumerStatefulWidget {
   final BarTab tab;
@@ -78,27 +24,40 @@ class BarIssueBillScreen extends ConsumerStatefulWidget {
 
 class _BarIssueBillScreenState extends ConsumerState<BarIssueBillScreen> {
   late final _customer = TextEditingController(text: widget.tab.guestName ?? '');
+  final _discount = TextEditingController();
   late final List<PaymentDraft> _pay = [PaymentDraft(method: 'CASH', amount: widget.tab.subtotal.toStringAsFixed(2))];
   String? _error;
 
   @override
   void dispose() {
     _customer.dispose();
+    _discount.dispose();
     super.dispose();
+  }
+
+  /// What the desk takes off, never more than the bill.
+  double get _off => ((num.tryParse(_discount.text.trim()) ?? 0).toDouble()).clamp(0, widget.tab.subtotal).toDouble();
+  double get _total => ((widget.tab.subtotal - _off) * 100).round() / 100;
+
+  /// A single payment row follows the new total until the desk edits it.
+  void _discountChanged() {
+    if (_pay.length == 1) _pay.first.amount = _total.toStringAsFixed(2);
+    setState(() {});
   }
 
   Future<void> _issue() async {
     final bad = paymentLinesError(_pay);
     if (bad != null) return setState(() => _error = bad);
     final paid = sumPayments(_pay);
-    if ((paid - widget.tab.subtotal).abs() > 0.009) {
-      return setState(() => _error = 'Payments add up to ${formatPrice(paid)}, but the bill is ${formatPrice(widget.tab.subtotal)}.');
+    if ((paid - _total).abs() > 0.009) {
+      return setState(() => _error = 'Payments add up to ${formatPrice(paid)}, but the bill is ${formatPrice(_total)}.');
     }
     setState(() => _error = null);
     final vm = ref.read(barViewModelProvider.notifier);
     final bill = await vm.issueBill(
       orderIds: widget.tab.orderIds,
       customerName: _customer.text,
+      discountAmount: _off,
       payments: [
         for (final p in _pay) (method: p.method!, amount: p.value.toDouble(), reference: p.reference.trim().isEmpty ? null : p.reference.trim()),
       ],
@@ -124,7 +83,9 @@ class _BarIssueBillScreenState extends ConsumerState<BarIssueBillScreen> {
     }
     if (g == null || !mounted) return;
     final guest = g;
-    final ok = await vm.addToRoom(t.orderIds, guest.bookingId, guest.roomId);
+    final discount = await askBarDiscount(context);
+    if (discount == null || !mounted) return;
+    final ok = await vm.addToRoom(t.orderIds, guest.bookingId, guest.roomId, discount: discount);
     if (!mounted) return;
     if (ok) {
       await vm.loadTabs();
@@ -141,9 +102,11 @@ class _BarIssueBillScreenState extends ConsumerState<BarIssueBillScreen> {
     final t = widget.tab;
     final bar = ref.watch(barViewModelProvider);
     final tax = bar.taxPercent;
-    final drinkTax = t.drinksTotal - t.drinksTotal / (1 + tax / 100);
+    // Drinks and food give up the discount in proportion, so tax is on what is left.
+    final netDrinks = t.subtotal > 0 ? t.drinksTotal * _total / t.subtotal : 0.0;
+    final drinkTax = netDrinks - netDrinks / (1 + tax / 100);
     final paid = sumPayments(_pay);
-    final diff = t.subtotal - paid;
+    final diff = _total - paid;
     Widget line(String l, double v) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(children: [Expanded(child: Text(l)), Text(formatPrice(v), style: const TextStyle(fontWeight: FontWeight.w600))]),
@@ -167,7 +130,8 @@ class _BarIssueBillScreenState extends ConsumerState<BarIssueBillScreen> {
                     const Divider(),
                     if (t.drinksTotal > 0) line('Drinks include tax (${tax.toStringAsFixed(tax % 1 == 0 ? 0 : 2)}%)', drinkTax),
                     if (t.foodTotal > 0) line('Food total (GST added if registered)', t.foodTotal),
-                    Row(children: [const Expanded(child: Text('Total', style: TextStyle(fontWeight: FontWeight.w900))), Text(formatPrice(t.subtotal), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))]),
+                    if (_off > 0) line('Discount', -_off),
+                    Row(children: [const Expanded(child: Text('Total', style: TextStyle(fontWeight: FontWeight.w900))), Text(formatPrice(_total), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))]),
                   ],
                 ),
               ),
@@ -178,6 +142,8 @@ class _BarIssueBillScreenState extends ConsumerState<BarIssueBillScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     NeuField(controller: _customer, label: 'Customer name (optional)', dense: true),
+                    const SizedBox(height: AppTheme.s8),
+                    NeuField(controller: _discount, label: 'Discount (optional)', hint: '0', keyboardType: TextInputType.number, dense: true, onChanged: (_) => _discountChanged()),
                     const SizedBox(height: AppTheme.s8),
                     for (var i = 0; i < _pay.length; i++)
                       PaymentRow(
@@ -200,7 +166,7 @@ class _BarIssueBillScreenState extends ConsumerState<BarIssueBillScreen> {
                 primary: true,
                 expand: true,
                 onPressed: bar.submitting ? null : _issue,
-                child: Text(bar.submitting ? 'Issuing bill…' : 'Issue bill · ${formatPrice(t.subtotal)}'),
+                child: Text(bar.submitting ? 'Issuing bill…' : 'Issue bill · ${formatPrice(_total)}'),
               ),
             ],
           ),

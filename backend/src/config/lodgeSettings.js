@@ -14,6 +14,8 @@ const SETTING_DEFAULTS = {
   wa_auto_booking: 1,
   wa_auto_walkin: 1,
   wa_auto_cancel: 1,
+  // AI ID-card scan (paid per image) — off until VengurlaTech enables it.
+  ai_id_scan: 0,
 };
 
 // API (camelCase) name -> column. The whitelist for anything written.
@@ -23,6 +25,7 @@ const SETTING_FIELDS = {
   waAutoBooking: 'wa_auto_booking',
   waAutoWalkin: 'wa_auto_walkin',
   waAutoCancel: 'wa_auto_cancel',
+  aiIdScan: 'ai_id_scan',
 };
 
 const SETTINGS_JOIN = 'LEFT JOIN dbo.lodge_settings ls ON ls.lodge_id = l.id';

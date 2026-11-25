@@ -662,14 +662,14 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
         .catch((err) => setFoodTabsError(err instanceof ApiError ? err.message : 'Could not add to the room bill.'));
       return;
     }
-    setRoomPick({ tab: tabKey, guests: null, bookingId: '', error: '' });
+    setRoomPick({ tab: tabKey, guests: null, bookingId: '', discount: '', error: '' });
     apiGet('/billing/food-tabs/in-house-guests', { token })
       .then((data) => setRoomPick((p) => p && { ...p, guests: data.guests }))
       .catch(() => setRoomPick((p) => p && { ...p, guests: [], error: 'Could not load guests.' }));
   };
   const addTabToRoom = async () => {
     try {
-      await apiPost(`/billing/food-tabs/${encodeURIComponent(roomPick.tab)}/add-to-room`, { bookingId: Number(roomPick.bookingId) }, { token });
+      await apiPost(`/billing/food-tabs/${encodeURIComponent(roomPick.tab)}/add-to-room`, { bookingId: Number(roomPick.bookingId), discountAmount: Number(roomPick.discount) || 0 }, { token });
       setRoomPick(null);
       loadFoodTabs();
     } catch (err) {
@@ -1075,7 +1075,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
   const [discountInput, setDiscountInput] = useState('');
   const [discountReason, setDiscountReason] = useState('');
   const cycleDiscount = Number(discountInput) || 0;
-  const isCycleStay = preview?.document?.checkinMode === 'CYCLE';
   const earlyReducing = discountReason === EARLY_DISCOUNT_REASON;
   // A discount is agreed as a percentage or as a round figure depending on who
   // is asking, so both boxes exist and each fills in the other. Only the amount
@@ -1131,7 +1130,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
           }`
         : billTarget.kind === 'SERVICE'
           ? `/billing/services/preview?ids=${billTarget.usageIds.join(',')}`
-          : `/billing/food-tabs/${encodeURIComponent(billTarget.tab)}/preview`
+          : `/billing/food-tabs/${encodeURIComponent(billTarget.tab)}/preview${cycleDiscount > 0 ? `?discountAmount=${cycleDiscount}` : ''}`
     : null;
 
   useEffect(() => {
@@ -1750,6 +1749,17 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                             ))}
                           </select>
                         )}
+                        <input
+                          className="room-pick__select"
+                          type="number"
+                          min="0"
+                          step="1"
+                          inputMode="decimal"
+                          placeholder="Discount ₹ (optional)"
+                          aria-label="Discount"
+                          value={roomPick.discount}
+                          onChange={(e) => setRoomPick({ ...roomPick, discount: e.target.value })}
+                        />
                         <button type="button" className="btn-secondary" onClick={() => setRoomPick(null)}>
                           Cancel
                         </button>
@@ -3289,11 +3299,23 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                           <span>{formatPrice(activeAmounts.foodSubtotal)}</span>
                         </div>
                       )}
+                      {activeAmounts.foodDiscountAmount > 0 && (
+                        <div className="sim-result__line">
+                          <span>Restaurant discount</span>
+                          <span>-{formatPrice(activeAmounts.foodDiscountAmount)}</span>
+                        </div>
+                      )}
 
                       {activeAmounts.barSubtotal + activeAmounts.barFoodSubtotal > 0 && (
                         <div className="sim-result__line">
                           <span>Bar</span>
                           <span>{formatPrice(activeAmounts.barSubtotal + activeAmounts.barFoodSubtotal)}</span>
+                        </div>
+                      )}
+                      {activeAmounts.barDiscountAmount > 0 && (
+                        <div className="sim-result__line">
+                          <span>Bar discount</span>
+                          <span>-{formatPrice(activeAmounts.barDiscountAmount)}</span>
                         </div>
                       )}
 
@@ -3310,13 +3332,13 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                           it had already reduced, it read as a deduction from
                           the taxed total — which is the one thing a discount
                           on an invoice must not appear to be. */}
-                      {activeAmounts.discountAmount > 0 && (
+                      {activeAmounts.discountAmount - (activeAmounts.foodDiscountAmount || 0) - (activeAmounts.barDiscountAmount || 0) > 0 && (
                         <div className="sim-result__line">
                           <span>
-                            Discount ({activeAmounts.discountPercent}%)
+                            Discount
                             {cycleDiscount > 0 && discountReason.trim() && ` · ${discountReason.trim()}`}
                           </span>
-                          <span>-{formatPrice(activeAmounts.discountAmount)}</span>
+                          <span>-{formatPrice(activeAmounts.discountAmount - (activeAmounts.foodDiscountAmount || 0) - (activeAmounts.barDiscountAmount || 0))}</span>
                         </div>
                       )}
 
@@ -3400,7 +3422,7 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                     is settled through what the guest hands over. The reason
                     prints on the bill beside the amount, so a discount
                     reads as a rule ("Leaving early") and not a favour. */}
-                {isCycleStay && !roomMode && (
+                {(billTarget.kind === 'STAY' || billTarget.kind === 'EVENT' || billTarget.kind === 'FOOD') && !roomMode && (
                   <div className="form-section billing-panel__discount">
                     <div className="form-section__title">Discount <span className="issue-bill__optional">(optional)</span></div>
                     <div className="field-row">
@@ -3419,17 +3441,6 @@ export default function Billing({ lodge, billNowBookingId = null, billNowEventId
                             onChange={(e) => setDiscountInput(e.target.value)}
                           />
                         </div>
-                      </div>
-                      <div className="field">
-                        <label htmlFor="cycleDiscountReason">Reason (printed on bill)</label>
-                        <input
-                          id="cycleDiscountReason"
-                          type="text"
-                          maxLength={100}
-                          placeholder="e.g. Leaving early, regular guest"
-                          value={discountReason}
-                          onChange={(e) => setDiscountReason(e.target.value)}
-                        />
                       </div>
                     </div>
                     <p className="billing-panel__hint">

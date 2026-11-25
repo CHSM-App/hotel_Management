@@ -148,7 +148,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     final booking = _booking;
     if (booking == null) return;
     final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
+      FullWidthRoute(
         builder: (_) => TakeBookingScreen(
           editBooking: booking,
           revise: booking.hasIssuedInvoice,
@@ -357,9 +357,9 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
                     return ListView(
                       padding: EdgeInsets.fromLTRB(
-                        split ? gutter : AppTheme.s12,
+                        AppTheme.isDesktop(context) ? gutter : AppTheme.s12,
                         AppTheme.s4,
-                        split ? gutter : AppTheme.s12,
+                        AppTheme.isDesktop(context) ? gutter : AppTheme.s12,
                         AppTheme.s24,
                       ),
                       physics: const AlwaysScrollableScrollPhysics(
@@ -772,7 +772,7 @@ class _TopBar extends StatelessWidget {
                   const _HeroDivider(),
                   _HeroStat(
                     label: 'CHECK-OUT',
-                    value: formatIsoDate(booking.checkOutDate),
+                    value: formatCheckOut(booking.checkOutDate),
                   ),
                   const _HeroDivider(),
                   _HeroStat(
@@ -885,7 +885,7 @@ class _StayRoomSection extends StatelessWidget {
           _Fact(
             label: 'Dates',
             value: '${formatIsoDate(booking.checkInDate)} – '
-                '${formatIsoDate(booking.checkOutDate)}',
+                '${formatCheckOut(booking.checkOutDate)}',
             note: nights == null ? null : nightsLabel(nights),
           ),
           _Fact(
@@ -1028,7 +1028,7 @@ class _MultiRoomBreakdown extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${formatIsoDate(room.checkInDate)} – ${formatIsoDate(room.checkOutDate)}'
+                  '${formatIsoDate(room.checkInDate)} – ${formatCheckOut(room.checkOutDate)}'
                   '${room.bedLabels.isNotEmpty ? ' · ${room.bedLabels.join(', ')}' : ''}'
                   '${room.totalPrice != null ? ' · ${formatPrice(room.totalPrice!)}' : ''}',
                   style: Theme.of(context).textTheme.bodySmall,

@@ -372,7 +372,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       draft: d,
                       onTap: () async {
                         await Navigator.of(context).push(
-                          MaterialPageRoute(
+                          FullWidthRoute(
                             builder: (_) => TakeBookingScreen(draft: d),
                           ),
                         );
@@ -1115,7 +1115,7 @@ class _RegisterTableRowState extends State<_RegisterTableRow> {
                       ? formatDateTime(left)
                       : cameIn != null
                       ? 'Still staying'
-                      : 'Due ${formatIsoDate(b.checkOutDate)}',
+                      : (b.checkOutDate == null ? 'Open-ended' : 'Due ${formatCheckOut(b.checkOutDate)}'),
                   c: left != null ? AppTheme.text : AppTheme.muted,
                 ),
               ),
@@ -1286,7 +1286,7 @@ class _RegisterCard extends StatelessWidget {
                                   ? formatDateTime(left)
                                   : cameIn != null
                                   ? 'Still staying'
-                                  : 'Due ${formatIsoDate(b.checkOutDate)}',
+                                  : (b.checkOutDate == null ? 'Open-ended' : 'Due ${formatCheckOut(b.checkOutDate)}'),
                             ),
                           ),
                           const SizedBox(width: AppTheme.s8),

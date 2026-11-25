@@ -377,8 +377,13 @@ function isWeekend(dateStr) {
 // the check-out day itself is free for the next guest, which is what makes
 // back-to-back bookings on one room possible.
 function nightsOf(booking) {
+  // An open-ended stay (no check-out date yet) has no night count until it ends.
+  if (!booking.checkOutDate) return 0;
   return Math.max(0, daysBetween(booking.checkInDate, booking.checkOutDate));
 }
+
+// A check-out date for display; a stay with none yet is open-ended.
+const checkOutLabel = (date) => (date ? formatDateLong(date) : 'Open (no check-out)');
 
 // The two directions of the same sum, kept together so they cannot drift.
 //
@@ -508,7 +513,7 @@ function rateParam(basePriceOverride) {
 const initialBookingForm = {
   bookingType: 'WALK_IN',
   checkInDate: todayIso(),
-  checkOutDate: addDays(todayIso(), 1),
+  checkOutDate: '',
   roomId: '',
   // The booking_rooms row of the first room and its status, on an edit — what
   // lets the save say which room of the booking it means, and the form hold a
@@ -1046,7 +1051,8 @@ export default function Bookings({
       // Clamped to the visible window: a stay can start before it or run past
       // the end of it, and neither needs walking day by day.
       const from = booking.checkInDate > rangeStart ? booking.checkInDate : rangeStart;
-      let bookingEnd = booking.checkOutDate;
+      // No check-out date yet: the room is held until the guest leaves.
+      let bookingEnd = booking.checkOutDate || '9999-12-31';
       // A guest still checked in past their sold checkout date hasn't given the
       // room back — it stays occupied through today (and blocks the picker,
       // matching the server's overlap check) until an actual checkout happens.
@@ -1602,7 +1608,7 @@ export default function Bookings({
     beginForm('CREATE', {
       ...initialBookingForm,
       checkInDate,
-      checkOutDate: addDays(checkInDate, 1),
+      checkOutDate: '',
       roomId: presetRoomId ? String(presetRoomId) : '',
       // Walk-in means "the guest is here now" — not a valid concept for a
       // future date, so a tape-chart click on a later day starts the form
@@ -1628,7 +1634,7 @@ export default function Bookings({
     const enquiryCheckIn = enquiry.checkInDate ? String(enquiry.checkInDate).slice(0, 10) : null;
     const enquiryCheckOut = enquiry.checkOutDate ? String(enquiry.checkOutDate).slice(0, 10) : null;
     const checkInDate = enquiryCheckIn || todayIso();
-    const checkOutDate = enquiryCheckOut && enquiryCheckOut > checkInDate ? enquiryCheckOut : addDays(checkInDate, 1);
+    const checkOutDate = enquiryCheckOut && enquiryCheckOut > checkInDate ? enquiryCheckOut : '';
     setEditTarget(null);
     setDraftId(null);
     setDraftNote('');
@@ -1832,13 +1838,18 @@ export default function Bookings({
     }
   };
 
+  // The check-out date is optional: with none, the stay is open-ended.
   const validRange =
-    bookingForm.checkInDate && bookingForm.checkOutDate && bookingForm.checkOutDate > bookingForm.checkInDate;
+    bookingForm.checkInDate && (!bookingForm.checkOutDate || bookingForm.checkOutDate > bookingForm.checkInDate);
   const isFutureCheckIn = bookingForm.checkInDate > today;
   // Dates already gone: the form records a stay that happened, checked out and
   // billed on save, instead of holding a room. Only where super admin allows it.
   const pastRequested =
-    !editing && canAddPastBookings && Boolean(validRange) && bookingWindow(bookingForm).checkOutDate <= today;
+    !editing &&
+    canAddPastBookings &&
+    Boolean(validRange) &&
+    Boolean(bookingWindow(bookingForm).checkOutDate) &&
+    bookingWindow(bookingForm).checkOutDate <= today;
   const pastSide = isGst ? bookingForm.pastBillingSide : 'NON_GST';
   useEffect(() => {
     if (!pastRequested) return undefined;
@@ -2226,7 +2237,7 @@ export default function Bookings({
   const paidInFull = Boolean(quote && advanceTyped > 0 && Math.abs(advanceTyped - quote.totalPrice) <= 0.005);
   const advanceOverTotal = Boolean(quote && advanceTyped > quote.totalPrice + 0.005);
   const stepDone = {
-    1: Boolean(bookingForm.checkInDate && bookingForm.checkOutDate && bookingForm.roomId),
+    1: Boolean(bookingForm.checkInDate && bookingForm.roomId),
     2: Boolean(bookingForm.adults[0]?.name?.trim()) && !overOccupancy,
     3: String(bookingForm.advanceAmount ?? '').trim() !== '',
     4: bookingForm.vehicles.length > 0,
@@ -2416,7 +2427,7 @@ export default function Bookings({
         return;
       }
       const span = roomDates(bookingForm, room);
-      if (!(span.checkOutDate > span.checkInDate)) {
+      if (span.checkOutDate && !(span.checkOutDate > span.checkInDate)) {
         failOn(`extraOut-${room.key}`, 'Check-out date must be after check-in date.');
         return;
       }
@@ -2538,7 +2549,13 @@ export default function Bookings({
     //
     // Against quote.totalPrice, the payable figure, rather than the gross: a
     // stay discounted to ₹900 cannot take ₹1,000 up front.
-    if (hasAdvanceAmount && quote && Number(bookingForm.advanceAmount) > quote.totalPrice) {
+    // An open-ended stay has no total yet (quote is ₹0), so nothing to cap against.
+    if (
+      hasAdvanceAmount &&
+      quote &&
+      bookingWindow(bookingForm).checkOutDate &&
+      Number(bookingForm.advanceAmount) > quote.totalPrice
+    ) {
       failOn(
         paymentFieldId('newBookingAdvance', 'Amount'),
         `An advance can’t be more than the stay total of ${formatPrice(quote.totalPrice)}.`
@@ -2729,7 +2746,7 @@ export default function Bookings({
           // a dormitory room, or simply no bed on a normal one. Same
           // blank-clears rule as basePriceOverride just above.
           formData.append('bedIds', JSON.stringify(bookingForm.bedIds.map(Number)));
-          formData.append('checkOutDate', bookingForm.checkOutDate);
+          if (bookingForm.checkOutDate) formData.append('checkOutDate', bookingForm.checkOutDate);
           // Only while the stay hasn't started. Sent even when unchanged, which
           // the backend reads as "no change" — it only refuses a date that
           // actually differs from the one on file.
@@ -2756,14 +2773,15 @@ export default function Bookings({
           const span = bookingWindow(bookingForm);
           formData.append('rooms', JSON.stringify(roomsPayload(bookingForm)));
           formData.append('checkInDate', span.checkInDate);
-          formData.append('checkOutDate', span.checkOutDate);
+          if (span.checkOutDate) formData.append('checkOutDate', span.checkOutDate);
         } else {
           formData.append('roomId', String(Number(bookingForm.roomId)));
           if (bookingForm.bedIds.length > 0) {
             formData.append('bedIds', JSON.stringify(bookingForm.bedIds.map(Number)));
           }
           formData.append('checkInDate', bookingForm.checkInDate);
-          formData.append('checkOutDate', bookingForm.checkOutDate);
+          // Left out for an open-ended stay: it holds the room until check-out.
+          if (bookingForm.checkOutDate) formData.append('checkOutDate', bookingForm.checkOutDate);
           if (bookingForm.basePriceOverride !== '') {
             formData.append('basePriceOverride', bookingForm.basePriceOverride);
           }
@@ -3795,7 +3813,11 @@ export default function Bookings({
           // at the sold checkout date until someone actually checks the guest
           // out. Nights past that date read as their real state (vacant, or a
           // vacated night from an early checkout) instead of more booking.
-          const nightBookings = (byDate?.get(d) || []).filter((b) => d < b.checkOutDate);
+          const nightBookings = (byDate?.get(d) || []).filter((b) =>
+            // An open-ended stay is drawn up to today (or its first night, if it
+            // hasn't started) and grows a night a day; it holds the room beyond.
+            b.checkOutDate ? d < b.checkOutDate : d <= (b.checkInDate > today ? b.checkInDate : today)
+          );
           // A whole-room buyout on a dormitory (bed_id NULL, no bedIds at
           // all) fills every bed at once, same as an ordinary room's one
           // booking — it renders as the traditional single-booking tile
@@ -3968,11 +3990,14 @@ export default function Bookings({
           // blocks the room in the availability map above, but the strip itself
           // stays put at the booked period — it doesn't keep growing a day at a
           // time until someone actually checks them out.
-          const lastNight =
-            booking.status === 'CHECKED_OUT' && booking.checkOutDate > today
+          // An open-ended stay has no last night: its strip just stops at today.
+          const lastNight = !booking.checkOutDate
+            ? null
+            : booking.status === 'CHECKED_OUT' && booking.checkOutDate > today
               ? addDays(today, -1)
               : addDays(booking.checkOutDate, -1);
           if (d === lastNight) classes.push('tape-tile--end');
+          if (!booking.checkOutDate && d === (booking.checkInDate > today ? booking.checkInDate : today)) classes.push('tape-tile--open-end');
           if (d === today) classes.push('tape-tile--today');
           // Pointing at any night of a stay lifts the whole stay, so its real
           // extent is obvious even where it runs off the edge of the month.
@@ -4471,7 +4496,7 @@ export default function Bookings({
               <span className="tape-tooltip__dates">
                 {formatDateLong(hoverTile.booking.checkInDate)}
                 <i>→</i>
-                {formatDateLong(hoverTile.booking.checkOutDate)}
+                {checkOutLabel(hoverTile.booking.checkOutDate)}
               </span>
               <span className="tape-tooltip__meta">
                 {nightsOf(hoverTile.booking)} night{nightsOf(hoverTile.booking) === 1 ? '' : 's'}
@@ -4499,7 +4524,7 @@ export default function Bookings({
                           <strong>Room {r?.roomNumber ?? b.roomId}</strong>
                           <span>
                             {r?.categoryName ? `${r.categoryName} · ` : ''}
-                            {formatDateLong(b.checkInDate)} → {formatDateLong(b.checkOutDate)}
+                            {formatDateLong(b.checkInDate)} → {checkOutLabel(b.checkOutDate)}
                           </span>
                         </button>
                       );
@@ -4516,7 +4541,7 @@ export default function Bookings({
                     <span className="tape-tooltip__meta">Upcoming bookings for this guest</span>
                     <span className="tape-tooltip__rooms">
                       {upcoming.slice(0, 4).map((b) => {
-                        const label = `${formatDateLong(b.checkInDate)} → ${formatDateLong(b.checkOutDate)}`;
+                        const label = `${formatDateLong(b.checkInDate)} → ${checkOutLabel(b.checkOutDate)}`;
                         const r = tapeData.rooms.find((x) => x.id === b.roomId);
                         return sticky ? (
                           <button key={b.id} type="button" className="tape-tooltip__room" onClick={() => jumpToStay(b.id, b.roomId)}>
@@ -4894,73 +4919,100 @@ export default function Bookings({
                     <label htmlFor="checkInDate">
                       Check-in<Req />
                     </label>
-                    <input
-                      id="checkInDate"
-                      type="date"
-                      value={bookingForm.checkInDate}
-                      // Today is the floor: a past night cannot be sold, and a
-                      // new or moved booking cannot be backdated onto one
-                      // either — the date has already gone.
-                      // Editable on a reservation that hasn't been checked in
-                      // yet — moving a booked stay to different dates is an
-                      // ordinary correction. Fixed once the guest has arrived:
-                      // by then the day they did is a recorded fact.
-                      min={revising || canAddPastBookings ? undefined : today}
-                      max={revising ? addDays(bookingForm.checkOutDate, -1) : undefined}
-                      disabled={!canEditCheckIn}
-                      aria-invalid={invalid('checkInDate')}
-                      onChange={(e) => {
-                        const checkInDate = e.target.value;
-                        setBookingForm((f) => ({
-                          ...f,
-                          checkInDate,
-                          // Dragging the arrival past the departure would leave
-                          // the form in a state it can't be saved from, and the
-                          // rooms and the quote would both stop loading until
-                          // the second box was fixed by hand. Carrying the
-                          // check-out along keeps the stay the same length,
-                          // which is what moving a booking usually means.
-                          checkOutDate:
-                            checkInDate && f.checkOutDate && f.checkOutDate <= checkInDate
-                              ? addDays(checkInDate, Math.max(1, daysBetween(f.checkInDate, f.checkOutDate)))
-                              : f.checkOutDate,
-                          // A future date can only be a reservation; today can
-                          // only be a walk-in. An edit is neither: the stay
-                          // already exists, and its type is not something this
-                          // box gets to rewrite.
-                          bookingType: editing
-                            ? f.bookingType
-                            : checkInDate > today
-                              ? 'RESERVATION'
-                              : checkInDate === today
-                                ? 'WALK_IN'
-                                : f.bookingType,
-                        }));
-                      }}
-                    />
+                    <div className="booking-form__date-time">
+                      <input
+                        id="checkInDate"
+                        type="date"
+                        value={bookingForm.checkInDate}
+                        // Today is the floor: a past night cannot be sold, and a
+                        // new or moved booking cannot be backdated onto one
+                        // either — the date has already gone.
+                        // Editable on a reservation that hasn't been checked in
+                        // yet — moving a booked stay to different dates is an
+                        // ordinary correction. Fixed once the guest has arrived:
+                        // by then the day they did is a recorded fact.
+                        min={revising || canAddPastBookings ? undefined : today}
+                        max={revising ? addDays(bookingForm.checkOutDate, -1) : undefined}
+                        disabled={!canEditCheckIn}
+                        aria-invalid={invalid('checkInDate')}
+                        onChange={(e) => {
+                          const checkInDate = e.target.value;
+                          setBookingForm((f) => ({
+                            ...f,
+                            checkInDate,
+                            // Dragging the arrival past the departure would leave
+                            // the form in a state it can't be saved from, and the
+                            // rooms and the quote would both stop loading until
+                            // the second box was fixed by hand. Carrying the
+                            // check-out along keeps the stay the same length,
+                            // which is what moving a booking usually means.
+                            checkOutDate:
+                              checkInDate && f.checkOutDate && f.checkOutDate <= checkInDate
+                                ? addDays(checkInDate, Math.max(1, daysBetween(f.checkInDate, f.checkOutDate)))
+                                : f.checkOutDate,
+                            // A future date can only be a reservation; today can
+                            // only be a walk-in. An edit is neither: the stay
+                            // already exists, and its type is not something this
+                            // box gets to rewrite.
+                            bookingType: editing
+                              ? f.bookingType
+                              : checkInDate > today
+                                ? 'RESERVATION'
+                                : checkInDate === today
+                                  ? 'WALK_IN'
+                                  : f.bookingType,
+                          }));
+                        }}
+                      />
+                      {canAddPastBookings && !editing && bookingForm.checkInDate && bookingForm.checkInDate < today && (
+                        <input
+                          id="pastInTime"
+                          type="time"
+                          aria-label="Check-in time"
+                          title="Check-in time"
+                          value={bookingForm.pastInTime}
+                          onChange={(e) => setBookingForm((f) => ({ ...f, pastInTime: e.target.value }))}
+                        />
+                      )}
+                    </div>
                     {fieldErr('checkInDate')}
                   </div>
                   <div className="field">
-                    <label htmlFor="checkOutDate">
-                      Check-out<Req />
-                    </label>
-                    <input
-                      id="checkOutDate"
-                      type="date"
-                      value={bookingForm.checkOutDate}
-                      // A stay is at least one night, whichever way it was
-                      // started — the check-in date is the floor for both.
-                      min={
-                        [bookingForm.checkInDate ? addDays(bookingForm.checkInDate, 1) : '', revising ? editWindow.minDate ?? '' : '']
-                          .sort()
-                          .pop() || undefined
-                      }
-                      max={revising ? editWindow.maxDate ?? undefined : undefined}
-                      disabled={!canEditStay}
-                      aria-invalid={invalid('checkOutDate')}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, checkOutDate: e.target.value }))}
-                    />
+                    <label htmlFor="checkOutDate">Check-out (optional)</label>
+                    <div className="booking-form__date-time">
+                      <input
+                        id="checkOutDate"
+                        type="date"
+                        value={bookingForm.checkOutDate}
+                        // A stay is at least one night, whichever way it was
+                        // started — the check-in date is the floor for both.
+                        min={
+                          [bookingForm.checkInDate ? addDays(bookingForm.checkInDate, 1) : '', revising ? editWindow.minDate ?? '' : '']
+                            .sort()
+                            .pop() || undefined
+                        }
+                        max={revising ? editWindow.maxDate ?? undefined : undefined}
+                        disabled={!canEditStay}
+                        aria-invalid={invalid('checkOutDate')}
+                        onChange={(e) => setBookingForm((f) => ({ ...f, checkOutDate: e.target.value }))}
+                      />
+                      {pastMode && (
+                        <input
+                          id="pastOutTime"
+                          type="time"
+                          aria-label="Check-out time"
+                          title="Check-out time"
+                          value={bookingForm.pastOutTime}
+                          onChange={(e) => setBookingForm((f) => ({ ...f, pastOutTime: e.target.value }))}
+                        />
+                      )}
+                    </div>
                     {fieldErr('checkOutDate')}
+                    {!bookingForm.checkOutDate && !revising && (
+                      <p className="bookings-panel__hint">
+                        Open-ended stay — the room stays held until the guest checks out, and the bill counts the nights actually stayed.
+                      </p>
+                    )}
                   </div>
                 </div>
                 {editing && (
@@ -4984,7 +5036,7 @@ export default function Bookings({
                     <strong>Past booking: saved as checked out and billed now.</strong>
                     <p className="bookings-panel__hint">
                       The invoice takes the next invoice number and is dated the check-out day. Enter when the guest really arrived
-                      and left, and the final payment below.
+                      and left (the times beside the dates), and the final payment below.
                     </p>
                     {gap && (
                       <p className="bookings-panel__hint">
@@ -5006,26 +5058,6 @@ export default function Bookings({
                         </select>
                       </div>
                     )}
-                    <div className="field-row">
-                      <div className="field">
-                        <label htmlFor="pastInTime">Checked in at</label>
-                        <input
-                          id="pastInTime"
-                          type="time"
-                          value={bookingForm.pastInTime}
-                          onChange={(e) => setBookingForm((f) => ({ ...f, pastInTime: e.target.value }))}
-                        />
-                      </div>
-                      <div className="field">
-                        <label htmlFor="pastOutTime">Checked out at</label>
-                        <input
-                          id="pastOutTime"
-                          type="time"
-                          value={bookingForm.pastOutTime}
-                          onChange={(e) => setBookingForm((f) => ({ ...f, pastOutTime: e.target.value }))}
-                        />
-                      </div>
-                    </div>
                   </div>
                 )}
 
@@ -5884,6 +5916,9 @@ export default function Bookings({
                         <div className="modal-form__head">
                           <div className="modal-form__head-row">
                             <h3>ID proof</h3>
+                            <a className="btn-secondary" href={idProofPreviewUrl} download="id-proof">
+                              Download
+                            </a>
                             <button type="button" className="btn-secondary btn-close-red" onClick={closeIdProofPreview}>
                               Close
                             </button>
@@ -6792,6 +6827,9 @@ function GuestNameField({ id, value, token, onChange, onPick }) {
   // Set when a suggestion is taken, so the fetch that the same keystroke would
   // otherwise fire doesn't reopen the list over the name just chosen.
   const picked = useRef('');
+  const [chosen, setChosen] = useState(null);
+  // Kept on screen after the pick, for as long as the name still is theirs.
+  const shown = chosen && value.trim() === chosen.name ? chosen : null;
   const boxRef = useRef(null);
 
   useEffect(() => {
@@ -6838,6 +6876,7 @@ function GuestNameField({ id, value, token, onChange, onPick }) {
 
   const take = (guest) => {
     picked.current = guest.name;
+    setChosen(guest);
     setOpen(false);
     setMatches([]);
     onPick(guest);
@@ -6895,7 +6934,7 @@ function GuestNameField({ id, value, token, onChange, onPick }) {
                   <span className="guest-typeahead__name">{guest.name}</span>
                   <span className="guest-typeahead__meta">
                     {guest.phone}
-                    {guest.stayCount > 1 ? ` · ${guest.stayCount} stays` : ''}
+                    {` · ${guest.stayCount} ${guest.stayCount === 1 ? 'stay' : 'stays'}`}
                   </span>
                   <span className="guest-typeahead__sub">
                     {guest.lastStayDate ? `Last stay ${formatDateLong(guest.lastStayDate)}` : 'New guest'}
@@ -6906,16 +6945,27 @@ function GuestNameField({ id, value, token, onChange, onPick }) {
                   </span>
                 </span>
                 {/* What this guest has paid the property so far, across every billed stay. */}
-                {guest.totalBusiness > 0 && (
-                  <span className="guest-typeahead__business" title="Total billed to this guest's stays">
-                    <b>{formatPrice(guest.totalBusiness)}</b>
-                    <small>{guest.billCount} {guest.billCount === 1 ? 'bill' : 'bills'}</small>
-                  </span>
-                )}
+                <span className="guest-typeahead__business" title="Total billed to this guest's stays">
+                  <b>{formatPrice(guest.totalBusiness ?? 0)}</b>
+                  <small>{guest.billCount ?? 0} {guest.billCount === 1 ? 'bill' : 'bills'}</small>
+                </span>
               </button>
             </li>
           ))}
         </ul>
+      )}
+      {shown && (
+        <div className="guest-typeahead__summary">
+          <span className="guest-typeahead__pill">
+            Total stays <b>{shown.stayCount}</b>
+          </span>
+          <span className="guest-typeahead__pill guest-typeahead__pill--revenue">
+            Total revenue <b>{formatPrice(shown.totalBusiness ?? 0)}</b>
+            <small>
+              {shown.billCount ?? 0} {shown.billCount === 1 ? 'bill' : 'bills'}
+            </small>
+          </span>
+        </div>
       )}
     </div>
   );
@@ -7040,8 +7090,18 @@ function PartyEditor({
 
   // What is already held for this guest, so an edit doesn't read as though the
   // document were missing and get one uploaded again on top of it.
+  const viewPicked = (file) => {
+    const url = URL.createObjectURL(file);
+    window.open(url, '_blank', 'noopener');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+
   const onFile = (person) =>
-    person.hasDocument && !person.idProofFile ? (
+    person.idProofFile ? (
+      <button type="button" className="btn-outline" style={{ marginTop: 6, padding: '4px 14px', minHeight: 32, fontSize: 13 }} onClick={() => viewPicked(person.idProofFile)}>
+        View ID
+      </button>
+    ) : person.hasDocument ? (
       <span className="on-file">
         <svg
           viewBox="0 0 24 24"

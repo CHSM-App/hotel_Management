@@ -22,7 +22,7 @@ class BookingsScreen extends ConsumerStatefulWidget {
 class _BookingsScreenState extends ConsumerState<BookingsScreen> {
   Future<void> _newBooking() async {
     final booked = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const TakeBookingScreen()),
+      FullWidthRoute(builder: (_) => const TakeBookingScreen()),
     );
     if (booked == true) {
       ref.read(bookingViewModelProvider.notifier).loadChart();

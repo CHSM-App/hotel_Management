@@ -46,6 +46,7 @@ class BarBillPdf {
             pw.Divider(),
             if (b.drinksSubtotal > 0) row('Drinks (incl. ${b.taxPercent.toStringAsFixed(0)}% tax ${_rs(b.taxAmount)})', _rs(b.drinksSubtotal)),
             if (b.foodSubtotal > 0) row('Food${b.foodTaxAmount > 0 ? ' (incl. GST ${_rs(b.foodTaxAmount)})' : ''}', _rs(b.foodSubtotal)),
+            if (b.discountAmount > 0) row('Discount', '- ${_rs(b.discountAmount)}'),
             row('Total', _rs(b.total), bold: true),
             pw.SizedBox(height: 6),
             for (final p in b.payments) row('Paid by ${_pay[p.method] ?? p.method}${(p.reference ?? '').isEmpty ? '' : ' (${p.reference})'}', _rs(p.amount)),

@@ -737,3 +737,35 @@
     grid-row: auto !important;
   }
 }
+
+/* "View" beside an uploaded ID document: a visible word, not an icon that only
+   explains itself on hover. */
+.stay-summary__view {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent, #1d4ed8);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.stay-summary__view svg {
+  width: 14px;
+  height: 14px;
+}
+
+.stay-summary__view:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.stay-summary__view:focus-visible {
+  outline: 2px solid var(--focus, currentColor);
+  outline-offset: 2px;
+}

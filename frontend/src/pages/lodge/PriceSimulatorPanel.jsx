@@ -1,3 +1,4 @@
+import { useQuotationSend } from './useQuotationSend';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { apiGet, apiPost, ApiError, API_BASE } from '../../lib/api';
@@ -169,22 +170,18 @@ export default function PriceSimulatorPanel({ onSaved }) {
 
   // Only the choices go up — the server prices every room again, so what is
   // stored is the rate card's own answer, not the figure on this screen.
-  const saveQuotation = async (pricedSims) => {
+  const { send: sendQuotation, host: sendHost } = useQuotationSend();
+
+  const saveQuotation = async (pricedSims, andSend = false) => {
     setSaveError('');
     if (phoneInvalid) {
       setPhoneChecked(true);
       document.getElementById('simGuestPhone')?.focus({ preventScroll: true });
       return;
     }
-    // Held until check-in, so one for today or earlier would be Expired the
-    // moment it was saved.
-    if (pricedSims.some((s) => s.from <= todayIso())) {
-      setSaveError('Choose a check-in date after today to save a quotation.');
-      return;
-    }
     setSaving(true);
     try {
-      await apiPost(
+      const saved = await apiPost(
         '/quotations',
         {
           guestName: guestName.trim() || undefined,
@@ -198,6 +195,8 @@ export default function PriceSimulatorPanel({ onSaved }) {
         },
         { token: session?.token }
       );
+      // Send before leaving this form: the list that follows would unmount it.
+      if (andSend) window.alert(await sendQuotation(saved));
       onSaved?.();
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : 'Could not save the quotation. Try again.');
@@ -610,6 +609,14 @@ export default function PriceSimulatorPanel({ onSaved }) {
                 </button>
                 <button
                   type="button"
+                  className="btn-whatsapp"
+                  disabled={!canDownload || saving}
+                  onClick={() => saveQuotation(priced, true)}
+                >
+                  Save &amp; send on WhatsApp
+                </button>
+                <button
+                  type="button"
                   className="btn-accent"
                   disabled={!canDownload || preparingPdf}
                   onClick={() =>
@@ -632,6 +639,7 @@ export default function PriceSimulatorPanel({ onSaved }) {
           <QuotationDocument ref={quoteRef} {...quoteDoc} />
         </div>
       )}
+      {sendHost}
     </div>
   );
 }

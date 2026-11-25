@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/models/draft.dart' show kPaymentMethods, needsPaymentReference;
 import '../../domain/models/food_order.dart';
+import '../../domain/models/invoice.dart' show FoodTab;
 import '../../domain/models/menu.dart';
 import '../../domain/models/receipt_doc.dart';
 import '../../domain/models/room.dart';
 import '../printing/thermal_print_action.dart';
 import '../../presentation/providers/view_model_provider.dart';
 import '../../presentation/view_models/orders_viewmodel.dart';
+import '../../widgets/adaptive_grid.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
+import '../billing/bill_receipt_screen.dart';
+import '../billing/issue_food_bill_screen.dart';
 import '../rooms/room_form_pieces.dart';
 import '../theme.dart';
 
@@ -36,7 +42,19 @@ class CounterOrderScreen extends ConsumerStatefulWidget {
   /// than lets them be changed.
   final FoodOrder? editingOrder;
 
-  const CounterOrderScreen({super.key, this.editingOrder});
+  /// A saved quotation being converted: its lines (menu item id, optional
+  /// portion id, quantity) and guest seed a new order. Ignored when editing.
+  final List<({int itemId, int? portionId, int quantity})>? prefillLines;
+  final String? prefillName;
+  final String? prefillPhone;
+
+  const CounterOrderScreen({
+    super.key,
+    this.editingOrder,
+    this.prefillLines,
+    this.prefillName,
+    this.prefillPhone,
+  });
 
   @override
   ConsumerState<CounterOrderScreen> createState() => _CounterOrderScreenState();
@@ -48,6 +66,14 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   final _customerTag = TextEditingController();
   final _guestPhone = TextEditingController();
   final _note = TextEditingController();
+
+  // "Issue bill now": place the order, mark it ready to bill and cut the bill
+  // in one go, with the discount and payment entered right here.
+  bool _billOpen = false;
+  bool _billBusy = false;
+  final _discount = TextEditingController();
+  final _payRef = TextEditingController();
+  String _payMethod = 'CASH';
   final _search = TextEditingController();
 
   List<MenuSection> _sections = const [];
@@ -63,14 +89,6 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   String _query = '';
   String? _guestNameError;
   String? _guestPhoneError;
-
-  // Two steps on this screen, same as the web counter form's own flow —
-  // where it's going first, the menu second — rather than one long page
-  // where the menu (by far the longest part) is buried below the target
-  // and guest fields. 0 = target/guest, 1 = menu. Editing skips straight to
-  // the menu: the target can't change on an edit, so there is nothing for
-  // step 0 to ask.
-  int _step = 0;
 
   // The section strip and the All/Veg/Non-veg strip both pin to the top of
   // the menu step while the dish list scrolls under them — a real sliver
@@ -102,7 +120,8 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
 
   GlobalKey _sectionAnchorKey(int id) =>
       _sectionAnchorKeys.putIfAbsent(id, GlobalKey.new);
-  GlobalKey _vegGroupKey(int id) => _vegGroupKeys.putIfAbsent(id, GlobalKey.new);
+  GlobalKey _vegGroupKey(int id) =>
+      _vegGroupKeys.putIfAbsent(id, GlobalKey.new);
   GlobalKey _nonVegGroupKey(int id) =>
       _nonVegGroupKeys.putIfAbsent(id, GlobalKey.new);
 
@@ -115,7 +134,6 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   @override
   void initState() {
     super.initState();
-    if (_editing) _step = 1;
     Future.microtask(_load);
     _scrollController.addListener(_onScroll);
   }
@@ -128,6 +146,8 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     _customerTag.dispose();
     _guestPhone.dispose();
     _note.dispose();
+    _discount.dispose();
+    _payRef.dispose();
     _search.dispose();
     super.dispose();
   }
@@ -315,31 +335,19 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     }
   }
 
-  /// Guest name/phone are only asked for a true counter order, same rule
-  /// [_place] already checked inline — pulled out so the "Next" button on
-  /// step 0 can run the same check before letting the desk into the menu.
+  /// Name and phone are optional; a phone, if given, must be 10 digits.
   bool _validateGuestDetails() {
     if (!_isCounter) return true;
     final phone = _guestPhone.text.trim();
     setState(() {
-      _guestNameError = _guestName.text.trim().isEmpty
-          ? "Add the guest's name for a counter order."
-          : null;
-      _guestPhoneError = phone.isEmpty
-          ? 'Add a phone number for a counter order.'
-          : (phone.length != 10 || int.tryParse(phone) == null)
-              ? 'Enter a valid 10-digit mobile number.'
-              : null;
+      _guestNameError = null;
+      _guestPhoneError =
+          phone.isEmpty || (phone.length == 10 && int.tryParse(phone) != null)
+          ? null
+          : 'Enter a valid 10-digit mobile number.';
     });
-    return _guestNameError == null && _guestPhoneError == null;
+    return _guestPhoneError == null;
   }
-
-  void _goToMenu() {
-    if (!_validateGuestDetails()) return;
-    setState(() => _step = 1);
-  }
-
-  void _goBack() => setState(() => _step = 0);
 
   Future<void> _load() async {
     setState(() {
@@ -349,7 +357,8 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     final vm = ref.read(ordersViewModelProvider.notifier);
     final lodge = ref.read(authViewModelProvider).me?.lodge;
     final servesTables = lodge?.foodTableService ?? false;
-    final servesRooms = (lodge?.hasRooms ?? false) && (lodge?.foodRoomService ?? false);
+    final servesRooms =
+        (lodge?.hasRooms ?? false) && (lodge?.foodRoomService ?? false);
     try {
       final sections = await vm.menu();
       // Only asked for where the property actually seats people. A lodge that
@@ -373,11 +382,13 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
         _loading = false;
       });
       _prefillForEdit();
+      _prefillFromQuotation();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _loadError = ref.read(ordersViewModelProvider).error ??
+        _loadError =
+            ref.read(ordersViewModelProvider).error ??
             'Could not load the menu.';
       });
     }
@@ -391,6 +402,30 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
   /// editOrder modal seeds itself from the order it was opened on. A line
   /// whose dish has since been removed from the menu is left off; its
   /// quantity can no longer be expressed through this picker.
+  /// Seeds the cart from a quotation being converted, matched against the
+  /// current menu; a dish that has since left the menu is skipped.
+  void _prefillFromQuotation() {
+    final wanted = widget.prefillLines;
+    if (wanted == null || _editing || _lines.isNotEmpty) return;
+    final allItems = _sections.expand((s) => s.items);
+    final drafts = <OrderLineDraft>[];
+    for (final w in wanted) {
+      final item = allItems.where((i) => i.id == w.itemId).firstOrNull;
+      if (item == null) continue;
+      final portion = w.portionId == null
+          ? null
+          : item.portions.where((p) => p.id == w.portionId).firstOrNull;
+      drafts.add(
+        OrderLineDraft(item: item, portion: portion, quantity: w.quantity),
+      );
+    }
+    setState(() {
+      _lines.addAll(drafts);
+      _guestName.text = widget.prefillName ?? '';
+      _guestPhone.text = widget.prefillPhone ?? '';
+    });
+  }
+
   void _prefillForEdit() {
     final order = _editingOrder;
     if (order == null || _lines.isNotEmpty) return;
@@ -493,34 +528,32 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       // read as one system rather than two different styles.
       appBar: AppBar(
         title: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _editing
-                          ? 'Edit order #${_editingOrder!.orderNumber}'
-                          : 'Take an order',
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                      style: const TextStyle(
-                        color: AppTheme.heading,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    Text(
-                      _editing
-                          ? 'Update items and note'
-                          : (_step == 0
-                                ? 'Step 1 of 2 · Where it goes'
-                                : 'Step 2 of 2 · Pick dishes'),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                      style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-                    ),
-                  ],
-                ),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _editing
+                  ? 'Edit order #${_editingOrder!.orderNumber}'
+                  : 'Take an order',
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
+            ),
+            Text(
+              _editing
+                  ? 'Update items and note'
+                  : 'Pick dishes and add the customer',
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            ),
+          ],
+        ),
       ),
       body: SafeArea(child: _body()),
     );
@@ -541,171 +574,111 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       );
     }
 
-    return _step == 0 ? _targetStep() : _menuStep();
+    return _menuStep();
   }
 
   // ── Step 0: where it's going ────────────────────────────────────────────
 
-  Widget _targetStep() {
-    return Column(
-      children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-              AppTheme.s16,
-              AppTheme.s8,
-              AppTheme.s16,
-              AppTheme.s16,
+  Widget _targetCard() {
+    return NeuCard(
+      radius: AppTheme.rLarge,
+      shadow: AppTheme.elevated,
+      padding: const EdgeInsets.all(AppTheme.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionLabel(
+            "Where's it going",
+            number: 1,
+            icon: Icons.near_me_rounded,
+          ),
+          const SizedBox(height: AppTheme.s8),
+          _TargetField(
+            tables: _tables,
+            rooms: _rooms,
+            selectedTable: _table,
+            selectedRoom: _room,
+            parcel: _parcel,
+            onSelectParcel: (p) => setState(() => _parcel = p),
+            onSelectTable: (t) => setState(() {
+              _table = t;
+              _room = null;
+              _parcel = false;
+              _clearOccupancy();
+            }),
+            onSelectRoom: (r) {
+              setState(() {
+                _room = r;
+                _table = null;
+                _parcel = false;
+                _clearOccupancy();
+              });
+              if (r != null) _loadOccupancy(r.id);
+            },
+          ),
+
+          if (_room != null) ...[
+            const SizedBox(height: AppTheme.s8),
+            _OccupancyCard(
+              loading: _occupancyLoading,
+              failed: _occupancyFailed,
+              occupancy: _occupancy,
             ),
-            children: [
-              Text(
-                'Goes straight into the kitchen queue — staff took it, so it '
-                'skips the accept step.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: AppTheme.s4),
-              NeuCard(
-                radius: AppTheme.rLarge,
-                shadow: AppTheme.elevated,
-                padding: const EdgeInsets.all(AppTheme.s12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SectionLabel("Where's it going", number: 1, icon: Icons.near_me_rounded),
-                    const SizedBox(height: AppTheme.s8),
-                    _TargetField(
-                      tables: _tables,
-                      rooms: _rooms,
-                      selectedTable: _table,
-                      selectedRoom: _room,
-                      parcel: _parcel,
-                      onSelectParcel: (p) => setState(() => _parcel = p),
-                      onSelectTable: (t) => setState(() {
-                        _table = t;
-                        _room = null;
-                        _parcel = false;
-                        _clearOccupancy();
-                      }),
-                      onSelectRoom: (r) {
-                        setState(() {
-                          _room = r;
-                          _table = null;
-                          _parcel = false;
-                          _clearOccupancy();
-                        });
-                        if (r != null) _loadOccupancy(r.id);
-                      },
-                    ),
+          ],
 
-                    if (_room != null) ...[
-                      const SizedBox(height: AppTheme.s8),
-                      _OccupancyCard(
-                        loading: _occupancyLoading,
-                        failed: _occupancyFailed,
-                        occupancy: _occupancy,
-                      ),
-                    ],
-
-                    // Only a true counter order — no room and no table —
-                    // asks for these. A room or a table already identifies
-                    // who the food is for, so re-typing a name there would
-                    // be a second, weaker record of something already
-                    // known; a walk-in has nothing else, so it's required
-                    // rather than optional, same as the web counter form.
-                    if (_table != null) ...[
-                      const SizedBox(height: AppTheme.s8),
-                      NeuField(
-                        controller: _customerTag,
-                        label: 'Customer',
-                        hint: 'Who at the table? Billed separately',
-                        maxLength: 60,
-                        forceCapitalizeWords: true,
-                      ),
-                    ],
-                    if (_isCounter) ...[
-                      const SizedBox(height: AppTheme.s8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: NeuField(
-                              controller: _guestName,
-                              label: 'Guest name',
-                              hint: "Who's collecting",
-                              required: true,
-                              errorText: _guestNameError,
-                              maxLength: 200,
-                              onChanged: (_) {
-                                if (_guestNameError != null) {
-                                  setState(() => _guestNameError = null);
-                                }
-                              },
-                              forceCapitalizeWords: true,
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.s12),
-                          Expanded(
-                            child: NeuField(
-                              controller: _guestPhone,
-                              label: 'Phone',
-                              hint: '10-digit mobile',
-                              required: true,
-                              errorText: _guestPhoneError,
-                              keyboardType: TextInputType.phone,
-                              maxLength: 10,
-                              onChanged: (_) {
-                                if (_guestPhoneError != null) {
-                                  setState(() => _guestPhoneError = null);
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.fromLTRB(
-            AppTheme.s12,
-            AppTheme.s4,
-            AppTheme.s12,
-            AppTheme.s4,
-          ),
-          decoration: const BoxDecoration(
-            color: AppTheme.card,
-            border: Border(top: BorderSide(color: AppTheme.border)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: NeuButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: const Text('Cancel', style: TextStyle(fontSize: 13)),
-                ),
-              ),
-              const SizedBox(width: AppTheme.s8),
-              Expanded(
-                flex: 2,
-                child: NeuButton(
-                  primary: true,
-                  onPressed: _goToMenu,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: const Text(
-                    'Next: Menu',
-                    style: TextStyle(fontSize: 13),
+          // A room or a table already identifies who the food is for; only a
+          // counter order asks for a guest, and both fields are optional.
+          if (_table != null) ...[
+            const SizedBox(height: AppTheme.s8),
+            NeuField(
+              controller: _customerTag,
+              label: 'Customer',
+              hint: 'Who at the table? Billed separately',
+              maxLength: 60,
+              forceCapitalizeWords: true,
+            ),
+          ],
+          if (_isCounter) ...[
+            const SizedBox(height: AppTheme.s8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: NeuField(
+                    controller: _guestName,
+                    label: 'Guest name',
+                    hint: 'Optional',
+                    errorText: _guestNameError,
+                    maxLength: 200,
+                    onChanged: (_) {
+                      if (_guestNameError != null) {
+                        setState(() => _guestNameError = null);
+                      }
+                    },
+                    forceCapitalizeWords: true,
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
-      ],
+                const SizedBox(width: AppTheme.s12),
+                Expanded(
+                  child: NeuField(
+                    controller: _guestPhone,
+                    label: 'Phone',
+                    hint: 'Optional · 10-digit mobile',
+                    errorText: _guestPhoneError,
+                    keyboardType: TextInputType.phone,
+                    maxLength: 10,
+                    onChanged: (_) {
+                      if (_guestPhoneError != null) {
+                        setState(() => _guestPhoneError = null);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -725,168 +698,165 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     final desk = AppTheme.atLeast(context, Tier.laptop);
 
     final scroll = CustomScrollView(
-            key: _scrollViewportKey,
-            controller: _scrollController,
-            // Flutter's default cache extent (250px) only mounts widgets
-            // near the viewport, so a GlobalKey for a section several
-            // screens down has no RenderObject to scroll to until the desk
-            // has already scrolled close to it by hand — tapping a distant
-            // section's tab would silently do nothing. A menu here tops out
-            // at a few hundred dishes, so mounting everything up front is
-            // cheap enough to trade for tap-to-scroll actually working.
-            cacheExtent: 20000,
-            slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppTheme.s16,
-                    AppTheme.s8,
-                    AppTheme.s16,
-                    AppTheme.s4,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // The target (room/table/counter) isn't sent by
-                      // PATCH /orders/:id/items — it can't be changed on an
-                      // edit, so it's shown as a fact rather than a field,
-                      // same as the web's own editOrder modal. A new order
-                      // already confirmed its target on step 0, so nothing
-                      // needs repeating here.
-                      if (_editing) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.s16,
-                            vertical: AppTheme.s12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppTheme.card,
-                            borderRadius: BorderRadius.circular(
-                              AppTheme.rSmall,
-                            ),
-                            border: Border.all(color: AppTheme.border),
-                          ),
-                          child: Text(
-                            '${_editingOrder!.target}'
-                            '${(_editingOrder!.guestName ?? '').isNotEmpty ? ' · ${_editingOrder!.guestName}' : ''}',
-                            style: const TextStyle(
-                              color: AppTheme.heading,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: AppTheme.s12),
-                        Text(
-                          'Saving replaces this order\'s items wholesale — '
-                          'billed or ready-to-bill orders can no longer be '
-                          'edited.',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        const SizedBox(height: AppTheme.s8),
-                      ],
-                      SectionLabel('Menu', number: menuNumber, icon: Icons.restaurant_menu_rounded),
-                      const SizedBox(height: AppTheme.s8),
-                      _MenuSearchBar(
-                        controller: _search,
-                        onChanged: (v) =>
-                            setState(() => _query = v.trim().toLowerCase()),
-                        onClear: () => setState(() {
-                          _search.clear();
-                          _query = '';
-                        }),
+      key: _scrollViewportKey,
+      controller: _scrollController,
+      // Flutter's default cache extent (250px) only mounts widgets
+      // near the viewport, so a GlobalKey for a section several
+      // screens down has no RenderObject to scroll to until the desk
+      // has already scrolled close to it by hand — tapping a distant
+      // section's tab would silently do nothing. A menu here tops out
+      // at a few hundred dishes, so mounting everything up front is
+      // cheap enough to trade for tap-to-scroll actually working.
+      cacheExtent: 20000,
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s16,
+              AppTheme.s8,
+              AppTheme.s16,
+              AppTheme.s4,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // The target (room/table/counter) isn't sent by
+                // PATCH /orders/:id/items — it can't be changed on an
+                // edit, so it's shown as a fact rather than a field,
+                // same as the web's own editOrder modal. A new order
+                // already confirmed its target on step 0, so nothing
+                // needs repeating here.
+                if (_editing) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.s16,
+                      vertical: AppTheme.s12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.card,
+                      borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Text(
+                      '${_editingOrder!.target}'
+                      '${(_editingOrder!.guestName ?? '').isNotEmpty ? ' · ${_editingOrder!.guestName}' : ''}',
+                      style: const TextStyle(
+                        color: AppTheme.heading,
+                        fontSize: 15,
                       ),
-                    ],
-                  ),
-                ),
-              ),
-              if (showSectionTabs || showDietTabs)
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _StickyMenuTabsDelegate(
-                    sections: _activeSections,
-                    selectedSectionId: _activeSectionId,
-                    onSelectSection: _selectSectionTab,
-                    selectedDiet: _dietTab,
-                    onSelectDiet: _selectDietTab,
-                    showSectionTabs: showSectionTabs,
-                    showDietTabs: showDietTabs,
-                  ),
-                ),
-              if (visible.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppTheme.s16,
-                      AppTheme.s12,
-                      AppTheme.s16,
-                      0,
-                    ),
-                    child: const NeuNotice(
-                      icon: Icons.search_off_rounded,
-                      message: 'Nothing on the menu matches.',
                     ),
                   ),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.s16,
+                  const SizedBox(height: AppTheme.s12),
+                  Text(
+                    'Saving replaces this order\'s items wholesale — '
+                    'billed or ready-to-bill orders can no longer be '
+                    'edited.',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate(
-                      _menuListWidgets(visible),
+                  const SizedBox(height: AppTheme.s8),
+                ],
+                if (!_editing && !desk) ...[
+                  _targetCard(),
+                  const SizedBox(height: AppTheme.s12),
+                ],
+                SectionLabel(
+                  'Menu',
+                  number: menuNumber,
+                  icon: Icons.restaurant_menu_rounded,
+                ),
+                const SizedBox(height: AppTheme.s8),
+                _MenuSearchBar(
+                  controller: _search,
+                  onChanged: (v) =>
+                      setState(() => _query = v.trim().toLowerCase()),
+                  onClear: () => setState(() {
+                    _search.clear();
+                    _query = '';
+                  }),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (showSectionTabs || showDietTabs)
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _StickyMenuTabsDelegate(
+              sections: _activeSections,
+              selectedSectionId: _activeSectionId,
+              onSelectSection: _selectSectionTab,
+              selectedDiet: _dietTab,
+              onSelectDiet: _selectDietTab,
+              showSectionTabs: showSectionTabs,
+              showDietTabs: showDietTabs,
+            ),
+          ),
+        if (visible.isEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTheme.s16,
+                AppTheme.s12,
+                AppTheme.s16,
+                0,
+              ),
+              child: const NeuNotice(
+                icon: Icons.search_off_rounded,
+                message: 'Nothing on the menu matches.',
+              ),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate(_menuListWidgets(visible)),
+            ),
+          ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s16,
+              AppTheme.s4,
+              AppTheme.s16,
+              AppTheme.s24,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_lines.isNotEmpty && !desk) ...[
+                  const SectionDivider(),
+                  SectionLabel(
+                    'Order (${_lines.length})',
+                    number: menuNumber + 1,
+                    icon: Icons.shopping_cart_rounded,
+                  ),
+                  const SizedBox(height: AppTheme.s8),
+                  for (final line in _lines)
+                    _CartLine(
+                      line: line,
+                      onRemove: () => _setQty(line.item, line.portion, 0),
                     ),
-                  ),
-                ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppTheme.s16,
-                    AppTheme.s4,
-                    AppTheme.s16,
-                    AppTheme.s24,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_lines.isNotEmpty && !desk) ...[
-                        const SectionDivider(),
-                        SectionLabel(
-                          'Order (${_lines.length})',
-                          number: menuNumber + 1,
-                          icon: Icons.shopping_cart_rounded,
-                        ),
-                        const SizedBox(height: AppTheme.s8),
-                        for (final line in _lines)
-                          _CartLine(
-                            line: line,
-                            onRemove: () =>
-                                _setQty(line.item, line.portion, 0),
-                          ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              // Guarantees every section — including the last one, however
-              // short — can still scroll its heading all the way up to the
-              // pinned header's bottom edge. Without this, a short trailing
-              // section plus a short note/cart block can run out of
-              // scrollable distance before that heading ever reaches the
-              // threshold [_onScroll] checks, so its tab never highlights.
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: MediaQuery.sizeOf(context).height * 0.6,
-                ),
-              ),
-            ],
-          );
+                ],
+              ],
+            ),
+          ),
+        ),
+        // Guarantees every section — including the last one, however
+        // short — can still scroll its heading all the way up to the
+        // pinned header's bottom edge. Without this, a short trailing
+        // section plus a short note/cart block can run out of
+        // scrollable distance before that heading ever reaches the
+        // threshold [_onScroll] checks, so its tab never highlights.
+        SliverToBoxAdapter(
+          child: SizedBox(height: MediaQuery.sizeOf(context).height * 0.6),
+        ),
+      ],
+    );
 
-    final cancelLabel = _editing ? 'Cancel' : 'Back';
-    final onCancel = working
-        ? null
-        : (_editing ? () => Navigator.of(context).pop() : _goBack);
+    const cancelLabel = 'Cancel';
+    final onCancel = working ? null : () => Navigator.of(context).pop();
     final VoidCallback? onPlace = (working || _lines.isEmpty) ? null : _place;
 
     if (desk) {
@@ -895,6 +865,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
         children: [
           Expanded(child: scroll),
           _OrderPanel(
+            header: _editing ? null : _targetCard(),
             note: _note,
             lines: _lines,
             total: _total,
@@ -903,7 +874,16 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
             cancelLabel: cancelLabel,
             onCancel: onCancel,
             onPlace: onPlace,
-            onRemove: (l) => _setQty(l.item, l.portion, 0),
+            onQty: (l, q) => _setQty(l.item, l.portion, q),
+            discount: _billOpen ? _discountAmt : 0,
+            // A food bill covers a counter or table tab; a room's food goes
+            // on the stay's own bill instead.
+            billBlock: (!_editing &&
+                    _room == null &&
+                    (ref.watch(authViewModelProvider).me?.user.permissions ?? const [])
+                        .contains('billing.manage'))
+                ? _billBlock(_total - _discountAmt, onPlace != null)
+                : null,
           ),
         ],
       );
@@ -1016,16 +996,10 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       if (vegItems.isNotEmpty) {
         final key = _vegGroupKey(section.id);
         dietGroups.add(('VEG', key));
-        widgets.add(_DietGroupLabel(key: key, label: 'Veg', color: AppTheme.vacant));
-        for (final item in vegItems) {
-          widgets.add(
-            _MenuRow(
-              item: item,
-              qtyFor: (p) => _qtyFor(item.id, p?.id),
-              onQty: (p, q) => _setQty(item, p, q),
-            ),
-          );
-        }
+        widgets.add(
+          _DietGroupLabel(key: key, label: 'Veg', color: AppTheme.vacant),
+        );
+        widgets.add(_menuGrid(vegItems));
       }
 
       if (nonVegItems.isNotEmpty) {
@@ -1034,15 +1008,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
         widgets.add(
           _DietGroupLabel(key: key, label: 'Non-veg', color: AppTheme.danger),
         );
-        for (final item in nonVegItems) {
-          widgets.add(
-            _MenuRow(
-              item: item,
-              qtyFor: (p) => _qtyFor(item.id, p?.id),
-              onQty: (p, q) => _setQty(item, p, q),
-            ),
-          );
-        }
+        widgets.add(_menuGrid(nonVegItems));
       }
 
       widgets.add(const SizedBox(height: AppTheme.s4));
@@ -1051,6 +1017,20 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     _renderedDietGroups = dietGroups;
     return widgets;
   }
+
+  /// Compact tiles that wrap to however many fit the width.
+  Widget _menuGrid(List<MenuItem> items) => AdaptiveGrid(
+    minTileWidth: 250,
+    spacing: 6,
+    children: [
+      for (final item in items)
+        _MenuRow(
+          item: item,
+          qtyFor: (p) => _qtyFor(item.id, p?.id),
+          onQty: (p, q) => _setQty(item, p, q),
+        ),
+    ],
+  );
 
   int _qtyFor(int itemId, int? portionId) {
     final idx = _lines.indexWhere(
@@ -1069,12 +1049,14 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       } else if (idx >= 0) {
         _lines[idx].quantity = quantity;
       } else {
-        _lines.add(OrderLineDraft(item: item, portion: portion, quantity: quantity));
+        _lines.add(
+          OrderLineDraft(item: item, portion: portion, quantity: quantity),
+        );
       }
     });
   }
 
-  Future<void> _place() async {
+  Future<void> _place({bool andBill = false}) async {
     if (_editing) {
       await _saveEdit();
       return;
@@ -1084,7 +1066,6 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     // got here without ever validating — unlikely, but cheap to guard
     // again — shouldn't be able to place an order with a bad guest name.
     if (!_validateGuestDetails()) {
-      setState(() => _step = 0);
       return;
     }
 
@@ -1116,7 +1097,7 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
     }
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    {
+    if (!andBill) {
       await offerKot(
         context,
         ref,
@@ -1132,12 +1113,276 @@ class _CounterOrderScreenState extends ConsumerState<CounterOrderScreen> {
       );
       if (!mounted) return;
     }
+    if (andBill) {
+      await _billOrder(order);
+      return;
+    }
     navigator.pop(true);
     messenger.showSnackBar(
       SnackBar(
         content: Text('Order #${order.orderNumber} is with the kitchen.'),
         backgroundColor: AppTheme.heading,
       ),
+    );
+  }
+
+  num get _discountAmt {
+    final d = num.tryParse(_discount.text.trim()) ?? 0;
+    return d < 0 ? 0 : (d > _total ? _total : d);
+  }
+
+  /// The order is placed; now bill it the same way the kitchen queue's own
+  /// "Issue bill" does — ready-to-bill, open the food tab, discount, payment,
+  /// issue. Anything the server refuses drops into the full bill screen with
+  /// the order already placed, so nothing typed here is lost.
+  Future<void> _billOrder(FoodOrder order) async {
+    final ordersVm = ref.read(ordersViewModelProvider.notifier);
+    final billing = ref.read(billingViewModelProvider.notifier);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final lodgeName = ref.read(authViewModelProvider).me?.lodge.name;
+
+    Future<void> openFullScreen() async {
+      if (!mounted) return;
+      await navigator.push(
+        MaterialPageRoute(builder: (_) => const IssueFoodBillScreen()),
+      );
+      await ordersVm.loadQueue();
+      if (mounted) navigator.pop(true);
+    }
+
+    final ready = order.readyToBill || await ordersVm.markReadyToBill(order.id);
+    if (!ready) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            ref.read(ordersViewModelProvider).error ?? 'Could not open the bill.',
+          ),
+          backgroundColor: AppTheme.heading,
+        ),
+      );
+      if (mounted) navigator.pop(true);
+      return;
+    }
+
+    await billing.openFood(
+      FoodTab(
+        tab: order.billingTabKey,
+        tableLabel: order.tableLabel,
+        guestName: order.guestName,
+        subtotal: order.subtotal,
+      ),
+    );
+    if (_discountAmt > 0) await billing.setDiscount('$_discountAmt');
+    final st = ref.read(billingViewModelProvider);
+    if (!st.nothingDue && st.payment.isNotEmpty) {
+      st.payment.first
+        ..method = _payMethod
+        ..reference = _payRef.text.trim();
+      billing.touch();
+    }
+
+    final invoice = await billing.issueFood();
+    if (invoice == null) {
+      await openFullScreen();
+      return;
+    }
+    billing.closeFood();
+    await ordersVm.loadQueue();
+    await ordersVm.loadHistory();
+    if (!mounted) return;
+    navigator.pop(true);
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => BillReceiptScreen(invoice: invoice, lodgeName: lodgeName),
+      ),
+    );
+  }
+
+  /// The "Issue bill now" toggle and, once open, its discount + payment form.
+  Widget _billBlock(num payable, bool canPlace) {
+    final needsRef = needsPaymentReference(_payMethod);
+    Widget label(IconData icon, String text) => Row(
+      children: [
+        Icon(icon, size: 15, color: AppTheme.accent),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: const TextStyle(
+            color: AppTheme.muted,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.7,
+          ),
+        ),
+      ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.rMedium),
+          onTap: () => setState(() => _billOpen = !_billOpen),
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.s12),
+            decoration: BoxDecoration(
+              color: _billOpen ? AppTheme.sidebarBrandWash : AppTheme.card,
+              borderRadius: BorderRadius.circular(AppTheme.rMedium),
+              border: Border.all(
+                color: _billOpen ? AppTheme.accent : AppTheme.border,
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.receipt_long_rounded, size: 18, color: AppTheme.accent),
+                const SizedBox(width: AppTheme.s8),
+                const Expanded(
+                  child: Text(
+                    'Issue bill now',
+                    style: TextStyle(
+                      color: AppTheme.accent,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                Icon(
+                  _billOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                  color: AppTheme.accent,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_billOpen) ...[
+          const SizedBox(height: AppTheme.s8),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.s12),
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.circular(AppTheme.rMedium),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                label(Icons.local_offer_rounded, 'DISCOUNT'),
+                const SizedBox(height: AppTheme.s8),
+                NeuField(
+                  controller: _discount,
+                  label: 'Amount (₹)',
+                  hint: '0',
+                  keyboardType: TextInputType.number,
+                  dense: true,
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: AppTheme.s12),
+                label(Icons.payments_rounded, 'PAYMENT'),
+                const SizedBox(height: AppTheme.s8),
+                Row(
+                  children: [
+                    for (final e in kPaymentMethods.entries) ...[
+                      Expanded(
+                        child: _PayChip(
+                          label: e.value,
+                          selected: _payMethod == e.key,
+                          onTap: () => setState(() => _payMethod = e.key),
+                        ),
+                      ),
+                      if (e.key != kPaymentMethods.keys.last)
+                        const SizedBox(width: AppTheme.s8),
+                    ],
+                  ],
+                ),
+                if (needsRef) ...[
+                  const SizedBox(height: AppTheme.s8),
+                  NeuField(
+                    controller: _payRef,
+                    label: 'Transaction number (optional)',
+                    hint: _payMethod == 'UPI' ? 'UPI reference / UTR' : 'Approval code',
+                    maxLength: 64,
+                    dense: true,
+                  ),
+                ],
+                const SizedBox(height: AppTheme.s12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.s12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.sidebarBrandWash,
+                    borderRadius: BorderRadius.circular(AppTheme.rSmall),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Collect now',
+                          style: TextStyle(
+                            color: AppTheme.accent,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        formatPrice(payable),
+                        style: const TextStyle(
+                          color: AppTheme.accent,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Tax is included. Final amount is confirmed on the bill.',
+                  style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                ),
+                const SizedBox(height: AppTheme.s12),
+                SizedBox(
+                  height: 46,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.accent,
+                      disabledBackgroundColor: AppTheme.border,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                      ),
+                    ),
+                    onPressed: canPlace && !_billBusy
+                        ? () async {
+                            setState(() => _billBusy = true);
+                            await _place(andBill: true);
+                            if (mounted) setState(() => _billBusy = false);
+                          }
+                        : null,
+                    icon: _billBusy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.check_circle_rounded, size: 18),
+                    label: Text(
+                      'Issue bill · ${formatPrice(payable)}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1725,7 +1970,11 @@ class _StickyMenuTabsDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.s16),
       decoration: BoxDecoration(
@@ -1759,7 +2008,10 @@ class _StickyMenuTabsDelegate extends SliverPersistentHeaderDelegate {
             SizedBox(
               height: dietRowHeight,
               child: Center(
-                child: _DietTabs(selected: selectedDiet, onSelect: onSelectDiet),
+                child: _DietTabs(
+                  selected: selectedDiet,
+                  onSelect: onSelectDiet,
+                ),
               ),
             ),
         ],
@@ -1899,33 +2151,36 @@ class _DietGroupLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label.toUpperCase(),
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
-                letterSpacing: 0.4,
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppTheme.s4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
-            ),
-          ],
+              const SizedBox(width: 6),
+              Text(
+                label.toUpperCase(),
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2024,7 +2279,11 @@ class _MenuRow extends StatelessWidget {
   final int Function(MenuPortion?) qtyFor;
   final void Function(MenuPortion?, int) onQty;
 
-  const _MenuRow({required this.item, required this.qtyFor, required this.onQty});
+  const _MenuRow({
+    required this.item,
+    required this.qtyFor,
+    required this.onQty,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2045,7 +2304,8 @@ class _MenuRow extends StatelessWidget {
               Text(
                 item.name,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: off ? AppTheme.muted : null,
+                  color: off ? AppTheme.muted : AppTheme.heading,
+                  fontWeight: FontWeight.w600,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -2065,7 +2325,9 @@ class _MenuRow extends StatelessWidget {
               if (off)
                 Text(
                   'Off today',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.danger),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: AppTheme.danger),
                 ),
             ],
           ),
@@ -2074,16 +2336,13 @@ class _MenuRow extends StatelessWidget {
     );
 
     Widget card(Widget child, bool selected) => Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.s12,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.s8, vertical: 4),
       decoration: BoxDecoration(
         color: selected ? AppTheme.sidebarBrandWash : AppTheme.card,
         borderRadius: BorderRadius.circular(AppTheme.rMedium),
         border: Border.all(
-          color: selected ? AppTheme.sidebarBrandWashEdge : AppTheme.border,
+          color: selected ? AppTheme.accent : AppTheme.border,
+          width: selected ? 1.5 : 1,
         ),
         boxShadow: [
           BoxShadow(
@@ -2097,20 +2356,26 @@ class _MenuRow extends StatelessWidget {
     );
 
     if (!item.hasPortions) {
-      return card(
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(child: nameRow),
-            const SizedBox(width: AppTheme.s8),
-            _Stepper(
-              qty: qtyFor(null),
-              enabled: !off,
-              onChanged: (q) => onQty(null, q),
-            ),
-          ],
+      // The whole tile adds one — the stepper is only for fine-tuning.
+      final tap = off ? null : () => onQty(null, qtyFor(null) + 1);
+      return InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        onTap: tap,
+        child: card(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: nameRow),
+              const SizedBox(width: AppTheme.s8),
+              _Stepper(
+                qty: qtyFor(null),
+                enabled: !off,
+                onChanged: (q) => onQty(null, q),
+              ),
+            ],
+          ),
+          qtyFor(null) > 0,
         ),
-        qtyFor(null) > 0,
       );
     }
 
@@ -2144,7 +2409,9 @@ class _MenuRow extends StatelessWidget {
                     child: Text(
                       formatPrice(portion.price),
                       textAlign: TextAlign.right,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
                     ),
                   ),
                   const SizedBox(width: AppTheme.s8),
@@ -2166,7 +2433,7 @@ class _MenuRow extends StatelessWidget {
 /// The +/- quantity control sitting beside each dish, replacing a separate
 /// "add" tap and cart-only stepper with the one control the web form's own
 /// per-line `Stepper` gives — the count is set right where the price is.
-class _Stepper extends StatelessWidget {
+class _Stepper extends StatefulWidget {
   final int qty;
   final bool enabled;
   final ValueChanged<int> onChanged;
@@ -2178,41 +2445,116 @@ class _Stepper extends StatelessWidget {
   });
 
   @override
+  State<_Stepper> createState() => _StepperState();
+}
+
+class _StepperState extends State<_Stepper> {
+  late final TextEditingController _c = TextEditingController(text: '${widget.qty}');
+
+  int get qty => widget.qty;
+  bool get enabled => widget.enabled;
+  ValueChanged<int> get onChanged => widget.onChanged;
+
+  @override
+  void didUpdateWidget(_Stepper old) {
+    super.didUpdateWidget(old);
+    // Keep the box in step with the +/- buttons, but never clobber a number
+    // that is mid-typing and already matches.
+    if ((int.tryParse(_c.text) ?? -1) != qty && _c.text.isNotEmpty) {
+      _c.text = '$qty';
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final active = qty > 0;
+    if (!active) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: enabled ? () => onChanged(1) : null,
+        child: Container(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border.all(color: enabled ? AppTheme.accent : AppTheme.border),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            'ADD',
+            style: TextStyle(
+              color: enabled ? AppTheme.accent : AppTheme.muted,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+      );
+    }
     return AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       height: 28,
       decoration: BoxDecoration(
-        color: active ? AppTheme.accent : AppTheme.card,
-        border: Border.all(color: active ? AppTheme.accent : AppTheme.border),
+        color: AppTheme.accent,
+        border: Border.all(color: AppTheme.accent),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _btn(
-            Icons.remove_rounded,
-            enabled && active ? () => onChanged(qty - 1) : null,
-            active,
-          ),
-          SizedBox(
-            width: 26,
-            child: Text(
-              '$qty',
+          _btn(Icons.remove_rounded, enabled ? () => onChanged(qty - 1) : null, true),
+          Container(
+            width: 40,
+            height: 22,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: TextField(
+              controller: _c,
+              enabled: enabled,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: active ? Colors.white : AppTheme.muted,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(3),
+              ],
+              cursorColor: AppTheme.accent,
+              style: const TextStyle(
+                color: AppTheme.heading,
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
               ),
+              decoration: const InputDecoration(
+                isDense: true,
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
+              onChanged: (v) {
+                final n = int.tryParse(v);
+                if (n != null) onChanged(n);
+              },
+              onSubmitted: (_) => _c.text = '$qty',
+              onTapOutside: (_) {
+                FocusManager.instance.primaryFocus?.unfocus();
+                _c.text = '$qty';
+              },
+              onTap: () =>
+                  _c.selection = TextSelection(baseOffset: 0, extentOffset: _c.text.length),
             ),
           ),
-          _btn(
-            Icons.add_rounded,
-            enabled ? () => onChanged(qty + 1) : null,
-            active,
-          ),
+          _btn(Icons.add_rounded, enabled ? () => onChanged(qty + 1) : null, true),
         ],
       ),
     );
@@ -2302,12 +2644,7 @@ class _OrderBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        AppTheme.s12,
-        6,
-        AppTheme.s12,
-        6,
-      ),
+      padding: const EdgeInsets.fromLTRB(AppTheme.s12, 6, AppTheme.s12, 6),
       decoration: BoxDecoration(
         color: AppTheme.card,
         border: const Border(top: BorderSide(color: AppTheme.border)),
@@ -2390,7 +2727,10 @@ class _OrderBar extends StatelessWidget {
                 child: NeuButton(
                   onPressed: onCancel,
                   padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Text(cancelLabel, style: const TextStyle(fontSize: 13)),
+                  child: Text(
+                    cancelLabel,
+                    style: const TextStyle(fontSize: 13),
+                  ),
                 ),
               ),
               const SizedBox(width: AppTheme.s8),
@@ -2426,17 +2766,23 @@ class _OrderBar extends StatelessWidget {
 // ── Desktop: the ticket as a pinned right-hand panel ────────────────────────
 
 class _OrderPanel extends StatelessWidget {
+  final Widget? header;
+  final Widget? billBlock;
   final TextEditingController note;
   final List<OrderLineDraft> lines;
   final num total;
+  final num discount;
   final bool working;
   final bool editing;
   final String cancelLabel;
   final VoidCallback? onCancel;
   final VoidCallback? onPlace;
-  final void Function(OrderLineDraft) onRemove;
+  final void Function(OrderLineDraft, int) onQty;
 
   const _OrderPanel({
+    this.header,
+    this.billBlock,
+    this.discount = 0,
     required this.note,
     required this.lines,
     required this.total,
@@ -2445,12 +2791,33 @@ class _OrderPanel extends StatelessWidget {
     required this.cancelLabel,
     required this.onCancel,
     required this.onPlace,
-    required this.onRemove,
+    required this.onQty,
   });
 
   @override
   Widget build(BuildContext context) {
     final count = lines.fold<int>(0, (n, l) => n + l.quantity);
+    final payable = total - discount;
+    final maxFooter = MediaQuery.sizeOf(context).height * 0.62;
+
+    Widget sumRow(String l, String v, {Color? color}) => Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Text(l, style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
+          const Spacer(),
+          Text(
+            v,
+            style: TextStyle(
+              color: color ?? AppTheme.text,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+
     return Container(
       width: AppTheme.atLeast(context, Tier.desktop) ? 420 : 360,
       decoration: const BoxDecoration(
@@ -2459,111 +2826,327 @@ class _OrderPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
+          // Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s16, AppTheme.s16, AppTheme.s8),
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.s16,
+              AppTheme.s12,
+              AppTheme.s16,
+              AppTheme.s12,
+            ),
             child: Row(
               children: [
-                const Icon(Icons.shopping_cart_rounded, size: 18, color: AppTheme.accent),
-                const SizedBox(width: AppTheme.s8),
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppTheme.sidebarBrandWash,
+                    borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                  ),
+                  child: const Icon(
+                    Icons.shopping_cart_rounded,
+                    size: 19,
+                    color: AppTheme.accent,
+                  ),
+                ),
+                const SizedBox(width: AppTheme.s12),
                 const Expanded(
                   child: Text(
                     'Current order',
-                    style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w800, fontSize: 16),
+                    style: TextStyle(
+                      color: AppTheme.heading,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: count > 0 ? AppTheme.accent : AppTheme.bg,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$count item${count == 1 ? '' : 's'}',
+                    style: TextStyle(
+                      color: count > 0 ? Colors.white : AppTheme.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppTheme.border),
+
+          // Customer + items
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(AppTheme.s12),
+              children: [
+                if (header != null) ...[header!, const SizedBox(height: AppTheme.s16)],
+                const Padding(
+                  padding: EdgeInsets.only(left: 4, bottom: AppTheme.s8),
+                  child: Text(
+                    'ITEMS',
+                    style: TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+                if (lines.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: AppTheme.s24),
+                    decoration: BoxDecoration(
+                      color: AppTheme.bg,
+                      borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(Icons.shopping_basket_outlined, size: 32, color: AppTheme.muted),
+                        SizedBox(height: AppTheme.s8),
+                        Text(
+                          'Nothing added yet',
+                          style: TextStyle(color: AppTheme.heading, fontWeight: FontWeight.w700),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Tap ADD on a dish to start the order',
+                          style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  for (final l in lines)
+                    _CartTile(line: l, onQty: (q) => onQty(l, q)),
+              ],
+            ),
+          ),
+
+          // Footer: note, totals, actions, issue bill
+          Container(
+            decoration: const BoxDecoration(
+              color: AppTheme.bg,
+              border: Border(top: BorderSide(color: AppTheme.border)),
+            ),
+            constraints: BoxConstraints(maxHeight: maxFooter),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppTheme.s12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: note,
+                    minLines: 1,
+                    maxLines: 2,
+                    style: const TextStyle(color: AppTheme.heading, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Note for the kitchen (optional)',
+                      hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                      prefixIcon: const Icon(
+                        Icons.edit_note_rounded,
+                        size: 20,
+                        color: AppTheme.accent,
+                      ),
+                      isDense: true,
+                      filled: true,
+                      fillColor: AppTheme.card,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                        borderSide: const BorderSide(color: AppTheme.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                        borderSide: const BorderSide(color: AppTheme.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+                        borderSide: const BorderSide(color: AppTheme.accent, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                  if (discount > 0) ...[
+                    sumRow('Subtotal', formatPrice(total)),
+                    sumRow('Discount', '- ${formatPrice(discount)}', color: AppTheme.vacant),
+                  ],
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        discount > 0 ? 'To pay' : 'Total',
+                        style: const TextStyle(
+                          color: AppTheme.heading,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        formatPrice(payable),
+                        style: const TextStyle(
+                          color: AppTheme.accent,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 26,
+                          height: 1.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppTheme.s12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: NeuButton(onPressed: onCancel, child: Text(cancelLabel)),
+                      ),
+                      const SizedBox(width: AppTheme.s8),
+                      Expanded(
+                        flex: 2,
+                        child: NeuButton(
+                          primary: true,
+                          onPressed: onPlace,
+                          child: working
+                              ? const SizedBox(
+                                  height: 16,
+                                  width: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Text(editing ? 'Save changes' : 'Place order'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (billBlock != null) ...[
+                    const SizedBox(height: AppTheme.s8),
+                    billBlock!,
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One dish on the ticket: name and rate on the left, a quantity stepper, the
+/// line total, and a remove button.
+class _CartTile extends StatelessWidget {
+  final OrderLineDraft line;
+  final ValueChanged<int> onQty;
+
+  const _CartTile({required this.line, required this.onQty});
+
+  @override
+  Widget build(BuildContext context) {
+    final rate = line.quantity == 0 ? 0 : line.lineTotal / line.quantity;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppTheme.s8),
+      padding: const EdgeInsets.fromLTRB(AppTheme.s12, 10, 4, 10),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  '$count item${count == 1 ? '' : 's'}',
+                  line.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.heading,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${formatPrice(rate)} each',
                   style: const TextStyle(color: AppTheme.muted, fontSize: 12),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: AppTheme.border),
-          Expanded(
-            child: lines.isEmpty
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(AppTheme.s24),
-                      child: Text(
-                        'Tap + on a dish to add it here.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppTheme.muted, fontSize: 13),
-                      ),
-                    ),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.all(AppTheme.s16),
-                    children: [for (final l in lines) _CartLine(line: l, onRemove: () => onRemove(l))],
-                  ),
+          const SizedBox(width: AppTheme.s8),
+          _Stepper(qty: line.quantity, onChanged: onQty),
+          SizedBox(
+            width: 70,
+            child: Text(
+              formatPrice(line.lineTotal),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: AppTheme.heading,
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
+            ),
           ),
-          const Divider(height: 1, color: AppTheme.border),
-          Padding(
-            padding: const EdgeInsets.all(AppTheme.s16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: note,
-                  minLines: 2,
-                  maxLines: 3,
-                  style: const TextStyle(color: AppTheme.heading, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: 'Add a note for the kitchen (optional)',
-                    hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 13),
-                    isDense: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppTheme.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppTheme.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppTheme.accent, width: 1.5),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppTheme.s12),
-                Row(
-                  children: [
-                    const Text('Total', style: TextStyle(color: AppTheme.muted, fontSize: 14)),
-                    const Spacer(),
-                    Text(
-                      formatPrice(total),
-                      style: const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w800, fontSize: 22),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppTheme.s12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: NeuButton(onPressed: onCancel, child: Text(cancelLabel)),
-                    ),
-                    const SizedBox(width: AppTheme.s8),
-                    Expanded(
-                      flex: 2,
-                      child: NeuButton(
-                        primary: true,
-                        onPressed: onPlace,
-                        child: working
-                            ? const SizedBox(
-                                height: 16,
-                                width: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : Text(editing ? 'Save changes' : 'Place order'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+          SizedBox(
+            width: 30,
+            height: 30,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              tooltip: 'Remove',
+              icon: const Icon(Icons.close_rounded, size: 16),
+              color: AppTheme.muted,
+              onPressed: () => onQty(0),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A payment-method choice: a pill that fills navy once picked.
+class _PayChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PayChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.rMedium),
+        onTap: onTap,
+        child: Container(
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.accent : AppTheme.card,
+            borderRadius: BorderRadius.circular(AppTheme.rMedium),
+            border: Border.all(color: selected ? AppTheme.accent : AppTheme.border),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : AppTheme.text,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2585,7 +3168,9 @@ class _CartLine extends StatelessWidget {
         children: [
           Text(
             '${line.quantity}×',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
           ),
           const SizedBox(width: AppTheme.s8),
           Expanded(

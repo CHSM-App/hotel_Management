@@ -34,21 +34,9 @@ const counterOrderSchema = z
     isParcel: z.boolean().optional().default(false),
     items: orderItemsSchema,
   })
+  // Guest name and phone are optional on a counter order, same as the bar.
   .refine((data) => !(data.tableId && data.roomId), {
     message: 'An order goes to a room or a table, not both.',
-  })
-  // A counter order is the one shape with nothing else identifying the payer:
-  // no booking, no table the party is sitting at. The name and number are the
-  // only record of whose food it is and the only way to call them back, so
-  // they are required here and ignored everywhere else. Enforced server-side
-  // because the form is not the rule — a direct API call has to obey it too.
-  .refine((data) => data.tableId || data.roomId || data.guestName.trim().length > 0, {
-    message: 'Add the guest’s name for a counter order.',
-    path: ['guestName'],
-  })
-  .refine((data) => data.tableId || data.roomId || data.guestPhone.trim().length > 0, {
-    message: 'Add a phone number for a counter order.',
-    path: ['guestPhone'],
   });
 
 const customerSchema = z.object({ customerTag: z.string().trim().max(60).nullable() });

@@ -969,6 +969,42 @@
 .guest-typeahead__option--active .guest-typeahead__business {
   background: var(--surface);
 }
+.guest-typeahead__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.guest-typeahead__pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--brand-wash);
+  border: 1px solid var(--brand-wash-edge);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.guest-typeahead__pill b {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--brand-ink);
+  font-variant-numeric: tabular-nums;
+}
+.guest-typeahead__pill--revenue {
+  background: var(--brand-ink);
+  border-color: var(--brand-ink);
+  color: #fff;
+}
+.guest-typeahead__pill--revenue b {
+  color: #fff;
+}
+.guest-typeahead__pill small {
+  font-size: 10.5px;
+  opacity: 0.85;
+}
 
 /* Icon-only, so it is sized as a square target rather than by its text.
    Width is pinned to match: an auto-width grid column that used to hold
@@ -3082,4 +3118,17 @@
 .bookings-panel__actions--footer > .btn-accent:hover:not(:disabled) {
   background: #ffb300;
   box-shadow: 0 5px 12px rgba(230, 150, 0, 0.45);
+}
+
+/* Past booking: the time sits beside its date. */
+.booking-form__date-time {
+  display: flex;
+  gap: 8px;
+}
+.booking-form__date-time > input[type='date'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.booking-form__date-time > input[type='time'] {
+  flex: 0 0 130px;
 }

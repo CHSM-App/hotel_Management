@@ -10,6 +10,7 @@ import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'bill_receipt_screen.dart';
 import 'bill_ui.dart';
+import 'issue_bill_screen.dart' show DiscountSection;
 
 /// The food side of billing: a table, a room, or a takeaway with delivered
 /// food nobody has paid for. Same shape as [IssueBillScreen] — what it says,
@@ -132,8 +133,8 @@ class _Body extends ConsumerWidget {
                     BillRowLine(label: 'Food', value: amounts!.foodSubtotal),
                   if ((amounts?.discountAmount ?? 0) > 0)
                     BillRowLine(
-                      label: 'Discount (${amounts!.discountPercent}%)',
-                      value: -amounts.discountAmount,
+                      label: 'Discount',
+                      value: -amounts!.discountAmount,
                     ),
                   if ((amounts?.foodCgstAmount ?? 0) > 0 ||
                       (amounts?.foodSgstAmount ?? 0) > 0) ...[
@@ -179,6 +180,10 @@ class _Body extends ConsumerWidget {
             ),
           ],
         ),
+
+        // ── The discount ────────────────────────────────────────────────────
+        const SizedBox(height: AppTheme.s12),
+        DiscountSection(state: state),
 
         // ── How it was paid ─────────────────────────────────────────────────
         const SizedBox(height: AppTheme.s16),

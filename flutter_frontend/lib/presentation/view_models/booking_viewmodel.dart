@@ -17,6 +17,7 @@ import '../../domain/models/late_checkout.dart';
 import '../../domain/models/multi_room_logic.dart';
 import '../../domain/models/quote.dart';
 import '../../domain/models/room.dart';
+import '../../domain/models/scanned_guest.dart';
 import '../../domain/models/tape_chart.dart';
 import '../../domain/usecase/booking_usecase.dart';
 import '../../core/network/api_error_message.dart';
@@ -209,6 +210,7 @@ class BookingState {
     bool clearEditBookingId = false,
     DateTime? checkIn,
     DateTime? checkOut,
+    bool clearCheckOut = false,
     AsyncValue<List<Room>>? rooms,
     Room? room,
     bool clearRoom = false,
@@ -251,7 +253,7 @@ class BookingState {
         ? null
         : (editBookingId ?? this.editBookingId),
     checkIn: checkIn ?? this.checkIn,
-    checkOut: checkOut ?? this.checkOut,
+    checkOut: clearCheckOut ? null : (checkOut ?? this.checkOut),
     rooms: rooms ?? this.rooms,
     room: clearRoom ? null : (room ?? this.room),
     bedIds: (clearRoom || clearBedIds) ? const [] : (bedIds ?? this.bedIds),
@@ -287,7 +289,13 @@ class BookingState {
       ? checkOut!.difference(checkIn!).inDays
       : 0;
 
-  bool get datesChosen => nights > 0;
+  /// A check-in with no check-out: an open-ended stay. The room is held until
+  /// the guest is checked out, and the stay is priced then, from the nights
+  /// actually stayed.
+  bool get openEnded => checkIn != null && checkOut == null;
+
+  /// Either a real range, or an open-ended stay (a check-in and no check-out).
+  bool get datesChosen => checkIn != null && (checkOut == null || nights > 0);
 
   /// A stay starting later than today.
   ///
@@ -479,6 +487,9 @@ class ChartRoom {
       if (s.booking.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
         outDate = today;
       }
+      // An open-ended stay is drawn up to and including today, and grows by a
+      // night each day; the room stays held beyond that on the server.
+      if (s.booking.isOpenEnded) outDate = _openDrawnEnd(s, today);
       if (!day.isBefore(s.inn) && day.isBefore(outDate)) found = s.booking;
     }
     return found;
@@ -493,9 +504,23 @@ class ChartRoom {
   List<_Span> get _spans => _spanCache[this] ??= [
     for (final b in stays)
       if (DateTime.tryParse(b.checkInDate ?? '') case final inn?)
-        if (DateTime.tryParse(b.checkOutDate ?? '') case final out?)
+        // An open-ended stay (no check-out date yet) holds its room until the
+        // guest leaves, so it is drawn on every night from check-in onward.
+        if ((b.isOpenEnded ? _openEnd : DateTime.tryParse(b.checkOutDate ?? '')) case final out?)
           _Span(b, inn, out),
   ];
+
+  /// Where an open-ended stay "ends" in the span list: the far future.
+  static final _openEnd = DateTime(9999, 12, 31);
+
+  /// The (exclusive) end an open-ended stay is drawn to: tomorrow, so today's
+  /// night is its last coloured one — or just its first night when it hasn't
+  /// started yet.
+  static DateTime _openDrawnEnd(_Span s, DateTime today) {
+    final tomorrow = today.add(const Duration(days: 1));
+    final afterFirst = s.inn.add(const Duration(days: 1));
+    return tomorrow.isAfter(afterFirst) ? tomorrow : afterFirst;
+  }
 
   List<_DraftSpan> get _draftSpans => _draftSpanCache[this] ??= [
     for (final d in drafts)
@@ -516,6 +541,7 @@ class ChartRoom {
       if (s.booking.status == 'CHECKED_OUT' && outDate.isAfter(today)) {
         outDate = today;
       }
+      if (s.booking.isOpenEnded) outDate = _openDrawnEnd(s, today);
       if (!day.isBefore(s.inn) && day.isBefore(outDate)) result.add(s.booking);
     }
     return result;
@@ -1009,12 +1035,17 @@ class BookingViewModel extends StateNotifier<BookingState> {
     }
   }
 
+  /// AI reads the ID photos. Unlike [searchGuests] this lets the error out:
+  /// the desk needs to be told why nothing was filled in.
+  Future<List<ScannedGuest>> scanIds(List<XFile> photos) =>
+      usecase.scanIds(photos);
+
   // ── Taking a booking ─────────────────────────────────────────────────────
 
   /// Choose the nights. Anything chosen after the dates is invalidated by
   /// changing them — a room free last week may not be free this one, and a
   /// quote for three nights means nothing once it is four.
-  Future<void> setDates(DateTime checkIn, DateTime checkOut) async {
+  Future<void> setDates(DateTime checkIn, DateTime? checkOut) async {
     // A billed stay keeps its room: moving the dates re-checks that room for
     // the new nights instead of sending the desk back to the picker.
     final keep = state.revising ? state.room : null;
@@ -1043,10 +1074,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
     }
   }
 
-  Future<void> _setDates(DateTime checkIn, DateTime checkOut) async {
+  Future<void> _setDates(DateTime checkIn, DateTime? checkOut) async {
     state = state.copyWith(
       checkIn: checkIn,
       checkOut: checkOut,
+      clearCheckOut: checkOut == null,
       clearRoom: true,
       clearQuote: true,
       extras: const {},
@@ -1076,8 +1108,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
   /// fetched first, and the save restates the invoice in place.
   Future<void> startEdit(Booking booking, {bool revise = false}) async {
     final checkIn = DateTime.tryParse(booking.checkInDate ?? '');
+    // No check-out date is a stay that is still open-ended, which is editable.
     final checkOut = DateTime.tryParse(booking.checkOutDate ?? '');
-    if (checkIn == null || checkOut == null) return;
+    if (checkIn == null) return;
 
     final extras = <int, ExtraDraft>{
       for (final c in booking.switchableCharges)
@@ -1106,6 +1139,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       clearEditWindow: window == null,
       checkIn: checkIn,
       checkOut: checkOut,
+      clearCheckOut: checkOut == null,
       clearRoom: true,
       clearQuote: true,
       extras: extras,
@@ -1205,6 +1239,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       clearEditBookingId: true,
       checkIn: form.checkInDate,
       checkOut: form.checkOutDate,
+      clearCheckOut: form.checkOutDate == null,
       clearRoom: true,
       clearQuote: true,
       extras: const {},
@@ -1282,6 +1317,9 @@ class BookingViewModel extends StateNotifier<BookingState> {
     }
   }
 
+  /// A date for the server, or null when the stay has no check-out yet.
+  static String? _isoOrNull(DateTime? d) => d == null ? null : iso(d);
+
   Future<void> loadRooms() async {
     if (!state.datesChosen) return;
     state = state.copyWith(rooms: const AsyncValue.loading());
@@ -1290,11 +1328,11 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final rooms = editId == null
           ? await usecase.availableRooms(
               iso(state.checkIn!),
-              iso(state.checkOut!),
+              _isoOrNull(state.checkOut),
             )
           : await usecase.availableRoomsForBooking(
               editId,
-              checkOutDate: iso(state.checkOut!),
+              checkOutDate: _isoOrNull(state.checkOut),
               checkInDate: iso(state.checkIn!),
             );
       state = state.copyWith(rooms: AsyncValue.data(rooms));
@@ -1332,7 +1370,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final beds = await usecase.availableBeds(
         roomId: room.id,
         checkInDate: iso(state.checkIn!),
-        checkOutDate: iso(state.checkOut!),
+        checkOutDate: _isoOrNull(state.checkOut),
       );
       state = state.copyWith(availableBeds: AsyncValue.data(beds));
     } catch (e, st) {
@@ -1697,7 +1735,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final quote = await usecase.priceQuote(
         roomId: room.id,
         checkInDate: iso(state.checkIn!),
-        checkOutDate: iso(state.checkOut!),
+        checkOutDate: _isoOrNull(state.checkOut),
         chargeIds: chargeIdsParam(),
         basePriceOverride: perNight(state.roomTotal, state.nights),
         discountAmount: wholeAmount(state.discount),
@@ -1728,7 +1766,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final response = await usecase.multiRoomPriceQuote(
         rooms: rooms,
         checkInDate: iso(window.$1),
-        checkOutDate: iso(window.$2),
+        checkOutDate: _isoOrNull(window.$2),
         discountAmount: wholeAmount(state.discount),
       );
       if (requestId != _quoteRequestId) return;
@@ -1794,7 +1832,8 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final multiRoom = state.isMultiRoom;
       final window = multiRoom ? MultiRoomLogic.bookingWindow(state) : null;
       final tripCheckIn = window?.$1 ?? state.checkIn!;
-      final tripCheckOut = window?.$2 ?? state.checkOut!;
+      // Null for an open-ended stay: no check-out date is sent at all.
+      final tripCheckOut = multiRoom ? window?.$2 : state.checkOut;
 
       final formMap = <String, dynamic>{
         if (multiRoom)
@@ -1809,7 +1848,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
           'switchableCharges': _extrasJson(),
         },
         'checkInDate': iso(tripCheckIn),
-        'checkOutDate': iso(tripCheckOut),
+        if (tripCheckOut != null) 'checkOutDate': iso(tripCheckOut),
         'numGuests': '$numGuests',
         if (numChildren != null) 'numChildren': '$numChildren',
         'guestName': guestName.trim(),
@@ -1952,7 +1991,8 @@ class BookingViewModel extends StateNotifier<BookingState> {
       final multiRoom = state.isMultiRoom;
       final window = multiRoom ? MultiRoomLogic.bookingWindow(state) : null;
       final tripCheckIn = window?.$1 ?? state.checkIn!;
-      final tripCheckOut = window?.$2 ?? state.checkOut!;
+      // Null for an open-ended stay: no check-out date is sent at all.
+      final tripCheckOut = multiRoom ? window?.$2 : state.checkOut;
 
       final formMap = <String, dynamic>{
         if (multiRoom)
@@ -1968,7 +2008,7 @@ class BookingViewModel extends StateNotifier<BookingState> {
           'switchableCharges': _extrasJson(),
         },
         'checkInDate': iso(tripCheckIn),
-        'checkOutDate': iso(tripCheckOut),
+        if (tripCheckOut != null) 'checkOutDate': iso(tripCheckOut),
         'numGuests': '$numGuests',
         if (numChildren != null) 'numChildren': '$numChildren',
         'guestName': guestName.trim(),

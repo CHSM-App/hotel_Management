@@ -9,6 +9,7 @@ import '../../widgets/neu.dart';
 import '../../widgets/pill_tabs.dart';
 import '../bar/bar_common.dart';
 import '../theme.dart';
+import 'item_sales_table.dart';
 
 /// Loads all three bar reports for a period in one go.
 Future<BarReport> loadBarReport(WidgetRef ref, String from, String to) async {
@@ -31,7 +32,7 @@ class BarReportPanel extends ConsumerStatefulWidget {
 }
 
 class _BarReportPanelState extends ConsumerState<BarReportPanel> {
-  String _view = 'sales';
+  String _view = 'overview';
   BarReport? _data;
   String? _error;
   bool _loading = true;
@@ -92,16 +93,36 @@ class _BarReportPanelState extends ConsumerState<BarReportPanel> {
         const SizedBox(height: AppTheme.s8),
         BarSection(title: 'By category', child: Column(children: [for (final c in s.byCategory) _row('${c.category}${c.ml > 0 ? ' · ${c.ml} ml' : ''}', formatPrice(c.amount))])),
       ],
-      if (s.byItem.isNotEmpty) ...[
-        const SizedBox(height: AppTheme.s8),
-        BarSection(title: 'Top items', child: Column(children: [for (final i in s.byItem.take(15)) _row('${i.name}${i.size.isEmpty ? '' : ' · ${i.size}'} × ${i.quantity}', formatPrice(i.amount))])),
-      ],
       if (s.byDay.isNotEmpty) ...[
         const SizedBox(height: AppTheme.s8),
         BarSection(title: 'By day', child: Column(children: [for (final d in s.byDay) _row('${formatIsoDate(d.date)} · ${d.bills} bill${d.bills == 1 ? '' : 's'}', formatPrice(d.total))])),
       ],
     ],
   );
+
+  /// Item-wise table for one side of the counter: drinks (`DRINK`) or the
+  /// dishes ordered on bar orders (`FOOD`).
+  Widget _items(BarSales s, String kind) {
+    final drinks = kind == 'DRINK';
+    final items = s.byItem.where((i) => i.kind == kind).toList();
+    final units = items.fold<int>(0, (a, i) => a + i.quantity);
+    final amount = items.fold<double>(0, (a, i) => a + i.amount);
+    return Column(
+      children: [
+        Row(children: [
+          _kpi(drinks ? 'Drinks sales' : 'Restaurant sales', formatPrice(amount)),
+          const SizedBox(width: 8),
+          _kpi(drinks ? 'Units sold' : 'Dishes sold', '$units'),
+        ]),
+        const SizedBox(height: AppTheme.s12),
+        ItemSalesTable(
+          variantLabel: drinks ? 'Size' : 'Portion',
+          emptyMessage: drinks ? 'No drinks sold in this period.' : 'No dishes sold on bar orders in this period.',
+          rows: [for (final i in items) (name: i.name, variant: i.size, quantity: i.quantity, amount: i.amount)],
+        ),
+      ],
+    );
+  }
 
   Widget _row(String l, String r) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 3),
@@ -155,7 +176,9 @@ class _BarReportPanelState extends ConsumerState<BarReportPanel> {
           selected: _view,
           onSelect: (k) => setState(() => _view = k),
           tabs: const [
-            PillTab('sales', 'Sales', Icons.bar_chart_rounded),
+            PillTab('overview', 'Overview', Icons.bar_chart_rounded),
+            PillTab('bar', 'Bar', Icons.local_bar_rounded),
+            PillTab('restaurant', 'Restaurant', Icons.restaurant_rounded),
             PillTab('stock', 'Stock', Icons.inventory_2_rounded),
             PillTab('bills', 'Bills', Icons.receipt_long_rounded),
           ],
@@ -169,6 +192,8 @@ class _BarReportPanelState extends ConsumerState<BarReportPanel> {
           switch (_view) {
             'stock' => _stock(d.stock),
             'bills' => _bills(d.bills),
+            'bar' => _items(d.sales, 'DRINK'),
+            'restaurant' => _items(d.sales, 'FOOD'),
             _ => _sales(d.sales),
           },
       ],

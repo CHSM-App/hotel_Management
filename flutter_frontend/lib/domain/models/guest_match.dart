@@ -20,6 +20,9 @@ class GuestMatch {
   final int stayCount;
   final String? lastStayDate;
 
+  /// Everything this guest has been billed across their stays.
+  final num totalBusiness;
+
   const GuestMatch({
     required this.bookingId,
     required this.name,
@@ -29,6 +32,7 @@ class GuestMatch {
     this.hasIdProofDocument = false,
     this.stayCount = 1,
     this.lastStayDate,
+    this.totalBusiness = 0,
   });
 
   factory GuestMatch.fromJson(Map<String, dynamic> json) => GuestMatch(
@@ -40,5 +44,6 @@ class GuestMatch {
     hasIdProofDocument: asBool(json['hasIdProofDocument']),
     stayCount: asInt(json['stayCount'], fallback: 1),
     lastStayDate: asStringOrNull(json['lastStayDate']),
+    totalBusiness: asNum(json['totalBusiness']),
   );
 }

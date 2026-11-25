@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPatch } from '../../lib/api';
 import PageLoader from '../../components/PageLoader';
+import Quotations from './Quotations';
 import BarBilling from './BarBilling';
 import BarTakeOrder from './BarTakeOrder';
 import BarHistory from './BarHistory';
@@ -19,7 +20,7 @@ import './Bar.css';
 export default function BarSection({ lodge, permissions = [], onViewReport = null }) {
   const canTake = permissions.includes('bar.take');
   const canBill = permissions.includes('bar.bill');
-  const tabs = [(canTake || canBill) && ['orders', 'Open orders'], canBill && ['billing', 'Ready to bill'], canBill && ['bills', 'Bills'], (canTake || canBill) && ['history', 'Order history']].filter(Boolean);
+  const tabs = [(canTake || canBill) && ['orders', 'Open orders'], canBill && ['billing', 'Billing'], canBill && ['bills', 'Bills'], (canTake || canBill) && ['history', 'Order history'], (canTake || canBill) && ['quotation', 'Quotation']].filter(Boolean);
   const [tab, setTab] = useState(tabs[0]?.[0]);
   const [taking, setTaking] = useState(false);
   const [editing, setEditing] = useState(null); // an open order being edited
@@ -61,6 +62,7 @@ export default function BarSection({ lodge, permissions = [], onViewReport = nul
       {tab === 'billing' && <BarBilling lodge={lodge} pickKey={pickKey} />}
       {tab === 'bills' && <BarHistory key="bills" mode="bills" lodge={lodge} canBill={canBill} />}
       {tab === 'history' && <BarHistory key="orders" mode="orders" lodge={lodge} canBill={canBill} />}
+      {tab === 'quotation' && <Quotations kind="BAR" />}
     </div>
   );
 }
@@ -174,7 +176,7 @@ function OpenOrders({ lodgeName, placed, canTake, canRoom, onIssueBill, onEdit }
           {orders.map((o) => {
             const orderPath = `/bar/orders/${o.id}/cancel`;
             const deliverAllPath = `/bar/orders/${o.id}/deliver`;
-            const state = o.readyToBill ? ['ready', 'Ready to bill'] : o.undelivered === 0 ? ['done', 'All delivered'] : ['wait', `${o.undelivered} to deliver`];
+            const state = o.undelivered === 0 ? ['done', 'All delivered'] : ['wait', `${o.undelivered} to deliver`];
             return (
               <article className={`bar-oc bar-oc--${state[0]}${highlight === o.id ? ' bar-oc--new' : ''}`} key={o.id}>
                 <header className="bar-oc__top">
@@ -244,6 +246,7 @@ function OpenOrders({ lodgeName, placed, canTake, canRoom, onIssueBill, onEdit }
                   <div className="bar-oc__room">
                     <BarAddToRoom
                       orderIds={[o.id]}
+                      fixedRoom={o.source === 'ROOM' && o.roomId && o.bookingId ? { roomId: o.roomId, bookingId: o.bookingId, roomNumber: o.roomNumber ?? '', guestName: o.guestName } : null}
                       onCancel={() => setRoomFor(null)}
                       onDone={(msg) => { setRoomFor(null); setNotice(`Order #${o.orderNumber}: ${msg}`); reload(); }}
                     />
@@ -260,19 +263,9 @@ function OpenOrders({ lodgeName, placed, canTake, canRoom, onIssueBill, onEdit }
                   </div>
                   <div className="bar-oc__more">
                   {canRoom && roomFor !== o.id && (
-                    o.source === 'ROOM' && o.roomId && o.bookingId ? (
-                      // Placed for a room: straight onto that room's bill, no picker.
-                      <button
-                        type="button"
-                        className="bar-btn bar-btn--sm"
-                        disabled={busy === `room${o.id}`}
-                        onClick={() => act(`/bar/orders/${o.id}/add-to-room`, `Order #${o.orderNumber} added to Room ${o.roomNumber ?? ''}${o.guestName ? ` · ${o.guestName}` : ''}.`, { bookingId: o.bookingId, roomId: o.roomId })}
-                      >
-                        Add to room bill
-                      </button>
-                    ) : (
-                      <button type="button" className="bar-btn bar-btn--sm" onClick={() => setRoomFor(o.id)}>Add to room bill</button>
-                    )
+                    // A room order goes straight onto its own room (no picker), but still
+                    // asks for the discount first.
+                    <button type="button" className="bar-btn bar-btn--sm" onClick={() => setRoomFor(o.id)}>Add to room bill</button>
                   )}
                   {onEdit && (
                     <button type="button" className="bar-btn bar-btn--sm" onClick={() => onEdit(o)}>Edit order</button>

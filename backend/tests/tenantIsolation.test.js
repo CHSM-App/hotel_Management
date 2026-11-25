@@ -249,6 +249,11 @@ test('every query touching a lodge-scoped table filters by lodge', () => {
   // still match something below, so a stale excuse fails rather than rots.
   const ACKNOWLEDGED = [
     {
+      file: 'quotations/quotations.service.js',
+      match: 'WHERE share_token = @token',
+      why: 'The public shared-quotation link: the unguessable token in the URL is the whole credential, exactly like the shared bill and receipt links — a guest has no lodge or session to filter by.',
+    },
+    {
       file: 'enquiries/enquiries.service.js',
       match: 'DELETE FROM dbo.lodge_enquiries WHERE created_at <',
       why: 'The retention purge. It runs on a schedule with no lodge context and deliberately deletes every lodge\'s enquiries older than RETENTION_DAYS — the age is the whole filter, and no request or session can reach it.',

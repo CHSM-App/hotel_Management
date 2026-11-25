@@ -1291,6 +1291,7 @@ function AddToRoomDialog({ order, onClose, onDone }) {
   const session = getSession();
   const [guests, setGuests] = useState(null);
   const [bookingId, setBookingId] = useState('');
+  const [discount, setDiscount] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -1314,7 +1315,7 @@ function AddToRoomDialog({ order, onClose, onDone }) {
     setError('');
     try {
       if (!order.readyToBill) await apiPost(`/orders/${order.id}/ready-to-bill`, {}, { token: session?.token });
-      await apiPost(`/billing/food-tabs/${tab}/add-to-room`, { bookingId: Number(ownStay || bookingId) }, { token: session?.token });
+      await apiPost(`/billing/food-tabs/${tab}/add-to-room`, { bookingId: Number(ownStay || bookingId), discountAmount: Number(discount) || 0 }, { token: session?.token });
       onDone();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not add this to the room bill.');
@@ -1362,6 +1363,19 @@ function AddToRoomDialog({ order, onClose, onDone }) {
               </select>
             </div>
           )}
+          <div className="field">
+            <label htmlFor="addRoomDiscount">Discount (optional)</label>
+            <input
+              id="addRoomDiscount"
+              type="number"
+              min="0"
+              step="1"
+              inputMode="decimal"
+              placeholder="₹ 0"
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+            />
+          </div>
         </div>
         <div className="cancel-modal__foot">
           <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>

@@ -42,29 +42,44 @@ class SavedQuotation {
   final String referenceCode;
   final String? guestName;
   final String? guestPhone;
+  /// ROOM, EVENT, FOOD or BAR.
+  final String kind;
   final String checkInDate;
   final String lastCheckOutDate;
+
+  /// The day it stops being valid (check-in for rooms). Null on old responses.
+  final String? validUntil;
   final num total;
   final String roomSummary;
   final String status;
   final int? bookedBookingId;
+  final int? bookedRefId;
 
   /// Only present on a single fetch (and the save response), not in the list.
   final List<SavedQuotationRoom> rooms;
+
+  /// The frozen breakdown of an event / food / bar quotation (single fetch only).
+  final Map<String, dynamic> details;
 
   const SavedQuotation({
     required this.id,
     required this.referenceCode,
     this.guestName,
     this.guestPhone,
-    required this.checkInDate,
-    required this.lastCheckOutDate,
+    this.kind = 'ROOM',
+    this.checkInDate = '',
+    this.lastCheckOutDate = '',
+    this.validUntil,
     required this.total,
     required this.roomSummary,
     required this.status,
     this.bookedBookingId,
+    this.bookedRefId,
     this.rooms = const [],
+    this.details = const {},
   });
+
+  bool get isRoom => kind == 'ROOM';
 
   bool get isActive => status == 'ACTIVE';
   bool get isExpired => status == 'EXPIRED';
@@ -75,12 +90,16 @@ class SavedQuotation {
     referenceCode: j['referenceCode']?.toString() ?? '',
     guestName: j['guestName']?.toString(),
     guestPhone: j['guestPhone']?.toString(),
+    kind: j['kind']?.toString() ?? 'ROOM',
     checkInDate: j['checkInDate']?.toString() ?? '',
     lastCheckOutDate: j['lastCheckOutDate']?.toString() ?? '',
+    validUntil: j['validUntil']?.toString(),
     total: asNum(j['total']),
     roomSummary: j['roomSummary']?.toString() ?? '',
     status: j['status']?.toString() ?? 'ACTIVE',
     bookedBookingId: j['bookedBookingId'] == null ? null : asInt(j['bookedBookingId']),
+    bookedRefId: j['bookedRefId'] == null ? null : asInt(j['bookedRefId']),
+    details: j['details'] is Map ? Map<String, dynamic>.from(j['details'] as Map) : const {},
     rooms: ((j['rooms'] as List?) ?? const [])
         .map((e) => SavedQuotationRoom.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList(),

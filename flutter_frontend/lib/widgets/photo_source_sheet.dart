@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -71,7 +73,7 @@ Future<ImageSource?> showPhotoSourceSheet(
             const SizedBox(height: AppTheme.s8),
             _PhotoSourceTile(
               icon: Icons.photo_library_outlined,
-              label: 'Choose from gallery',
+              label: Platform.isWindows ? 'Choose from device' : 'Choose from gallery',
               onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
             ),
             const SizedBox(height: AppTheme.s8),

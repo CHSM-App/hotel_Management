@@ -467,10 +467,16 @@ class BillPdf {
                       2: pw.FixedColumnWidth(26),
                     },
                     children: [
-                      if (inv.discountAmount > 0)
+                      // Discounts given on restaurant / bar orders are named for
+                      // their section; what is left was given on the bill.
+                      if (inv.foodDiscountAmount > 0)
+                        _moneyRow('Less: Restaurant discount', -inv.foodDiscountAmount),
+                      if (inv.barDiscountAmount > 0)
+                        _moneyRow('Less: Bar discount', -inv.barDiscountAmount),
+                      if (inv.generalDiscount > 0)
                         _moneyRow(
                           'Less: Discount${_discountQualifier(inv)}',
-                          -inv.discountAmount,
+                          -inv.generalDiscount,
                         ),
                       _moneyRow(
                         // The rates printed above are tax-inclusive on a GST

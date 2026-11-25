@@ -92,6 +92,16 @@ const EVENT_CANCELLATION_TEMPLATE_ID = process.env.WHATSAPP_EVENT_CANCELLATION_T
 //   {{1}} name  {{2}} hotel_name  {{3}} receipt_number
 //   {{4}} amt  {{5}} payment_method  {{6}} link
 const RECEIPT_TEMPLATE_ID = process.env.WHATSAPP_RECEIPT_TEMPLATE_ID || '';
+// The approved "here is your quotation" template, sent from the Quotations
+// screen when the desk shares a quotation with a guest. Its own approval,
+// separate from the bill and receipt ones. Left blank, the desk falls back to
+// opening a WhatsApp chat with the message typed in.
+//
+// Its nine variables, in order, are built by quotations.service.js:
+//   {{1}} name  {{2}} hotel_name  {{3}} quotation_type (room / event / restaurant / bar)
+//   {{4}} quotation_no  {{5}} details  {{6}} total  {{7}} valid_until
+//   {{8}} link  {{9}} phone
+const QUOTATION_TEMPLATE_ID = process.env.WHATSAPP_QUOTATION_TEMPLATE_ID || '';
 // The approved "welcome" template, sent once a guest is checked in. Its own
 // approval, separate from the booking-confirmation one — a confirmation goes
 // out before the stay even starts, this one lands the moment the guest is
@@ -289,6 +299,10 @@ function isEventCancellationTemplateConfigured() {
 // The same question for the receipt template. Asked by the advance-receipt
 // screen before it offers WhatsApp as a channel, same shape as the bill check
 // above.
+function isQuotationTemplateConfigured() {
+  return isConfigured() && !isPlaceholder(QUOTATION_TEMPLATE_ID);
+}
+
 function isReceiptTemplateConfigured() {
   return isConfigured() && !isPlaceholder(RECEIPT_TEMPLATE_ID);
 }
@@ -411,6 +425,7 @@ module.exports = {
   isCancellationTemplateConfigured,
   isEventCancellationTemplateConfigured,
   isReceiptTemplateConfigured,
+  isQuotationTemplateConfigured,
   isCheckinTemplateConfigured,
   isWalkinTemplateConfigured,
   isReminderTemplateConfigured,
@@ -425,6 +440,7 @@ module.exports = {
   CANCELLATION_TEMPLATE_ID,
   EVENT_CANCELLATION_TEMPLATE_ID,
   RECEIPT_TEMPLATE_ID,
+  QUOTATION_TEMPLATE_ID,
   CHECKIN_TEMPLATE_ID,
   WALKIN_TEMPLATE_ID,
   REMINDER_TEMPLATE_ID,

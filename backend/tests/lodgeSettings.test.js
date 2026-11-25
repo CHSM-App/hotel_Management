@@ -16,11 +16,17 @@ const { settingsSchema } = require('../src/modules/me/me.schema');
 const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 
 test('migration 162 and schema.sql both create lodge_settings with every column', () => {
+  // Columns added after 162 live in their own migration (178: ai_id_scan).
+  const later = new Set(['ai_id_scan']);
   for (const file of ['migrations/162_lodge_settings.sql', 'src/config/schema.sql']) {
     const text = read(file);
     assert.match(text, /dbo\.lodge_settings/);
-    for (const col of Object.keys(SETTING_DEFAULTS)) assert.ok(text.includes(col), `${file} lacks ${col}`);
+    for (const col of Object.keys(SETTING_DEFAULTS)) {
+      if (file.startsWith('migrations/') && later.has(col)) continue;
+      assert.ok(text.includes(col), `${file} lacks ${col}`);
+    }
   }
+  assert.match(read('migrations/178_ai_id_scan.sql'), /ai_id_scan/);
 });
 
 test('migration 162 is additive: it never alters dbo.lodges', () => {
@@ -37,6 +43,7 @@ test('defaults equal the behaviour before the table existed', () => {
     wa_auto_booking: 1,
     wa_auto_walkin: 1,
     wa_auto_cancel: 1,
+    ai_id_scan: 0,
   });
 });
 

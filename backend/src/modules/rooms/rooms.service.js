@@ -337,12 +337,12 @@ async function setRoomActive(lodgeId, roomId, isActive) {
         SELECT COUNT(*) AS n FROM (
           SELECT b.id FROM dbo.bookings b
            WHERE b.lodge_id = @lodgeId AND b.room_id = @roomId
-             AND b.status IN ('BOOKED','CHECKED_IN') AND b.check_out_date > @today
+             AND b.status IN ('BOOKED','CHECKED_IN') AND COALESCE(b.check_out_date, '9999-12-31') > @today
           UNION
           SELECT br.booking_id FROM dbo.booking_rooms br
             JOIN dbo.bookings b ON b.id = br.booking_id
            WHERE b.lodge_id = @lodgeId AND br.room_id = @roomId
-             AND br.status IN ('BOOKED','CHECKED_IN') AND br.check_out_date > @today
+             AND br.status IN ('BOOKED','CHECKED_IN') AND COALESCE(br.check_out_date, '9999-12-31') > @today
         ) x
       `);
     if (open.recordset[0].n > 0) {

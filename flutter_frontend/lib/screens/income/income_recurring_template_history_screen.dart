@@ -81,7 +81,7 @@ class _IncomeRecurringTemplateHistoryScreenState extends ConsumerState<IncomeRec
                 onRefresh: _load,
                 color: AppTheme.accent,
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, 88),
+                  padding: EdgeInsets.fromLTRB(AppTheme.sidePad(context), AppTheme.s8, AppTheme.sidePad(context), 88),
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: [
                     if ((_income ?? const []).isEmpty)

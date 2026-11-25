@@ -87,7 +87,7 @@ async function listRooms(lodgeId) {
         FROM dbo.booking_rooms br
         JOIN dbo.bookings b ON b.id = br.booking_id
         WHERE br.room_id = r.id AND br.status = 'CHECKED_IN'
-        ORDER BY br.check_out_date ASC, br.id ASC
+        ORDER BY CASE WHEN br.check_out_date IS NULL THEN 1 ELSE 0 END, br.check_out_date ASC, br.id ASC
       ) stay
       OUTER APPLY (
         SELECT TOP 1 l.done_at, u.name AS cleaner

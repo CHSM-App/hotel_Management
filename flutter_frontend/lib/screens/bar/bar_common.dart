@@ -208,6 +208,31 @@ Future<BarGuest?> pickBarRoom(BuildContext context, List<BarGuest> guests) {
   );
 }
 
+/// Asks for the discount to take off an order being added to a room bill (shown
+/// under Bar there). Null when dismissed; 0 when skipped.
+Future<double?> askBarDiscount(BuildContext context) {
+  final c = TextEditingController();
+  return showDialog<double>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Discount (optional)'),
+      content: TextField(
+        controller: c,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(prefixText: '₹ ', hintText: '0'),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, double.tryParse(c.text.trim()) ?? 0),
+          child: const Text('Add to room bill'),
+        ),
+      ],
+    ),
+  );
+}
+
 /// A rounded section card with a title row, used across the bar screens.
 class BarSection extends StatelessWidget {
   final String title;

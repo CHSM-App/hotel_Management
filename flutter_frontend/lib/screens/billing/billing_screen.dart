@@ -120,9 +120,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     // holds voided stays waiting to be reissued — hide it while it is empty.
     // (Still shown while loading or if the queue failed to load.)
     final showRoom =
-        !widget.restaurantOnly &&
-        (state.queue.valueOrNull?.isNotEmpty ?? true);
-    final roomFallback = showServices ? _BillingTab.services : _BillingTab.issued;
+        !widget.restaurantOnly && (state.queue.valueOrNull?.isNotEmpty ?? true);
+    final roomFallback = showServices
+        ? _BillingTab.services
+        : _BillingTab.issued;
     var tab = widget.restaurantOnly
         ? (_tab == _BillingTab.issued ? _BillingTab.issued : _BillingTab.food)
         : (_tab == _BillingTab.food
@@ -355,14 +356,13 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             title: tab.guestName != null
                 ? '${tab.tableLabel} · ${tab.guestName}'
                 : tab.tableLabel ?? 'Counter',
-            subtitle:
-                (tab.isTakeaway
-                    ? [
-                        if (tab.customerPhone != null) tab.customerPhone!,
-                        'Placed ${formatTimeOfDay(tab.openedAt)}',
-                      ].join(' · ')
-                    : '${tab.orderCount} order${tab.orderCount == 1 ? '' : 's'} '
-                          '· since ${formatTimeOfDay(tab.openedAt)}'),
+            subtitle: (tab.isTakeaway
+                ? [
+                    if (tab.customerPhone != null) tab.customerPhone!,
+                    'Placed ${formatTimeOfDay(tab.openedAt)}',
+                  ].join(' · ')
+                : '${tab.orderCount} order${tab.orderCount == 1 ? '' : 's'} '
+                      '· since ${formatTimeOfDay(tab.openedAt)}'),
             amount: tab.subtotal,
           ),
       ];
@@ -600,7 +600,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             roomLabel: stay.roomNumber,
             title: stay.guestName ?? 'Guest',
             subtitle: [
-              '${formatIsoDate(stay.checkInDate)} → ${formatIsoDate(stay.checkOutDate)} (${nightsLabel(stay.nights)})',
+              '${formatIsoDate(stay.checkInDate)} → ${formatCheckOut(stay.checkOutDate)} (${nightsLabel(stay.nights)})',
               if (stay.bookingNumber != null) stay.bookingNumber!,
               if (stay.categoryName != null) stay.categoryName!,
               'Stay ${formatPrice(stay.totalPrice)}',
@@ -728,7 +728,10 @@ List<Widget> _cardList(BuildContext context, List<Widget> cards) {
   }
   return [
     for (final c in cards)
-      Padding(padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2), child: c),
+      Padding(
+        padding: const EdgeInsets.only(bottom: AppTheme.s4 + 2),
+        child: c,
+      ),
   ];
 }
 
@@ -1440,218 +1443,353 @@ class BillingInvoiceCard extends ConsumerWidget {
     }
     final invoice = document.invoice!;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.rMedium),
-        border: Border.all(color: AppTheme.border),
-        boxShadow: AppTheme.extruded,
+    return _InvoiceTile(invoice: invoice);
+  }
+}
+
+// ── An issued bill, redesigned ──────────────────────────────────────────────
+//
+// Layout (one card, any width):
+//   ┌─┬──────────────────────────────────────────────┐
+//   │▌│ [Room tile]  Tax invoice 22          20 Nov  │  ← identity
+//   │▌│              HRP2611031 · Aniket Mestry      │
+//   │▌├──────────────────────────────────────────────┤
+//   │▌│ TOTAL      ADVANCE      COLLECTED   [UPI ✓]  │  ← money strip
+//   └─┴──────────────────────────────────────────────┘
+// The left spine says status at a glance (green settled, amber balance taken,
+// red void). Below 340px the money strip wraps to a 2-up grid so nothing
+// truncates on a small phone.
+
+class _InvoiceTile extends StatelessWidget {
+  final Invoice invoice;
+
+  const _InvoiceTile({required this.invoice});
+
+  @override
+  Widget build(BuildContext context) {
+    final inv = invoice;
+    final place = inv.isEventBill
+        ? (inv.venueName ?? 'Function')
+        : inv.roomNumber != null
+        ? inv.roomNumber!
+        : inv.tableLabel;
+    final placeIsRoom = !inv.isEventBill && inv.roomNumber != null;
+    final title =
+        '${kDocumentLabels[inv.documentType] ?? 'Bill'} ${inv.invoiceNumber ?? ''}'
+            .trim();
+    final meta = [
+      if (inv.bookingNumber != null) inv.bookingNumber!,
+      if (inv.guestName != null) inv.guestName!,
+    ].join(' · ');
+    final method = inv.balancePaymentMethod;
+
+    final figures = <Widget>[
+      _TileFigure(label: 'Total', value: inv.totalAmount),
+      if (inv.advancePaid > 0)
+        _TileFigure(label: 'Advance', value: inv.advancePaid),
+      _TileFigure(
+        label: 'Collected',
+        value: inv.balanceCollected,
+        strong: true,
+        color: inv.isVoid ? AppTheme.muted : AppTheme.accent,
+        strike: inv.isVoid,
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          highlightColor: AppTheme.accent.withValues(alpha: 0.04),
-          splashColor: AppTheme.accent.withValues(alpha: 0.08),
-          // Print/Download/Share/Void used to live here, four buttons deep in
-          // a card meant to be a queue row — they overflowed a narrow phone
-          // no matter how they were packed. The bill now opens on its own
-          // page, where those actions have a full-width row to themselves.
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => InvoicePreviewScreen(invoice: invoice),
+    ];
+
+    return Semantics(
+      button: true,
+      label:
+          '$title, ${inv.guestName ?? ''}, total ${formatPrice(inv.totalAmount)}',
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppTheme.card,
+          borderRadius: BorderRadius.circular(AppTheme.rMedium),
+          border: Border.all(color: AppTheme.border),
+          boxShadow: AppTheme.extruded,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            highlightColor: AppTheme.accent.withValues(alpha: 0.04),
+            splashColor: AppTheme.accent.withValues(alpha: 0.08),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => InvoicePreviewScreen(invoice: inv),
+              ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s12,
-                  AppTheme.s8 + 2,
-                  AppTheme.s12,
-                  AppTheme.s8,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final narrow = c.maxWidth < 340;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                    Padding(
+                      padding: const EdgeInsets.all(AppTheme.s12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Text(
-                            '${kDocumentLabels[invoice.documentType] ?? 'Bill'} '
-                            '${invoice.invoiceNumber ?? ''}',
-                            style: Theme.of(context).textTheme.titleSmall,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (invoice.bookingNumber != null)
-                            Text(
-                              invoice.bookingNumber!,
-                              style: const TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 10.5,
-                              ),
-                              overflow: TextOverflow.ellipsis,
+                          if (place != null) ...[
+                            _PlaceTile(
+                              label: place,
+                              isRoom: placeIsRoom,
+                              dorm: inv.isDormitory,
                             ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              if (invoice.guestName != null) ...[
-                                Flexible(
-                                  child: Text(
-                                    invoice.guestName!,
+                            const SizedBox(width: AppTheme.s12),
+                          ],
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppTheme.heading,
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.1,
+                                  ),
+                                ),
+                                if (meta.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    meta,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       color: AppTheme.text,
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                              ],
-                              if (invoice.isEventBill ||
-                                  invoice.roomNumber != null ||
-                                  invoice.tableLabel != null) ...[
-                                Flexible(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 7,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.sidebarBrandWash,
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      invoice.isEventBill
-                                          ? (invoice.venueName ?? 'Function')
-                                          : invoice.roomNumber != null
-                                          ? 'Room ${invoice.roomNumber}'
-                                                '${invoice.isDormitory ? ' · Dorm' : ''}'
-                                          : invoice.tableLabel!,
-                                      style: const TextStyle(
-                                        color: AppTheme.sidebarBrandInk,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 6),
+                                ],
                               ],
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.s8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
                               Text(
-                                formatIsoDate(invoice.createdAt),
+                                formatIsoDate(inv.createdAt),
                                 style: const TextStyle(
                                   color: AppTheme.muted,
-                                  fontSize: 10.5,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
+                              if (inv.isVoid) ...[
+                                const SizedBox(height: 4),
+                                const _TilePill('VOID', AppTheme.danger),
+                              ],
                             ],
                           ),
                         ],
                       ),
                     ),
-                    if (invoice.isVoid)
-                      Container(
-                        margin: const EdgeInsets.only(left: AppTheme.s8),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.danger.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text(
-                          'Void',
-                          style: TextStyle(
-                            color: AppTheme.danger,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                    Container(
+                      color: AppTheme.sidebarBrandWash.withValues(alpha: 0.55),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.s12,
+                        vertical: AppTheme.s8 + 2,
                       ),
-                  ],
-                ),
-              ),
-              Container(height: 1, color: AppTheme.border),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.s12,
-                  AppTheme.s8,
-                  AppTheme.s12,
-                  AppTheme.s8,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: _Figure(
-                            label: 'Total',
-                            value: invoice.totalAmount,
-                          ),
-                        ),
-                        if (invoice.advancePaid > 0) ...[
-                          const SizedBox(width: AppTheme.s16),
-                          Flexible(
-                            child: _Figure(
-                              label: 'Advance',
-                              value: invoice.advancePaid,
+                      child: narrow
+                          ? Wrap(
+                              spacing: AppTheme.s16,
+                              runSpacing: AppTheme.s8,
+                              children: figures,
+                            )
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                for (final f in figures.take(
+                                  figures.length - 1,
+                                )) ...[f, const SizedBox(width: 20)],
+                                const Spacer(),
+                                if (method != null &&
+                                    !inv.isVoid &&
+                                    inv.tenders.length < 2) ...[
+                                  _TilePill(method, AppTheme.muted),
+                                  const SizedBox(width: AppTheme.s8),
+                                ],
+                                figures.last,
+                              ],
                             ),
-                          ),
-                        ],
-                        const Spacer(),
-                        _Figure(
-                          label: 'Collected',
-                          value: invoice.balanceCollected,
-                          strong: true,
-                          color: AppTheme.accent,
-                        ),
-                      ],
                     ),
-                    // How the balance was tendered, one row per method. A
-                    // bill paid part cash, part UPI says both — a single
-                    // method against a split is a statement the guest can
-                    // see is wrong.
-                    if (invoice.tenders.length > 1) ...[
-                      const SizedBox(height: AppTheme.s4),
-                      for (final t in invoice.tenders)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            '${t.method} ${formatPrice(t.amount)}'
-                            '${t.reference != null ? ' · ${t.reference}' : ''}',
-                            style: const TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 11,
-                            ),
-                          ),
+                    // A split tender lists every method; a void states why.
+                    if (inv.tenders.length > 1 ||
+                        (inv.isVoid && inv.voidReason != null))
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTheme.s12,
+                          AppTheme.s8,
+                          AppTheme.s12,
+                          AppTheme.s8,
                         ),
-                    ],
-                    if (invoice.isVoid && invoice.voidReason != null) ...[
-                      const SizedBox(height: AppTheme.s4),
-                      Text(
-                        'Voided: ${invoice.voidReason}',
-                        style: const TextStyle(
-                          color: AppTheme.danger,
-                          fontSize: 11,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (inv.tenders.length > 1)
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: [
+                                  for (final t in inv.tenders)
+                                    _TilePill(
+                                      '${t.method} ${formatPrice(t.amount)}'
+                                      '${t.reference != null ? ' · ${t.reference}' : ''}',
+                                      AppTheme.muted,
+                                    ),
+                                ],
+                              ),
+                            if (inv.isVoid && inv.voidReason != null)
+                              Text(
+                                'Voided: ${inv.voidReason}',
+                                style: const TextStyle(
+                                  color: AppTheme.danger,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                    ],
                   ],
-                ),
-              ),
-            ],
+                );
+              },
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The square "Room 101" badge — the thing a cashier scans for first.
+class _PlaceTile extends StatelessWidget {
+  final String label;
+  final bool isRoom;
+  final bool dorm;
+
+  const _PlaceTile({
+    required this.label,
+    required this.isRoom,
+    required this.dorm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 52, maxWidth: 84),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.sidebarBrandWash,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.sidebarBrandWashEdge),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            isRoom ? (dorm ? 'DORM' : 'ROOM') : 'FOR',
+            style: const TextStyle(
+              color: AppTheme.accent,
+              fontSize: 8.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+            ),
+          ),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppTheme.sidebarBrandInk,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TilePill extends StatelessWidget {
+  final String text;
+  final Color color;
+
+  const _TilePill(this.text, this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _TileFigure extends StatelessWidget {
+  final String label;
+  final num? value;
+  final bool strong;
+  final bool strike;
+  final Color? color;
+
+  const _TileFigure({
+    required this.label,
+    required this.value,
+    this.strong = false,
+    this.strike = false,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: AppTheme.muted,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.6,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          formatPrice(value),
+          style: TextStyle(
+            color: color ?? AppTheme.heading,
+            fontSize: strong ? 17 : 14,
+            fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+            letterSpacing: -0.2,
+            decoration: strike ? TextDecoration.lineThrough : null,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1954,7 +2092,12 @@ class _BillingSearchAndViewToggleState
   final _focus = FocusNode();
 
   Future<void> _openFilter() async {
-    await showNeuFilterSheet(context, widget.filterPanelBuilder!, onReset: widget.onFilterReset, multi: widget.filterMulti);
+    await showNeuFilterSheet(
+      context,
+      widget.filterPanelBuilder!,
+      onReset: widget.onFilterReset,
+      multi: widget.filterMulti,
+    );
     if (mounted) setState(() {});
   }
 
@@ -2531,7 +2674,12 @@ class _QueueTableColumn {
   final double width;
   final bool lowPriority;
 
-  const _QueueTableColumn(this.key, this.label, {this.width = 120, this.lowPriority = false});
+  const _QueueTableColumn(
+    this.key,
+    this.label, {
+    this.width = 120,
+    this.lowPriority = false,
+  });
 }
 
 const _kQueueTableColumns = [
@@ -2561,10 +2709,9 @@ class BillingQueueTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = _visibleQueueCols(context).fold<double>(
-      0,
-      (sum, c) => sum + c.width,
-    );
+    final width = _visibleQueueCols(
+      context,
+    ).fold<double>(0, (sum, c) => sum + c.width);
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -2640,9 +2787,9 @@ class _QueueTableFooter extends StatelessWidget {
     final labelWidth = _visibleQueueCols(context)
         .where((c) => c.key != 'amount')
         .fold<double>(0, (sum, c) => sum + c.width);
-    final amountWidth = _visibleQueueCols(context)
-        .firstWhere((c) => c.key == 'amount')
-        .width;
+    final amountWidth = _visibleQueueCols(
+      context,
+    ).firstWhere((c) => c.key == 'amount').width;
 
     return Container(
       decoration: const BoxDecoration(
@@ -3035,7 +3182,7 @@ class _StayCard extends StatelessWidget {
                           const SizedBox(width: 4),
                           Flexible(
                             child: Text(
-                              '${formatIsoDate(stay.checkInDate)} → ${formatIsoDate(stay.checkOutDate)} · ${nightsLabel(stay.nights)}',
+                              '${formatIsoDate(stay.checkInDate)} → ${formatCheckOut(stay.checkOutDate)} · ${nightsLabel(stay.nights)}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -3062,7 +3209,10 @@ class _StayCard extends StatelessWidget {
               children: [
                 fig('Room', formatPrice(stay.totalPrice)),
                 fig('Food', food ? formatPrice(stay.foodTotal) : '—'),
-                fig('Advance', adv ? '− ${formatPrice(stay.advanceAmount)}' : '—'),
+                fig(
+                  'Advance',
+                  adv ? '− ${formatPrice(stay.advanceAmount)}' : '—',
+                ),
                 fig(
                   'To collect',
                   formatPrice(stay.balanceDue),
@@ -3210,7 +3360,7 @@ class _ReadyToBillRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '${formatIsoDate(stay.checkInDate)} → ${formatIsoDate(stay.checkOutDate)}',
+                    '${formatIsoDate(stay.checkInDate)} → ${formatCheckOut(stay.checkOutDate)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -3486,7 +3636,12 @@ class _InvoiceTableColumn {
   final double width;
   final bool lowPriority;
 
-  const _InvoiceTableColumn(this.key, this.label, {this.width = 110, this.lowPriority = false});
+  const _InvoiceTableColumn(
+    this.key,
+    this.label, {
+    this.width = 110,
+    this.lowPriority = false,
+  });
 }
 
 // Same eight columns, same order, as the web's own history-table in
@@ -3563,10 +3718,9 @@ class BillingInvoiceTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = _visibleInvoiceCols(context).fold<double>(
-      0,
-      (sum, c) => sum + c.width,
-    );
+    final width = _visibleInvoiceCols(
+      context,
+    ).fold<double>(0, (sum, c) => sum + c.width);
 
     return NeuCard(
       padding: EdgeInsets.zero,
@@ -3648,9 +3802,9 @@ class _InvoiceTableFooter extends StatelessWidget {
     final labelWidth = _visibleInvoiceCols(context)
         .where((c) => c.key != 'amount')
         .fold<double>(0, (sum, c) => sum + c.width);
-    final amountWidth = _visibleInvoiceCols(context)
-        .firstWhere((c) => c.key == 'amount')
-        .width;
+    final amountWidth = _visibleInvoiceCols(
+      context,
+    ).firstWhere((c) => c.key == 'amount').width;
 
     return Container(
       decoration: const BoxDecoration(

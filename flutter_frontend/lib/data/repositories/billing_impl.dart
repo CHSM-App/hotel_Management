@@ -122,8 +122,8 @@ class BillingImpl implements BillingRepository {
   Future<List<FoodTab>> foodTabs() => _orEmpty(api.foodTabs);
 
   @override
-  Future<FoodBillPreview> previewFoodBill(String tab) =>
-      api.previewFoodBill(tab);
+  Future<FoodBillPreview> previewFoodBill(String tab, {num discountAmount = 0}) =>
+      api.previewFoodBill(tab, discountAmount: discountAmount);
 
   @override
   Future<Invoice> issueFoodInvoice(String tab, Map<String, dynamic> body) =>
@@ -133,8 +133,8 @@ class BillingImpl implements BillingRepository {
   Future<List<InHouseGuest>> inHouseGuests() => api.inHouseGuests();
 
   @override
-  Future<void> addFoodTabToRoom(String tab, int bookingId) =>
-      api.addFoodTabToRoom(tab, bookingId);
+  Future<void> addFoodTabToRoom(String tab, int bookingId, {num discountAmount = 0}) =>
+      api.addFoodTabToRoom(tab, bookingId, discountAmount: discountAmount);
 
   @override
   Future<List<Invoice>> invoices() => _orEmpty(api.invoices);

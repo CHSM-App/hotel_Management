@@ -35,7 +35,7 @@ class BarUsecase {
 
   Future<List<MenuSection>> foodMenu() => repository.foodMenu();
 
-  Future<void> createOrder(Map<String, dynamic> body) => repository.createOrder(body);
+  Future<int> createOrder(Map<String, dynamic> body) => repository.createOrder(body);
 
   Future<void> addItems(int id, Map<String, dynamic> body) => repository.addItems(id, body);
 
@@ -51,10 +51,10 @@ class BarUsecase {
 
   Future<void> deliverFoodItem(int foodOrderId, int itemId) => repository.deliverFoodItem(foodOrderId, itemId);
 
-  Future<void> readyToBill(int id) => repository.readyToBill(id);
   Future<void> setCustomer(int id, String? tag) => repository.setCustomer(id, tag);
 
-  Future<void> addToRoom(int id, int bookingId, int roomId) => repository.addToRoom(id, bookingId, roomId);
+  Future<void> addToRoom(int id, int bookingId, int roomId, {num discountAmount = 0}) =>
+      repository.addToRoom(id, bookingId, roomId, discountAmount: discountAmount);
 
   Future<List<BarTab>> tabs() => repository.tabs();
 

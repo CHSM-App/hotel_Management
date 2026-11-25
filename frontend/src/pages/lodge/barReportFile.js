@@ -40,7 +40,8 @@ function sheetsFor(view, d) {
     },
     { name: 'By day', head: ['Day', 'Bills', 'Sales'], rows: d.byDay.map((x) => [day(x.date), x.bills, money(x.total)]) },
     { name: 'By category', head: ['Category', 'ml sold', 'Sales'], rows: d.byCategory.map((x) => [x.category, x.ml, money(x.amount)]) },
-    { name: 'By item', head: ['Item', 'Size', 'Type', 'Qty', 'ml sold', 'Sales'], rows: d.byItem.map((x) => [x.name, x.size || '', x.kind === 'FOOD' ? 'Food' : 'Drink', x.quantity, x.ml, money(x.amount)]) },
+    { name: 'Bar items', head: ['Item', 'Size', 'Qty sold', 'ml sold', 'Sale amount'], rows: d.byItem.filter((x) => x.kind !== 'FOOD').map((x) => [x.name, x.size || '', x.quantity, x.ml, money(x.amount)]) },
+    { name: 'Restaurant items', head: ['Item', 'Portion', 'Qty sold', 'Sale amount'], rows: d.byItem.filter((x) => x.kind === 'FOOD').map((x) => [x.name, x.size || '', x.quantity, money(x.amount)]) },
   ];
 }
 

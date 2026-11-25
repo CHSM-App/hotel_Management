@@ -591,14 +591,15 @@ async function getLodgeDashboard(id, { foodPeriod = 'today' } = {}) {
       FROM dbo.booking_rooms br
       JOIN dbo.bookings b ON b.id = br.booking_id
       WHERE b.lodge_id = @lodgeId AND br.status <> 'CANCELLED'
-        AND br.check_in_date < DATEADD(day, 1, @toDate) AND br.check_out_date > @fromDate
+        AND br.check_in_date < DATEADD(day, 1, @toDate) AND COALESCE(br.check_out_date, '9999-12-31') > @fromDate
     `);
   const trendDates = datesInRange(weekAgo, today);
   const soldByDate = new Map(trendDates.map((d) => [d, new Set()]));
   const inHouseByDate = new Map(trendDates.map((d) => [d, new Set()]));
   for (const row of bookingRoomsResult.recordset) {
     const stayStart = toIsoDate(row.check_in_date);
-    const stayEnd = toIsoDate(row.check_out_date);
+    // An open-ended stay (no check-out date yet) still holds its room.
+    const stayEnd = row.check_out_date == null ? '9999-12-31' : toIsoDate(row.check_out_date);
     for (const date of trendDates) {
       if (date >= stayStart && date < stayEnd) {
         soldByDate.get(date).add(row.room_id);

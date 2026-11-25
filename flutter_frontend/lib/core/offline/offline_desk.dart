@@ -66,7 +66,8 @@ class OfflineDesk {
   /// Every ordinary room with nothing on it across [checkIn, checkOut).
   /// Advisory: built from the downloaded chart plus whatever this device has
   /// booked since, so a room another device sold meanwhile is only caught at sync.
-  Future<List<Room>> availableRooms(String checkIn, String checkOut) async {
+  Future<List<Room>> availableRooms(String checkIn, String? checkOutDate) async {
+    final checkOut = checkOutDate ?? _openEnd;
     final ref = await _need();
     final held = await _heldRanges(ref);
     final out = <Room>[];
@@ -82,6 +83,19 @@ class OfflineDesk {
     return out;
   }
 
+  /// What an open-ended stay (no check-out date yet) holds its room until: the
+  /// far future, so it blocks the room exactly as the server's own checks do.
+  static const _openEnd = '9999-12-31';
+
+  /// A stored check-out date, or [_openEnd] when the stay has none.
+  static String _endOf(Object? v) {
+    final t = '$v';
+    return v == null || t == 'null' || t.isEmpty ? _openEnd : t.substring(0, 10);
+  }
+
+  static const _openStayNeedsConnection =
+      'Stays with no check-out date need a connection to be booked or closed.';
+
   Future<List<({int roomId, String checkIn, String checkOut})>> _heldRanges(ReferenceData ref) async {
     final stays = await store.staysAll();
     final localIds = {for (final s in stays) _id(s)};
@@ -95,7 +109,7 @@ class OfflineDesk {
       out.add((
         roomId: int.parse('${m['roomId']}'),
         checkIn: '${m['checkInDate']}'.substring(0, 10),
-        checkOut: '${m['checkOutDate']}'.substring(0, 10),
+        checkOut: _endOf(m['checkOutDate']),
       ));
     }
     for (final s in stays) {
@@ -105,7 +119,7 @@ class OfflineDesk {
         out.add((
           roomId: int.parse('${r['roomId']}'),
           checkIn: '${r['checkInDate'] ?? s['checkInDate']}'.substring(0, 10),
-          checkOut: '${r['checkOutDate'] ?? s['checkOutDate']}'.substring(0, 10),
+          checkOut: _endOf(r['checkOutDate'] ?? s['checkOutDate']),
         ));
       }
     }
@@ -115,12 +129,13 @@ class OfflineDesk {
   Future<Quote> priceQuote({
     required int roomId,
     required String checkIn,
-    required String checkOut,
+    required String? checkOut,
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
     List<int>? bedIds,
   }) async {
+    if (checkOut == null) throw OfflineUnavailable.because(_openStayNeedsConnection);
     final ref = await _need();
     if (bedIds != null && bedIds.isNotEmpty) {
       throw OfflineUnavailable.because('Dormitory beds can\'t be priced offline.');
@@ -249,7 +264,7 @@ class OfflineDesk {
 
   static bool _overlaps(Map b, String? from, String? to) {
     final inDate = '${b['checkInDate']}'.substring(0, 10);
-    final outDate = '${b['checkOutDate']}'.substring(0, 10);
+    final outDate = _endOf(b['checkOutDate']);
     if (to != null && inDate.compareTo(to) > 0) return false;
     if (from != null && outDate.compareTo(from) < 0) return false;
     return true;
@@ -280,7 +295,10 @@ class OfflineDesk {
     }
     final roomId = int.parse(f['roomId'] ?? '0');
     final checkIn = f['checkInDate']!;
-    final checkOut = f['checkOutDate']!;
+    final checkOut = f['checkOutDate'];
+    if (checkOut == null || checkOut.isEmpty) {
+      throw OfflineUnavailable.because(_openStayNeedsConnection);
+    }
 
     final picks = <ChargePick>[
       for (final c in (_jsonList(f['switchableCharges'])))
@@ -462,6 +480,8 @@ class OfflineDesk {
   }
 
   List<double> _nights(Map<String, dynamic> room) {
+    // An open stay is dated and priced by the server as it closes.
+    if (room['checkOutDate'] == null) throw OfflineUnavailable.because(_openStayNeedsConnection);
     final list = room['nights'] as List?;
     if (list != null && list.isNotEmpty) {
       return [for (final n in list) ((n as Map)['amount'] as num).toDouble()];
@@ -544,6 +564,12 @@ class OfflineDesk {
             (o['status'] == 'READY' || o['status'] == 'DELIVERED'))
           o.cast<String, dynamic>(),
     ];
+
+    // A discount given on an order shows under its own section; the device does
+    // not price that, so the server does.
+    if (foodOrders.any((o) => ((o['discount'] as num?) ?? 0) > 0)) {
+      throw OfflineUnavailable.because('This stay has a discount on its restaurant orders — that needs a connection.');
+    }
 
     final grossNights = _nights(room);
     final alreadyLate = (stay['lateCheckoutCharge'] as num?) ?? (room['lateCheckoutCharge'] as num?) ?? 0;

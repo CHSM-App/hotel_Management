@@ -13,6 +13,7 @@ const {
   bookingDraftSchema,
 } = require('./bookings.schema');
 const bookingsService = require('./bookings.service');
+const { scanIds } = require('./idScan.service');
 const draftsService = require('./drafts.service');
 const pricingService = require('../pricing/pricing.service');
 const { ApiError } = require('../../middleware/errorHandler');
@@ -48,11 +49,13 @@ function parseBasePriceOverride(raw) {
 
 function parseDateRange(query) {
   const checkInDate = String(query.checkInDate || '');
-  const checkOutDate = String(query.checkOutDate || '');
-  if (!DATE_RE.test(checkInDate) || !DATE_RE.test(checkOutDate)) {
+  // Optional: no check-out date asks about an open-ended stay.
+  const rawOut = String(query.checkOutDate || '');
+  if (!DATE_RE.test(checkInDate) || (rawOut && !DATE_RE.test(rawOut))) {
     throw new ApiError('Choose a valid date range.', 400);
   }
-  if (checkOutDate <= checkInDate) {
+  const checkOutDate = rawOut || null;
+  if (checkOutDate && checkOutDate <= checkInDate) {
     throw new ApiError('Check-out date must be after check-in date.', 400);
   }
   return { checkInDate, checkOutDate };
@@ -81,10 +84,12 @@ async function listAvailableRoomsHandler(req, res, next) {
 
 async function listAvailableRoomsForBookingHandler(req, res, next) {
   try {
-    const checkOutDate = String(req.query.checkOutDate || '');
-    if (!DATE_RE.test(checkOutDate)) {
+    // Optional: no check-out date asks about an open-ended stay.
+    const rawOut = String(req.query.checkOutDate || '');
+    if (rawOut && !DATE_RE.test(rawOut)) {
       throw new ApiError('Choose a valid check-out date.', 400);
     }
+    const checkOutDate = rawOut || null;
     // Optional: an edit that is also moving the arrival asks against the range
     // it is proposing, not the one on file. Omitted keeps the stored date.
     const checkInDate = String(req.query.checkInDate || '');
@@ -205,6 +210,15 @@ async function searchGuestsHandler(req, res, next) {
   try {
     const guests = await bookingsService.searchGuests(req.user.lodgeId, req.query.q);
     res.json({ guests });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Photos in, guests out. Nothing is stored or logged from the images.
+async function scanIdsHandler(req, res, next) {
+  try {
+    res.json(await scanIds({ lodgeId: req.user.lodgeId, userId: req.user.sub, files: req.files || [] }));
   } catch (err) {
     next(err);
   }
@@ -698,6 +712,7 @@ module.exports = {
   getIdProofHandler,
   getGuestIdProofHandler,
   createBookingHandler,
+  scanIdsHandler,
   checkInHandler,
   updateBookingHandler,
   getLateCheckoutHandler,

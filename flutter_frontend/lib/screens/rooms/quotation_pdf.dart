@@ -93,7 +93,7 @@ class QuotationPdf {
     await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
-  static Future<Uint8List?> _fetchLogo(String? url) async {
+  static Future<Uint8List?> fetchLogo(String? url) async {
     if (url == null) return null;
     try {
       final res = await Dio().get<List<int>>('$baseUrl$url', options: Options(responseType: ResponseType.bytes));
@@ -112,7 +112,7 @@ class QuotationPdf {
     String? guestPhone,
     String? preparedBy,
   }) async {
-    final logo = await _fetchLogo(lodge?.logoUrl);
+    final logo = await fetchLogo(lodge?.logoUrl);
     final name = (lodge?.name.isNotEmpty ?? false) ? lodge!.name : 'Quotation';
     final address = [lodge?.address, lodge?.city, lodge?.state].whereType<String>().where((s) => s.isNotEmpty).join(', ');
     final contact = [
@@ -163,12 +163,12 @@ class QuotationPdf {
           ],
         ),
         build: (context) => [
-          _letterhead(name, address, contact, logo, date, preparedBy),
+          letterhead(name, address, contact, logo, date, preparedBy),
           pw.SizedBox(height: 14),
           pw.Container(height: 1.2, color: ReportPdfStyle.ink),
           pw.SizedBox(height: 14),
 
-          if (hasGuest) _preparedFor(guestName, guestPhone),
+          if (hasGuest) preparedFor(guestName, guestPhone),
           _glance(rooms.length, totalNights, arrival, departure),
           pw.SizedBox(height: 14),
 
@@ -186,7 +186,7 @@ class QuotationPdf {
     return doc.save();
   }
 
-  static pw.Widget _letterhead(String name, String address, String contact, Uint8List? logo, String date, String? preparedBy) {
+  static pw.Widget letterhead(String name, String address, String contact, Uint8List? logo, String date, String? preparedBy) {
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -225,7 +225,7 @@ class QuotationPdf {
     );
   }
 
-  static pw.Widget _preparedFor(String? guestName, String? guestPhone) {
+  static pw.Widget preparedFor(String? guestName, String? guestPhone) {
     final name = guestName?.trim() ?? '';
     final phone = guestPhone?.trim() ?? '';
     return pw.Padding(

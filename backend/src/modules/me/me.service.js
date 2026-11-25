@@ -324,7 +324,9 @@ async function getMySettings(lodgeId) {
 }
 
 async function updateMySettings(lodgeId, patch) {
-  await saveSettings(await getPool(), lodgeId, patch);
+  // aiIdScan costs us money per scan, so only a super-admin edit may switch it.
+  const { aiIdScan, ...ownerPatch } = patch;
+  await saveSettings(await getPool(), lodgeId, ownerPatch);
   return getSettings(lodgeId);
 }
 

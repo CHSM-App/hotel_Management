@@ -121,6 +121,9 @@ class Lodge {
   /// Support-enabled: a stay that already happened may be recorded and billed.
   final bool canAddPastBookings;
 
+  /// Support-enabled: the booking form may read ID cards with AI.
+  final bool aiIdScan;
+
   const Lodge({
     required this.id,
     required this.name,
@@ -156,6 +159,7 @@ class Lodge {
     this.barTaxPercent,
     this.canEditBilledStays = false,
     this.canAddPastBookings = false,
+    this.aiIdScan = false,
   });
 
   factory Lodge.fromJson(Map<String, dynamic> json) => Lodge(
@@ -193,6 +197,7 @@ class Lodge {
     barTaxPercent: _asDoubleOrNull(json['barTaxPercent']),
     canEditBilledStays: asBool(json['canEditBilledStays']),
     canAddPastBookings: asBool(json['canAddPastBookings']),
+    aiIdScan: json['settings'] is Map && asBool((json['settings'] as Map)['aiIdScan']),
   );
 }
 

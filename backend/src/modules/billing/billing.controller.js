@@ -249,7 +249,7 @@ async function addTabToRoomBillHandler(req, res, next) {
     if (!Number.isSafeInteger(bookingId) || bookingId <= 0) {
       throw new ApiError('Pick the guest to charge.', 400);
     }
-    res.json(await billingService.addTabToRoomBill(req.user.lodgeId, req.params.tab, bookingId));
+    res.json(await billingService.addTabToRoomBill(req.user.lodgeId, req.params.tab, bookingId, parseDiscount(req.body?.discountAmount)));
   } catch (err) {
     next(err);
   }

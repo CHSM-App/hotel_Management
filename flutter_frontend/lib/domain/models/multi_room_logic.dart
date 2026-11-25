@@ -45,13 +45,23 @@ class MultiRoomLogic {
 
   /// The overall span the booking covers: the earliest check-in and the
   /// latest check-out across room 1 and every picked extra room.
-  static (DateTime, DateTime)? bookingWindow(BookingState state) {
+  ///
+  /// The end is null when room 1 is open-ended (no check-out yet): the booking
+  /// is then open too, whatever the other rooms' dates are.
+  static (DateTime, DateTime?)? bookingWindow(BookingState state) {
     final spans = <(DateTime, DateTime)>[
       if (state.checkIn != null && state.checkOut != null)
         (state.checkIn!, state.checkOut!),
       for (final r in pickedExtraRooms(state))
         if (roomDates(state, r) != null) roomDates(state, r)!,
     ];
+    if (state.openEnded) {
+      var earliest = state.checkIn!;
+      for (final s in spans) {
+        if (s.$1.isBefore(earliest)) earliest = s.$1;
+      }
+      return (earliest, null);
+    }
     if (spans.isEmpty) return null;
     var earliest = spans.first.$1;
     var latest = spans.first.$2;

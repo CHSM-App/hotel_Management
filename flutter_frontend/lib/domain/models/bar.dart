@@ -460,6 +460,7 @@ class BarBill {
   final String billNumber;
   final String? billDate;
   final double subtotal;
+  final double discountAmount;
   final double drinksSubtotal;
   final double foodSubtotal;
   final double taxPercent;
@@ -479,6 +480,7 @@ class BarBill {
     required this.billNumber,
     this.billDate,
     this.subtotal = 0,
+    this.discountAmount = 0,
     this.drinksSubtotal = 0,
     this.foodSubtotal = 0,
     this.taxPercent = 0,
@@ -499,6 +501,7 @@ class BarBill {
     billNumber: j['billNumber']?.toString() ?? '',
     billDate: asStringOrNull(j['billDate']),
     subtotal: asNum(j['subtotal']).toDouble(),
+    discountAmount: asNum(j['discountAmount']).toDouble(),
     drinksSubtotal: asNum(j['drinksSubtotal']).toDouble(),
     foodSubtotal: asNum(j['foodSubtotal']).toDouble(),
     taxPercent: asNum(j['taxPercent']).toDouble(),

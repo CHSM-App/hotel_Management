@@ -27,7 +27,10 @@ class CheckInRoomStatus extends ConsumerStatefulWidget {
   final List<CheckInRoomStatusEntry> rooms;
   final bool venues;
 
-  const CheckInRoomStatus({super.key, required this.rooms, this.venues = false});
+  /// One coloured line of text, for sitting under a dropdown.
+  final bool inline;
+
+  const CheckInRoomStatus({super.key, required this.rooms, this.venues = false, this.inline = false});
 
   @override
   ConsumerState<CheckInRoomStatus> createState() => _CheckInRoomStatusState();
@@ -66,6 +69,18 @@ class _CheckInRoomStatusState extends ConsumerState<CheckInRoomStatus> {
     if (byId == null) return const SizedBox.shrink();
     final rows = widget.rooms.map((r) => (r, byId[r.roomId])).where((e) => e.$2 != null).toList();
     if (rows.isEmpty) return const SizedBox.shrink();
+
+    if (widget.inline) {
+      final hk = rows.first.$2!;
+      final tone = kRoomStatusTone[hk.status] ?? AppTheme.muted;
+      return Padding(
+        padding: const EdgeInsets.only(top: 4, left: 2),
+        child: Text(
+          'Room status: ${kRoomStatusLabel[hk.status] ?? hk.status}',
+          style: TextStyle(color: tone, fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+      );
+    }
 
     return Container(
       margin: const EdgeInsets.only(top: AppTheme.s8),

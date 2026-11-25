@@ -261,7 +261,9 @@ class ReceiptDocs {
       if ((inv.guestName ?? '').isNotEmpty) RText('Guest: ${inv.guestName}', center: false),
       const RRule(),
       RTable(_tableHeaders, rows),
-      if (inv.discountAmount > 0) RRow('Discount:', '- ${_rs(inv.discountAmount)}'),
+      if (inv.foodDiscountAmount > 0) RRow('Restaurant discount:', '- ${_rs(inv.foodDiscountAmount)}'),
+      if (inv.barDiscountAmount > 0) RRow('Bar discount:', '- ${_rs(inv.barDiscountAmount)}'),
+      if (inv.generalDiscount > 0) RRow('Discount:', '- ${_rs(inv.generalDiscount)}'),
       if (inv.roundOff != 0) RRow('Round off:', _rs(inv.roundOff)),
       if (inv.isGstRegistered && (cgst > 0 || sgst > 0)) ...[
         RNote('incl. CGST ${_rs(cgst)}'),

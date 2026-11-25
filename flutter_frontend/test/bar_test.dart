@@ -49,7 +49,7 @@ void main() {
         'status': 'OPEN',
         'subtotal': 450,
         'undelivered': 1,
-        'readyToBill': false,
+        
         'items': [
           {'id': '1', 'name': 'Beer', 'size': '650 ml', 'quantity': 2, 'lineTotal': 400, 'deliveredAt': '2026-01-01'},
         ],

@@ -16,6 +16,7 @@ import '../billing/invoice_preview_screen.dart';
 import '../billing/issue_food_bill_screen.dart';
 import '../../widgets/pill_tabs.dart';
 import '../theme.dart';
+import '../rooms/quotation_screen.dart';
 import 'counter_order_screen.dart';
 
 /// The kitchen queue, and the day behind it.
@@ -157,13 +158,27 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
           Positioned(
             right: AppTheme.s16,
             bottom: AppTheme.s16,
-            child: _NewOrderButton(
-              onPressed: () async {
-                final placed = await Navigator.of(context).push<bool>(
-                  MaterialPageRoute(builder: (_) => const CounterOrderScreen()),
-                );
-                if (placed == true) await vm.loadQueue();
-              },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'food-quotation',
+                  tooltip: 'Quotation',
+                  backgroundColor: AppTheme.card,
+                  foregroundColor: AppTheme.sidebarBrand,
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QuotationScreen(kind: 'FOOD'))),
+                  child: const Icon(Icons.request_quote_outlined),
+                ),
+                const SizedBox(width: AppTheme.s12),
+                _NewOrderButton(
+                  onPressed: () async {
+                    final placed = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(builder: (_) => const CounterOrderScreen()),
+                    );
+                    if (placed == true) await vm.loadQueue();
+                  },
+                ),
+              ],
             ),
           ),
       ],
@@ -1552,7 +1567,7 @@ class _OrderCard extends ConsumerWidget {
                   // offers it there — but shown everywhere else,
                   // including a captain's own "Kitchen" tab, same as
                   // renderCaptainCard.
-                  if (!isRealQueue && canDeliver && order.isEditable) ...[
+                  if (canDeliver && order.isEditable) ...[
                     const SizedBox(height: AppTheme.s8),
                     NeuButton(
                       expand: true,
@@ -2693,7 +2708,7 @@ class _OrdersSheetState extends ConsumerState<_OrdersSheet> {
     // Edit and View bill are never on the real Kitchen queue, same as
     // OrdersPanel.jsx's renderOrder — but a captain's own "Kitchen" tab
     // (myOrdersMode, not isRealQueue) gets both, same as renderCaptainCard.
-    if (!widget.isRealQueue && widget.canDeliver && order.isEditable) {
+    if (widget.canDeliver && order.isEditable) {
       buttons.add(
         _SheetActionButton(
           label: 'Edit',
@@ -2905,6 +2920,13 @@ class _AddToRoomDialogState extends ConsumerState<_AddToRoomDialog> {
   int? _bookingId;
   bool _busy = false;
   String? _error;
+  final _discount = TextEditingController();
+
+  @override
+  void dispose() {
+    _discount.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -2943,7 +2965,11 @@ class _AddToRoomDialogState extends ConsumerState<_AddToRoomDialog> {
       }
       await ref
           .read(billingUsecaseProvider)
-          .addFoodTabToRoom(order.billingTabKey, _bookingId!);
+          .addFoodTabToRoom(
+            order.billingTabKey,
+            _bookingId!,
+            discountAmount: num.tryParse(_discount.text.trim()) ?? 0,
+          );
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -3010,6 +3036,17 @@ class _AddToRoomDialogState extends ConsumerState<_AddToRoomDialog> {
                 ],
                 onChanged: _busy ? null : (v) => setState(() => _bookingId = v),
               ),
+            const SizedBox(height: AppTheme.s12),
+            // Shown under Restaurant on the room bill.
+            TextField(
+              controller: _discount,
+              enabled: !_busy,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Discount (optional)',
+                prefixText: '₹ ',
+              ),
+            ),
           ],
         ),
       ),

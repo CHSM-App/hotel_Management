@@ -187,10 +187,9 @@ class BillingState {
         : (lastSettleMode ?? this.lastSettleMode),
   );
 
-  /// Only a cycle property discounts here: on the other two modes the bill is
-  /// what the stay costs and any concession is settled through what the
-  /// guest hands over.
-  bool get isCycleStay => preview?.checkinMode == 'CYCLE';
+  /// Any stay can be discounted, except one room leaving on its own — the
+  /// server ignores a discount there; it belongs on the final bill.
+  bool get canDiscount => preview?.settleMode != 'ROOM';
 
   /// The typed discount, as money. Never sent as a percentage — the server
   /// re-derives that, so the two can't disagree on the document.
@@ -340,11 +339,12 @@ class BillingViewModel extends StateNotifier<BillingState> {
   );
 
   /// Open a table, room, or takeaway for billing — the food side of the
-  /// queue. No overstay and no cycle discount: a food bill is the food side
-  /// on its own, with nothing to negotiate beyond how it was paid.
+  /// queue. No overstay; the desk can take a discount off it.
   Future<void> openFood(FoodTab tab) async {
     state = state.copyWith(
       foodTarget: tab,
+      discountInput: '',
+      discountReason: '',
       clearFoodPreview: true,
       clearError: true,
       payment: [PaymentDraft()],
@@ -356,6 +356,8 @@ class BillingViewModel extends StateNotifier<BillingState> {
   void closeFood() => state = state.copyWith(
     clearFoodTarget: true,
     clearFoodPreview: true,
+    discountInput: '',
+    discountReason: '',
     clearError: true,
     payment: const [],
     paymentTouched: false,
@@ -367,7 +369,7 @@ class BillingViewModel extends StateNotifier<BillingState> {
 
     state = state.copyWith(previewing: true, clearError: true);
     try {
-      final preview = await usecase.previewFoodBill(tab.tab);
+      final preview = await usecase.previewFoodBill(tab.tab, discountAmount: state.cycleDiscount);
       final rows = state.payment.isEmpty
           ? <PaymentDraft>[PaymentDraft()]
           : state.payment;
@@ -440,8 +442,11 @@ class BillingViewModel extends StateNotifier<BillingState> {
   /// of [BillingState.target]/[BillingState.eventTarget] is ever non-null at
   /// a time, so the discount typed into either screen re-prices the one
   /// that's actually open.
-  Future<void> _refreshOpenPreview() =>
-      state.eventTarget != null ? refreshEventPreview() : refreshPreview();
+  Future<void> _refreshOpenPreview() => state.eventTarget != null
+      ? refreshEventPreview()
+      : state.foodTarget != null
+      ? refreshFoodPreview()
+      : refreshPreview();
 
   /// Set the discount amount and re-price. Clearing it also clears the
   /// reason — an empty amount is charging in full, and a reason with no

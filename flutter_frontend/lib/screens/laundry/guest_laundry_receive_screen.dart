@@ -113,7 +113,7 @@ class _GuestLaundryReceiveScreenState extends ConsumerState<GuestLaundryReceiveS
       appBar: AppBar(title: Text('Receive from wash · tag ${order.tagNumber}')),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s16, AppTheme.s8, AppTheme.s16, AppTheme.s32),
+          padding: EdgeInsets.fromLTRB(AppTheme.sidePad(context), AppTheme.s8, AppTheme.sidePad(context), AppTheme.s32),
           children: [
             if (_error != null) ...[
               ErrorBanner(_error!),

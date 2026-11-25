@@ -37,8 +37,13 @@ const lineName = (label) => (/×/.test(label) ? label : label.replace(/\s*₹\s?
 //
 // `rooms` is one entry per priced room: { room, from, to, result }, with
 // `result` as /pricing/simulate returned it.
+//
+// An event / food / bar quotation passes `generic` instead of `rooms`:
+// { title, facts: [[label, value]], columns: [label], rows: [[cell]],
+//   totals: [[label, value, isResult]], note, terms: [string], words }.
+// The letterhead, sign-off and styling are the same.
 const QuotationDocument = forwardRef(function QuotationDocument(
-  { lodge, logoSrc, date, preparedBy, guest, rooms, total },
+  { lodge, logoSrc, date, preparedBy, guest, rooms = [], total, generic = null },
   ref
 ) {
   const name = lodge?.name || 'Quotation';
@@ -77,7 +82,7 @@ const QuotationDocument = forwardRef(function QuotationDocument(
           </div>
         </div>
         <div className="quote__doc">
-          <div className="quote__title">Quotation</div>
+          <div className="quote__title">{generic?.title || 'Quotation'}</div>
           <dl>
             <dt>Date</dt>
             <dd>{date}</dd>
@@ -114,28 +119,65 @@ const QuotationDocument = forwardRef(function QuotationDocument(
           </div>
         )}
         <div>
-          <div className="quote__cap">Stay at a glance</div>
+          <div className="quote__cap">{generic ? 'At a glance' : 'Stay at a glance'}</div>
           <div className="quote__glance">
-            <div>
-              <span>Rooms</span>
-              <b>{rooms.length}</b>
-            </div>
-            <div>
-              <span>Nights</span>
-              <b>{totalNights}</b>
-            </div>
-            <div>
-              <span>Arrival</span>
-              <b>{formatDate(arrival, false)}</b>
-            </div>
-            <div>
-              <span>Departure</span>
-              <b>{formatDate(departure, false)}</b>
-            </div>
+            {generic ? (
+              generic.facts.map(([label, value]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <b>{value}</b>
+                </div>
+              ))
+            ) : (
+              <>
+                <div>
+                  <span>Rooms</span>
+                  <b>{rooms.length}</b>
+                </div>
+                <div>
+                  <span>Nights</span>
+                  <b>{totalNights}</b>
+                </div>
+                <div>
+                  <span>Arrival</span>
+                  <b>{formatDate(arrival, false)}</b>
+                </div>
+                <div>
+                  <span>Departure</span>
+                  <b>{formatDate(departure, false)}</b>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
 
+      {generic && (
+        <div className="quote__pad">
+          <table className="quote__table">
+            <thead>
+              <tr data-quote-break>
+                {generic.columns.map((c) => (
+                  <th key={c}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {generic.rows.map((row, i) => (
+                <tr key={i} data-quote-break>
+                  {row.map((cell, j) => (
+                    <td key={j} className={j === 0 ? 'quote__item' : undefined}>
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!generic && (
       <div className="quote__pad">
         <table className="quote__table">
           <thead>
@@ -183,10 +225,20 @@ const QuotationDocument = forwardRef(function QuotationDocument(
           ))}
         </table>
       </div>
+      )}
 
       <div className="quote__close quote__pad" data-quote-break>
         <div>
           <div className="quote__cap">Terms and conditions</div>
+          {generic && (
+            <ol className="quote__terms">
+              {generic.terms.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ol>
+          )}
+          {generic?.note && <p>Note: {generic.note}</p>}
+          {!generic && (
           <ol className="quote__terms">
             <li>This quotation is valid only for the rooms and dates mentioned above.</li>
             <li>
@@ -198,11 +250,18 @@ const QuotationDocument = forwardRef(function QuotationDocument(
             <li>Any change in rooms, dates, number of guests or extras will change the amount.</li>
             <li>Services not listed above are charged separately.</li>
           </ol>
+          )}
           <div className="quote__words">
             <b>Amount in words:</b> {rupeesInWords(total)}
           </div>
         </div>
         <div className="quote__totals">
+          {generic?.totals.map(([label, value, result]) => (
+            <div key={label} className={result ? 'quote__grand' : undefined}>
+              <span>{label}</span>
+              <span>{value}</span>
+            </div>
+          ))}
           {rooms.map(({ room, result }) => (
             <div key={room.id}>
               <span>
@@ -211,20 +270,26 @@ const QuotationDocument = forwardRef(function QuotationDocument(
               <span>{formatPrice(result.total)}</span>
             </div>
           ))}
-          <div className="quote__grand">
-            <span>Total</span>
-            <span>{formatPrice(total)}</span>
-          </div>
-          <small>
-            {rooms.length} room{rooms.length === 1 ? '' : 's'} · {nightsLabel(totalNights)}
-          </small>
+          {!generic && (
+            <>
+              <div className="quote__grand">
+                <span>Total</span>
+                <span>{formatPrice(total)}</span>
+              </div>
+              <small>
+                {rooms.length} room{rooms.length === 1 ? '' : 's'} · {nightsLabel(totalNights)}
+              </small>
+            </>
+          )}
         </div>
       </div>
 
       <div className="quote__spacer" />
 
       <div className="quote__sign quote__pad" data-quote-break>
-        <div className="quote__thanks">Thank you for considering {name}. We look forward to hosting you.</div>
+        <div className="quote__thanks">
+          Thank you for considering {name}. We look forward to {generic ? 'serving you' : 'hosting you'}.
+        </div>
         <div className="quote__sign-box">
           <i />
           <b>For {name}</b>

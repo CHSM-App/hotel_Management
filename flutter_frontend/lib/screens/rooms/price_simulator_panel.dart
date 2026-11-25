@@ -11,6 +11,8 @@ import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
 import 'quotation_pdf.dart';
+import 'quotation_send.dart';
+import 'quote_common.dart';
 import 'room_form_pieces.dart';
 
 String _iso(DateTime d) =>
@@ -232,7 +234,7 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
     }
   }
 
-  Future<void> _pickDate(_SimRoom sim, {required bool from}) async {
+  Future<void> _pickDate(_SimRoom sim, {required bool from, BuildContext? anchor}) async {
     final earliest = DateTime.now().subtract(const Duration(days: 365));
     final firstDate = from ? earliest : sim.fromDate;
     var initialDate = from ? sim.fromDate : sim.toDate;
@@ -242,6 +244,7 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
       initialDate: initialDate,
       firstDate: firstDate,
       lastDate: DateTime.now().add(const Duration(days: 730)),
+      anchor: anchor, // opens right under the field, not as a pop-up
     );
     if (picked == null) return;
     setState(() {
@@ -257,17 +260,10 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
 
   /// Keeps the quotation on the server. Only the choices go up — the server
   /// prices every room again, so the stored figure is the rate card's own.
-  Future<void> _saveQuotation(List<_SimRoom> priced) async {
+  Future<void> _saveQuotation(List<_SimRoom> priced, {bool whatsApp = false}) async {
     if (_phoneInvalid) {
       setState(() => _phoneChecked = true);
       _guestPhoneFocus.requestFocus();
-      return;
-    }
-    // Held until check-in, so one for today or earlier would be Expired the
-    // moment it was saved — say so up front rather than after a round trip.
-    final today = DateUtils.dateOnly(DateTime.now());
-    if (priced.any((s) => !s.fromDate.isAfter(today))) {
-      setState(() => _saveError = 'Choose a check-in date after today to save a quotation.');
       return;
     }
     setState(() {
@@ -275,7 +271,7 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
       _saving = true;
     });
     try {
-      await ref.read(roomsViewModelProvider.notifier).saveQuotation(
+      final saved = await ref.read(roomsViewModelProvider.notifier).saveQuotation(
         guestName: _guestNameController.text,
         guestPhone: _guestPhoneController.text,
         rooms: [
@@ -287,6 +283,12 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Quotation saved.'), backgroundColor: AppTheme.heading),
       );
+      // Send before leaving this form: the list that follows would dispose it.
+      if (whatsApp) {
+        await sendSavedQuotation(ref, saved, (m) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m), backgroundColor: AppTheme.heading));
+        });
+      }
       widget.onSaved?.call();
     } catch (e) {
       if (!mounted) return;
@@ -355,14 +357,7 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
     Set<int> takenByOthers(_SimRoom sim) =>
         {for (final s in _sims) if (s.key != sim.key && s.roomId != null) s.roomId!};
 
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: AppTheme.formMaxWidth(context)),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppTheme.s12, AppTheme.s8, AppTheme.s12, AppTheme.s24),
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: [
+    final main = <Widget>[
             NeuCard(
               radius: AppTheme.rLarge,
               padding: const EdgeInsets.all(AppTheme.s12),
@@ -422,6 +417,8 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
               ),
             ),
 
+    ];
+    final side = <Widget>[
             for (final (index, sim) in _sims.indexed)
               if (roomOf(sim) != null) ...[
                 const SizedBox(height: AppTheme.s12),
@@ -446,10 +443,8 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
                   message: 'Choose a room and the price for the stay appears here.',
                 ),
               ),
-          ],
-        ),
-      ),
-    );
+    ];
+    return QuoteTwoColumn(main: main, side: side);
   }
 
   Widget _simBlock({
@@ -521,7 +516,7 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
               child: _DateField(
                 label: 'From (check-in)',
                 value: _iso(sim.fromDate),
-                onTap: () => _pickDate(sim, from: true),
+                onTap: (a) => _pickDate(sim, from: true, anchor: a),
               ),
             ),
             const SizedBox(width: AppTheme.s8),
@@ -529,7 +524,7 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
               child: _DateField(
                 label: 'To (check-out)',
                 value: _iso(sim.toDate),
-                onTap: () => _pickDate(sim, from: false),
+                onTap: (a) => _pickDate(sim, from: false, anchor: a),
               ),
             ),
           ],
@@ -805,6 +800,8 @@ class _PriceSimulatorPanelState extends ConsumerState<PriceSimulatorPanel> {
             ),
           ),
           const SizedBox(height: AppTheme.s8),
+          QuoteWhatsAppButton(busy: _saving, onPressed: !canDownload ? null : () => _saveQuotation(priced, whatsApp: true)),
+          const SizedBox(height: AppTheme.s8),
           SizedBox(
             width: double.infinity,
             height: 44,
@@ -866,7 +863,7 @@ class _RoomCard extends StatelessWidget {
 class _DateField extends StatelessWidget {
   final String label;
   final String value;
-  final VoidCallback onTap;
+  final void Function(BuildContext anchor) onTap;
 
   const _DateField({required this.label, required this.value, required this.onTap});
 
@@ -879,8 +876,8 @@ class _DateField extends StatelessWidget {
     final parsed = DateTime.tryParse(value);
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
+      child: Builder(builder: (anchor) => InkWell(
+        onTap: () => onTap(anchor),
         borderRadius: BorderRadius.circular(14),
         highlightColor: AppTheme.accent.withValues(alpha: 0.05),
         splashColor: AppTheme.accent.withValues(alpha: 0.08),
@@ -925,7 +922,7 @@ class _DateField extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }

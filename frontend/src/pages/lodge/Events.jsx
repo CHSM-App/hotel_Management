@@ -1,3 +1,4 @@
+import Quotations from './Quotations';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiGet, apiPatch, apiPost, apiPostForm, apiPatchForm, apiDelete, API_BASE } from '../../lib/api';
@@ -1874,6 +1875,7 @@ export default function Events({
   const token = getSession()?.token;
   const [urlTab, setTab] = useUrlState('tab', 'diary');
   const tab = only ?? urlTab;
+  const [quoting, setQuoting] = useState(false);
   const [venues, setVenues] = useState([]);
   const [addons, setAddons] = useState([]);
   // Which event is open, and whether the form is up (with a prefilled date).
@@ -1966,8 +1968,19 @@ export default function Events({
     );
   };
 
+  if (quoting) {
+    return <Quotations kind="EVENT" onBack={() => setQuoting(false)} backLabel="← Events" />;
+  }
+
   return (
     <div>
+      {tab === 'list' && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button type="button" className="btn-secondary" onClick={() => setQuoting(true)}>
+            Quotation
+          </button>
+        </div>
+      )}
       {!only && (
       <div className="subtabs">
         {TABS.map((t) => (

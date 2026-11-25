@@ -61,7 +61,7 @@ class BarState {
     taxPercent: taxPercent ?? this.taxPercent,
   );
 
-  /// Open orders; billing doesn't wait on a ready-to-bill hand-off.
+  /// Open orders; every one can be billed straight away.
   List<BarOrder> get openOrders => orders;
 }
 
@@ -134,7 +134,12 @@ class BarViewModel extends StateNotifier<BarState> {
     }
   }
 
-  Future<bool> placeOrder(Map<String, dynamic> body) => _run(() => usecase.createOrder(body));
+  /// The new order's id, or null when the server refused.
+  Future<int?> placeOrder(Map<String, dynamic> body) async {
+    int? id;
+    final ok = await _run(() async => id = await usecase.createOrder(body));
+    return ok ? id : null;
+  }
 
   Future<bool> addItems(int id, Map<String, dynamic> body) => _run(() => usecase.addItems(id, body));
 
@@ -151,14 +156,14 @@ class BarViewModel extends StateNotifier<BarState> {
   Future<bool> deliverFoodItem(int foodOrderId, int itemId) =>
       _run(() => usecase.deliverFoodItem(foodOrderId, itemId));
 
-  Future<bool> readyToBill(int id) => _run(() => usecase.readyToBill(id));
-
   /// Move an open table order to another customer; blank = the table's shared bill.
   Future<bool> setCustomer(int id, String? tag) => _run(() => usecase.setCustomer(id, tag));
 
-  Future<bool> addToRoom(List<int> orderIds, int bookingId, int roomId) => _run(() async {
-    for (final id in orderIds) {
-      await usecase.addToRoom(id, bookingId, roomId);
+  /// [discount] is for the whole lot; it rides on the first order (the server
+  /// caps it at what that order came to).
+  Future<bool> addToRoom(List<int> orderIds, int bookingId, int roomId, {num discount = 0}) => _run(() async {
+    for (final (i, id) in orderIds.indexed) {
+      await usecase.addToRoom(id, bookingId, roomId, discountAmount: i == 0 ? discount : 0);
     }
   });
 
@@ -168,6 +173,7 @@ class BarViewModel extends StateNotifier<BarState> {
   Future<BarBill?> issueBill({
     required List<int> orderIds,
     String? customerName,
+    num discountAmount = 0,
     required List<({String method, double amount, String? reference})> payments,
   }) async {
     state = state.copyWith(submitting: true, clearError: true, clearPending: true);
@@ -176,6 +182,7 @@ class BarViewModel extends StateNotifier<BarState> {
       final bill = await usecase.issueBill({
         'orderIds': orderIds,
         'customerName': name.isEmpty ? null : name,
+        if (discountAmount > 0) 'discountAmount': discountAmount,
         'payments': [
           for (final p in payments) {'method': p.method, 'amount': p.amount, 'reference': p.reference},
         ],

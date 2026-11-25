@@ -83,6 +83,7 @@ function formFromLodge(lodge, owner) {
       waAutoCancel: lodge.settings?.waAutoCancel ?? true,
       waAutoBill: lodge.settings?.waAutoBill ?? true,
       waAutoReceipt: lodge.settings?.waAutoReceipt ?? false,
+      aiIdScan: lodge.settings?.aiIdScan ?? false,
     },
     isActive: !!lodge.is_active,
     showLogoOnReceipt: !!lodge.show_logo_on_receipt,
@@ -535,6 +536,13 @@ export default function LodgeEditModal({ lodge, owner, stats, onSaved, onClose }
             note="Lets this property record a stay it missed, with the real check-in and check-out times and payments. The invoice takes the next invoice number and is dated the check-out day."
             checked={form.canAddPastBookings}
             onChange={update('canAddPastBookings')}
+          />
+          <Check
+            id="edit-ai-id-scan"
+            label="AI ID scan on the booking form"
+            note="Lets staff photograph guest ID cards and fill the guest details automatically. Each photo read is a paid Claude API call (capped per month), so switch it on only for properties that should have it."
+            checked={form.settings.aiIdScan}
+            onChange={updateSetting('aiIdScan')}
           />
           {WA_MESSAGES.map(({ key, title, note }) => (
             <Check

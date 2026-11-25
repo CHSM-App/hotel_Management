@@ -277,6 +277,18 @@ function cappedDiscount(requested, gross) {
   return round2(Math.min(Math.max(Number.isFinite(amount) ? amount : 0, 0), gross));
 }
 
+// Restaurant and bar discounts come off their own section first; the general
+// (room-level) discount is then spread over what is left. `total` is everything
+// taken off the document, which is what discount_amount stores.
+function applyDiscounts([room, food, service, bar], { foodDiscount = 0, barDiscount = 0, general = 0 }) {
+  const fD = cappedDiscount(foodDiscount, food);
+  const bD = cappedDiscount(barDiscount, bar);
+  const left = [room, round2(food - fD), service, round2(bar - bD)];
+  const leftGross = round2(left.reduce((sum, a) => sum + a, 0));
+  const g = cappedDiscount(general, leftGross);
+  return { foodDiscount: fD, barDiscount: bD, general: g, total: round2(fD + bD + g), net: netOfDiscount(left, g, leftGross) };
+}
+
 // The desk decides what the guest hands over — "make it ₹1,500" — and this
 // works out the discount that lands there.
 //
@@ -410,7 +422,7 @@ function ratePercentFromAmount(taxAmount, subtotal) {
 // which is why the split is recomputed here rather than only in the caller.
 //
 // `food` is optional so every room-only caller keeps its old shape.
-function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, service = null, bar = null, discountAmount = 0 }) {
+function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, service = null, bar = null, discountAmount = 0, foodDiscount = 0, barDiscount = 0 }) {
   const foodSubtotal = food ? round2(food.subtotal) : 0;
   const foodCgst = food ? food.cgstAmount : 0;
   const foodSgst = food ? food.sgstAmount : 0;
@@ -428,12 +440,13 @@ function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, ser
   const barFoodTax = bar ? bar.foodTaxAmount : 0;
 
   const grossSubtotal = round2(roomSubtotal + foodSubtotal + serviceSubtotal + barGross);
-  const discount = cappedDiscount(discountAmount, grossSubtotal);
-  const [roomGross, foodGross, serviceGross, barGrossNet] = netOfDiscount(
-    [round2(roomSubtotal), foodSubtotal, serviceSubtotal, barGross],
-    discount,
-    grossSubtotal
-  );
+  const d = applyDiscounts([round2(roomSubtotal), foodSubtotal, serviceSubtotal, barGross], {
+    foodDiscount,
+    barDiscount,
+    general: discountAmount,
+  });
+  const discount = d.total;
+  const [roomGross, foodGross, serviceGross, barGrossNet] = d.net;
 
   // The taxable value of an inclusive amount is what is left once the tax
   // inside it comes out. Every figure below that a tax invoice has to state —
@@ -512,7 +525,11 @@ function buildBreakdown({ roomSubtotal, cgstAmount, sgstAmount, food = null, ser
     // What the desk took off this document, and what that came to as a
     // percentage of everything on it before tax — the two ways the same
     // decision gets described, both printed.
+    // Total taken off; the restaurant and bar parts of it are also reported so
+    // the bill can print them inside those sections.
     discountAmount: discount,
+    foodDiscountAmount: d.foodDiscount,
+    barDiscountAmount: d.barDiscount,
     discountPercent: grossSubtotal > 0 ? round2((discount / grossSubtotal) * 100) : 0,
     grossSubtotal,
 
@@ -596,8 +613,17 @@ function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmoun
   // What it is actually being charged at, which is what GST is due on. The
   // nights, the overstay, the food and the services each give up their share of
   // the discount before any of them is banded or taxed.
-  const discount = cappedDiscount(discountAmount, grossSubtotal);
-  const net = netOfDiscount([...grossNights, grossLate, grossFood, grossService, grossBar], discount, grossSubtotal);
+  // Restaurant and bar discounts were given on their orders; the discount typed
+  // on the bill is the general one, spread over what is left.
+  const foodDiscount = cappedDiscount(orderDiscountOf(foodOrders), grossFood);
+  const barDiscount = cappedDiscount(orderDiscountOf(bars), grossBar);
+  const baseGross = round2(grossSubtotal - foodDiscount - barDiscount);
+  const discount = cappedDiscount(discountAmount, baseGross);
+  const net = netOfDiscount(
+    [...grossNights, grossLate, round2(grossFood - foodDiscount), grossService, round2(grossBar - barDiscount)],
+    discount,
+    baseGross
+  );
   const netNights = net.slice(0, grossNights.length);
   const netLate = net[grossNights.length];
   const netFood = net[grossNights.length + 1];
@@ -630,6 +656,8 @@ function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmoun
           service,
           bar,
           discountAmount: discount,
+          foodDiscount,
+          barDiscount,
         }),
       }
     : null;
@@ -645,10 +673,12 @@ function priceStayBill(booking, foodOrders, { includeLateCheckout, discountAmoun
       // Drinks tax is the bar's own and stays; food GST only applies on a registered lodge.
       bar: bar ? { ...bar, foodTaxAmount: 0, foodRatePercent: 0 } : null,
       discountAmount: discount,
+      foodDiscount,
+      barDiscount,
     }),
   };
 
-  return { gst, nonGst, grossNights, nightsSubtotal, grossLate, grossSubtotal, discount };
+  return { gst, nonGst, grossNights, nightsSubtotal, grossLate, grossSubtotal, discount, baseGross };
 }
 
 // The two lookups the pricing needs, then the pricing. Callers that price the
@@ -762,8 +792,8 @@ async function scopeBooking(db, lodgeId, booking, scope = null) {
       .request()
       .input('bookingId', sql.BigInt, booking.id)
       .query(`
-        SELECT br.id, br.room_id, r.room_number, br.status, br.check_in_date, br.check_out_date,
-               br.actual_check_in_at, br.nightly_breakdown, br.total_price
+        SELECT br.id, br.booking_id, br.room_id, r.room_number, br.status, br.check_in_date, br.check_out_date,
+               br.actual_check_in_at, br.nightly_breakdown, br.total_price, br.base_price_override
         FROM dbo.booking_rooms br JOIN dbo.rooms r ON r.id = br.room_id
         WHERE br.booking_id = @bookingId AND br.status <> 'CANCELLED'
         ORDER BY br.id
@@ -779,6 +809,19 @@ async function scopeBooking(db, lodgeId, booking, scope = null) {
   if (roomId != null && !target) throw new ApiError('That room is not checked in.', 409);
 
   const leaving = target ? [target] : inHouse;
+
+  // A room with no check-out date (an open-ended stay) is billed as if it left
+  // now: dated today and priced for the nights actually stayed. Only the view is
+  // changed here — applyCheckOut writes the same figures when the bill is issued.
+  let settledOpen = false;
+  for (const room of leaving) {
+    if (room.check_out_date != null) continue;
+    settledOpen = true;
+    const priced = await lazyBookings().priceOpenStay(db, lodgeId, room, at);
+    room.check_out_date = priced.checkOutDate;
+    room.total_price = priced.totalPrice;
+    room.nightly_breakdown = priced.nightlyBreakdown;
+  }
   const staying = rooms.filter((r) => r.status !== 'CHECKED_OUT' && !leaving.includes(r));
   if (!target && staying.length > 0) {
     throw new ApiError('Some rooms on this booking have not checked in yet.', 409);
@@ -788,6 +831,9 @@ async function scopeBooking(db, lodgeId, booking, scope = null) {
     return {
       view: {
         ...booking,
+        // Dates and totals re-derived from the rooms, now that any open stay has
+        // been dated and priced above (identical to the stored figures otherwise).
+        ...(settledOpen ? lazyBookings().bookingFiguresFromRooms(rooms) : {}),
         status: 'CHECKED_OUT',
         actual_check_out_at: at,
         // Rooms already out carry theirs on the booking row; the room(s) leaving now add this one.
@@ -880,7 +926,7 @@ async function previewBill(
     // What the guest hands over, not the bill's own total — the advance is
     // already in the property's hands.
     const payable = (d) => round2(sideOf(priced(d)).totalAmount - advancePaid);
-    const solved = solveDiscountForTarget(targetTotal, sideOf(priced(0)).grossSubtotal, payable);
+    const solved = solveDiscountForTarget(targetTotal, priced(0).baseGross, payable);
     applied = solved.discount;
     targetAchieved = solved.achieved;
   }
@@ -912,7 +958,7 @@ async function previewBill(
     // Everything on this bill before tax and before anything comes off it —
     // the figure a percentage discount is a percentage *of*, so the screen can
     // convert between "10%" and "₹520" without guessing at the base.
-    discountBase: bill.grossSubtotal,
+    discountBase: bill.baseGross,
     discountAmount: bill.discount,
     // What the guest was actually brought to, when a target was asked for.
     // Often not the exact figure typed: GST bands per night and the total
@@ -988,7 +1034,7 @@ async function loadStayFoodOrders(request, lodgeId, bookingId, roomId = null) {
     .input('bookingId', sql.BigInt, bookingId)
     .input('roomId', sql.BigInt, roomId)
     .query(`
-      SELECT id, order_number, subtotal, placed_at
+      SELECT id, order_number, subtotal, placed_at, discount_amount
       FROM dbo.food_orders
       WHERE lodge_id = @lodgeId AND booking_id = @bookingId AND on_room_bill = 1
         AND (@roomId IS NULL OR room_id = @roomId)
@@ -1000,6 +1046,7 @@ async function loadStayFoodOrders(request, lodgeId, bookingId, roomId = null) {
     orderNumber: row.order_number,
     subtotal: Number(row.subtotal),
     placedAt: row.placed_at,
+    discount: Number(row.discount_amount) || 0,
   }));
 }
 
@@ -1050,6 +1097,12 @@ async function loadFoodItemsByInvoice(pool, invoiceIds) {
 }
 
 // What the food on a bill is worth before anything comes off it.
+// What was already taken off these orders (restaurant or bar) before they
+// reached the bill.
+function orderDiscountOf(orders) {
+  return round2(orders.reduce((sum, o) => sum + (Number(o.discount) || 0), 0));
+}
+
 function foodSubtotalOf(orders) {
   return round2(orders.reduce((sum, o) => sum + o.subtotal, 0));
 }
@@ -1137,7 +1190,7 @@ async function loadBarOrders(newRequest, lodgeId, { bookingId = null, roomId = n
     : "o.booking_id = @bookingId AND o.on_room_bill = 1 AND o.invoice_id IS NULL AND o.status = 'OPEN' AND (@roomId IS NULL OR o.room_id = @roomId)";
   const orders = (
     await request.query(`
-      SELECT o.id, o.order_number, l.bar_tax_percent, l.is_gst_registered, l.is_specified_premises,
+      SELECT o.id, o.order_number, o.discount_amount, l.bar_tax_percent, l.is_gst_registered, l.is_specified_premises,
              (SELECT ISNULL(SUM(i.line_total), 0) FROM dbo.bar_order_items i WHERE i.order_id = o.id AND i.is_cancelled = 0) AS drinks,
              (SELECT ISNULL(SUM(fi.line_total), 0) FROM dbo.food_orders fo JOIN dbo.food_order_items fi ON fi.order_id = fo.id
               WHERE fo.bar_order_id = o.id AND fo.lodge_id = @lodgeId AND fo.status <> 'CANCELLED') AS food
@@ -1158,6 +1211,7 @@ async function loadBarOrders(newRequest, lodgeId, { bookingId = null, roomId = n
     orderNumber: o.order_number,
     drinks: Number(o.drinks),
     food: Number(o.food),
+    discount: Number(o.discount_amount) || 0,
     taxPercent: Number(o.bar_tax_percent),
     foodRatePercent,
     items: items.get(String(o.id)) || [],
@@ -1506,6 +1560,8 @@ async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null }
       .input('lateCheckoutCharge', sql.Decimal(10, 2), bill.grossLate)
       .input('discountAmount', sql.Decimal(10, 2), breakdown.discountAmount)
       .input('discountPercent', sql.Decimal(5, 2), breakdown.discountPercent)
+      .input('foodDiscountAmount', sql.Decimal(10, 2), breakdown.foodDiscountAmount)
+      .input('barDiscountAmount', sql.Decimal(10, 2), breakdown.barDiscountAmount)
       // Only kept when there is a discount for it to explain.
       .input('discountReason', sql.NVarChar(100), breakdown.discountAmount > 0 ? input.discountReason ?? null : null)
       .input('createdBy', sql.BigInt, userId ?? null)
@@ -1518,7 +1574,7 @@ async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null }
            cgst_amount, sgst_amount, food_subtotal, food_cgst_amount, food_sgst_amount,
            service_subtotal, service_cgst_amount, service_sgst_amount,
            bar_subtotal, bar_food_subtotal, bar_tax_amount, bar_food_tax_amount,
-           late_checkout_charge, discount_amount, discount_percent, discount_reason, round_off, total_amount,
+           late_checkout_charge, discount_amount, discount_percent, discount_reason, food_discount_amount, bar_discount_amount, round_off, total_amount,
            advance_paid, balance_collected, balance_payment_method, balance_reference, created_by, created_at)
         OUTPUT inserted.id
         VALUES
@@ -1526,7 +1582,7 @@ async function issueInvoice(lodgeId, userId, bookingId, input, { settle = null }
            @cgstAmount, @sgstAmount, @foodSubtotal, @foodCgstAmount, @foodSgstAmount,
            @serviceSubtotal, @serviceCgstAmount, @serviceSgstAmount,
            @barSubtotal, @barFoodSubtotal, @barTaxAmount, @barFoodTaxAmount,
-           @lateCheckoutCharge, @discountAmount, @discountPercent, @discountReason, @roundOff, @totalAmount,
+           @lateCheckoutCharge, @discountAmount, @discountPercent, @discountReason, @foodDiscountAmount, @barDiscountAmount, @roundOff, @totalAmount,
            @advancePaid, @balanceCollected, @balancePaymentMethod, @balanceReference, @createdBy,
            COALESCE(SWITCHOFFSET(@createdAt, '+05:30'), SYSDATETIMEOFFSET()))
       `);
@@ -1726,11 +1782,12 @@ function mapInvoice(row) {
   const barTaxAmount = Number(row.bar_tax_amount ?? 0);
   const barFoodTaxAmount = Number(row.bar_food_tax_amount ?? 0);
   const barGross = round2(barSubtotal + barFoodSubtotal);
-  const [roomGross, foodGross, serviceGross, barGrossNet] = netOfDiscount(
+  const foodDiscountAmount = Number(row.food_discount_amount ?? 0);
+  const barDiscountAmount = Number(row.bar_discount_amount ?? 0);
+  const [roomGross, foodGross, serviceGross, barGrossNet] = applyDiscounts(
     [roomSubtotal, foodSubtotal, serviceSubtotal, barGross],
-    discountAmount,
-    round2(roomSubtotal + foodSubtotal + serviceSubtotal + barGross)
-  );
+    { foodDiscount: foodDiscountAmount, barDiscount: barDiscountAmount, general: round2(discountAmount - foodDiscountAmount - barDiscountAmount) }
+  ).net;
 
   // ...and then the tax that was sitting inside those amounts comes out, the
   // same way it did when the bill was issued. Prices are GST-inclusive, so the
@@ -1848,6 +1905,8 @@ function mapInvoice(row) {
     // What the desk took off this bill, and the percentage it was agreed as.
     // 0 on every bill written before discounts existed, which prints nothing.
     discountAmount,
+    foodDiscountAmount,
+    barDiscountAmount,
     discountPercent: Number(row.discount_percent ?? 0),
     discountReason: row.discount_reason ?? null,
     roundOff: Number(row.round_off),
@@ -2008,6 +2067,8 @@ function buildPreviewDocument({
     barItems,
 
     discountAmount: side.discountAmount,
+    foodDiscountAmount: side.foodDiscountAmount ?? 0,
+    barDiscountAmount: side.barDiscountAmount ?? 0,
     discountPercent: side.discountPercent,
     discountReason,
     roundOff: side.roundOff,
@@ -2844,7 +2905,7 @@ async function listInHouseGuests(lodgeId) {
 // A room guest who ate at a table: charge that tab's delivered food to their
 // stay, or a room-QR tab (already tied to its stay) moved off the restaurant
 // bill onto that stay's bill.
-async function addTabToRoomBill(lodgeId, tab, bookingId) {
+async function addTabToRoomBill(lodgeId, tab, bookingId, discountAmount = 0) {
   const roomStay = /^room-booking-(\d+)$/.exec(String(tab));
   if (!roomStay && !/^(table|counter)-\d+$/.test(String(tab))) {
     throw new ApiError('Only a table, takeaway or room-order tab can be added to a room bill.', 400);
@@ -2867,18 +2928,33 @@ async function addTabToRoomBill(lodgeId, tab, bookingId) {
   const request = pool.request().input('lodgeId', sql.BigInt, lodgeId).input('stayId', sql.BigInt, bookingId);
   const scope = tabScope(request, tab);
   const result = await request.query(`
+    DECLARE @moved TABLE (id BIGINT, subtotal DECIMAL(10,2));
     -- Adding to the stay is the desk's own deliberate act, so a room order does not
     -- need to have been marked ready to bill first; table and takeaway food does.
-    UPDATE o SET o.booking_id = @stayId, o.on_room_bill = 1,
+    UPDATE o SET o.booking_id = @stayId, o.on_room_bill = 1, o.discount_amount = 0,
                  o.ready_to_bill_at = COALESCE(o.ready_to_bill_at, SYSDATETIMEOFFSET())
+    OUTPUT inserted.id, inserted.subtotal INTO @moved
     FROM dbo.food_orders o
     WHERE o.lodge_id = @lodgeId AND o.status <> 'CANCELLED' AND o.invoice_id IS NULL
-      AND o.on_room_bill = 0 AND o.bar_order_id IS NULL ${scope}
+      AND o.on_room_bill = 0 AND o.bar_order_id IS NULL ${scope};
+    SELECT id, subtotal FROM @moved ORDER BY id;
   `);
-  if (result.rowsAffected[0] === 0) {
+  if (result.recordset.length === 0) {
     throw new ApiError('Nothing to add — no orders are waiting on this tab.', 409);
   }
-  return { added: result.rowsAffected[0] };
+  // The discount given on this tab rides on its first order, capped at what the
+  // tab came to; the room bill shows it under Restaurant.
+  const tabTotal = round2(result.recordset.reduce((sum, r) => sum + Number(r.subtotal), 0));
+  const off = cappedDiscount(discountAmount, tabTotal);
+  if (off > 0) {
+    await pool
+      .request()
+      .input('lodgeId', sql.BigInt, lodgeId)
+      .input('id', sql.BigInt, result.recordset[0].id)
+      .input('off', sql.Decimal(10, 2), off)
+      .query('UPDATE dbo.food_orders SET discount_amount = @off WHERE id = @id AND lodge_id = @lodgeId');
+  }
+  return { added: result.recordset.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -3202,8 +3278,8 @@ async function reviseInvoice(
   const foodOrders = (
     await tx()
       .input('invoiceId', sql.BigInt, old.id)
-      .query('SELECT id, order_number, subtotal, placed_at FROM dbo.food_orders WHERE invoice_id = @invoiceId')
-  ).recordset.map((r) => ({ id: r.id, orderNumber: r.order_number, subtotal: Number(r.subtotal), placedAt: r.placed_at }));
+      .query('SELECT id, order_number, subtotal, placed_at, discount_amount FROM dbo.food_orders WHERE invoice_id = @invoiceId')
+  ).recordset.map((r) => ({ id: r.id, orderNumber: r.order_number, subtotal: Number(r.subtotal), placedAt: r.placed_at, discount: Number(r.discount_amount) || 0 }));
   const services = (
     await tx()
       .input('invoiceId', sql.BigInt, old.id)
@@ -3215,7 +3291,8 @@ async function reviseInvoice(
     services,
     bars,
     includeLateCheckout: Number(old.late_checkout_charge) > 0,
-    discountAmount: Number(old.discount_amount) || 0,
+    // The general part only: the restaurant and bar parts come back off their orders.
+    discountAmount: round2((Number(old.discount_amount) || 0) - (Number(old.food_discount_amount) || 0) - (Number(old.bar_discount_amount) || 0)),
   });
   const { documentType, ...b } = old.billing_side === 'GST' && bill.gst ? bill.gst : bill.nonGst;
 
@@ -3279,6 +3356,8 @@ async function reviseInvoice(
     .input('lateCharge', sql.Decimal(10, 2), bill.grossLate)
     .input('discountAmount', sql.Decimal(10, 2), b.discountAmount)
     .input('discountPercent', sql.Decimal(5, 2), b.discountPercent)
+    .input('foodDiscountAmount', sql.Decimal(10, 2), b.foodDiscountAmount)
+    .input('barDiscountAmount', sql.Decimal(10, 2), b.barDiscountAmount)
     .query(`
       UPDATE dbo.invoices SET document_type = @documentType, room_subtotal = @roomSubtotal,
         cgst_amount = @cgstAmount, sgst_amount = @sgstAmount, round_off = @roundOff, total_amount = @totalAmount,
@@ -3286,7 +3365,8 @@ async function reviseInvoice(
         food_subtotal = @foodSubtotal, food_cgst_amount = @foodCgst, food_sgst_amount = @foodSgst,
         service_subtotal = @serviceSubtotal, service_cgst_amount = @serviceCgst, service_sgst_amount = @serviceSgst,
         bar_subtotal = @barSubtotal, bar_food_subtotal = @barFoodSubtotal, bar_tax_amount = @barTaxAmount, bar_food_tax_amount = @barFoodTaxAmount,
-        late_checkout_charge = @lateCharge, discount_amount = @discountAmount, discount_percent = @discountPercent
+        late_checkout_charge = @lateCharge, discount_amount = @discountAmount, discount_percent = @discountPercent,
+        food_discount_amount = @foodDiscountAmount, bar_discount_amount = @barDiscountAmount
       WHERE id = @id AND lodge_id = @lodgeId
     `);
 
@@ -3353,6 +3433,7 @@ module.exports = {
   // Shared with reports.service.js so the booking report states a bill's taxable
   // value by the same apportionment the bill itself was printed with.
   netOfDiscount,
+  applyDiscounts,
   getGstSlabs,
   ratePercentFor,
   nightlyAmounts,

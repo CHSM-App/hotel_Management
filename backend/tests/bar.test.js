@@ -73,3 +73,23 @@ test('stay bill carries a separate Bar line (drinks at bar tax, dishes at food G
   assert.strictEqual(nonGst.barTaxAmount, 90.91);
   assert.strictEqual(nonGst.totalAmount, 2210);
 });
+
+// A discount given on a bar order posted to a room comes off the Bar section only, is reported
+// separately, and the general bill discount is spread over what is left.
+test('stay bill: bar order discount is its own figure, general discount spreads over the rest', () => {
+  const { priceStayBill } = require('../src/modules/billing/billing.service');
+  const booking = { nightly_breakdown: JSON.stringify([{ total: 1000 }]), late_checkout_charge: 0, is_gst_registered: true };
+  const slabs = [{ maxAmount: null, ratePercent: 0 }];
+  const bars = [{ id: 1, orderNumber: 1, drinks: 1000, food: 0, discount: 100, taxPercent: 10, foodRatePercent: 0, items: [] }];
+  const base = { includeLateCheckout: false, slabs, foodRate: null, services: [], bars };
+
+  const only = priceStayBill(booking, [], { ...base, discountAmount: 0 }).gst;
+  assert.strictEqual(only.barDiscountAmount, 100);
+  assert.strictEqual(only.discountAmount, 100);
+  assert.strictEqual(only.totalAmount, 1900); // 1000 room + 1000 bar - 100
+
+  const both = priceStayBill(booking, [], { ...base, discountAmount: 200 }).gst;
+  assert.strictEqual(both.barDiscountAmount, 100);
+  assert.strictEqual(both.discountAmount, 300); // total off = bar 100 + general 200
+  assert.strictEqual(both.totalAmount, 1700);
+});

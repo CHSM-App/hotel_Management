@@ -95,9 +95,16 @@ class BillSide {
   final num serviceCgstRatePercent;
   final num serviceSgstRatePercent;
   final num discountAmount;
+
+  /// The parts of [discountAmount] given on restaurant / bar orders. The rest is
+  /// the discount typed on the bill itself.
+  final num foodDiscountAmount;
+  final num barDiscountAmount;
   final num discountPercent;
   final num roundOff;
   final num totalAmount;
+
+  num get generalDiscount => discountAmount - foodDiscountAmount - barDiscountAmount;
 
   const BillSide({
     this.documentType,
@@ -119,6 +126,8 @@ class BillSide {
     this.serviceCgstRatePercent = 0,
     this.serviceSgstRatePercent = 0,
     this.discountAmount = 0,
+    this.foodDiscountAmount = 0,
+    this.barDiscountAmount = 0,
     this.discountPercent = 0,
     this.roundOff = 0,
     this.totalAmount = 0,
@@ -144,6 +153,8 @@ class BillSide {
     serviceCgstRatePercent: asNum(json['serviceCgstRatePercent']),
     serviceSgstRatePercent: asNum(json['serviceSgstRatePercent']),
     discountAmount: asNum(json['discountAmount']),
+    foodDiscountAmount: asNum(json['foodDiscountAmount']),
+    barDiscountAmount: asNum(json['barDiscountAmount']),
     discountPercent: asNum(json['discountPercent']),
     roundOff: asNum(json['roundOff']),
     totalAmount: asNum(json['totalAmount']),
@@ -928,10 +939,16 @@ class Invoice {
   final num serviceCgstRatePercent;
   final num serviceSgstRatePercent;
   final num discountAmount;
+  final num foodDiscountAmount;
+  final num barDiscountAmount;
   final num discountPercent;
   final String? discountReason;
   final num roundOff;
   final String? advanceReceiptNumbers;
+
+  /// What was taken off on the bill itself, apart from the restaurant and bar
+  /// parts, which print inside their own sections.
+  num get generalDiscount => discountAmount - foodDiscountAmount - barDiscountAmount;
 
   // ── The property, as it prints on the document ───────────────────────────
   final String? lodgeName;
@@ -1009,6 +1026,8 @@ class Invoice {
     this.serviceCgstRatePercent = 0,
     this.serviceSgstRatePercent = 0,
     this.discountAmount = 0,
+    this.foodDiscountAmount = 0,
+    this.barDiscountAmount = 0,
     this.discountPercent = 0,
     this.discountReason,
     this.roundOff = 0,
@@ -1102,6 +1121,8 @@ class Invoice {
     serviceCgstRatePercent: asNum(json['serviceCgstRatePercent']),
     serviceSgstRatePercent: asNum(json['serviceSgstRatePercent']),
     discountAmount: asNum(json['discountAmount']),
+    foodDiscountAmount: asNum(json['foodDiscountAmount']),
+    barDiscountAmount: asNum(json['barDiscountAmount']),
     discountPercent: asNum(json['discountPercent']),
     discountReason: asStringOrNull(json['discountReason']),
     roundOff: asNum(json['roundOff']),
@@ -1256,6 +1277,10 @@ class AdvanceReceipt {
   final num cgstRatePercent;
   final num sgstRatePercent;
   final num stayTotal;
+
+  /// A stay with no check-out date yet: there is no total or balance until
+  /// the guest checks out.
+  final bool openEnded;
   final num roundOff;
   final num balanceDue;
 
@@ -1324,6 +1349,7 @@ class AdvanceReceipt {
     this.cgstRatePercent = 0,
     this.sgstRatePercent = 0,
     this.stayTotal = 0,
+    this.openEnded = false,
     this.roundOff = 0,
     this.balanceDue = 0,
     this.roomCharges = const [],
@@ -1372,6 +1398,7 @@ class AdvanceReceipt {
     cgstRatePercent: asNum(json['cgstRatePercent']),
     sgstRatePercent: asNum(json['sgstRatePercent']),
     stayTotal: asNum(json['stayTotal']),
+    openEnded: json['openEnded'] == true,
     roundOff: asNum(json['roundOff']),
     balanceDue: asNum(json['balanceDue']),
     roomCharges:

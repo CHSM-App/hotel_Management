@@ -84,7 +84,7 @@ test('the new check-in date is the one priced, checked and written', () => {
 
   assert.match(
     body,
-    /if \(checkOutDate <= checkInDate\)/,
+    /if \(checkOutDate && checkOutDate <= checkInDate\)/,
     'the one-night minimum is measured against the stored check-in date again, so ' +
       'an edit could move the arrival past the departure'
   );

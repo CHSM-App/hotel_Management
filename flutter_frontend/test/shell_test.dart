@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
+import 'package:hotel_manager/domain/models/scanned_guest.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
@@ -140,13 +142,13 @@ class _FakeBookings implements BookingRepository {
   Future<Map<String, dynamic>> sendWhatsApp(int id) async => {'status': 'sent'};
 
   @override
-  Future<List<Room>> availableRooms(String a, String b) async => const [];
+  Future<List<Room>> availableRooms(String a, String? b) async => const [];
 
   @override
   Future<Quote> priceQuote({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     String? chargeIds,
     num? basePriceOverride,
     num? discountAmount,
@@ -157,7 +159,7 @@ class _FakeBookings implements BookingRepository {
   Future<MultiRoomQuote> multiRoomPriceQuote({
     required List<Map<String, dynamic>> rooms,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
     num? discountAmount,
   }) async => const MultiRoomQuote();
 
@@ -165,7 +167,7 @@ class _FakeBookings implements BookingRepository {
   Future<AvailableBeds> availableBeds({
     required int roomId,
     required String checkInDate,
-    required String checkOutDate,
+    required String? checkOutDate,
   }) async => const AvailableBeds(pricePerNight: 0);
 
   @override
@@ -177,6 +179,9 @@ class _FakeBookings implements BookingRepository {
 
   @override
   Future<List<CheckAlert>> checkoutAlerts() async => const [];
+
+  @override
+  Future<List<ScannedGuest>> scanIds(List<XFile> photos) async => const [];
 
   @override
   Future<List<GuestMatch>> searchGuests(String query) async => const [];
@@ -199,7 +204,7 @@ class _FakeBookings implements BookingRepository {
   @override
   Future<List<Room>> availableRoomsForBooking(
     int bookingId, {
-    required String checkOutDate,
+    required String? checkOutDate,
     String? checkInDate,
   }) async => const [];
 

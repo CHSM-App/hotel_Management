@@ -463,6 +463,19 @@ async function viewSharedReceiptHandler(req, res, next) {
   }
 }
 
+// A shared quotation: the PDF the desk sent, opened inline in the guest's browser.
+async function viewSharedQuotationHandler(req, res, next) {
+  try {
+    const { filePath, referenceCode } = await require('../quotations/quotations.service').readSharedQuotation(String(req.params.token || ''));
+    res.type('application/pdf');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', `inline; filename="${String(referenceCode).replace(/[\/"]/g, '-')}.pdf"`);
+    res.sendFile(filePath);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function downloadSharedReceiptHandler(req, res, next) {
   try {
     const { filePath, receiptNumber } = await receiptShareService.readSharedReceipt(String(req.params.token || ''));
@@ -510,6 +523,7 @@ module.exports = {
   viewSharedBillHandler,
   downloadSharedBillHandler,
   getSharedReceiptHandler,
+  viewSharedQuotationHandler,
   getSharedReceiptPreviewImageHandler,
   viewSharedReceiptHandler,
   downloadSharedReceiptHandler,

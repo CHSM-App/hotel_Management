@@ -72,7 +72,6 @@ router.post('/orders/:id/cancel', ...take, h((req) => svc.cancelOrder(lodge(req)
 
 router.get('/targets', ...take, h((req) => svc.listTargets(lodge(req))));
 // Captain or the desk: either holding bar.take (captain) or bar.bill (reception) may mark it.
-router.post('/orders/:id/ready-to-bill', authenticate, requirePermission('bar.take', 'bar.bill'), h((req) => svc.markReadyToBill(lodge(req), id(req))));
 router.post('/orders/:id/add-to-room', authenticate, requirePermission('bar.take', 'bar.bill'), h((req) => svc.addToRoomBill(lodge(req), id(req), parse(s.roomBillSchema, req.body))));
 router.post('/orders/:id/deliver', ...take, h((req) => svc.deliverAll(lodge(req), id(req))));
 router.post('/orders/:id/items/:itemId/deliver', ...take, h((req) => svc.deliverItem(lodge(req), id(req), id(req, 'itemId'))));

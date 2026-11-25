@@ -15,6 +15,11 @@ import 'package:flutter/material.dart';
 /// desktop 1440-1919, wide >=1920.
 enum Tier { phone, tablet, laptop, desktop, wide }
 
+/// A route that opts out of [DeskPageTransitions]' content-width cap.
+class FullWidthRoute<T> extends MaterialPageRoute<T> {
+  FullWidthRoute({required super.builder});
+}
+
 /// Desktop page transition that also keeps every pushed (non-first) screen to
 /// the web's 1360px content width on the web's page background — one place
 /// instead of a cap on each of the screens that never had one.
@@ -29,20 +34,10 @@ class DeskPageTransitions extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    final wrapped = (!route.isFirst && AppTheme.isDesktop(context))
-        ? ColoredBox(
-            color: AppTheme.paper,
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: AppTheme.contentMaxWidth(context)),
-                child: child,
-              ),
-            ),
-          )
-        : child;
+    // Pushed pages use the full window; each page owns its side gutter
+    // (AppTheme.gutter) or centers itself with AppTheme.formMaxWidth.
     return const FadeForwardsPageTransitionsBuilder()
-        .buildTransitions(route, context, animation, secondaryAnimation, wrapped);
+        .buildTransitions(route, context, animation, secondaryAnimation, child);
   }
 }
 
@@ -267,6 +262,13 @@ class AppTheme {
   static const double formWidthDesktop = 960;
   static double formMaxWidth(BuildContext context) =>
       isDesktop(context) ? formWidthDesktop : maxContentWidth;
+
+  /// Horizontal padding that centers a full-window ListView's content to
+  /// [formMaxWidth] while keeping the scrollbar at the window edge.
+  static double sidePad(BuildContext context) {
+    final extra = (MediaQuery.sizeOf(context).width - formMaxWidth(context)) / 2;
+    return extra > s16 ? extra : s16;
+  }
 
   // ── Radius ────────────────────────────────────────────────────────────────
   /// Inputs and small buttons.

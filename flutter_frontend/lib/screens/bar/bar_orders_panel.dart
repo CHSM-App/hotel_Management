@@ -8,10 +8,11 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
+import 'bar_billing_panel.dart';
 import 'bar_common.dart';
 import 'bar_take_order_screen.dart';
 
-/// The bar's live orders: deliver, add, mark ready to bill, add to a room bill.
+/// The bar's live orders: deliver, add, issue the bill, add to a room bill.
 class BarOrdersPanel extends ConsumerStatefulWidget {
   const BarOrdersPanel({super.key});
 
@@ -60,7 +61,20 @@ class _BarOrdersPanelState extends ConsumerState<BarOrdersPanel> {
     }
     if (g == null || !mounted) return;
     final guest = g;
-    await _act(() => vm.addToRoom([o.id], guest.bookingId, guest.roomId), 'Added to Room ${guest.roomNumber} bill.');
+    final discount = await askBarDiscount(context);
+    if (discount == null || !mounted) return;
+    await _act(() => vm.addToRoom([o.id], guest.bookingId, guest.roomId, discount: discount), 'Added to Room ${guest.roomNumber} bill.');
+  }
+
+  /// Bill the tab this order sits on (a table's customer bills together).
+  Future<void> _bill(BarOrder o) async {
+    final vm = ref.read(barViewModelProvider.notifier);
+    await vm.loadTabs();
+    if (!mounted) return;
+    final tab = ref.read(barViewModelProvider).tabs.where((t) => t.orderIds.contains(o.id)).firstOrNull;
+    if (tab == null) return barSnack(context, ref.read(barViewModelProvider).error ?? 'This order can no longer be billed.');
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => BarIssueBillScreen(tab: tab)));
+    if (mounted) vm.loadOrders(silent: true);
   }
 
   @override
@@ -68,6 +82,7 @@ class _BarOrdersPanelState extends ConsumerState<BarOrdersPanel> {
     final bar = ref.watch(barViewModelProvider);
     final me = ref.watch(authViewModelProvider).me;
     final canTake = me?.user.can('bar.take') ?? false;
+    final canBill = me?.user.can('bar.bill') ?? false;
     final orders = bar.openOrders;
 
     return Scaffold(
@@ -109,6 +124,8 @@ class _BarOrdersPanelState extends ConsumerState<BarOrdersPanel> {
                 itemBuilder: (_, i) => _OrderCard(
                   order: orders[i],
                   canTake: canTake,
+                  canBill: canBill,
+                  onBill: () => _bill(orders[i]),
                   onAdd: () => _take(orders[i]),
                   onToRoom: () => _toRoom(orders[i]),
                   onAct: _act,
@@ -123,11 +140,13 @@ class _BarOrdersPanelState extends ConsumerState<BarOrdersPanel> {
 class _OrderCard extends ConsumerWidget {
   final BarOrder order;
   final bool canTake;
+  final bool canBill;
+  final VoidCallback onBill;
   final VoidCallback onAdd;
   final VoidCallback onToRoom;
   final Future<void> Function(Future<bool> Function() run, String done) onAct;
 
-  const _OrderCard({required this.order, required this.canTake, required this.onAdd, required this.onToRoom, required this.onAct});
+  const _OrderCard({required this.order, required this.canTake, required this.canBill, required this.onBill, required this.onAdd, required this.onToRoom, required this.onAct});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -213,6 +232,18 @@ class _OrderCard extends ConsumerWidget {
               ],
             ),
           ),
+          if (canBill) ...[
+            const SizedBox(height: AppTheme.s8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(42), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                onPressed: busy ? null : onBill,
+                icon: const Icon(Icons.receipt_long_rounded, size: 18),
+                label: const Text('Issue bill', style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
           if (canTake && o.undelivered > 0) ...[
             const SizedBox(height: AppTheme.s8),
             SizedBox(

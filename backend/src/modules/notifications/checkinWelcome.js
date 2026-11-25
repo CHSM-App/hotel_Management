@@ -55,6 +55,7 @@ function dateParts(value) {
 }
 
 function formatDate(value) {
+  if (value == null) return 'To be confirmed'; // an open-ended stay has no check-out date
   const { y, m, d } = dateParts(value);
   return `${d} ${MONTHS[m - 1]} ${y}`;
 }
@@ -161,7 +162,8 @@ async function loadDeadlines(lodgeId, bookingId) {
       WHERE br.booking_id = @bookingId AND b.lodge_id = @lodgeId AND br.status = 'CHECKED_IN'
     `);
   const day = (v) => (typeof v === 'string' ? v : v.toISOString()).slice(0, 10);
-  return result.recordset.map((row) =>
+  // An open-ended stay has no check-out time to promise the guest.
+  return result.recordset.filter((row) => row.check_out_date != null).map((row) =>
     lateCheckout.checkoutDeadline({
       checkinMode: row.checkin_mode,
       checkOutTime: toClockTime(row.check_out_time),

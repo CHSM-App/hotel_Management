@@ -195,8 +195,18 @@ const enquirySubmitLimiter = createRateLimiter({
   countWhen: (res) => res.statusCode < 400,
 });
 
+// Each scan call costs real money (Claude API), so cap bursts per network. The
+// per-property monthly image cap in idScan.service.js is the real budget.
+const idScanLimiter = createRateLimiter({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  message: 'Too many ID scans. Please wait a few minutes, or enter the IDs by hand.',
+  countWhen: (res) => res.statusCode < 400,
+});
+
 module.exports = {
   createRateLimiter,
+  idScanLimiter,
   enquirySubmitLimiter,
   refreshLimiter,
   pinAttemptLimiter,

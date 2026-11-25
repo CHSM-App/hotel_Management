@@ -27,12 +27,20 @@ class Quote {
   /// What the stay costs: grossTotal less discountAmount.
   final num totalPrice;
 
+  /// A stay with no check-out date yet. There is no total to show — it is worked
+  /// out at check-out from the nights actually stayed — so [charges] are what one
+  /// night costs, and [nightlyRate] is that night's total.
+  final bool openEnded;
+  final num nightlyRate;
+
   const Quote({
     this.charges = const [],
     this.nights = const [],
     this.grossTotal = 0,
     this.discountAmount = 0,
     this.totalPrice = 0,
+    this.openEnded = false,
+    this.nightlyRate = 0,
   });
 
   factory Quote.fromJson(Map<String, dynamic> json) => Quote(
@@ -49,6 +57,8 @@ class Quote {
     grossTotal: asNum(json['grossTotal']),
     discountAmount: asNum(json['discountAmount']),
     totalPrice: asNum(json['totalPrice']),
+    openEnded: json['openEnded'] == true,
+    nightlyRate: asNum(json['nightlyRate']),
   );
 
   int get nightCount => nights.length;

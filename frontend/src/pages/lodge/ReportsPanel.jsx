@@ -2401,6 +2401,46 @@ export default function ReportsPanel({ lodge, permissions = [], only = null }) {
                 />
               )}
 
+              <p className="reports-panel__section-label">Items sold</p>
+
+              <div className="dash-card">
+                {(foodOrders.byItem || []).length === 0 ? (
+                  <div className="dash-state">No dishes sold in this period.</div>
+                ) : (
+                  <div className="dash-table-scroll">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Item</th>
+                          <th>Portion</th>
+                          <th className="dash-table__num">Qty sold</th>
+                          <th className="dash-table__num">Sale amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {foodOrders.byItem.map((i, n) => (
+                          <tr key={`${i.name}|${i.portion}`}>
+                            <td>{n + 1}</td>
+                            <td>{i.name}</td>
+                            <td>{i.portion || '—'}</td>
+                            <td className="dash-table__num">{i.quantity}</td>
+                            <td className="dash-table__num">{formatPrice(i.amount)}</td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td />
+                          <td><b>Total</b></td>
+                          <td />
+                          <td className="dash-table__num"><b>{foodOrders.byItem.reduce((s, i) => s + i.quantity, 0)}</b></td>
+                          <td className="dash-table__num"><b>{formatPrice(foodOrders.byItem.reduce((s, i) => s + i.amount, 0))}</b></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
               <p className="reports-panel__section-label">Food orders</p>
 
               {foodOrders.orders.length === 0 ? (

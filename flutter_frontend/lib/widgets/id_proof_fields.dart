@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -14,6 +15,12 @@ import 'photo_source_sheet.dart';
 /// camera affordance, offered explicitly here since a phone has both and no
 /// single tap picks between them.
 Future<XFile?> pickIdProofPhoto(BuildContext context) async {
+  // image_picker has no gallery/camera on Windows; use the native file dialog.
+  if (Platform.isWindows) {
+    final r = await FilePicker.pickFiles(type: FileType.image);
+    final path = r?.files.single.path;
+    return path == null ? null : XFile(path);
+  }
   final source = await showPhotoSourceSheet(
     context,
     title: 'Upload ID proof',
@@ -25,6 +32,29 @@ Future<XFile?> pickIdProofPhoto(BuildContext context) async {
     imageQuality: 85,
     maxWidth: 1600,
   );
+}
+
+/// Many ID photos in one go, for the AI scan — gallery multi-select (or the
+/// native file dialog on Windows). Camera users scan again to add more.
+/// Capped at [kMaxScanPhotos]: 10 cards, front and back.
+const kMaxScanPhotos = 20;
+
+Future<List<XFile>> pickIdScanPhotos(BuildContext context) async {
+  if (Platform.isWindows) {
+    final r = await FilePicker.pickFiles(type: FileType.image, allowMultiple: true);
+    return [for (final f in r?.files ?? const <PlatformFile>[]) if (f.path != null) XFile(f.path!)];
+  }
+  final source = await showPhotoSourceSheet(
+    context,
+    title: 'Scan ID cards',
+    subtitle: 'Take a photo, or pick many from your gallery',
+  );
+  if (source == null) return [];
+  if (source == ImageSource.camera) {
+    final one = await ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 1600);
+    return one == null ? [] : [one];
+  }
+  return ImagePicker().pickMultiImage(imageQuality: 85, maxWidth: 1600);
 }
 
 /// One glyph per [kIdProofTypes] entry — purely decorative, so a type with
@@ -80,7 +110,12 @@ class IdProofFields extends StatelessWidget {
   final XFile? file;
   final ValueChanged<XFile?>? onFile;
 
+  /// Fields (name, mobile) that share the row with the ID trio when there is
+  /// room for all of them; below that they sit on a row of their own above it.
+  final List<Widget> leading;
+
   const IdProofFields({
+    this.leading = const [],
     super.key,
     required this.type,
     required this.number,
@@ -226,7 +261,7 @@ class IdProofFields extends StatelessWidget {
   Widget _docPart(BuildContext context, {bool wide = false}) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-            _label(context, 'Document photo (optional)'),
+            _label(context, 'Photo (optional)'),
             SizedBox(height: RoomyForm.on(context) ? 6 : AppTheme.s4),
             if (file != null)
               PhotoThumb(
@@ -279,42 +314,71 @@ class IdProofFields extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // With the width for it, the three sit on one row — type, number and
-        // the document photo — so a guest's ID takes one line of the form
-        // instead of a stack of them.
-        if (constraints.maxWidth >= 560) {
+        final w = constraints.maxWidth;
+        const gap = SizedBox(width: AppTheme.s12);
+        // Everything on one line: [leading…] type, number, photo.
+        if (leading.isNotEmpty && w >= 900) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              for (final l in leading) ...[Expanded(child: l), gap],
               Expanded(child: _typePart(context)),
-              const SizedBox(width: AppTheme.s12),
-              // Number and photo keep their slots before a type is picked, so
-              // the dropdown doesn't change width the moment one is chosen.
-              Expanded(
-                child: type != null ? _numberPart(context) : const SizedBox(),
-              ),
+              gap,
+              Expanded(child: _numberPart(context)),
               if (onFile != null) ...[
-                const SizedBox(width: AppTheme.s12),
-                SizedBox(
-                  width: _docWidth,
-                  child: type != null ? _docPart(context, wide: true) : null,
-                ),
+                gap,
+                SizedBox(width: _docWidth, child: _docPart(context, wide: true)),
               ],
             ],
           );
         }
+        // With the width for it, the three sit on one row — type, number and
+        // the document photo — so a guest's ID takes one line of the form
+        // instead of a stack of them. All three always show: the number and
+        // photo no longer wait for a type to be picked.
+        final Widget trio = w >= 560
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _typePart(context)),
+                  gap,
+                  Expanded(child: _numberPart(context)),
+                  if (onFile != null) ...[
+                    gap,
+                    SizedBox(width: _docWidth, child: _docPart(context, wide: true)),
+                  ],
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _typePart(context),
+                  const SizedBox(height: AppTheme.s4),
+                  _numberPart(context),
+                  if (onFile != null) ...[
+                    const SizedBox(height: AppTheme.s4),
+                    _docPart(context),
+                  ],
+                ],
+              );
+        if (leading.isEmpty) return trio;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _typePart(context),
-            if (type != null) ...[
-              const SizedBox(height: AppTheme.s4),
-              _numberPart(context),
-              if (onFile != null) ...[
-                const SizedBox(height: AppTheme.s4),
-                _docPart(context),
-              ],
-            ],
+            if (w >= 520)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < leading.length; i++) ...[
+                    if (i > 0) gap,
+                    Expanded(child: leading[i]),
+                  ],
+                ],
+              )
+            else
+              for (final l in leading) ...[l, const SizedBox(height: AppTheme.s4)],
+            const SizedBox(height: AppTheme.s4),
+            trio,
           ],
         );
       },

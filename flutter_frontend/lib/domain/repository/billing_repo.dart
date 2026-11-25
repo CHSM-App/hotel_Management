@@ -30,7 +30,7 @@ abstract class BillingRepository {
   /// Tables, rooms, and takeaways holding delivered food nobody has paid for.
   Future<List<FoodTab>> foodTabs();
 
-  Future<FoodBillPreview> previewFoodBill(String tab);
+  Future<FoodBillPreview> previewFoodBill(String tab, {num discountAmount = 0});
 
   Future<Invoice> issueFoodInvoice(String tab, Map<String, dynamic> body);
 
@@ -40,7 +40,7 @@ abstract class BillingRepository {
 
   /// Moves a table or takeaway tab's delivered, unbilled food onto a stay's
   /// bill.
-  Future<void> addFoodTabToRoom(String tab, int bookingId);
+  Future<void> addFoodTabToRoom(String tab, int bookingId, {num discountAmount = 0});
 
   Future<List<Invoice>> invoices();
 

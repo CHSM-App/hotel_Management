@@ -232,10 +232,20 @@ class _Body extends ConsumerWidget {
                         value: amounts!.serviceSubtotal,
                       ),
 
-                    if ((amounts?.discountAmount ?? 0) > 0)
+                    if ((amounts?.foodDiscountAmount ?? 0) > 0)
                       _Row(
-                        label: 'Discount (${amounts!.discountPercent}%)',
-                        value: -amounts.discountAmount,
+                        label: 'Restaurant discount',
+                        value: -amounts!.foodDiscountAmount,
+                      ),
+                    if ((amounts?.barDiscountAmount ?? 0) > 0)
+                      _Row(
+                        label: 'Bar discount',
+                        value: -amounts!.barDiscountAmount,
+                      ),
+                    if ((amounts?.generalDiscount ?? 0) > 0)
+                      _Row(
+                        label: 'Discount',
+                        value: -amounts!.generalDiscount,
                       ),
 
                     const Divider(
@@ -444,12 +454,10 @@ class _Body extends ConsumerWidget {
         ],
 
         // ── The discount ─────────────────────────────────────────────────────
-        // Only a cycle property discounts here: on the other two modes the
-        // bill is what the stay costs and any concession is settled through
-        // what the guest hands over.
-        if (state.isCycleStay) ...[
+        // Any stay can be discounted (not a single room leaving alone).
+        if (state.canDiscount) ...[
           const SizedBox(height: AppTheme.s12),
-          _DiscountSection(state: state),
+          DiscountSection(state: state),
         ],
 
         // ── How it was paid ─────────────────────────────────────────────────
@@ -1483,38 +1491,33 @@ class _EarlyCheckoutNoticeState extends ConsumerState<_EarlyCheckoutNotice> {
 /// A discount the desk gives on a CYCLE stay, in rupees, with the reason that
 /// prints beside it on the bill. The server caps the amount and solves the
 /// document; this only carries what was typed.
-class _DiscountSection extends ConsumerStatefulWidget {
+class DiscountSection extends ConsumerStatefulWidget {
   final BillingState state;
 
-  const _DiscountSection({required this.state});
+  const DiscountSection({super.key, required this.state});
 
   @override
-  ConsumerState<_DiscountSection> createState() => _DiscountSectionState();
+  ConsumerState<DiscountSection> createState() => _DiscountSectionState();
 }
 
-class _DiscountSectionState extends ConsumerState<_DiscountSection> {
+class _DiscountSectionState extends ConsumerState<DiscountSection> {
   late final _amount = TextEditingController(text: widget.state.discountInput);
-  late final _reason = TextEditingController(text: widget.state.discountReason);
 
   // The early-checkout banner writes into these same two fields when the
   // desk fills the discount in from there instead — without this, typing up
   // there left this card showing whatever it started with, and a discount
   // that looked unset here was still the one that priced the bill.
   @override
-  void didUpdateWidget(covariant _DiscountSection old) {
+  void didUpdateWidget(covariant DiscountSection old) {
     super.didUpdateWidget(old);
     if (_amount.text != widget.state.discountInput) {
       _amount.text = widget.state.discountInput;
-    }
-    if (_reason.text != widget.state.discountReason) {
-      _reason.text = widget.state.discountReason;
     }
   }
 
   @override
   void dispose() {
     _amount.dispose();
-    _reason.dispose();
     super.dispose();
   }
 
@@ -1544,18 +1547,6 @@ class _DiscountSectionState extends ConsumerState<_DiscountSection> {
                 keyboardType: TextInputType.number,
                 dense: true,
                 onChanged: vm.setDiscount,
-              ),
-            ),
-            const SizedBox(width: AppTheme.s8),
-            Expanded(
-              flex: 3,
-              child: NeuField(
-                controller: _reason,
-                label: 'Reason (on bill)',
-                hint: 'e.g. Regular guest',
-                maxLength: 100,
-                dense: true,
-                onChanged: vm.setDiscountReason,
               ),
             ),
           ],
@@ -1855,7 +1846,7 @@ class _StayDetailsContent extends StatelessWidget {
               label: 'Dates',
               value:
                   '${formatIsoDate(booking.checkInDate)} – '
-                  '${formatIsoDate(booking.checkOutDate)}'
+                  '${formatCheckOut(booking.checkOutDate)}'
                   '${nights != null ? ' · ${nightsLabel(nights)}' : ''}',
             ),
             _Fact(

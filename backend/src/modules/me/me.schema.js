@@ -85,6 +85,8 @@ const settingsSchema = z
     waAutoBooking: z.boolean().optional(),
     waAutoWalkin: z.boolean().optional(),
     waAutoCancel: z.boolean().optional(),
+    // Super-admin only: updateMySettings (the owner's route) strips it.
+    aiIdScan: z.boolean().optional(),
   })
   .strict();
 

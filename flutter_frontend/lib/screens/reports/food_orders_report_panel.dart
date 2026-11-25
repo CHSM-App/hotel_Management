@@ -6,6 +6,7 @@ import '../../presentation/providers/view_model_provider.dart';
 import '../../widgets/format.dart';
 import '../../widgets/neu.dart';
 import '../theme.dart';
+import 'item_sales_table.dart';
 import 'report_widgets.dart';
 
 /// Food orders register — mirrors the web's Reports > Food orders tab.
@@ -84,6 +85,16 @@ class _Loaded extends StatelessWidget {
                 note: "on a room's bill",
               ),
           ],
+        ),
+        const SizedBox(height: AppTheme.s16),
+        CollapsibleRegister(
+          title: 'Items sold',
+          initiallyExpanded: true,
+          child: ItemSalesTable(
+            variantLabel: 'Portion',
+            emptyMessage: 'No dishes sold in this period.',
+            rows: [for (final i in report.byItem) (name: i.name, variant: i.portion, quantity: i.quantity, amount: i.amount)],
+          ),
         ),
         const SizedBox(height: AppTheme.s16),
         CollapsibleRegister(

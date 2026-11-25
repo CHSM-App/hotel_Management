@@ -113,6 +113,10 @@ class TapeChartBooking {
   final String? status;
   final num? totalPrice;
 
+  /// No check-out date yet: the room is held, and the chart keeps colouring it,
+  /// until the guest is checked out.
+  bool get isOpenEnded => checkOutDate == null || checkOutDate!.isEmpty;
+
   const TapeChartBooking({
     required this.id,
     required this.roomId,

@@ -26,28 +26,46 @@ class NetworkService {
   /// would otherwise never heal on its own.
   static const reprobeEvery = Duration(seconds: 30);
 
+  /// While offline, look again this often: coming back online should show
+  /// within seconds, not at the next 30 s tick (DNS is often not ready for the
+  /// first moments after wifi returns, so the first probe can fail).
+  static const reprobeOffline = Duration(seconds: 4);
+
   Stream<bool> get onConnectivityChanged {
     late final StreamController<bool> out;
     StreamSubscription? sub;
     Timer? timer;
     var probing = false;
+    var again = false; // an event arrived mid-probe: probe once more after
+    var up = true;
+    var last = DateTime.now();
 
     Future<void> probe({bool interfaceFirst = false}) async {
-      if (probing || out.isClosed) return;
+      if (out.isClosed) return;
+      if (probing) {
+        again = true;
+        return;
+      }
       probing = true;
+      last = DateTime.now();
       try {
-        if (interfaceFirst) out.add(await hasInterface());
-        var up = await hasInterface() && await canReachBackend();
+        // The backend itself is the truth: a LAN-only PC (no internet) can
+        // report "no interface" while the local server is right there.
+        up = await canReachBackend();
         // One failed probe is often a blip (a dropped packet, wifi roaming).
         // Look again before telling the desk the connection is gone, so the
         // strip does not flicker on and off.
-        if (!up && await hasInterface()) {
+        if (!up) {
           await Future<void>.delayed(const Duration(seconds: 2));
           up = await canReachBackend();
         }
         if (!out.isClosed) out.add(up);
       } finally {
         probing = false;
+        if (again) {
+          again = false;
+          probe();
+        }
       }
     }
 
@@ -55,7 +73,9 @@ class NetworkService {
       onListen: () {
         probe(interfaceFirst: true);
         sub = _connectivity.onConnectivityChanged.listen((_) => probe());
-        timer = Timer.periodic(reprobeEvery, (_) => probe());
+        timer = Timer.periodic(reprobeOffline, (_) {
+          if (!up || DateTime.now().difference(last) >= reprobeEvery) probe();
+        });
       },
       onCancel: () async {
         timer?.cancel();
