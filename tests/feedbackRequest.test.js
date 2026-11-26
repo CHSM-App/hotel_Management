@@ -1,0 +1,192 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+
+// Same preamble as the other WhatsApp suites.
+process.env.DB_SERVER ||= 'localhost';
+process.env.DB_PORT ||= '1433';
+process.env.DB_NAME ||= 'lodge_test';
+process.env.DB_USER ||= 'sa';
+process.env.DB_PASSWORD ||= 'test';
+process.env.JWT_SECRET ||= 'a'.repeat(40);
+// Must be OFF for these tests: with a template id set the notifier would go
+// looking for a database.
+delete process.env.WHATSAPP_FEEDBACK_TEMPLATE_ID;
+delete process.env.PUBLIC_BASE_URL;
+
+const {
+  buildFeedbackSample,
+  buildGreetMessage,
+  clean,
+  notifyFeedbackRequest,
+} = require('../src/modules/notifications/feedbackRequest');
+const { sendDueFeedbackRequests, newFeedbackToken } = require('../src/modules/bookings/feedbackRequests.service');
+const whatsapp = require('../src/config/whatsapp');
+
+const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+
+const lodge = { name: 'Sea View Lodge' };
+const booking = { id: 41, guestName: 'Rahul Patil', guestPhone: '9876543210' };
+const link = 'https://hotel.example.com/public/feedback/abc123';
+
+// ---------------------------------------------------------------------------
+// The two variables, in template order
+// ---------------------------------------------------------------------------
+
+test('a feedback request fills the two template variables in order, defaulting to the stay opening', () => {
+  const sample = buildFeedbackSample(booking, lodge, link);
+  assert.strictEqual(sample.length, 2, `expected 2 variables, got ${sample.length}`);
+  assert.strictEqual(sample[0], 'Rahul Patil');
+  assert.strictEqual(sample[1], buildGreetMessage(lodge, link, 'stay'));
+});
+
+// An earlier three-variable version of this template ({{1}} name {{2}}
+// hotel_name {{3}} feedback_link) was rejected by WhatsApp's reviewers —
+// collapsing hotel name, the ask, and the link into one composed block is
+// what passed. The static wording carries no comma, and the hotel name is
+// cleaned before it goes in, so the whole block is guaranteed comma-free.
+test('greet_message carries the ask and the link, with no stray comma', () => {
+  const message = buildGreetMessage(lodge, link, 'stay');
+  assert.match(message, /Please use the link below to leave your feedback:/);
+  assert.ok(message.includes(link), 'expected the link to appear in the composed message');
+  assert.ok(!message.includes(','), `comma in greet_message: "${message}"`);
+});
+
+// The one sentence that actually differs between a stay and a function —
+// everything after it (the ask, the link) is identical either way.
+test('the opening line reads right for a stay and for an event, picked by kind', () => {
+  const stayMessage = buildGreetMessage(lodge, link, 'stay');
+  assert.match(stayMessage, /Thank you for staying with us at Sea View Lodge\./);
+  assert.doesNotMatch(stayMessage, /hosting your event/);
+
+  const eventMessage = buildGreetMessage(lodge, link, 'event');
+  assert.match(eventMessage, /Thank you for hosting your event with us at Sea View Lodge\./);
+  assert.doesNotMatch(eventMessage, /staying with us/);
+});
+
+test('an unknown kind falls back to the stay opening rather than throwing', () => {
+  const message = buildGreetMessage(lodge, link, 'bogus');
+  assert.match(message, /Thank you for staying with us at Sea View Lodge\./);
+});
+
+test('a comma in the hotel name is replaced, not left to break the variable packing', () => {
+  const message = buildGreetMessage({ name: 'Hotel Sai, Vengurla' }, link, 'stay');
+  assert.ok(!message.includes(','), `comma in greet_message: "${message}"`);
+  assert.match(message, /Hotel Sai - Vengurla/);
+});
+
+// Confirmed in production: WhatsApp's own API rejects a parameter value
+// outright if it contains a newline, a tab, or a run of more than 4 spaces
+// ("Param text cannot have new-line/tab characters or more than 4
+// consecutive spaces"). An earlier version joined the ask and the link with
+// "\n\n", which got every send rejected — this is the regression guard.
+test('greet_message never contains a newline, a tab, or more than 4 consecutive spaces', () => {
+  for (const kind of ['stay', 'event']) {
+    const message = buildGreetMessage(lodge, link, kind);
+    assert.ok(!message.includes('\n'), `newline in greet_message (${kind}): "${message}"`);
+    assert.ok(!message.includes('\t'), `tab in greet_message (${kind}): "${message}"`);
+    assert.ok(!/ {5,}/.test(message), `5+ consecutive spaces in greet_message (${kind}): "${message}"`);
+  }
+});
+
+test('clean() collapses whitespace, replaces commas, and never yields an empty variable', () => {
+  assert.strictEqual(clean('  Sea View,  Lodge '), 'Sea View - Lodge');
+  assert.strictEqual(clean(''), '-');
+  assert.strictEqual(clean(null), '-');
+});
+
+// ---------------------------------------------------------------------------
+// Off unless configured, and never throwing
+// ---------------------------------------------------------------------------
+
+test('with no template configured the notifier skips without touching the database', async () => {
+  assert.strictEqual(whatsapp.isFeedbackTemplateConfigured(), false);
+  assert.deepStrictEqual(await notifyFeedbackRequest(1, booking, lodge, link), {
+    status: 'skipped',
+    reason: 'not configured',
+  });
+});
+
+test('with no template or PUBLIC_BASE_URL configured the sweep does nothing, never throws', async () => {
+  assert.deepStrictEqual(await sendDueFeedbackRequests(), { checked: 0, sent: 0, skipped: 0, failed: 0 });
+});
+
+// ---------------------------------------------------------------------------
+// newFeedbackToken — same shape as orders.service.js's newPublicToken
+// ---------------------------------------------------------------------------
+
+test('newFeedbackToken produces a URL-safe, sufficiently long, non-repeating token', () => {
+  const a = newFeedbackToken();
+  const b = newFeedbackToken();
+  assert.notStrictEqual(a, b);
+  assert.ok(a.length >= 20, `expected a long token, got ${a.length} characters`);
+  assert.ok(/^[A-Za-z0-9_-]+$/.test(a), `expected a URL-safe token, got "${a}"`);
+});
+
+// ---------------------------------------------------------------------------
+// The exact shape getBooking()-style data the notifier expects
+// ---------------------------------------------------------------------------
+
+test('reads the camelCase fields buildFeedbackSample expects, not raw snake_case', () => {
+  const src = read('src/modules/notifications/feedbackRequest.js');
+  assert.match(src, /booking\.guestName/);
+  assert.match(src, /booking\.guestPhone/);
+});
+
+// ---------------------------------------------------------------------------
+// One ask per booking, ever — the row is written before the send, not after
+// ---------------------------------------------------------------------------
+
+test('the stay sweep passes the stay opening, not the event one', () => {
+  const src = read('src/modules/bookings/feedbackRequests.service.js');
+  assert.match(src, /notifyFeedbackRequest\(row\.lodge_id, booking, lodge, link, 'stay'\)/);
+});
+
+test('the sweep records the feedback request before attempting the send', () => {
+  const src = read('src/modules/bookings/feedbackRequests.service.js');
+  const insertAt = src.indexOf('INSERT INTO dbo.feedback_requests');
+  const sendAt = src.indexOf('notifyFeedbackRequest(');
+  assert.ok(insertAt > -1 && sendAt > -1, 'expected both the insert and the send call to exist');
+  assert.ok(insertAt < sendAt, 'expected the feedback_requests row to be written before the send is attempted');
+});
+
+test('the sweep query excludes bookings older than the 3-day upper bound', () => {
+  const src = read('src/modules/bookings/feedbackRequests.service.js');
+  assert.match(src, /MAX_AGE_DAYS/);
+  assert.match(src, /actual_check_out_at >= DATEADD\(day, -@maxAgeDays/);
+});
+
+// ---------------------------------------------------------------------------
+// Where it fires from
+// ---------------------------------------------------------------------------
+
+test('server.js schedules the feedback sweep every 2 hours, separate from the daily one', () => {
+  const src = read('src/server.js');
+  assert.match(src, /sendDueFeedbackRequests/);
+  assert.match(src, /0 \*\/2 \* \* \*/);
+  assert.match(src, /Asia\/Kolkata/);
+});
+
+test('.env.example documents the template switch and the link it needs', () => {
+  const src = read('.env.example');
+  assert.match(src, /^WHATSAPP_FEEDBACK_TEMPLATE_ID=/m);
+  assert.match(src, /^PUBLIC_BASE_URL=/m);
+});
+
+// ---------------------------------------------------------------------------
+// publicBaseUrl extraction — one implementation, two callers
+// ---------------------------------------------------------------------------
+
+test('publicBaseUrl is a shared helper, not duplicated per feature', () => {
+  const shared = read('src/config/publicBaseUrl.js');
+  assert.match(shared, /function publicBaseUrl/);
+
+  const billShare = read('src/modules/billing/billShare.service.js');
+  const receiptShare = read('src/modules/billing/receiptShare.service.js');
+  const sweep = read('src/modules/bookings/feedbackRequests.service.js');
+  for (const src of [billShare, receiptShare, sweep]) {
+    assert.match(src, /require\(.*config\/publicBaseUrl.*\)/);
+    assert.doesNotMatch(src, /function publicBaseUrl/);
+  }
+});

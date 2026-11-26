@@ -1,0 +1,94 @@
+const { Router } = require('express');
+const { authenticate, requirePermission } = require('../../middleware/authenticate');
+const { idProofUpload } = require('../../middleware/idProofUpload');
+const { idScanUpload } = require('../../middleware/idScanUpload');
+const { idScanLimiter } = require('../../middleware/rateLimit');
+const { idempotent } = require('../../middleware/idempotency');
+const { bookingEditLog } = require('../../middleware/bookingEditLog');
+const {
+  listAvailableRoomsHandler,
+  listAvailableRoomsForBookingHandler,
+  listAvailableBedsHandler,
+  listBookingsHandler,
+  searchGuestsHandler,
+  priceQuoteHandler,
+  getTapeChartHandler,
+  getBookingHandler,
+  listBookingEditsHandler,
+  getEditWindowHandler,
+  getPastWindowHandler,
+  getIdProofHandler,
+  getGuestIdProofHandler,
+  createBookingHandler,
+  scanIdsHandler,
+  createPastBookingHandler,
+  checkInHandler,
+  updateBookingHandler,
+  getLateCheckoutHandler,
+  listCheckoutAlertsHandler,
+  listCheckinAlertsHandler,
+  checkOutHandler,
+  cancelBookingHandler,
+  sendBookingWhatsAppHandler,
+  listDraftsHandler,
+  getDraftHandler,
+  createDraftHandler,
+  updateDraftHandler,
+  deleteDraftHandler,
+} = require('./bookings.controller');
+
+const router = Router();
+
+// Who/device behind a booking edit or cancel. New bookings, check-in/out and
+// drafts are not logged.
+const LOGGED = /^\/\d+(\/cancel)?$/;
+router.use((req, res, next) =>
+  req.method === 'PATCH' && LOGGED.test(req.path) ? bookingEditLog(req, res, next) : next()
+);
+
+const staff = requirePermission('bookings.manage');
+// The guest & ID register reads this same list, so a role granted only
+// guests.view can reach it without being able to touch the tape chart.
+const canSeeRegister = requirePermission('bookings.manage', 'guests.view');
+
+router.get('/', authenticate, canSeeRegister, listBookingsHandler);
+// Ahead of /:id, or "drafts" is parsed as a booking id.
+router.get('/drafts', authenticate, staff, listDraftsHandler);
+router.post('/drafts', authenticate, staff, createDraftHandler);
+router.get('/drafts/:id', authenticate, staff, getDraftHandler);
+router.put('/drafts/:id', authenticate, staff, updateDraftHandler);
+router.delete('/drafts/:id', authenticate, staff, deleteDraftHandler);
+// Answers the same question the register does — who has stayed here — so it
+// takes the same permission, and reveals nothing a register reader can't
+// already page through.
+router.get('/guest-search', authenticate, canSeeRegister, searchGuestsHandler);
+router.get('/available-rooms', authenticate, staff, listAvailableRoomsHandler);
+router.get('/available-beds', authenticate, staff, listAvailableBedsHandler);
+router.get('/price-quote', authenticate, staff, priceQuoteHandler);
+router.get('/tape-chart', authenticate, staff, getTapeChartHandler);
+// Ahead of /:id for the same reason as /drafts above.
+router.get('/checkout-alerts', authenticate, staff, listCheckoutAlertsHandler);
+router.get('/checkin-alerts', authenticate, staff, listCheckinAlertsHandler);
+router.get('/past-window', authenticate, staff, getPastWindowHandler);
+router.get('/:id/edit-window', authenticate, staff, getEditWindowHandler);
+router.get('/:id', authenticate, staff, getBookingHandler);
+router.get('/:id/edits', authenticate, staff, listBookingEditsHandler);
+router.get('/:id/available-rooms', authenticate, staff, listAvailableRoomsForBookingHandler);
+router.get('/:id/late-checkout', authenticate, staff, getLateCheckoutHandler);
+router.get('/:id/rooms/:roomId/late-checkout', authenticate, staff, getLateCheckoutHandler);
+router.get('/:id/id-proof', authenticate, canSeeRegister, getIdProofHandler);
+router.get('/:id/guests/:guestId/id-proof', authenticate, canSeeRegister, getGuestIdProofHandler);
+// AI reads the ID photos. POST, so it can never be mistaken for GET /:id.
+router.post('/scan-id', authenticate, staff, idScanLimiter, idScanUpload, scanIdsHandler);
+router.post('/past', authenticate, staff, idProofUpload, createPastBookingHandler);
+router.post('/', authenticate, staff, idempotent, idProofUpload, createBookingHandler);
+router.patch('/:id', authenticate, staff, idProofUpload, updateBookingHandler);
+router.patch('/:id/check-in', authenticate, staff, idempotent, idProofUpload, checkInHandler);
+router.patch('/:id/check-out', authenticate, staff, checkOutHandler);
+// One room of a multi-room booking; the plain routes above act on all of them.
+router.patch('/:id/rooms/:roomId/check-in', authenticate, staff, idempotent, idProofUpload, checkInHandler);
+router.patch('/:id/rooms/:roomId/check-out', authenticate, staff, checkOutHandler);
+router.patch('/:id/cancel', authenticate, staff, cancelBookingHandler);
+router.post('/:id/send-whatsapp', authenticate, staff, sendBookingWhatsAppHandler);
+
+module.exports = router;
