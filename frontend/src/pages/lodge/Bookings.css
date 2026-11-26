@@ -837,6 +837,19 @@
   padding: 6px 8px;
 }
 
+/* A compact button, so the filename beside it keeps room to show. */
+.bookings-panel__party-row input[type='file']::file-selector-button {
+  margin-right: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* ------------------------------------------- returning-guest suggestions */
 
 /* The list hangs off the name field rather than pushing the party row down —
@@ -969,17 +982,27 @@
 .guest-typeahead__option--active .guest-typeahead__business {
   background: var(--surface);
 }
+/* The picked guest's totals hang under the name field, out of flow, in room the
+   party row reserves for them (see :has below). Inside the narrow name cell they
+   used to wrap onto two lines and stretch that cell, pushing every other field
+   in the row out of line with it. */
 .guest-typeahead__summary {
+  position: absolute;
+  top: 100%;
+  left: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-top: 8px;
+  white-space: nowrap;
 }
 .guest-typeahead__pill {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 12px;
   border-radius: 999px;
   background: var(--brand-wash);
   border: 1px solid var(--brand-wash-edge);
@@ -1696,6 +1719,25 @@
    wraps a short one anyway. */
 .bookings-panel__party-row:has(.field__error) {
   padding-bottom: 48px;
+}
+
+/* Room for the picked guest's totals pills (28px + gap), which hang out of
+   flow under the name field. After the .on-file allowance above so it wins. */
+.bookings-panel__party-row:has(.guest-typeahead__summary) {
+  padding-bottom: 50px;
+}
+
+/* Stacked on a phone the Mobile field sits right under the name, so the pills
+   take their own place in the flow instead of hanging over it. */
+@media (max-width: 480px) {
+  .guest-typeahead__summary {
+    position: static;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .bookings-panel__party-row:has(.guest-typeahead__summary) {
+    padding-bottom: 10px;
+  }
 }
 
 /* ---------------------------------------------------- booking saved dialog */
